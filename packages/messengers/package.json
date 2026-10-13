@@ -1,0 +1,113 @@
+{
+  "name": "@ykurilov/agent-chat-messengers",
+  "version": "0.47.0",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "drizzle",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "exports": {
+    ".": {
+      "@ykurilov/agent-chat-source": "./src/index.ts",
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./telegram": {
+      "@ykurilov/agent-chat-source": "./src/telegram.ts",
+      "types": "./dist/types/telegram.d.ts",
+      "import": "./dist/telegram.js"
+    },
+    "./vk": {
+      "@ykurilov/agent-chat-source": "./src/vk.ts",
+      "types": "./dist/types/vk.d.ts",
+      "import": "./dist/vk.js"
+    },
+    "./max": {
+      "@ykurilov/agent-chat-source": "./src/max.ts",
+      "types": "./dist/types/max.d.ts",
+      "import": "./dist/max.js"
+    },
+    "./sqlite": {
+      "@ykurilov/agent-chat-source": "./src/sqlite.ts",
+      "types": "./dist/types/sqlite.d.ts",
+      "import": "./dist/sqlite.js"
+    },
+    "./postgres": {
+      "@ykurilov/agent-chat-source": "./src/postgres.ts",
+      "types": "./dist/types/postgres.d.ts",
+      "import": "./dist/postgres.js"
+    },
+    "./react": {
+      "@ykurilov/agent-chat-source": "./src/react.ts",
+      "types": "./dist/types/react.d.ts",
+      "import": "./dist/react.js"
+    }
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ykurilov/agent-chat-sdk.git",
+    "directory": "packages/messengers"
+  },
+  "scripts": {
+    "build": "node ../../scripts/build-package.mjs",
+    "typecheck": "tsc -p tsconfig.json",
+    "db:generate": "drizzle-kit generate --config drizzle.config.sqlite.ts && drizzle-kit generate --config drizzle.config.postgres.ts"
+  },
+  "dependencies": {
+    "@ykurilov/agent-chat-core": "workspace:*",
+    "drizzle-orm": "^0.45.3"
+  },
+  "peerDependencies": {
+    "better-sqlite3": "^13.0.3",
+    "pg": "^8.23.0",
+    "react": "^19.3.0",
+    "@ykurilov/agent-chat-react": "workspace:^"
+  },
+  "peerDependenciesMeta": {
+    "better-sqlite3": {
+      "optional": true
+    },
+    "pg": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    },
+    "@ykurilov/agent-chat-react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@ai-sdk/provider": "4.0.19",
+    "@electric-sql/pglite": "0.5.8",
+    "@testing-library/react": "^16.3.3",
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/pg": "^8.23.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@ykurilov/agent-chat-attachments": "workspace:*",
+    "@ykurilov/agent-chat-background": "workspace:*",
+    "@ykurilov/agent-chat-limits": "workspace:*",
+    "@ykurilov/agent-chat-react": "workspace:*",
+    "@ykurilov/agent-chat-server": "workspace:*",
+    "@ykurilov/agent-chat-voice": "workspace:*",
+    "ai": "7.0.122",
+    "better-sqlite3": "^13.0.3",
+    "drizzle-kit": "^0.31.11",
+    "jsdom": "^30.1.1",
+    "pg": "^8.23.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "customConditions": ["@ykurilov/agent-chat-source"],
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "noUncheckedIndexedAccess": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "types": ["node"],
+    // TypeScript 7.0 при чтении файлов в несколько потоков изредка (≈1 раз из 30) путает подпути одного пакета:
+    // `drizzle-orm/node-postgres` получает файл `drizzle-orm/better-sqlite3` и наоборот. В 7.1 исправлено — тогда флаг убрать.
+    "singleThreaded": true
+  }
+}

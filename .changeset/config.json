@@ -1,0 +1,36 @@
+{
+  "$schema": "https://unpkg.com/@changesets/config@3.1.1/schema.json",
+  "changelog": "@changesets/cli/changelog",
+  "commit": false,
+  "fixed": [
+    [
+      "@ykurilov/agent-chat-core",
+      "@ykurilov/agent-chat-server",
+      "@ykurilov/agent-chat-react",
+      "@ykurilov/agent-chat-storage-sqlite",
+      "@ykurilov/agent-chat-storage-postgres",
+      "@ykurilov/agent-chat-skin-tandem",
+      "@ykurilov/agent-chat-web-tools",
+      "@ykurilov/agent-chat-history-search",
+      "@ykurilov/agent-chat-voice",
+      "@ykurilov/agent-chat-voice-dialog",
+      "@ykurilov/agent-chat-attachments",
+      "@ykurilov/agent-chat-limits",
+      "@ykurilov/agent-chat-memory",
+      "@ykurilov/agent-chat-diagrams",
+      "@ykurilov/agent-chat-images",
+      "@ykurilov/agent-chat-videos",
+      "@ykurilov/agent-chat-sandbox",
+      "@ykurilov/agent-chat-background",
+      "@ykurilov/agent-chat-messengers"
+    ]
+  ],
+  "linked": [],
+  "access": "public",
+  "baseBranch": "main",
+  "updateInternalDependencies": "patch",
+  "ignore": [
+    "@ykurilov/agent-chat-demo",
+    "@ykurilov/agent-chat-next-example"
+  ]
+}

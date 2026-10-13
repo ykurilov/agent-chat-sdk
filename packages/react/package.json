@@ -1,0 +1,56 @@
+{
+  "name": "@ykurilov/agent-chat-react",
+  "version": "0.47.0",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "exports": {
+    ".": {
+      "@ykurilov/agent-chat-source": "./src/index.ts",
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./panel": {
+      "@ykurilov/agent-chat-source": "./src/agent-panel/index.ts",
+      "types": "./dist/types/agent-panel/index.d.ts",
+      "import": "./dist/panel.js"
+    }
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ykurilov/agent-chat-sdk.git",
+    "directory": "packages/react"
+  },
+  "scripts": {
+    "build": "node ../../scripts/build-package.mjs",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@ai-sdk/react": "4.0.125",
+    "ai": "7.0.122",
+    "virtua": "0.52.8"
+  },
+  "peerDependencies": {
+    "react": "^19.3.0"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "jsdom": "^30.1.1",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  }
+}

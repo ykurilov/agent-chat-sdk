@@ -1,0 +1,1 @@
+CREATE INDEX "messenger_conversations_current_chat_idx" ON "agent_chat"."messenger_conversations" USING btree ("current_chat_id");

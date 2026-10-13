@@ -1,0 +1,40 @@
+[
+ {
+  "toolChoice": {
+   "type": "auto"
+  },
+  "prompt": [
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "text",
+      "text": "Найди дубли"
+     }
+    ]
+   }
+  ],
+  "headers": {
+   "user-agent": "ai/7.0.122"
+  }
+ },
+ {
+  "toolChoice": {
+   "type": "auto"
+  },
+  "prompt": [
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "text",
+      "text": "Найди дубли"
+     }
+    ]
+   }
+  ],
+  "headers": {
+   "user-agent": "ai/7.0.122"
+  }
+ }
+]

@@ -1,0 +1,1 @@
+CREATE INDEX `messenger_conversations_current_chat_idx` ON `messenger_conversations` (`current_chat_id`);

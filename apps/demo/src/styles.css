@@ -1,0 +1,10 @@
+@import "tailwindcss";
+@import "@tandem/ui/styles.css";
+@source "../node_modules/@tandem/ui/dist";
+@source "../../../skins/tandem/src";
+
+html,
+body,
+#root {
+  height: 100%;
+}

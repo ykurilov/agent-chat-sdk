@@ -1,0 +1,1 @@
+ALTER TABLE "agent_chat"."messages" ADD COLUMN "alive_at" text;

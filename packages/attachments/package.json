@@ -1,0 +1,70 @@
+{
+  "name": "@ykurilov/agent-chat-attachments",
+  "version": "0.47.0",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "exports": {
+    ".": {
+      "@ykurilov/agent-chat-source": "./src/index.ts",
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./react": {
+      "@ykurilov/agent-chat-source": "./src/react/index.ts",
+      "types": "./dist/types/react/index.d.ts",
+      "import": "./dist/react/index.js"
+    },
+    "./storage-contract": {
+      "@ykurilov/agent-chat-source": "./src/attachment-storage-contract.ts",
+      "types": "./dist/types/attachment-storage-contract.d.ts",
+      "import": "./dist/attachment-storage-contract.js"
+    }
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ykurilov/agent-chat-sdk.git",
+    "directory": "packages/attachments"
+  },
+  "scripts": {
+    "build": "node ../../scripts/build-package.mjs",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@ykurilov/agent-chat-core": "workspace:*",
+    "sharp": "^0.35.5",
+    "unpdf": "^1.8.1"
+  },
+  "peerDependencies": {
+    "react": "^19.3.0",
+    "@ykurilov/agent-chat-react": "workspace:^"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.3",
+    "@types/react": "^19.3.0",
+    "@ykurilov/agent-chat-react": "workspace:*",
+    "jsdom": "^30.1.1",
+    "react": "^19.3.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
+    "@ykurilov/agent-chat-react": {
+      "optional": true
+    }
+  }
+}

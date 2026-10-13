@@ -1,0 +1,94 @@
+[
+ {
+  "type": "start",
+  "messageId": "id-1",
+  "messageMetadata": {
+   "modelId": "mock-model",
+   "providerId": "mock"
+  }
+ },
+ {
+  "type": "start-step"
+ },
+ {
+  "type": "tool-input-available",
+  "toolCallId": "call-1",
+  "toolName": "lookup",
+  "input": {
+   "topic": "дроби"
+  }
+ },
+ {
+  "type": "tool-output-available",
+  "toolCallId": "call-1",
+  "output": "Справка про дроби"
+ },
+ {
+  "type": "finish-step"
+ },
+ {
+  "type": "start-step"
+ },
+ {
+  "type": "reasoning-start",
+  "id": "reasoning-0"
+ },
+ {
+  "type": "reasoning-delta",
+  "id": "reasoning-0",
+  "delta": "думаю"
+ },
+ {
+  "type": "reasoning-end",
+  "id": "reasoning-0"
+ },
+ {
+  "type": "message-metadata",
+  "messageMetadata": {
+   "reasoningDurationsMs": [
+    "0"
+   ]
+  }
+ },
+ {
+  "type": "text-start",
+  "id": "txt-0"
+ },
+ {
+  "type": "text-delta",
+  "id": "txt-0",
+  "delta": "Дроби "
+ },
+ {
+  "type": "text-delta",
+  "id": "txt-0",
+  "delta": "— это части целого."
+ },
+ {
+  "type": "text-end",
+  "id": "txt-0"
+ },
+ {
+  "type": "finish-step"
+ },
+ {
+  "type": "message-metadata",
+  "messageMetadata": {
+   "status": "complete",
+   "reasoningDurationsMs": [
+    "0"
+   ],
+   "usage": {
+    "inputTokens": 200,
+    "cachedInputTokens": 120,
+    "outputTokens": 60,
+    "reasoningTokens": 20,
+    "contextTokens": 130
+   }
+  }
+ },
+ {
+  "type": "finish",
+  "finishReason": "stop"
+ }
+]

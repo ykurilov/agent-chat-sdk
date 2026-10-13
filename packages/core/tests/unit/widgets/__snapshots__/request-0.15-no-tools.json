@@ -1,0 +1,70 @@
+[
+ {
+  "toolChoice": {
+   "type": "auto"
+  },
+  "prompt": [
+   {
+    "role": "system",
+    "content": "Ты помощник."
+   },
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "text",
+      "text": "привет"
+     },
+     {
+      "type": "text",
+      "text": "Сегодня: суббота, 3 октября 2026 г."
+     }
+    ]
+   }
+  ],
+  "includeRawChunks": false
+ },
+ {
+  "toolChoice": {
+   "type": "auto"
+  },
+  "prompt": [
+   {
+    "role": "system",
+    "content": "Ты помощник."
+   },
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "text",
+      "text": "привет"
+     },
+     {
+      "type": "text",
+      "text": "Сегодня: суббота, 3 октября 2026 г."
+     }
+    ]
+   },
+   {
+    "role": "assistant",
+    "content": [
+     {
+      "type": "text",
+      "text": "Готово"
+     }
+    ]
+   },
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "text",
+      "text": "ещё"
+     }
+    ]
+   }
+  ],
+  "includeRawChunks": false
+ }
+]

@@ -1,0 +1,66 @@
+{
+  "name": "@ykurilov/agent-chat-core",
+  "version": "0.47.0",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "exports": {
+    ".": {
+      "@ykurilov/agent-chat-source": "./src/index.ts",
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./access": {
+      "@ykurilov/agent-chat-source": "./src/access/resolved-user.ts",
+      "types": "./dist/types/access/resolved-user.d.ts",
+      "import": "./dist/access.js"
+    },
+    "./storage-contract": {
+      "@ykurilov/agent-chat-source": "./src/storage/storage-contract.ts",
+      "types": "./dist/types/storage/storage-contract.d.ts",
+      "import": "./dist/storage-contract.js"
+    }
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ykurilov/agent-chat-sdk.git",
+    "directory": "packages/core"
+  },
+  "scripts": {
+    "build": "node ../../scripts/build-package.mjs",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@ai-sdk/deepseek": "3.0.56",
+    "@ai-sdk/fireworks": "3.0.62",
+    "@ai-sdk/togetherai": "3.0.60",
+    "@openrouter/ai-sdk-provider": "3.1.0",
+    "ai": "7.0.122",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@ai-sdk/provider": "4.0.19",
+    "vitest": "5.0.2"
+  },
+  "peerDependencies": {
+    "vitest": "^5.0.2"
+  },
+  "peerDependenciesMeta": {
+    "vitest": {
+      "optional": true
+    }
+  }
+}

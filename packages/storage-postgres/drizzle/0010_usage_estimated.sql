@@ -1,0 +1,1 @@
+ALTER TABLE "agent_chat"."usage_records" ADD COLUMN "estimated" boolean DEFAULT false NOT NULL;

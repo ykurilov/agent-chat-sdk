@@ -1,0 +1,50 @@
+{
+  "name": "@ykurilov/agent-chat-web-tools",
+  "version": "0.47.0",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "exports": {
+    ".": {
+      "@ykurilov/agent-chat-source": "./src/index.ts",
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./firecrawl": {
+      "@ykurilov/agent-chat-source": "./src/firecrawl/firecrawl-services.ts",
+      "types": "./dist/types/firecrawl/firecrawl-services.d.ts",
+      "import": "./dist/firecrawl.js"
+    },
+    "./labels": {
+      "@ykurilov/agent-chat-source": "./src/labels.ts",
+      "types": "./dist/types/labels.d.ts",
+      "import": "./dist/labels.js"
+    }
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ykurilov/agent-chat-sdk.git",
+    "directory": "packages/web-tools"
+  },
+  "scripts": {
+    "build": "node ../../scripts/build-package.mjs",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@ykurilov/agent-chat-core": "workspace:*",
+    "ai": "7.0.122",
+    "zod": "^4.6.5"
+  }
+}

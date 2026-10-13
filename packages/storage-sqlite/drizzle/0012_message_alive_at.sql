@@ -1,0 +1,1 @@
+ALTER TABLE `messages` ADD `alive_at` text;

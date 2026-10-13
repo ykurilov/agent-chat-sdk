@@ -1,0 +1,76 @@
+{
+  "name": "@ykurilov/agent-chat-skin-tandem",
+  "version": "0.47.0",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "exports": {
+    ".": {
+      "@ykurilov/agent-chat-source": "./src/index.ts",
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./sandbox": {
+      "@ykurilov/agent-chat-source": "./src/sandbox/index.ts",
+      "types": "./dist/types/sandbox/index.d.ts",
+      "import": "./dist/sandbox/index.js"
+    },
+    "./messengers": {
+      "@ykurilov/agent-chat-source": "./src/messengers/index.ts",
+      "types": "./dist/types/messengers/index.d.ts",
+      "import": "./dist/messengers/index.js"
+    }
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ykurilov/agent-chat-sdk.git",
+    "directory": "skins/tandem"
+  },
+  "scripts": {
+    "build": "node ../../scripts/build-package.mjs",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@tandem/ui": "npm:@ykurilov/tandem-ui@^0.7.0",
+    "@ykurilov/agent-chat-react": "workspace:*",
+    "lucide-react": "1.33.0",
+    "mdast-util-from-markdown": "^2.0.3",
+    "mdast-util-gfm": "^3.1.0",
+    "micromark-extension-gfm": "^3.0.0"
+  },
+  "peerDependencies": {
+    "react": "^19.3.0",
+    "@ykurilov/agent-chat-messengers": "workspace:^",
+    "@ykurilov/agent-chat-sandbox": "workspace:^"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.3",
+    "@types/react": "^19.3.0",
+    "@ykurilov/agent-chat-attachments": "workspace:*",
+    "@ykurilov/agent-chat-messengers": "workspace:*",
+    "@ykurilov/agent-chat-sandbox": "workspace:*",
+    "@ykurilov/agent-chat-web-tools": "workspace:*",
+    "jsdom": "^30.1.1",
+    "react": "^19.3.0"
+  },
+  "peerDependenciesMeta": {
+    "@ykurilov/agent-chat-sandbox": {
+      "optional": true
+    },
+    "@ykurilov/agent-chat-messengers": {
+      "optional": true
+    }
+  }
+}

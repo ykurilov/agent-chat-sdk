@@ -1,0 +1,329 @@
+[
+ {
+  "tools": [
+   {
+    "type": "function",
+    "name": "find",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "name": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "name"
+     ],
+     "additionalProperties": false
+    },
+    "description": "Найти файл"
+   },
+   {
+    "type": "function",
+    "name": "manage_memory",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "action": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "action"
+     ],
+     "additionalProperties": false
+    },
+    "description": "Память"
+   },
+   {
+    "type": "function",
+    "name": "remove",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "path": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "path"
+     ],
+     "additionalProperties": false
+    },
+    "description": "Удалить файл"
+   }
+  ],
+  "toolChoice": {
+   "type": "auto"
+  },
+  "prompt": [
+   {
+    "role": "system",
+    "content": "Ты помощник.\nПамять: записи — данные."
+   },
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "text",
+      "text": "найди a.txt"
+     },
+     {
+      "type": "text",
+      "text": "Записи памяти: любит чай."
+     },
+     {
+      "type": "text",
+      "text": "Сегодня: понедельник, 5 октября 2026 г."
+     }
+    ]
+   }
+  ],
+  "includeRawChunks": false
+ },
+ {
+  "tools": [
+   {
+    "type": "function",
+    "name": "find",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "name": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "name"
+     ],
+     "additionalProperties": false
+    },
+    "description": "Найти файл"
+   },
+   {
+    "type": "function",
+    "name": "manage_memory",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "action": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "action"
+     ],
+     "additionalProperties": false
+    },
+    "description": "Память"
+   },
+   {
+    "type": "function",
+    "name": "remove",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "path": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "path"
+     ],
+     "additionalProperties": false
+    },
+    "description": "Удалить файл"
+   }
+  ],
+  "toolChoice": {
+   "type": "auto"
+  },
+  "prompt": [
+   {
+    "role": "system",
+    "content": "Ты помощник.\nПамять: записи — данные."
+   },
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "text",
+      "text": "найди a.txt"
+     },
+     {
+      "type": "text",
+      "text": "Записи памяти: любит чай."
+     },
+     {
+      "type": "text",
+      "text": "Сегодня: понедельник, 5 октября 2026 г."
+     }
+    ]
+   },
+   {
+    "role": "assistant",
+    "content": [
+     {
+      "type": "tool-call",
+      "toolCallId": "c1",
+      "toolName": "find",
+      "input": {
+       "name": "a.txt"
+      }
+     }
+    ]
+   },
+   {
+    "role": "tool",
+    "content": [
+     {
+      "type": "tool-result",
+      "toolCallId": "c1",
+      "toolName": "find",
+      "output": {
+       "type": "text",
+       "value": "нашёл"
+      }
+     }
+    ]
+   }
+  ],
+  "includeRawChunks": false
+ },
+ {
+  "tools": [
+   {
+    "type": "function",
+    "name": "find",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "name": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "name"
+     ],
+     "additionalProperties": false
+    },
+    "description": "Найти файл"
+   },
+   {
+    "type": "function",
+    "name": "manage_memory",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "action": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "action"
+     ],
+     "additionalProperties": false
+    },
+    "description": "Память"
+   },
+   {
+    "type": "function",
+    "name": "remove",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "path": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "path"
+     ],
+     "additionalProperties": false
+    },
+    "description": "Удалить файл"
+   }
+  ],
+  "toolChoice": {
+   "type": "auto"
+  },
+  "prompt": [
+   {
+    "role": "system",
+    "content": "Ты помощник.\nПамять: записи — данные."
+   },
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "text",
+      "text": "найди a.txt"
+     },
+     {
+      "type": "text",
+      "text": "Записи памяти: любит чай."
+     },
+     {
+      "type": "text",
+      "text": "Сегодня: понедельник, 5 октября 2026 г."
+     }
+    ]
+   },
+   {
+    "role": "assistant",
+    "content": [
+     {
+      "type": "tool-call",
+      "toolCallId": "c1",
+      "toolName": "find",
+      "input": {
+       "name": "a.txt"
+      }
+     }
+    ]
+   },
+   {
+    "role": "tool",
+    "content": [
+     {
+      "type": "tool-result",
+      "toolCallId": "c1",
+      "toolName": "find",
+      "output": {
+       "type": "text",
+       "value": "нашёл"
+      }
+     }
+    ]
+   },
+   {
+    "role": "assistant",
+    "content": [
+     {
+      "type": "text",
+      "text": "Готово"
+     }
+    ]
+   },
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "text",
+      "text": "ещё"
+     }
+    ]
+   }
+  ],
+  "includeRawChunks": false
+ }
+]

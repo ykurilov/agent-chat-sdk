@@ -1,0 +1,316 @@
+# @ykurilov/agent-chat-videos
+
+## 0.47.0
+
+### Patch Changes
+
+- @ykurilov/agent-chat-react@0.47.0
+
+## 0.46.2
+
+### Patch Changes
+
+- @ykurilov/agent-chat-react@0.46.2
+
+## 0.46.1
+
+### Patch Changes
+
+- @ykurilov/agent-chat-react@0.46.1
+
+## 0.46.0
+
+### Patch Changes
+
+- Updated dependencies [56d7528]
+  - @ykurilov/agent-chat-react@0.46.0
+
+## 0.45.0
+
+### Patch Changes
+
+- Updated dependencies [eb74c58]
+- Updated dependencies [ac9aede]
+  - @ykurilov/agent-chat-react@0.45.0
+
+## 0.44.0
+
+### Patch Changes
+
+- Updated dependencies [6a2b5d9]
+  - @ykurilov/agent-chat-react@0.44.0
+
+## 0.43.0
+
+### Patch Changes
+
+- @ykurilov/agent-chat-react@0.43.0
+
+## 0.42.0
+
+### Patch Changes
+
+- Updated dependencies [a385276]
+  - @ykurilov/agent-chat-react@0.42.0
+
+## 0.41.0
+
+### Patch Changes
+
+- Updated dependencies [9472fcb]
+  - @ykurilov/agent-chat-react@0.41.0
+
+## 0.40.0
+
+### Patch Changes
+
+- Updated dependencies [0e7aab3]
+  - @ykurilov/agent-chat-react@0.40.0
+
+## 0.39.1
+
+### Patch Changes
+
+- Updated dependencies [5c0f3af]
+  - @ykurilov/agent-chat-react@0.39.1
+
+## 0.39.0
+
+### Patch Changes
+
+- Updated dependencies [3b90429]
+  - @ykurilov/agent-chat-react@0.39.0
+
+## 0.38.0
+
+### Patch Changes
+
+- @ykurilov/agent-chat-react@0.38.0
+
+## 0.37.0
+
+### Patch Changes
+
+- @ykurilov/agent-chat-react@0.37.0
+
+## 0.36.0
+
+### Patch Changes
+
+- Updated dependencies [3487fb4]
+- Updated dependencies [5f13c74]
+  - @ykurilov/agent-chat-react@0.36.0
+
+## 0.35.0
+
+### Patch Changes
+
+- Updated dependencies [6ceee78]
+  - @ykurilov/agent-chat-react@0.35.0
+
+## 0.34.0
+
+### Patch Changes
+
+- Updated dependencies [d039ce4]
+  - @ykurilov/agent-chat-react@0.34.0
+
+## 0.33.0
+
+### Patch Changes
+
+- @ykurilov/agent-chat-react@0.33.0
+
+## 0.32.0
+
+### Patch Changes
+
+- Updated dependencies [4087a22]
+  - @ykurilov/agent-chat-react@0.32.0
+
+## 0.31.2
+
+### Patch Changes
+
+- @ykurilov/agent-chat-react@0.31.2
+
+## 0.31.1
+
+### Patch Changes
+
+- @ykurilov/agent-chat-react@0.31.1
+
+## 0.31.0
+
+### Patch Changes
+
+- @ykurilov/agent-chat-react@0.31.0
+
+## 0.30.0
+
+### Patch Changes
+
+- @ykurilov/agent-chat-react@0.30.0
+
+## 0.29.0
+
+### Patch Changes
+
+- @ykurilov/agent-chat-react@0.29.0
+
+## 0.28.0
+
+### Patch Changes
+
+- Updated dependencies [d63ccaa]
+- Updated dependencies [189cba9]
+  - @ykurilov/agent-chat-react@0.28.0
+
+## 0.27.0
+
+### Patch Changes
+
+- Updated dependencies [5e4ed28]
+- Updated dependencies [e0bb519]
+  - @ykurilov/agent-chat-react@0.27.0
+
+## 0.26.2
+
+### Patch Changes
+
+- @ykurilov/agent-chat-react@0.26.2
+
+## 0.26.1
+
+### Patch Changes
+
+- Updated dependencies [5b52515]
+  - @ykurilov/agent-chat-react@0.26.1
+
+## 0.26.0
+
+### Patch Changes
+
+- @ykurilov/agent-chat-react@0.26.0
+
+## 0.25.0
+
+### Patch Changes
+
+- @ykurilov/agent-chat-react@0.25.0
+
+## 0.24.0
+
+### Patch Changes
+
+- Updated dependencies [9b895cd]
+  - @ykurilov/agent-chat-react@0.24.0
+
+## 0.23.0
+
+### Patch Changes
+
+- Updated dependencies [30fb729]
+  - @ykurilov/agent-chat-react@0.23.0
+
+## 0.22.0
+
+### Patch Changes
+
+- @ykurilov/agent-chat-react@0.22.0
+
+## 0.21.0
+
+### Patch Changes
+
+- @ykurilov/agent-chat-react@0.21.0
+
+## 0.20.0
+
+### Patch Changes
+
+- Updated dependencies [fd16b01]
+  - @ykurilov/agent-chat-react@0.20.0
+
+## 0.19.0
+
+### Patch Changes
+
+- Updated dependencies [aa0fd51]
+- Updated dependencies [6f26b93]
+  - @ykurilov/agent-chat-react@0.19.0
+
+## 0.18.6
+
+### Patch Changes
+
+- c688091: Встроенный поиск `searchVideos(videos, query)` экспортируется из корня пакета: приложение со списком роликов в базе зовёт его из `source.search`.
+- @ykurilov/agent-chat-react@0.18.6
+
+## 0.18.5
+
+### Patch Changes
+
+- Updated dependencies [56b9ab6]
+  - @ykurilov/agent-chat-react@0.18.5
+
+## 0.18.4
+
+### Patch Changes
+
+- @ykurilov/agent-chat-react@0.18.4
+
+## 0.18.3
+
+### Patch Changes
+
+- Updated dependencies [ce3c26f]
+  - @ykurilov/agent-chat-react@0.18.3
+
+## 0.18.2
+
+### Patch Changes
+
+- Updated dependencies [7e7e966]
+  - @ykurilov/agent-chat-react@0.18.2
+
+## 0.18.1
+
+### Patch Changes
+
+- Updated dependencies [179ad9d]
+  - @ykurilov/agent-chat-react@0.18.1
+
+## 0.18.0
+
+### Patch Changes
+
+- Updated dependencies [43d7ebe]
+  - @ykurilov/agent-chat-react@0.18.0
+
+## 0.17.0
+
+### Minor Changes
+
+- e5d0860: Видео от агента: новый пакет `@ykurilov/agent-chat-videos`. Агент находит видео в каталоге приложения (`find_videos`) и
+  присылает карточкой (`show_video`), можно с нужной минуты. По нажатию плеер YouTube (`youtube-nocookie.com`) или Kinescope
+  играет в ленте, есть «На весь экран». До нажатия к площадкам не уходит ни одного запроса.
+  
+  - сервер: `createVideoLibrary({ videos })` или `({ source: { search, get } })`, `videos.tools(model)` в `agent.tools`;
+  - страница: `videos={videosClient}` у `AgentChat`, `ChatWorkspace` и `AgentPanel`;
+  - договор скина версии 14: необязательная часть `AgentVideo` (`AgentVideoView`); скин без неё показывает видео ссылкой;
+  - надписи `videos.play`, `videos.from`, `videos.fullscreen` и `voice.videoOnScreen` («видео на экране» в голосовом режиме).
+  
+  Подробно: `docs/videos.md`.
+  
+  ### Как обновить приложение
+  
+  Обычному приложению делать ничего не нужно: видео включается отдельно, миграций нет.
+  
+  1. Полный словарь надписей, написанный вручную без `{ ...russianLabels }`, — добавьте `voice.videoOnScreen`.
+  2. Проверка: `pnpm typecheck`, затем в чате отправить сообщение и получить ответ.
+
+### Patch Changes
+
+- Updated dependencies [e5d0860]
+  - @ykurilov/agent-chat-react@0.17.0

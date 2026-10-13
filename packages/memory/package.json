@@ -1,0 +1,48 @@
+{
+  "name": "@ykurilov/agent-chat-memory",
+  "version": "0.47.0",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "exports": {
+    ".": {
+      "@ykurilov/agent-chat-source": "./src/index.ts",
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./labels": {
+      "@ykurilov/agent-chat-source": "./src/tool-titles.ts",
+      "types": "./dist/types/tool-titles.d.ts",
+      "import": "./dist/labels.js"
+    }
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ykurilov/agent-chat-sdk.git",
+    "directory": "packages/memory"
+  },
+  "scripts": {
+    "build": "node ../../scripts/build-package.mjs",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@ykurilov/agent-chat-core": "workspace:*",
+    "ai": "7.0.122",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@ai-sdk/provider": "4.0.19"
+  }
+}

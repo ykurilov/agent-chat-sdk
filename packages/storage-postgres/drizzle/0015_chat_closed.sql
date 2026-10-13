@@ -1,0 +1,1 @@
+ALTER TABLE "agent_chat"."chats" ADD COLUMN "closed" json;

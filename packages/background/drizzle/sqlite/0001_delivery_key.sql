@@ -1,0 +1,1 @@
+ALTER TABLE `background_tasks` ADD `delivery_key` text;

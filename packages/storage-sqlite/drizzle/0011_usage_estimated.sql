@@ -1,0 +1,1 @@
+ALTER TABLE `usage_records` ADD `estimated` integer DEFAULT false NOT NULL;

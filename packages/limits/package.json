@@ -1,0 +1,44 @@
+{
+  "name": "@ykurilov/agent-chat-limits",
+  "version": "0.47.0",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "exports": {
+    ".": {
+      "@ykurilov/agent-chat-source": "./src/index.ts",
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ykurilov/agent-chat-sdk.git",
+    "directory": "packages/limits"
+  },
+  "scripts": {
+    "build": "node ../../scripts/build-package.mjs",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@ykurilov/agent-chat-core": "workspace:*"
+  },
+  "devDependencies": {
+    "@ai-sdk/provider": "4.0.19",
+    "@ykurilov/agent-chat-server": "workspace:*",
+    "@ykurilov/agent-chat-storage-sqlite": "workspace:*",
+    "ai": "7.0.122"
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "name": "@ykurilov/agent-chat-videos",
+  "version": "0.47.0",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "exports": {
+    ".": {
+      "@ykurilov/agent-chat-source": "./src/index.ts",
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./react": {
+      "@ykurilov/agent-chat-source": "./src/react/index.ts",
+      "types": "./dist/types/react/index.d.ts",
+      "import": "./dist/react/index.js"
+    }
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ykurilov/agent-chat-sdk.git",
+    "directory": "packages/videos"
+  },
+  "scripts": {
+    "build": "node ../../scripts/build-package.mjs",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "ai": "7.0.122",
+    "zod": "^4.6.5"
+  },
+  "peerDependencies": {
+    "react": "^19.3.0",
+    "@ykurilov/agent-chat-react": "workspace:^"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.3",
+    "@types/react": "^19.3.0",
+    "@ykurilov/agent-chat-react": "workspace:*",
+    "jsdom": "^30.1.1",
+    "react": "^19.3.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
+    "@ykurilov/agent-chat-react": {
+      "optional": true
+    }
+  }
+}

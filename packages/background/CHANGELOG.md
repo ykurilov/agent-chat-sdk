@@ -1,0 +1,304 @@
+# @ykurilov/agent-chat-background
+
+## 0.47.0
+
+### Patch Changes
+
+- Updated dependencies [5a59c33]
+  - @ykurilov/agent-chat-core@0.47.0
+
+## 0.46.2
+
+### Patch Changes
+
+- Updated dependencies [3d0d2f2]
+  - @ykurilov/agent-chat-core@0.46.2
+
+## 0.46.1
+
+### Patch Changes
+
+- @ykurilov/agent-chat-core@0.46.1
+
+## 0.46.0
+
+### Patch Changes
+
+- Updated dependencies [56d7528]
+- Updated dependencies [a1933fd]
+- Updated dependencies [52cc67d]
+  - @ykurilov/agent-chat-core@0.46.0
+
+## 0.45.0
+
+### Minor Changes
+
+- eb74c58: Простой вид работы агента: свойство экрана `workView="simple"` — пока ход идёт, одна живая строка с текущим шагом
+  («Рисую календарь…»); после хода шаги свёрнуты в «Сделано N шагов» со списком понятных фраз, без кода и «Думал N сек».
+  По умолчанию `workView="detailed"` — всё как раньше. Фразы задаёт приложение (`stepPhrases`: имя инструмента →
+  `{ running, done, failed? }` или функция от вызова); встроенные пакеты дают свои во входе `./labels`
+  (`webToolStepPhrases`, `memoryStepPhrases`, `historySearchStepPhrases`, `backgroundStepPhrases`, и английские).
+  Договор скина 23: необязательный `ChatSkin.WorkSteps`; скин 22 работает без правок. Подробно — docs/work-view.md.
+  
+  ### Как обновить приложение
+  
+  Ничего не требуется. Чтобы включить простой вид:
+  
+  ```tsx
+  import { webToolStepPhrases } from "@ykurilov/agent-chat-web-tools/labels";
+  
+  <ChatWorkspace
+    workView="simple"
+    stepPhrases={{
+      ...webToolStepPhrases,
+      write_file: ({ input }) => ((input as { path?: string } | undefined)?.path ? { running: "Пишу файл", done: "Написал файл" } : undefined),
+      check_app: { running: "Проверяю приложение", done: "Проверил приложение" },
+    }}
+    …
+  />;
+  ```
+  
+  Свой скин может нарисовать простой вид сам — `WorkSteps` по docs/work-view.md (`WorkStepsView`: `live` с фразой или
+  `done` со `steps`, `count`, `open`). Без него шаги рисуются строкой `ToolCallRow`: «Сделано N шагов» в `title`, входа нет,
+  а список понятных фраз приходит в `output` строкой — скин покажет его как обычный результат вызова.
+
+### Patch Changes
+
+- @ykurilov/agent-chat-core@0.45.0
+
+## 0.44.0
+
+### Minor Changes
+
+- 6a2b5d9: Живые демонстрации: блок ```html-demo в ответе запускается в изолированной рамке (`sandbox="allow-scripts"`, строгий CSP,
+  наружу только высота). `agent.liveDemos` на сервере — одна постоянная строка инструкции; `liveDemos` у `AgentChat`,
+  `ChatWorkspace` и `AgentPanel`. Договор скина v22: необязательные `AgentText.renderDemo` и `ChatSkin.demoColors`, Тандем
+  умеет. Мессенджеры вместо блока пишут `liveDemoOnSite`, если у службы чата `liveDemos` (новое необязательное поле `ChatService.liveDemos`).
+  Код живёт в рамке внутри рамки: уйти на чужой адрес он не может, WebRTC убран. Выключатель: в чате с чужим текстом (веб-инструменты, файл человека, инструмент с `metadata: { externalContent: true }`)
+  демонстрации не запускаются — признак `ChatHistory.externalContent` и кусок потока `data-external-content`. Вложенные рамки
+  и `<link rel=preconnect>` в документе демонстрации запрещены. Всё необязательное, ломающих изменений нет. Как обновить
+  приложение — в CHANGES.md, раздел 0.44.0.
+
+### Patch Changes
+
+- Updated dependencies [6a2b5d9]
+  - @ykurilov/agent-chat-core@0.44.0
+
+## 0.43.0
+
+### Patch Changes
+
+- Updated dependencies [763f4c5]
+  - @ykurilov/agent-chat-core@0.43.0
+
+## 0.42.0
+
+### Patch Changes
+
+- Updated dependencies [a385276]
+  - @ykurilov/agent-chat-core@0.42.0
+
+## 0.41.0
+
+### Patch Changes
+
+- Updated dependencies [9472fcb]
+  - @ykurilov/agent-chat-core@0.41.0
+
+## 0.40.0
+
+### Patch Changes
+
+- Updated dependencies [0e7aab3]
+  - @ykurilov/agent-chat-core@0.40.0
+
+## 0.39.1
+
+### Patch Changes
+
+- @ykurilov/agent-chat-core@0.39.1
+
+## 0.39.0
+
+### Patch Changes
+
+- Updated dependencies [3b90429]
+  - @ykurilov/agent-chat-core@0.39.0
+
+## 0.38.0
+
+### Patch Changes
+
+- Updated dependencies [1cae504]
+- Updated dependencies [4065a4a]
+  - @ykurilov/agent-chat-core@0.38.0
+
+## 0.37.0
+
+### Patch Changes
+
+- Updated dependencies [7f49d12]
+- Updated dependencies [ea78982]
+  - @ykurilov/agent-chat-core@0.37.0
+
+## 0.36.0
+
+### Patch Changes
+
+- Updated dependencies [3487fb4]
+- Updated dependencies [8c43b86]
+- Updated dependencies [6f42418]
+- Updated dependencies [5f13c74]
+  - @ykurilov/agent-chat-core@0.36.0
+
+## 0.35.0
+
+### Patch Changes
+
+- Updated dependencies [2382026]
+  - @ykurilov/agent-chat-core@0.35.0
+
+## 0.34.0
+
+### Patch Changes
+
+- Updated dependencies [d039ce4]
+  - @ykurilov/agent-chat-core@0.34.0
+
+## 0.33.0
+
+### Patch Changes
+
+- Updated dependencies [4a72339]
+  - @ykurilov/agent-chat-core@0.33.0
+
+## 0.32.0
+
+### Patch Changes
+
+- Updated dependencies [71c32b7]
+- Updated dependencies [cae13bf]
+- Updated dependencies [a94bda9]
+- Updated dependencies [4e44492]
+- Updated dependencies [ac9b7d3]
+- Updated dependencies [27f4b1e]
+  - @ykurilov/agent-chat-core@0.32.0
+
+## 0.31.2
+
+### Patch Changes
+
+- @ykurilov/agent-chat-core@0.31.2
+
+## 0.31.1
+
+### Patch Changes
+
+- @ykurilov/agent-chat-core@0.31.1
+
+## 0.31.0
+
+### Patch Changes
+
+- @ykurilov/agent-chat-core@0.31.0
+
+## 0.30.0
+
+### Patch Changes
+
+- @ykurilov/agent-chat-core@0.30.0
+
+## 0.29.0
+
+### Patch Changes
+
+- @ykurilov/agent-chat-core@0.29.0
+
+## 0.28.0
+
+### Patch Changes
+
+- Updated dependencies [11c3c97]
+- Updated dependencies [d63ccaa]
+- Updated dependencies [6a2f903]
+- Updated dependencies [189cba9]
+  - @ykurilov/agent-chat-core@0.28.0
+
+## 0.27.0
+
+### Patch Changes
+
+- Updated dependencies [d8341b2]
+- Updated dependencies [5e4ed28]
+- Updated dependencies [e0bb519]
+  - @ykurilov/agent-chat-core@0.27.0
+
+## 0.26.2
+
+### Patch Changes
+
+- Updated dependencies [f24858a]
+  - @ykurilov/agent-chat-core@0.26.2
+
+## 0.26.1
+
+### Patch Changes
+
+- @ykurilov/agent-chat-core@0.26.1
+
+## 0.26.0
+
+### Patch Changes
+
+- Updated dependencies [eb43e47]
+  - @ykurilov/agent-chat-core@0.26.0
+
+## 0.25.0
+
+### Patch Changes
+
+- Updated dependencies [99d426e]
+- Updated dependencies [d8201f6]
+  - @ykurilov/agent-chat-core@0.25.0
+
+## 0.24.0
+
+### Patch Changes
+
+- Updated dependencies [9b895cd]
+  - @ykurilov/agent-chat-core@0.24.0
+
+## 0.23.0
+
+### Patch Changes
+
+- @ykurilov/agent-chat-core@0.23.0
+
+## 0.22.0
+
+### Patch Changes
+
+- @ykurilov/agent-chat-core@0.22.0
+
+## 0.21.0
+
+### Patch Changes
+
+- Updated dependencies [7c3bcc4]
+  - @ykurilov/agent-chat-core@0.21.0
+
+## 0.20.0
+
+### Minor Changes
+
+- fd16b01: Два новых пакета.
+  
+  - `@ykurilov/agent-chat-background` — фоновые задачи: инструмент или помощник работает в фоне, итог приходит в чат служебным сообщением, задачи переживают перезапуск сервера. Хранилища: память, SQLite, PostgreSQL. README пакета и `docs/background.md`.
+  - `@ykurilov/agent-chat-messengers` — чат приложения в Telegram, VK и MAX: привязка аккаунтов, вебхук или опрос, группы, файлы, голос, голосовые ответы, карточки задач, доставка «хотя бы раз». README пакета и `docs/messengers.md`. Для вида панели подключения — `MessengersSkin` v1.
+  
+  Что сделать в приложении: ставить нужно только если нужны фон или мессенджеры; подключение — по README пакетов.
+
+### Patch Changes
+
+- Updated dependencies [fd16b01]
+  - @ykurilov/agent-chat-core@0.20.0

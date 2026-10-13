@@ -1,0 +1,63 @@
+{
+  "name": "@ykurilov/agent-chat-voice",
+  "version": "0.47.0",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "exports": {
+    ".": {
+      "@ykurilov/agent-chat-source": "./src/index.ts",
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./server": {
+      "@ykurilov/agent-chat-source": "./src/server.ts",
+      "types": "./dist/types/server.d.ts",
+      "import": "./dist/server.js"
+    },
+    "./hono": {
+      "@ykurilov/agent-chat-source": "./src/hono.ts",
+      "types": "./dist/types/hono.d.ts",
+      "import": "./dist/hono.js"
+    }
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ykurilov/agent-chat-sdk.git",
+    "directory": "packages/voice"
+  },
+  "scripts": {
+    "build": "node ../../scripts/build-package.mjs",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@ykurilov/agent-chat-core": "workspace:*"
+  },
+  "devDependencies": {
+    "@hono/node-server": "^2.1.1",
+    "@hono/node-ws": "^1.3.1",
+    "@ykurilov/agent-chat-react": "workspace:*",
+    "@ykurilov/agent-chat-server": "workspace:*",
+    "hono": "^4.13.10"
+  },
+  "peerDependencies": {
+    "hono": "^4.13.10"
+  },
+  "peerDependenciesMeta": {
+    "hono": {
+      "optional": true
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "name": "@ykurilov/agent-chat-next-example",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc -p tsconfig.json",
+    "test:next": "node scripts/check-next.mjs"
+  },
+  "dependencies": {
+    "@ai-sdk/provider": "4.0.19",
+    "@ykurilov/agent-chat-core": "workspace:*",
+    "@ykurilov/agent-chat-react": "workspace:*",
+    "@ykurilov/agent-chat-server": "workspace:*",
+    "ai": "7.0.122",
+    "next": "16.3.7",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.4",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0"
+  }
+}

@@ -1,0 +1,16 @@
+node_modules
+dist
+.env.local
+*.sqlite
+*.sqlite-*
+test-results
+
+# Playwright MCP session logs
+.playwright-mcp/
+*.sqlite.attachments
+
+# Копия лицензий сторонних проектов, кладётся в пакет при сборке
+packages/*/THIRD_PARTY_NOTICES.md
+
+# Хвосты sed -i на macOS
+*-E

@@ -1,0 +1,149 @@
+[
+ {
+  "toolChoice": {
+   "type": "auto"
+  },
+  "prompt": [
+   {
+    "role": "system",
+    "content": "Ты помощник."
+   },
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "text",
+      "text": "найди a.txt"
+     },
+     {
+      "type": "text",
+      "text": "Сегодня: понедельник, 5 октября 2026 г."
+     }
+    ]
+   }
+  ],
+  "includeRawChunks": false
+ },
+ {
+  "toolChoice": {
+   "type": "auto"
+  },
+  "prompt": [
+   {
+    "role": "system",
+    "content": "Ты помощник."
+   },
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "text",
+      "text": "найди a.txt"
+     },
+     {
+      "type": "text",
+      "text": "Сегодня: понедельник, 5 октября 2026 г."
+     }
+    ]
+   },
+   {
+    "role": "assistant",
+    "content": [
+     {
+      "type": "tool-call",
+      "toolCallId": "c1",
+      "toolName": "find",
+      "input": {
+       "name": "a.txt"
+      }
+     }
+    ]
+   },
+   {
+    "role": "tool",
+    "content": [
+     {
+      "type": "tool-result",
+      "toolCallId": "c1",
+      "toolName": "find",
+      "output": {
+       "type": "error-text",
+       "value": "AI_NoSuchToolError: Model tried to call unavailable tool 'find'. No tools are available."
+      }
+     }
+    ]
+   }
+  ],
+  "includeRawChunks": false
+ },
+ {
+  "toolChoice": {
+   "type": "auto"
+  },
+  "prompt": [
+   {
+    "role": "system",
+    "content": "Ты помощник."
+   },
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "text",
+      "text": "найди a.txt"
+     },
+     {
+      "type": "text",
+      "text": "Сегодня: понедельник, 5 октября 2026 г."
+     }
+    ]
+   },
+   {
+    "role": "assistant",
+    "content": [
+     {
+      "type": "tool-call",
+      "toolCallId": "c1",
+      "toolName": "find",
+      "input": {
+       "name": "a.txt"
+      }
+     }
+    ]
+   },
+   {
+    "role": "tool",
+    "content": [
+     {
+      "type": "tool-result",
+      "toolCallId": "c1",
+      "toolName": "find",
+      "output": {
+       "type": "error-text",
+       "value": "Model tried to call unavailable tool 'find'. No tools are available."
+      }
+     }
+    ]
+   },
+   {
+    "role": "assistant",
+    "content": [
+     {
+      "type": "text",
+      "text": "Готово"
+     }
+    ]
+   },
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "text",
+      "text": "ещё"
+     }
+    ]
+   }
+  ],
+  "includeRawChunks": false
+ }
+]

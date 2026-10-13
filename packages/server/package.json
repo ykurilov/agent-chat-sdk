@@ -1,0 +1,66 @@
+{
+  "name": "@ykurilov/agent-chat-server",
+  "version": "0.47.0",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "exports": {
+    ".": {
+      "@ykurilov/agent-chat-source": "./src/index.ts",
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./hono": {
+      "@ykurilov/agent-chat-source": "./src/hono.ts",
+      "types": "./dist/types/hono.d.ts",
+      "import": "./dist/hono.js"
+    },
+    "./next": {
+      "@ykurilov/agent-chat-source": "./src/next.ts",
+      "types": "./dist/types/next.d.ts",
+      "import": "./dist/next.js"
+    },
+    "./node": {
+      "@ykurilov/agent-chat-source": "./src/node.ts",
+      "types": "./dist/types/node.d.ts",
+      "import": "./dist/node.js"
+    }
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ykurilov/agent-chat-sdk.git",
+    "directory": "packages/server"
+  },
+  "scripts": {
+    "build": "node ../../scripts/build-package.mjs",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@ykurilov/agent-chat-core": "workspace:*",
+    "ai": "7.0.122"
+  },
+  "peerDependencies": {
+    "hono": "^4.13.10"
+  },
+  "peerDependenciesMeta": {
+    "hono": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@ai-sdk/provider": "4.0.19",
+    "hono": "^4.13.10"
+  }
+}
