@@ -100,7 +100,9 @@ import type { ChatStorage } from "@ykurilov/agent-chat-core";
   пакет `@ykurilov/agent-chat-reply-check` (чужие слова, выдуманные ссылки); своя — `ReplyCheck`: `({ text, seenTexts,
   rewrite, … }) => { text, note? } | void`. Веб: `web: "replace"` (по умолчанию) — печатать и заменить исправленным,
   `"hold"` — не печатать до проверки. Мессенджеры получают только проверенный текст. Переписка — расход
-  `answer_correction`. Подробно — [docs/reply-check.md](https://github.com/ykurilov/agent-chat-sdk/blob/main/docs/reply-check.md).
+  `answer_correction`. С 0.51: `{ checks, knownTexts }` — тексты приложения вне инструкции, законные для проверок; служебные
+  сообщения и реплики сотрудника «виденным» не считаются; `service.checkReply({ ownerId, chatId, text })` — те же
+  проверки над текстом вне хода. Подробно — [docs/reply-check.md](https://github.com/ykurilov/agent-chat-sdk/blob/main/docs/reply-check.md).
 - `now` — часы службы: дата в запросе к модели, `prepareTurn.now`, время сценариев. Тесты подменяют время целиком.
 - `beforeTurn` кроме отказа может вернуть `{ hold: true }` — записать сообщение и промолчать (`steer` отвечает статусом
   `held`), или `{ reply: { text } }` — ответить готовым текстом без модели. «Записать и промолчать» лимит не тратит.

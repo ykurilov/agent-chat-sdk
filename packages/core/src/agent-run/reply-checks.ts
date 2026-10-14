@@ -2,13 +2,17 @@ import { generateText } from "ai";
 import type { ModelMessage, SystemModelMessage, UIMessageChunk } from "ai";
 import { emptyTokenUsage, addTokenUsage } from "../conversation/token-usage";
 import type { AgentChatMessage } from "../conversation/types";
+import { FROZEN_CONTEXT_PART_TYPE } from "../frozen-context/context-blocks";
+import type { FrozenContextData } from "../frozen-context/context-blocks";
+import type { AgentNotice, AgentNoticeKind } from "../notices/agent-notice";
+import { noticeText, noticesOfPart } from "../notices/notices-for-model";
 import type { ModelCatalog } from "../models/model-catalog";
 import { findModel } from "../models/model-catalog";
 import type { ChatStorage } from "../storage/chat-storage";
 import { recordSpentTokens } from "../usage/record-usage";
 import { buildModelRequest } from "./build-model-request";
 import { chunksForParts } from "./parts-to-chunks";
-import type { ReplyCheck, ReplyChecksWebMode } from "./reply-check-types";
+import type { KnownTexts, KnownTextsContext, ReplyCheck, ReplyChecksWebMode } from "./reply-check-types";
 import { STEP_RESET_PART_TYPE } from "./step-reset";
 
 // Проверка законченного ответа перед записью (`createChatService({ replyChecks })`): цепочка проверок над последней
@@ -20,29 +24,61 @@ type MessagePart = AgentChatMessage["parts"][number];
 export interface TurnReplyChecks {
   checks: readonly ReplyCheck[];
   web: ReplyChecksWebMode;
+  knownTexts?: KnownTexts;
 }
+
+/** Служебные сообщения, слова которых «виденным» не считаются: событие приложения (в нём и реплика сотрудника) и «напиши первым». */
+const SERVICE_NOTICE_KINDS: ReadonlySet<AgentNoticeKind> = new Set(["app", "conversation_started"]);
+
+/** Результаты фоновых задач — это выводы инструментов, их агент видел по-настоящему. */
+const isServiceNotice = (notice: AgentNotice): boolean => SERVICE_NOTICE_KINDS.has(notice.kind);
 
 /**
  * Что агент видел за ход: инструкция и все запросы к модели — блоки контекста, хвост шага, реплики человека, выводы
- * инструментов. Свои прошлые ответы агента — нет: выдуманная им раньше ссылка не становится «виденной».
+ * инструментов. Свои прошлые ответы агента — нет: выдуманная им раньше ссылка не становится «виденной». Служебные
+ * сообщения приложения (`app`, «напиши первым») и реплики сотрудника — тоже нет: это не слова человека, чужая ссылка в
+ * них не становится законной. Тексты приложения законны через `knownTexts`.
  */
 export function createSeenTexts() {
   const texts = new Set<string>();
+  // Текст части для модели → что в нём остаётся «виденным» (пусто — часть служебная целиком).
+  const service = new Map<string, string>();
   const add = (text: string) => {
     if (text) texts.add(text);
   };
+  const addVisible = (text: string) => add(service.has(text) ? service.get(text)! : text);
   return {
     instructions(instructions: string | SystemModelMessage): void {
       add(typeof instructions === "string" ? instructions : instructions.content);
     },
+    /** Служебные сообщения из истории и хода: их тексты в запросах не считаются виденными. */
+    serviceNotices(notices: readonly (readonly AgentNotice[])[]): void {
+      for (const group of notices) {
+        if (!group.some(isServiceNotice)) continue;
+        const kept = group.filter((notice) => !isServiceNotice(notice)).map(noticeText).join("\n\n");
+        service.set(group.map(noticeText).join("\n\n"), kept);
+        // Служебные сообщения хода — по одному на текстовую часть.
+        for (const notice of group) service.set(noticeText(notice), isServiceNotice(notice) ? "" : noticeText(notice));
+      }
+    },
     messages(messages: readonly ModelMessage[]): void {
-      for (const message of messages) for (const text of textsOfModelMessage(message)) add(text);
+      for (const message of messages) for (const text of textsOfModelMessage(message)) (message.role === "tool" ? add : addVisible)(text);
     },
     list: (): string[] => [...texts],
   };
 }
 
 export type SeenTexts = ReturnType<typeof createSeenTexts>;
+
+/** Группы служебных сообщений в частях истории и в блоках текущего хода: по группе на часть. */
+export function noticeGroupsOf(history: readonly Pick<AgentChatMessage, "parts">[], frozen?: Pick<FrozenContextData, "notices">): AgentNotice[][] {
+  const groups = history.flatMap((message) =>
+    message.parts.map((part) =>
+      part.type === FROZEN_CONTEXT_PART_TYPE ? [...((part as { data?: FrozenContextData }).data?.notices ?? [])] : noticesOfPart(part as { type: string; data?: unknown }),
+    ),
+  );
+  return [...groups, [...(frozen?.notices ?? [])]].filter((group) => group.length > 0);
+}
 
 function textsOfModelMessage(message: ModelMessage): string[] {
   if (message.role === "assistant") return [];
@@ -55,10 +91,60 @@ function textsOfModelMessage(message: ModelMessage): string[] {
 }
 
 /**
+ * Что агент видел в чате вне хода (`service.checkReply`): инструкция, блоки контекста, реплики человека и выводы
+ * инструментов на ветке. Как у хода, без своих ответов агента и служебных сообщений. Хвоста шага (`stepContext`) вне хода
+ * нет — его тексты приложение называет через `knownTexts`.
+ */
+export function seenTextsOfBranch(input: { instructions: string | SystemModelMessage; branch: readonly Pick<AgentChatMessage, "role" | "parts">[] }): string[] {
+  const seen = createSeenTexts();
+  seen.instructions(input.instructions);
+  seen.serviceNotices(noticeGroupsOf(input.branch));
+  const lines: ModelMessage[] = input.branch.flatMap((message): ModelMessage[] =>
+    message.parts.flatMap((part): ModelMessage[] => {
+      const typed = part as { type: string; text?: string; state?: string; output?: unknown; data?: unknown };
+      if (message.role === "user" && typed.type === "text") return [{ role: "user", content: typed.text ?? "" }];
+      if (typed.type === FROZEN_CONTEXT_PART_TYPE) {
+        const data = typed.data as FrozenContextData | undefined;
+        return [...(data?.blocks ?? []).map((block): ModelMessage => ({ role: "user", content: block.text })), ...(data?.notices ?? []).map((notice): ModelMessage => ({ role: "user", content: noticeText(notice) }))];
+      }
+      const notices = noticesOfPart(typed);
+      if (notices.length > 0) return [{ role: "user", content: notices.map(noticeText).join("\n\n") }];
+      if (typed.type.startsWith("tool-") && typed.state === "output-available") {
+        return [{ role: "tool", content: [{ type: "tool-result", toolCallId: "", toolName: "", output: { type: "json", value: typed.output } }] } as ModelMessage];
+      }
+      return [];
+    }),
+  );
+  seen.messages(lines);
+  return seen.list();
+}
+
+/**
+ * Тексты приложения для проверок (`replyChecks.knownTexts`). Сбой или не список — строка в журнал и пустой список:
+ * проверки идут с тем, что видел агент.
+ */
+export async function knownTextsOf(known: KnownTexts | undefined, context: KnownTextsContext, logError: (message: string) => void): Promise<string[]> {
+  if (!known) return [];
+  try {
+    const texts = await known({ ...context });
+    if (Array.isArray(texts)) return texts.filter((text): text is string => typeof text === "string" && text !== "");
+    logError(`[replyChecks] чат=${context.chatId} knownTexts вернул не список — проверка без текстов приложения`);
+  } catch (failure) {
+    logError(`[replyChecks] чат=${context.chatId} knownTexts упал: ${failure instanceof Error ? failure.message : String(failure)} — проверка без текстов приложения`);
+  }
+  return [];
+}
+
+/**
  * Проверки по очереди: следующая получает текст предыдущей. Заметка — строка в журнал. Сбой проверки или пустой текст —
  * текст до неё и строка в журнал: пустой ответ человеку не уходит, следующие проверки идут дальше.
  */
-export async function checkedReplyText(input: {
+export async function checkedReplyText(input: Parameters<typeof runReplyChecks>[0]): Promise<string> {
+  return (await runReplyChecks(input)).text;
+}
+
+/** Те же проверки с итогом: текст после правок и заметки проверок (то, что в ходе уходит строками в журнал). */
+export async function runReplyChecks(input: {
   checks: readonly ReplyCheck[];
   text: string;
   ownerId: string;
@@ -67,9 +153,10 @@ export async function checkedReplyText(input: {
   seenTexts: readonly string[];
   rewrite: (system: string, prompt: string) => Promise<string>;
   logError: (message: string) => void;
-}): Promise<string> {
+}): Promise<{ text: string; notes: string[] }> {
   const { ownerId, chatId, messageId, rewrite, logError } = input;
   let text = input.text;
+  const notes: string[] = [];
   for (const [index, check] of input.checks.entries()) {
     const where = `[replyChecks] чат=${chatId} ответ=${messageId} проверка=${index + 1}`;
     let result: unknown;
@@ -85,10 +172,13 @@ export async function checkedReplyText(input: {
       logError(`${where} вернула пустой текст — оставлен текст до неё${typeof note === "string" && note ? ` (${note})` : ""}`);
       continue;
     }
-    if (typeof note === "string" && note) logError(`${where}: ${note}`);
+    if (typeof note === "string" && note) {
+      logError(`${where}: ${note}`);
+      notes.push(note);
+    }
     text = next;
   }
-  return text;
+  return { text, notes };
 }
 
 /** Переписка для проверок: модель хода, без рассуждений и инструментов; расход — `answer_correction` на этот ответ. */
@@ -100,7 +190,8 @@ export function createReplyRewrite(input: {
   providerId: string;
   chatId: string;
   ownerId?: string;
-  messageId: string;
+  /** Ответ, на который идёт расход; вне хода (`service.checkReply`) — `null`. */
+  messageId: string | null;
   abortSignal: AbortSignal;
   logError: (message: string) => void;
 }): (system: string, prompt: string) => Promise<string> {

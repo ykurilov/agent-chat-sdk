@@ -60,7 +60,7 @@ import type { ModeNotes } from "./mode-notes";
 import { createReasoningTimer } from "./reasoning-timer";
 import { decideNextAttempt, fallbackProviders, nextSilenceProvider, resolveSilenceSwitch } from "./next-attempt";
 import { chunksForParts } from "./parts-to-chunks";
-import { checkedReplyText, createHeldReplyText, createReplyRewrite, createSeenTexts, createShownSteps, lastTextIndex, replacementChunks, withTextAt } from "./reply-checks";
+import { checkedReplyText, createHeldReplyText, createReplyRewrite, createSeenTexts, createShownSteps, knownTextsOf, lastTextIndex, noticeGroupsOf, replacementChunks, withTextAt } from "./reply-checks";
 import type { SeenTexts, TurnReplyChecks } from "./reply-checks";
 import { erasableStepStart, STEP_RESET_PART_TYPE, STEPS_MAY_RESET_PART_TYPE } from "./step-reset";
 import type { NextAttempt, ProviderFallbackSetting } from "./next-attempt";
@@ -942,7 +942,7 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
         ownerId: input.ownerId ?? "",
         chatId: input.chatId,
         messageId,
-        seenTexts: seenTexts?.list() ?? [],
+        seenTexts: [...(seenTexts?.list() ?? []), ...(await knownTextsOf(replyChecks.knownTexts, { ownerId: input.ownerId ?? "", chatId: input.chatId }, logError))],
         rewrite: createReplyRewrite({ ...input, providerId: answeredProviderId, messageId, logError }),
         logError,
       });
@@ -1346,6 +1346,7 @@ async function openAttempt(
   });
   attempt.turnUsage.beginAttempt(request, providerId);
   attempt.seenTexts?.instructions(request.instructions);
+  attempt.seenTexts?.serviceNotices(noticeGroupsOf(attempt.history, attempt.frozenContext));
   const cacheWatch = cacheMissWatch?.forRequest({
     chatId: input.chatId,
     modelId: found.profile.id,

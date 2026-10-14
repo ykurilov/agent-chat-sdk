@@ -70,20 +70,23 @@ export function createBackgroundTasks(options: BackgroundTasksOptions): Backgrou
   let timer: ReturnType<typeof setInterval> | undefined;
   let unsubscribe: (() => void) | undefined;
   let recovering = false;
-  let ticking: Promise<void> | undefined;
+  let renewing: Promise<void> | undefined;
+  let sweeping: Promise<void> | undefined;
 
-  /** Обход по таймеру: продлить аренды, повторить недоставленное, после `recover` — подобрать брошенные задачи. */
+  /**
+   * Обход по таймеру: продлить аренды; отдельно — повторить недоставленное и, после `recover`, подобрать брошенные
+   * задачи. Продление не ждёт доставки и подбора: на медленной базе они идут дольше аренды.
+   */
   function tick(): void {
-    if (ticking) return;
-    ticking = (async () => {
-      try {
-        await runner.renewLeases();
-        await delivery.retryPending();
-        if (recovering) await runner.recoverExpired().catch((error: unknown) => port?.logError(error));
-      } finally {
-        ticking = undefined;
-      }
-    })();
+    renewing ??= runner.renewLeases().finally(() => {
+      renewing = undefined;
+    });
+    sweeping ??= (async () => {
+      await delivery.retryPending();
+      if (recovering) await runner.recoverExpired().catch((error: unknown) => port?.logError(error));
+    })().finally(() => {
+      sweeping = undefined;
+    });
   }
 
   return {
@@ -121,7 +124,7 @@ export function createBackgroundTasks(options: BackgroundTasksOptions): Backgrou
       clearInterval(timer);
       unsubscribe?.();
       recovering = false;
-      await ticking;
+      await Promise.all([renewing, sweeping]);
       await runner.stop();
       await delivery.idle();
     },

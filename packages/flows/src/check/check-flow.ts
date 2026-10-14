@@ -184,10 +184,15 @@ function checkSideTasks(flow: AgentFlow, issues: Issues) {
   }
 }
 
-/** Состояния, до которых можно дойти от старта: обычными переходами и общими (кроме конечных и исключённых). */
+/**
+ * Состояния, до которых можно дойти от старта: обычными переходами и общими (кроме конечных и исключённых).
+ * «Срок вышел» (`schedule.deadlineState`) — тоже вход: срок может выйти в любой момент разговора.
+ */
 function reachableFrom(flow: AgentFlow, start: FlowState): Set<string> {
   const seen = new Set<string>();
   const queue = [start];
+  const deadline = flow.schedule?.deadlineState === undefined ? undefined : stateById(flow, flow.schedule.deadlineState);
+  if (deadline) queue.push(deadline);
   while (queue.length > 0) {
     const state = queue.shift()!;
     if (seen.has(state.id)) continue;

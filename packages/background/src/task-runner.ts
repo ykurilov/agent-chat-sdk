@@ -76,6 +76,7 @@ export function createTaskRunner(deps: {
   const ownerLock = createKeyedLock();
   /** Служба остановлена: брошенные задачи не подбираем, новых запусков нет. */
   let stopped = false;
+  let recovering: Promise<void> | undefined;
   const now = () => new Date().toISOString();
   const leaseUntil = (from: string) => new Date(Date.parse(from) + leaseMs).toISOString();
   /** Запись идущей задачи: только пока аренда у этой копии и задача идёт — отмену или чужой итог она не затрёт. */
@@ -174,6 +175,21 @@ export function createTaskRunner(deps: {
   /** Задача без запуска получает итог сразу (прервана, описания нет). */
   async function finishWithout(record: TaskRecord, outcome: TaskOutcome): Promise<void> {
     await taskLock(record.id, () => writeOutcome(record, outcome));
+  }
+
+  /** Обход брошенных задач. На медленной базе он идёт долго: аренда каждой задачи считается от её взятия. */
+  async function recoverOnce(): Promise<void> {
+    for (const stale of await store.listExpired(now())) {
+      if (stopped) return;
+      if (leases.has(stale.id)) continue;
+      try {
+        const at = now();
+        const claimed = await store.claim(stale.id, me, leaseUntil(at), at);
+        if (claimed) await resume(stale.status, claimed);
+      } catch (error) {
+        logError(error);
+      }
+    }
   }
 
   async function resume(prior: TaskStatus, claimed: TaskRecord): Promise<void> {
@@ -283,35 +299,31 @@ export function createTaskRunner(deps: {
       await store.deleteForChat(ownerId, chatId);
     },
 
-    async recoverExpired() {
-      const at = now();
-      for (const stale of await store.listExpired(at)) {
-        if (stopped) return;
-        if (leases.has(stale.id)) continue;
-        try {
-          const claimed = await store.claim(stale.id, me, leaseUntil(at), at);
-          if (claimed) await resume(stale.status, claimed);
-        } catch (error) {
-          logError(error);
-        }
-      }
+    recoverExpired() {
+      // Один обход за раз: второй, начатый посреди первого, взял бы ту же задачу (своя аренда берётся снова) и запустил дважды.
+      recovering ??= recoverOnce().finally(() => {
+        recovering = undefined;
+      });
+      return recovering;
     },
 
     async renewLeases() {
       const until = leaseUntil(now());
-      for (const [taskId, lease] of [...leases]) {
-        let renewed: boolean;
-        try {
-          renewed = await store.renewLease(taskId, me, until);
-        } catch (error) {
-          logError(error);
-          continue;
-        }
-        // Не продлилась: итог доставлен или задачу забрала другая копия (она её и ведёт).
-        if (renewed || leases.get(taskId) !== lease) continue;
-        leases.delete(taskId);
-        if (lease.run) stopRun(lease.run, "аренда задачи потеряна");
-      }
+      await Promise.all(
+        [...leases].map(async ([taskId, lease]) => {
+          let renewed: boolean;
+          try {
+            renewed = await store.renewLease(taskId, me, until);
+          } catch (error) {
+            logError(error);
+            return;
+          }
+          // Не продлилась: итог доставлен или задачу забрала другая копия (она её и ведёт).
+          if (renewed || leases.get(taskId) !== lease) return;
+          leases.delete(taskId);
+          if (lease.run) stopRun(lease.run, "аренда задачи потеряна");
+        }),
+      );
     },
 
     async stop() {

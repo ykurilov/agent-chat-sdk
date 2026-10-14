@@ -180,7 +180,7 @@ export type {
   TurnStopReason,
 } from "./turn-hooks/turn-hooks";
 export { DEFAULT_REPLY_CHECKS_WEB, resolveReplyChecks } from "./agent-run/reply-check-types";
-export type { ReplyCheck, ReplyCheckInput, ReplyCheckResult, ReplyChecksSetting, ReplyChecksWebMode } from "./agent-run/reply-check-types";
+export type { KnownTexts, KnownTextsContext, ReplyCheck, ReplyCheckInput, ReplyCheckResult, ReplyChecksSetting, ReplyChecksWebMode } from "./agent-run/reply-check-types";
 export { accessRefusedResponse, allowedUser } from "./access/resolved-user";
 export type { AccessRefusal, ResolvedUser } from "./access/resolved-user";
 export { ActionForbiddenError, CHAT_CAPABILITIES, resolveChatCapabilities } from "./access/chat-capabilities";
@@ -229,6 +229,8 @@ export type {
   CompactionOutcome,
   CompactionSettings,
   FlushOptions,
+  CheckReplyInput,
+  CheckReplyResult,
   IncomingUserMessage,
   ModelChoice,
   ModelChosenHandler,

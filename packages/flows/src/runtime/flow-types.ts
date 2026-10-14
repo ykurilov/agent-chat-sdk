@@ -10,6 +10,7 @@ import type {
   ChatService,
   ModelChoice,
   RecordUsage,
+  ReplyChecksSetting,
   StateChangedHandler,
   StepContextInput,
 } from "@ykurilov/agent-chat-core";
@@ -387,6 +388,11 @@ export interface FlowChatOptions {
   beforeTurn?: BeforeTurnHandler;
   afterTurn?: AfterTurnHandler;
   onStateChanged?: StateChangedHandler;
+  /**
+   * Проверки ответа службы (`createChatService({ replyChecks })`). С ними `withChat` добавляет тексты сценария чата
+   * (`flowKnownTexts`) к `knownTexts`: ссылка из первого сообщения или прощания не считается выдуманной. Нет — не трогается.
+   */
+  replyChecks?: ReplyChecksSetting;
 }
 
 export interface AgentFlowOptions {

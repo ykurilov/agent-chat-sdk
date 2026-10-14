@@ -58,6 +58,47 @@ describe("проверка графа v2: «Дни и время»", () => {
     });
   });
 
+  describe("достижимость: системные входы", () => {
+    const addEnd = (json: Record<string, any>, id: string) => {
+      json.states.push({ id, title: "Срок вышел", instructions: "Попрощаться.", firstMessage: null, tags: [], exits: [] });
+      json.layout[id] = { x: 0, y: 0 };
+    };
+    const unreachable = (issues: ReturnType<typeof check>) => issues.filter((issue) => issue.code === "unreachable_state");
+
+    it("нода, в которую ведёт только «срок вышел», достижима", () => {
+      const issues = check((json) => {
+        addEnd(json, "expired");
+        json.schedule = { dayStart: "09:00", lengthDays: 3, deadlineState: "expired" };
+      });
+      expect(unreachable(issues)).toEqual([]);
+    });
+
+    it("нода, в которую ведёт только общий переход «из любого состояния», достижима", () => {
+      const issues = check((json) => {
+        addEnd(json, "expired");
+        json.anyState.exits.push({ id: "any_expired", when: { type: "timer", from: "since_start", amount: 3, unit: "d" }, to: "expired" });
+      });
+      expect(unreachable(issues)).toEqual([]);
+    });
+
+    it("нода без единого входа по-прежнему недостижима", () => {
+      const issues = check((json) => {
+        addEnd(json, "expired");
+        addEnd(json, "lost");
+        json.schedule = { dayStart: "09:00", lengthDays: 3, deadlineState: "expired" };
+      });
+      expect(unreachable(issues)).toEqual([{ level: "error", code: "unreachable_state", place: { stateId: "lost" } }]);
+    });
+
+    it("нода срока, которой нет, не прячет другие ошибки", () => {
+      const issues = check((json) => {
+        addEnd(json, "lost");
+        json.schedule = { dayStart: "09:00", deadlineState: "gone" };
+      });
+      expect(unreachable(issues)).toEqual([{ level: "error", code: "unreachable_state", place: { stateId: "lost" } }]);
+    });
+  });
+
   it("мягкая рамка дня не раньше жёсткой", () => {
     expect(check((json) => (json.schedule = { dayStart: "09:00", dayFrame: { softFrom: 30, hardAt: 30 } }))).toContainEqual({
       level: "error",

@@ -37,6 +37,7 @@ import { createFlowJudge } from "./judge";
 import { createFlowTimers } from "./flow-timers";
 import { createChatMigrator } from "./migrate-chats";
 import { sendFlowSignal } from "./flow-signals";
+import { withFlowKnownTexts } from "./flow-known-texts";
 import { flowPrepareTurn, pendingEvent } from "./prepare-turn";
 import { withFlowTools } from "./flow-tools";
 import { withStepTail } from "./step-tail";
@@ -771,6 +772,7 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
           track(judgeAfterTurn(result));
           return own;
         },
+        ...(chat.replyChecks && { replyChecks: withFlowKnownTexts(chat.replyChecks, (ownerId, chatId) => chatFlow(ownerId, chatId), logError) }),
         onStateChanged: async (input) => {
           if (input.reason !== "turn") {
             const run = storedRun(input.state[FLOW_STATE_KEY]);

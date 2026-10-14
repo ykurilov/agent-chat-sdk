@@ -1,5 +1,12 @@
 # @ykurilov/agent-chat-web-tools
 
+## 0.51.0
+
+### Patch Changes
+
+- Updated dependencies [41b1726]
+  - @ykurilov/agent-chat-core@0.51.0
+
 ## 0.50.0
 
 ### Patch Changes

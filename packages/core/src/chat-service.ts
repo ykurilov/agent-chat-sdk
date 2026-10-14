@@ -14,6 +14,7 @@ import { continuationRequestContext } from "./page-context/page-context";
 import type { ScreenPlace, TurnRequestContext } from "./page-context/page-context";
 import { checkBrowserToolDescriptions, createPendingBrowserCalls, resolveBrowserToolTimeoutMs } from "./agent-run/browser-tools";
 import type { BrowserCallAnswer } from "./agent-run/browser-tools";
+import { createReplyRewrite, knownTextsOf, runReplyChecks, seenTextsOfBranch } from "./agent-run/reply-checks";
 import { runAgentTurn } from "./agent-run/run-agent-turn";
 import type { AgentToolsModel, AgentToolsSource } from "./agent-run/run-agent-turn";
 import { DEFAULT_STEP_CONTEXT_TIMEOUT_MS } from "./agent-run/step-context";
@@ -766,6 +767,14 @@ export interface ChatService {
    */
   deliverNotices(input: DeliverNoticesInput): Promise<DeliverNoticesResult>;
   /**
+   * Текст приложения вне хода модели (например, итог его инструмента) — через те же проверки ответа (`replyChecks`),
+   * что и ответ агента. `seenTexts` те же: инструкция чата, блоки контекста, реплики человека и выводы инструментов на
+   * ветке плюс `knownTexts`; хвоста шага вне хода нет. Переписка — моделью чата, расход — `answer_correction` без
+   * сообщения. Нет проверок — текст как есть. Сбой проверки — как на ходе: остаётся текст до неё.
+   * @throws ChatNotFoundError чата нет или он чужой.
+   */
+  checkReply(input: CheckReplyInput): Promise<CheckReplyResult>;
+  /**
    * Ответ не доставлен наружу (канал закрыт, человек заблокировал): ответ и его служебное сообщение остаются в истории с
    * пометкой, модель их больше не видит, экран показывает подпись «не доставлено».
    */
@@ -1012,6 +1021,22 @@ export interface ChatService {
   readonly liveDemos?: boolean;
   /** Есть ли проверки ответа (`replyChecks`): мессенджеры не шлют ответ по словам, а ждут проверенный текст. */
   readonly checksReplies?: boolean;
+}
+
+/** Текст вне хода для `service.checkReply`. */
+export interface CheckReplyInput {
+  ownerId: string;
+  chatId: string;
+  text: string;
+  /** Ответ, к которому относится текст: идёт в проверки как `messageId`. Нет — пусто. */
+  messageId?: string;
+  abortSignal?: AbortSignal;
+}
+
+/** Итог проверок: текст после правок и заметки проверок (те же строки, что на ходе уходят в журнал). */
+export interface CheckReplyResult {
+  text: string;
+  notes: string[];
 }
 
 /** Как останавливать службу. */
@@ -2628,6 +2653,36 @@ export function createChatService(input: ChatServiceOptions): ChatService {
       await writeUndelivered(chatId);
     },
 
+    async checkReply(request) {
+      const chat = await ownChat(request.ownerId, request.chatId);
+      if (replyChecks.checks.length === 0) return { text: request.text, notes: [] };
+      const branch = await currentBranch(request.chatId);
+      // Без хода: инструкция чата берётся как для сжатия, ничего не закрывая и не запуская.
+      const instructions = instructionsOfChat ? await instructionsOfChat(chat) : options.agent.instructions;
+      const known = await knownTextsOf(replyChecks.knownTexts, { ownerId: request.ownerId, chatId: request.chatId }, logError);
+      const model = effectiveChoiceOfChat(options.catalog, env, chat, defaultChoice);
+      return runReplyChecks({
+        checks: replyChecks.checks,
+        text: request.text,
+        ownerId: request.ownerId,
+        chatId: request.chatId,
+        messageId: request.messageId ?? "",
+        seenTexts: [...seenTextsOfBranch({ instructions, branch: branch.map(toAgentChatMessage) }), ...known],
+        rewrite: createReplyRewrite({
+          catalog: options.catalog,
+          env,
+          storage,
+          modelId: model.modelId,
+          providerId: model.providerId,
+          chatId: request.chatId,
+          ownerId: request.ownerId,
+          messageId: request.messageId ?? null,
+          abortSignal: request.abortSignal ?? new AbortController().signal,
+          logError,
+        }),
+        logError,
+      });
+    },
     async deliverNotices(request) {
       const { ownerId, chatId } = request;
       const gone: DeliverNoticesResult = { status: "chat_gone", turnStarted: false };
@@ -3556,5 +3611,6 @@ function checkedReplyChecks(setting: ReplyChecksSetting | undefined): ReturnType
     throw new TypeError("replyChecks: нужен список функций проверки ответа");
   }
   if (resolved.web !== "replace" && resolved.web !== "hold") throw new TypeError(`replyChecks.web: "replace" или "hold", а не ${JSON.stringify(resolved.web)}`);
+  if (resolved.knownTexts !== undefined && typeof resolved.knownTexts !== "function") throw new TypeError("replyChecks.knownTexts: нужна функция, которая вернёт список текстов");
   return resolved;
 }
