@@ -101,7 +101,7 @@ import type { ChatStorage } from "@ykurilov/agent-chat-core";
   rewrite, … }) => { text, note? } | void`. Веб: `web: "replace"` (по умолчанию) — печатать и заменить исправленным,
   `"hold"` — не печатать до проверки. Мессенджеры получают только проверенный текст. Переписка — расход
   `answer_correction`. С 0.51: `{ checks, knownTexts }` — тексты приложения вне инструкции, законные для проверок; служебные
-  сообщения и реплики сотрудника «виденным» не считаются; `service.checkReply({ ownerId, chatId, text })` — те же
+  сообщения «виденным» не считаются (реплики сотрудника с 0.53 — считаются); `service.checkReply({ ownerId, chatId, text })` — те же
   проверки над текстом вне хода. Подробно — [docs/reply-check.md](https://github.com/ykurilov/agent-chat-sdk/blob/main/docs/reply-check.md).
 - `now` — часы службы: дата в запросе к модели, `prepareTurn.now`, время сценариев. Тесты подменяют время целиком.
 - `beforeTurn` кроме отказа может вернуть `{ hold: true }` — записать сообщение и промолчать (`steer` отвечает статусом
@@ -109,8 +109,14 @@ import type { ChatStorage } from "@ykurilov/agent-chat-core";
 - `markUndelivered({ ownerId, chatId, messageId })` — ответ не дошёл наружу: он остаётся в истории с пометкой
   `metadata.undelivered`, модель его больше не видит, экран показывает «Не доставлено».
 - `deliverNotices` получил `timeZone` (пояс человека для даты в инструкции), `awaitAnswer` (дождаться хода и вернуть
-  готовый проверенный текст в `answer`) и `usageSource`. Ход, где агент пишет первым, пишется в расход как
-  `first_message`.
+  готовый проверенный текст в `answer`; с 0.53 там же `parts` — части ответа для человека: текст, файлы, вызовы
+  инструментов с результатом, без рассуждений и служебных частей, `deliverableParts`) и `usageSource`. Ход, где агент пишет первым, пишется в расход как
+  `first_message`. С 0.53 — `maxServerTurnsInRow`: свой потолок ходов сервера подряд без человека (по умолчанию 5,
+  `MAX_SERVER_TURNS_IN_ROW`), `false` — без потолка, частоту держит вызывающий (так ходят касания сценария).
+- `appendStaffMessage({ ownerId, chatId, text, staffName?, wakeAgent?, deliveryKey? })` (с 0.53) — реплика живого
+  сотрудника в конец ветки. Модель видит её словами сотрудника («Живой сотрудник «Ольга» ответил человеку вместо тебя…»),
+  экран — сообщением сотрудника (`StaffMessage` скина). Проверки ответа агента её текст знают, а `person_link_view`
+  ссылкой человека её не считает. Ход сама не начинает; `wakeAgent: true` — агент отвечает сразу. Занятый чат — `busy`, пустой текст — `TypeError`.
 
 ## Надёжность хода
 
@@ -133,5 +139,5 @@ import type { ChatStorage } from "@ykurilov/agent-chat-core";
 Журнал изменений и что делать при обновлении: [CHANGELOG.md](./CHANGELOG.md). Все пакеты SDK выходят вместе и с одной версией; обновление — `pnpm update "@ykurilov/agent-chat-*" --latest`.
 
 Расход и лимиты: ядро пишет токены и стоимость в долларах (`costUsd`, по ценам модели на момент хода) каждого ответа и фонового сжатия в журнал расхода
-(`insertUsageRecord`, `sumUsage`), цены лежат в профиле модели (`pricing`), а `createChatService({ limits })` проверяет лимит до хода.
+(`insertUsageRecord`, `sumUsage`, а сумма по списку чатов одним запросом — `sumUsageByChat({ chatIds, source? })`), цены лежат в профиле модели (`pricing`), а `createChatService({ limits })` проверяет лимит до хода.
 Лимиты и суммы считает `@ykurilov/agent-chat-limits`. Ручное `compactNow` лимит не проверяет.

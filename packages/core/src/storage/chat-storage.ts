@@ -22,6 +22,8 @@ import type {
   StoredBranchSelection,
   StoredCompaction,
   StoredMessage,
+  UsageByChatFilter,
+  UsageChatSum,
   UsageFilter,
   UsageRecord,
   UsageSum,
@@ -228,6 +230,11 @@ export interface ChatStorage {
   hasUsageRecord?(id: string): Promise<boolean>;
   /** Сумма расхода по парам «модель × провайдер», без пар с нулевым числом записей. Без фильтра — весь расход. */
   sumUsage(filter: UsageFilter): Promise<UsageSum[]>;
+  /**
+   * Сумма расхода по списку чатов одним запросом (с 0.53): по чату и паре «модель × провайдер», без пар с нулевым числом
+   * записей. Чатов без записей в ответе нет; пустой список — пустой ответ. Необязательный: без него — `sumUsage` по чату.
+   */
+  sumUsageByChat?(filter: UsageByChatFilter): Promise<UsageChatSum[]>;
   /**
    * Состояние лимитов расходов (`@ykurilov/agent-chat-limits`) по ключу: строка, которую лимиты пишут и читают сами
    * (начала скользящих окон, перенос перерасхода, ручные сбросы, личные лимиты, отправленные пороги). `null` — записи нет.

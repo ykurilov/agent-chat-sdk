@@ -3,7 +3,7 @@ import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { parseFlow, type AgentFlow } from "../src/format";
-import { useFlowEditor, type FlowMigration } from "../src/react/editor/use-flow-editor";
+import { useFlowEditor, type FlowMigration, type UseFlowEditorOptions } from "../src/react/editor/use-flow-editor";
 import salesReview from "./fixtures/sales-review.json";
 import sheetsLesson from "./fixtures/sheets-lesson.json";
 import shopSupport from "./fixtures/shop-support.json";
@@ -21,7 +21,7 @@ afterEach(cleanup);
 
 const catalog = { tools: ["give_booking_link", "call_expert"], events: ["booking_link"], widgets: [] };
 
-function useHarness(initial: AgentFlow, extra: { onSave?: (flow: AgentFlow) => Promise<void>; migration?: FlowMigration } = {}) {
+function useHarness(initial: AgentFlow, extra: Partial<UseFlowEditorOptions> = {}) {
   const [value, setValue] = useState(initial);
   const editor = useFlowEditor({ value, onChange: setValue, catalog, now: () => Date.UTC(2026, 9, 13, 9), timeZone: "UTC", ...extra });
   return { value, editor };
@@ -138,5 +138,118 @@ describe("useFlowEditor", () => {
     await act(async () => hook.result.current.editor.migrate!.run());
     expect(migration.migrate).toHaveBeenCalledWith({ old_state: "offer" });
     expect(hook.result.current.editor.migrate!.moved).toBe(3);
+  });
+
+  describe("только просмотр", () => {
+    it("правки, связи, удаление, загрузка JSON и сохранение ничего не меняют; просмотр и прогон работают", async () => {
+      const onSave = vi.fn(async () => {});
+      const hook = renderHook(() => useHarness(fixtureFlow("sales-review"), { readOnly: true, onSave }));
+      const before = hook.result.current.value;
+      const { editor } = hook.result.current;
+      expect(editor.readOnly).toBe(true);
+      act(() => {
+        editor.edit((flow) => ({ ...flow, name: "Другое" }));
+        editor.addState({ x: 1, y: 1 });
+        editor.connect("intro", "intro_clear", "booked");
+        editor.connectToNewState("booked", null, { x: 1, y: 1 });
+        editor.removeState("block");
+      });
+      expect(hook.result.current.value).toBe(before);
+      let loaded = true;
+      act(() => {
+        loaded = hook.result.current.editor.loadJson(JSON.stringify({ ...before, name: "Чужое" }));
+      });
+      expect(loaded).toBe(false);
+      expect(hook.result.current.value).toBe(before);
+      await act(async () => hook.result.current.editor.save());
+      expect(onSave).not.toHaveBeenCalled();
+
+      act(() => hook.result.current.editor.select({ kind: "state", stateId: "block" }));
+      expect(hook.result.current.editor.selection).toEqual({ kind: "state", stateId: "block" });
+      act(() => hook.result.current.editor.setMode("check"));
+      expect(hook.result.current.editor.mode).toBe("check");
+      act(() => hook.result.current.editor.openJson());
+      expect(hook.result.current.editor.dialog).toBe("json");
+      act(() => hook.result.current.editor.setMode("run"));
+      act(() => hook.result.current.editor.simulate.choose("intro_clear"));
+      expect(hook.result.current.editor.simulation!.run.state).toBe("block");
+    });
+
+    it("без readOnly всё как раньше", () => {
+      const hook = renderHook(() => useHarness(fixtureFlow("sales-review"), { readOnly: false }));
+      act(() => hook.result.current.editor.edit((flow) => ({ ...flow, name: "Другое" })));
+      expect(hook.result.current.value.name).toBe("Другое");
+    });
+  });
+
+  describe("отказ в сохранении", () => {
+    const renameThenSave = async (hook: ReturnType<typeof renderHook<ReturnType<typeof useHarness>, unknown>>) => {
+      act(() => hook.result.current.editor.edit((flow) => ({ ...flow, name: "Другое" })));
+      await act(async () => hook.result.current.editor.save());
+    };
+
+    it("undefined, void и { ok: true } — успех: «Сохранено»", async () => {
+      for (const result of [undefined, { ok: true as const }]) {
+        const hook = renderHook(() => useHarness(fixtureFlow("sales-review"), { onSave: async () => result }));
+        await renameThenSave(hook);
+        expect(hook.result.current.editor.dirty).toBe(false);
+        expect(hook.result.current.editor.saveFailed).toBe(false);
+      }
+    });
+
+    it("{ ok: false, issues }: остаётся «несохранено», отказ виден, находки стоят у нод как в проверке графа", async () => {
+      const onSave = vi.fn(async () => ({ ok: false as const, issues: [{ path: "states[intro].exits[0]", message: "Приложение: нельзя." }] }));
+      const hook = renderHook(() => useHarness(fixtureFlow("sales-review"), { onSave }));
+      await renameThenSave(hook);
+      const { editor } = hook.result.current;
+      expect(editor.dirty).toBe(true);
+      expect(editor.saveFailed).toBe(true);
+      expect(editor.saving).toBe(false);
+      const found = editor.issues.find((issue) => issue.message === "Приложение: нельзя.")!;
+      expect(found).toMatchObject({ level: "error", place: { stateId: "intro", exitId: "intro_clear" } });
+      expect(editor.issueCount.errors).toBe(1);
+      act(() => editor.goToIssue(found));
+      expect(hook.result.current.editor.selection).toEqual({ kind: "state", stateId: "intro", exitId: "intro_clear" });
+
+      // Любая правка снимает отказ: находка устарела.
+      act(() => hook.result.current.editor.edit((flow) => ({ ...flow, name: "Третье" })));
+      expect(hook.result.current.editor.saveFailed).toBe(false);
+      expect(hook.result.current.editor.issueCount.errors).toBe(0);
+    });
+
+    it("{ ok: false } без issues: только отказ в шапке", async () => {
+      const hook = renderHook(() => useHarness(fixtureFlow("sales-review"), { onSave: async () => ({ ok: false as const }) }));
+      await renameThenSave(hook);
+      expect(hook.result.current.editor.saveFailed).toBe(true);
+      expect(hook.result.current.editor.issues).toHaveLength(0);
+    });
+
+    it("исключение из onSave — тоже отказ, без необработанной ошибки", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const error = vi.spyOn(console, "error").mockImplementation(() => {});
+      const hook = renderHook(() =>
+        useHarness(fixtureFlow("sales-review"), {
+          onSave: async () => {
+            throw new Error("Сервер недоступен");
+          },
+        }),
+      );
+      await renameThenSave(hook);
+      expect(hook.result.current.editor.saveFailed).toBe(true);
+      expect(hook.result.current.editor.dirty).toBe(true);
+      expect(hook.result.current.editor.saving).toBe(false);
+      expect(error).not.toHaveBeenCalled();
+      warn.mockRestore();
+      error.mockRestore();
+    });
+
+    it("повторное сохранение после отказа проходит", async () => {
+      const results = [{ ok: false as const }, { ok: true as const }];
+      const hook = renderHook(() => useHarness(fixtureFlow("sales-review"), { onSave: async () => results.shift() }));
+      await renameThenSave(hook);
+      await act(async () => hook.result.current.editor.save());
+      expect(hook.result.current.editor.saveFailed).toBe(false);
+      expect(hook.result.current.editor.dirty).toBe(false);
+    });
   });
 });

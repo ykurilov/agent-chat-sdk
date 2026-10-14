@@ -1,6 +1,7 @@
 import { TooltipProvider } from "@tandem/ui";
+import { russianLabels } from "@ykurilov/agent-chat-react";
 import type { AgentNoticeViewProps, HelperCallView, TaskCardView, TaskStatusView } from "@ykurilov/agent-chat-react";
-import { tandemWorkParts } from "@ykurilov/agent-chat-skin-tandem";
+import { tandemSkin, tandemWorkParts } from "@ykurilov/agent-chat-skin-tandem";
 import { tandemMessengersSkin } from "@ykurilov/agent-chat-skin-tandem/messengers";
 import { StrictMode, useState } from "react";
 import type { ComponentProps, ReactNode } from "react";
@@ -9,7 +10,8 @@ import "../src/styles.css";
 
 /*
  * Витрина частей фона и мессенджеров скина Тандем (T023 плана 027) для снимков тем: строка помощника во всех состояниях,
- * карточка фоновой задачи во всех статусах, плашки служебных сообщений, панель подключения мессенджеров. Без сервера.
+ * карточка фоновой задачи во всех статусах, плашки служебных сообщений, реплика сотрудника (0.53), панель подключения
+ * мессенджеров. Без сервера.
  *   theme=light|dark
  */
 
@@ -74,6 +76,20 @@ const notices: AgentNoticeViewProps[] = [
   { kind: "conversation_started", title: "" },
 ];
 
+/**
+ * Реплика живого сотрудника (договор скина 25): свой `StaffMessage` скина, без него — запасной вид `AgentChat`: ответ
+ * агента с подписью «Сотрудник Ольга». Тандем `StaffMessage` пока не рисует.
+ */
+function StaffReply({ text, staffName }: { text: string; staffName?: string }) {
+  const View = tandemSkin.StaffMessage;
+  if (View) return <View text={text} {...(staffName && { staffName })} />;
+  return (
+    <tandemSkin.AgentMessage status="complete" empty={false} onCopy={noop}>
+      <tandemSkin.AgentText markdown={`**${russianLabels.notices.staffSaid(staffName)}:** ${text}`} streaming={false} />
+    </tandemSkin.AgentMessage>
+  );
+}
+
 type MessengerRows = ComponentProps<typeof MessengerConnectPanel>["rows"];
 const row = (messenger: MessengerRows[number]["messenger"], extra: Partial<MessengerRows[number]> = {}): MessengerRows[number] => ({
   messenger,
@@ -116,6 +132,12 @@ createRoot(document.getElementById("root")!).render(
         </Section>
         <Section title="Служебные сообщения">
           <div className="flex flex-col gap-2">{notices.map((notice, index) => <AgentNoticeView key={index} {...notice} />)}</div>
+        </Section>
+        <Section title="Реплика сотрудника">
+          <div data-gallery="staff-reply" className="flex flex-col gap-2">
+            <StaffReply staffName="Ольга" text="Здравствуйте! Запись эфира пришлю сегодня вечером, а пока посмотрите урок про композицию." />
+            <StaffReply text="Подключила вас к закрытому чату курса." />
+          </div>
         </Section>
         <Section title="Мессенджеры">
           <MessengerConnectPanel state="ready" rows={messengerRows} onRetry={noop} />

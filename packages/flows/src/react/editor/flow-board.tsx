@@ -143,10 +143,12 @@ function runMarks(editor: FlowEditorController) {
 
 function useBoardModel(editor: FlowEditorController) {
   const labels = useFlowLabels().editor;
-  const { flow, issues, selection, mode, select } = editor;
+  const { flow, issues, selection, mode, select, readOnly } = editor;
   return useMemo(() => {
     const marks = runMarks(editor);
-    const editable = mode !== "run";
+    // Выбирать ноду и стрелку можно вне прогона; двигать и соединять — ещё и не в режиме «только просмотр».
+    const selectable = mode !== "run";
+    const editable = selectable && !readOnly;
     const selectedExit = selection.kind === "state" || selection.kind === "any" ? selection.exitId : undefined;
 
     const nodes: BoardNode[] = flow.states.map((state, index) => ({
@@ -170,7 +172,7 @@ function useBoardModel(editor: FlowEditorController) {
           dimmed: marks !== null && !marks.visited.has(state.id) && !marks.next.has(state.id),
           run: marks === null ? null : marks.current === state.id ? "current" : marks.visited.has(state.id) ? "visited" : null,
           issues: countFor(issues, (issue) => issue.place.stateId === state.id),
-          onSelect: () => editable && select({ kind: "state", stateId: state.id }),
+          onSelect: () => selectable && select({ kind: "state", stateId: state.id }),
         },
       },
     }));
@@ -188,7 +190,7 @@ function useBoardModel(editor: FlowEditorController) {
             selected: selection.kind === "any",
             dimmed: marks !== null,
             issues: countFor(issues, (issue) => !issue.place.stateId && flow.anyState.exits.some((exit) => exit.id === issue.place.exitId)),
-            onSelect: () => editable && select({ kind: "any" }),
+            onSelect: () => selectable && select({ kind: "any" }),
           },
         },
       });
@@ -215,14 +217,14 @@ function useBoardModel(editor: FlowEditorController) {
             dimmed: marks !== null && !marks.traversed.has(exit.id) && !(marks.live.has(exit.id) && nodeId === marks.current),
             traversed: marks?.traversed.has(exit.id) ?? false,
             onSelect: () =>
-              editable && select(nodeId === ANY_STATE_LAYOUT_KEY ? { kind: "any", exitId: exit.id } : { kind: "state", stateId: nodeId, exitId: exit.id }),
+              selectable && select(nodeId === ANY_STATE_LAYOUT_KEY ? { kind: "any", exitId: exit.id } : { kind: "state", stateId: nodeId, exitId: exit.id }),
           },
         })),
     );
     return { nodes, edges };
     // `editor` целиком меняется на каждом рендере; от прогона берём `simulation` и `mode`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [flow, issues, selection, mode, editor.simulation, labels, select]);
+  }, [flow, issues, selection, mode, readOnly, editor.simulation, labels, select]);
 }
 
 /** Кнопки масштаба скина: ведут доску через `useReactFlow`. */
@@ -247,6 +249,8 @@ function clientPoint(event: MouseEvent | TouchEvent): { x: number; y: number } |
   }
   return { x: event.clientX, y: event.clientY };
 }
+
+const ignoreNodeClick = () => {};
 
 function Board({ editor }: { editor: FlowEditorController }) {
   const skin = useSkin();
@@ -309,7 +313,8 @@ function Board({ editor }: { editor: FlowEditorController }) {
     [edit],
   );
 
-  const editable = editor.mode !== "run";
+  const selectable = editor.mode !== "run";
+  const editable = selectable && !editor.readOnly;
   return (
     <ReactFlow<BoardNode, BoardEdge>
       nodes={nodes}
@@ -320,7 +325,9 @@ function Board({ editor }: { editor: FlowEditorController }) {
       onConnect={onConnect}
       onConnectEnd={onConnectEnd}
       onNodeDragStop={onNodeDragStop}
-      onPaneClick={() => editable && select({ kind: "overview" })}
+      // Без перетаскивания и связей (только просмотр) доска отключает клики по узлам, если нет обработчика: нужен хотя бы пустой.
+      onNodeClick={ignoreNodeClick}
+      onPaneClick={() => selectable && select({ kind: "overview" })}
       nodesConnectable={editable}
       elementsSelectable={false}
       deleteKeyCode={null}

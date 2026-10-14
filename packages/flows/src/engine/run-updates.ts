@@ -77,6 +77,7 @@ export function noteHumanMessage(run: FlowRun, now: number, dayKey?: string): Fl
     lastHumanAt: now,
     chain: 0,
     ...(run.nudgeStep === undefined ? {} : { nudgeStep: 0 }),
+    ...(run.serverTurns === undefined ? {} : { serverTurns: 0 }),
     ...(dayKey === undefined ? {} : { dayCounts: { [dayKey]: (run.dayCounts?.[dayKey] ?? 0) + 1 } }),
   };
 }

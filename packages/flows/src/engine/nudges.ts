@@ -56,9 +56,8 @@ export interface FirstWakeContext {
  * человек ответил или писал без ответа, агент ещё не писал, разговор закончен — `null`.
  */
 export function nextNudge(flow: AgentFlow, run: FlowRun, now: number, timeZone: string, context: FirstWakeContext = {}): NudgeDue | null {
-  const nudges = stateNudges(flow, run.state);
-  if (!nudges || run.endedAt !== undefined || run.lastAgentAt === null) return null;
-  if ((run.lastHumanAt !== null && run.lastHumanAt > run.lastAgentAt) || (context.unanswered ?? 0) > 0) return null;
+  const nudges = nudgesRunning(flow, run, context);
+  if (!nudges || run.lastAgentAt === null) return null;
   // Ответ сотрудника — слова агента (FR-507): тишина идёт от конца паузы.
   const base = Math.max(run.lastAgentAt, context.pausedUntil ?? 0, context.undeliveredAt ?? 0);
   const step = run.nudgeStep ?? 0;
@@ -73,13 +72,28 @@ export function nextNudge(flow: AgentFlow, run: FlowRun, now: number, timeZone: 
       if (!nudge || at < nudge.at) nudge = { at, reason: { kind: "daily", at: clock } };
     }
   }
-  if (nudges.giveUpAfter) {
-    // Слова сотрудника на паузе — тоже разговор (FR-507): тишина человека считается и от конца паузы.
-    const giveUp = Math.max(run.lastHumanAt ?? run.startedAt, context.pausedUntil ?? 0) + durationMs(nudges.giveUpAfter);
-    // Сервер стоял дольше тишины: пропущенное касание уже не к месту — разговор кончается.
-    if (!nudge || giveUp <= nudge.at || giveUp <= now) return { at: giveUp, reason: { kind: "give_up" } };
-  }
+  const giveUp = giveUpAt(flow, run, context);
+  // Сервер стоял дольше тишины: пропущенное касание уже не к месту — разговор кончается.
+  if (giveUp !== null && (!nudge || giveUp <= nudge.at || giveUp <= now)) return { at: giveUp, reason: { kind: "give_up" } };
   return nudge;
+}
+
+/** Касания ноды идут: они есть, разговор не кончен, агент писал последним и сообщений без ответа нет. */
+function nudgesRunning(flow: AgentFlow, run: FlowRun, context: FirstWakeContext): FlowNudges | null {
+  const nudges = stateNudges(flow, run.state);
+  if (!nudges || run.endedAt !== undefined || run.lastAgentAt === null) return null;
+  if ((run.lastHumanAt !== null && run.lastHumanAt > run.lastAgentAt) || (context.unanswered ?? 0) > 0) return null;
+  return nudges;
+}
+
+/**
+ * Когда наступит «не завершил» (`giveUpAfter` тишины человека), независимо от касаний: отложенное или не начатое
+ * касание конец разговора не двигает. Нет `giveUpAfter` или тишина не идёт — `null`.
+ */
+export function giveUpAt(flow: AgentFlow, run: FlowRun, context: FirstWakeContext = {}): number | null {
+  const giveUpAfter = nudgesRunning(flow, run, context)?.giveUpAfter;
+  // Слова сотрудника на паузе — тоже разговор (FR-507): тишина человека считается и от конца паузы.
+  return giveUpAfter ? Math.max(run.lastHumanAt ?? run.startedAt, context.pausedUntil ?? 0) + durationMs(giveUpAfter) : null;
 }
 
 /** Пишет ли сценарий утреннее: так задано, а нет — если у программы есть срок. */
@@ -103,6 +117,22 @@ export function nextMorning(flow: AgentFlow, run: FlowRun, timeZone: string, con
     morning = flowDay(run, morning, timeZone, schedule).nextDayStartAt;
   }
   return morning;
+}
+
+/** Касания, которые ждут правила «человек писал недавно»: агент пишет первым без дела, а не по программе или ответу. */
+const HELD_AT_DAY_START = new Set<FlowFirstReason["kind"]>(["morning", "silence", "daily"]);
+
+/**
+ * До какого момента молчат касания в начале дня: человек писал до начала дня и меньше `skipMorningIfHumanWithinMin`
+ * назад — как утреннее, ждут и касание тишины, перенесённое ночью на утро, и касание по часам. Переход ноды по сроку и
+ * ответ на ночные сообщения — по делу, они не ждут. Ждать не нужно — `null`.
+ */
+export function dayStartHoldUntil(flow: AgentFlow, run: FlowRun, now: number, timeZone: string, reasons: readonly FlowFirstReason[]): number | null {
+  const schedule = flow.schedule;
+  if (!schedule || run.lastHumanAt === null || !reasons.every((reason) => HELD_AT_DAY_START.has(reason.kind))) return null;
+  const until = run.lastHumanAt + (schedule.firstMessages?.skipMorningIfHumanWithinMin ?? DEFAULT_SKIP_MORNING_MIN) * 60_000;
+  if (until <= now) return null;
+  return run.lastHumanAt < flowDay(run, now, timeZone, schedule).dayStartedAt ? until : null;
 }
 
 /** Ответить на накопленное: в начале дня после последних записанных в место слов. Сообщений без ответа нет — `null`. */

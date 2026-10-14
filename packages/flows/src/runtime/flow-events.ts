@@ -43,6 +43,8 @@ export interface FlowRuntime {
   cardValues(ownerId: string): Promise<Record<string, unknown>>;
   /** Пояс человека; нет — пояс хода (подделки в тестах). */
   timeZones?: FlowTimeZones;
+  /** `AgentFlowOptions.defaultTimeZone`: пояс хода без страницы и без известного пояса человека — он, а не пояс службы. */
+  defaultTimeZone?: string;
   /** Переходы случились: копия состояния в хранилище, `onTransition`. Не бросает. */
   afterTransitions(input: { ownerId: string; chatId: string; pinned: PinnedFlow; run: FlowRun; transitions: Transition[] }): Promise<void>;
 }

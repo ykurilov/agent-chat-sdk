@@ -1,4 +1,4 @@
-import type { FinalAnswerStatus, UsageSource } from "../conversation/types";
+import type { FinalAnswerStatus, StoredMessage, UsageSource } from "../conversation/types";
 
 /** Что случилось с задачей или разговором. */
 export type AgentNoticeKind =
@@ -11,7 +11,13 @@ export type AgentNoticeKind =
   /** Правило приложения попросило агента написать первым. */
   | "conversation_started"
   /** Событие приложения или расширения (сработал таймер, сигнал). Модель видит `title`, человек плашку не видит. */
-  | "app";
+  | "app"
+  /**
+   * Реплика живого сотрудника человеку (с 0.53, `ChatService.appendStaffMessage`): `title` — её текст, `staffName` — кто.
+   * Модель видит её словами сотрудника, экран — сообщением сотрудника. Проверки ответа агента её текст знают; словами
+   * человека (`person_link_view`) она не считается.
+   */
+  | "staff";
 
 /**
  * Служебное сообщение: часть сообщения человека `{ type: "data-agent-notice", data: { notices: AgentNotice[] } }`.
@@ -23,6 +29,8 @@ export interface AgentNotice {
   taskId?: string;
   /** Название задачи («Отчёт по сделкам»); у `conversation_started` — указание агенту от приложения; у `app` — текст для модели. */
   title: string;
+  /** Есть у `staff`: имя сотрудника («Ольга»); нет — просто «сотрудник». */
+  staffName?: string;
   /** Есть у `app`: имя события (`flow_event`, `flow_timer`). */
   name?: string;
   /** Есть у `app`: данные события, JSON. */
@@ -62,14 +70,37 @@ export interface DeliverNoticesInput {
   awaitAnswer?: boolean;
   /** Источник расхода хода. По умолчанию `answer`; агент пишет первым — `first_message`. */
   usageSource?: UsageSource;
+  /**
+   * Потолок ходов сервера подряд без человека (защита от петли), с 0.53. По умолчанию `MAX_SERVER_TURNS_IN_ROW` (5):
+   * дальше сообщение пишется без хода. `false` — без потолка: частоту держит вызывающий (ходы по расписанию).
+   */
+  maxServerTurnsInRow?: number | false;
 }
 
 export interface DeliverNoticesResult {
   status: "delivered" | "busy" | "chat_gone";
   messageId?: string;
   turnStarted: boolean;
-  /** Ответ хода — только при `awaitAnswer` и начатом ходе. */
-  answer?: { messageId: string; text: string; status: FinalAnswerStatus };
+  /**
+   * Ответ хода — только при `awaitAnswer` и начатом ходе. `text` — текстовые части подряд; `parts` (с 0.53) — всё, что
+   * надо доставить человеку: текст, файлы, вызовы инструментов с результатом (карточка ролика, картинка, виджет), без
+   * рассуждений модели и служебных частей (`deliverableParts`).
+   */
+  answer?: { messageId: string; text: string; status: FinalAnswerStatus; parts: StoredMessage["parts"] };
+}
+
+/** Что служба принимает для реплики живого сотрудника в историю чата (`ChatService.appendStaffMessage`, с 0.53). */
+export interface AppendStaffMessageInput {
+  ownerId: string;
+  chatId: string;
+  /** Что сотрудник сказал человеку. Пустой — `TypeError`. */
+  text: string;
+  /** Кто ответил: модель и экран назовут его по имени. */
+  staffName?: string;
+  /** `true` — агент сразу отвечает после реплики (ход, как после служебного сообщения). По умолчанию `false`: только запись. */
+  wakeAgent?: boolean;
+  /** Повтор с тем же ключом ничего не добавляет. Нет — каждый вызов пишет новую реплику. */
+  deliveryKey?: string;
 }
 
 /** `ChatService.deliverNotices` (этап 4). */

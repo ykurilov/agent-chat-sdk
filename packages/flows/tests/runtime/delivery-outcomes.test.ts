@@ -1,5 +1,9 @@
 import type { ReplyCheck } from "@ykurilov/agent-chat-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { tool } from "ai";
+import { z } from "zod";
+import { saying } from "../../../core/tests/unit/support/notice-chat";
+import { finishPart, streamStart } from "../../../core/tests/unit/support/mock-model";
 import type { FlowDeliveryOutcome, FlowOutgoing } from "../../src/runtime/flow-types";
 import { agentTexts, clockAt, human, OWNER, tick, timerChat, type TimerChatSetup } from "./timer-chat";
 import { iso, msk, promptText } from "./days-chat";
@@ -54,7 +58,15 @@ describe("T705: доставка приложения", () => {
     const chat = appChannel();
     const id = await startedAndNudged(chat);
     expect(chat.sent).toEqual([
-      { ownerId: OWNER, chatId: id, messageId: expect.any(String), text: (await agentTexts(chat.service, id)).at(-1), reasons: [{ kind: "silence", step: 1 }], attempt: 1 },
+      {
+        ownerId: OWNER,
+        chatId: id,
+        messageId: expect.any(String),
+        text: (await agentTexts(chat.service, id)).at(-1),
+        parts: [expect.objectContaining({ type: "text", text: (await agentTexts(chat.service, id)).at(-1) })],
+        reasons: [{ kind: "silence", step: 1 }],
+        attempt: 1,
+      },
     ]);
     expect(await chat.store.countFirstMessages(OWNER, "2026-10-14")).toBe(1);
     expect(await chat.store.getChat(id)).toMatchObject({ dueAt: iso(msk(14, 11, 15)), delivery: null });
@@ -269,5 +281,27 @@ describe("T705: reportDelivery — исходы из каналов SDK", () => 
   it("исход чужого или неизвестного чата — ничего", async () => {
     const { chat } = await nudgedBySdk();
     await expect(chat.flow.reportDelivery({ chatId: "нет", messageId: "m", outcome: { status: "blocked" } })).resolves.toBeUndefined();
+  });
+});
+
+describe("0.53: доставка приложения отдаёт все части ответа, а не только текст", () => {
+  const showVideo = tool({ description: "Показать ролик", inputSchema: z.object({ id: z.string() }), execute: async ({ id }) => ({ видео: { id } }) });
+  const videoCall = [streamStart, { type: "tool-call" as const, toolCallId: "v1", toolName: "show_video", input: JSON.stringify({ id: "v-7" }) }, finishPart("tool-calls")];
+  const videoPart = expect.objectContaining({ type: "tool-show_video", toolCallId: "v1", state: "output-available", output: { видео: { id: "v-7" } } });
+
+  it("касание с карточкой ролика: в deliver — части ответа (ролик и текст), text прежний; повтор — те же части", async () => {
+    const chat = appChannel([{ status: "retry" }], { agent: { tools: { show_video: showVideo } }, scripts: [saying("Здравствуйте!"), videoCall, saying("Вот ролик.")] });
+    const id = await startedAndNudged(chat);
+    expect(chat.sent[0]).toMatchObject({ text: "Вот ролик.", parts: [videoPart, expect.objectContaining({ type: "text", text: "Вот ролик." })] });
+    expect(chat.sent[0]!.parts.map((part) => part.type)).not.toContain("step-start");
+    clockAt(msk(14, 10, 16));
+    await tick(chat, id);
+    expect(chat.sent[1]).toMatchObject({ attempt: 2, parts: chat.sent[0]!.parts });
+  });
+
+  it("касание только карточкой ролика, без текста, тоже уходит в deliver", async () => {
+    const chat = appChannel([], { agent: { tools: { show_video: showVideo } }, scripts: [saying("Здравствуйте!"), videoCall, [streamStart, finishPart()]] });
+    await startedAndNudged(chat);
+    expect(chat.sent).toEqual([expect.objectContaining({ text: "", parts: [videoPart] })]);
   });
 });

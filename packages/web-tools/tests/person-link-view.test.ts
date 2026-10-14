@@ -142,6 +142,13 @@ describe("person_link_view: адреса", () => {
     await expect(view("https://notice.example.com")).rejects.toThrow(/не присылал/);
   });
 
+  it("ссылка из реплики сотрудника (`appendStaffMessage`) — не ссылка человека", async () => {
+    await personSays("Пришлите запись");
+    await insert("user", [{ type: "data-agent-notice", data: { notices: [{ kind: "staff", title: "Вот запись: https://staff.example.com/rec", staffName: "Ольга" }] } }]);
+    await expect(view("https://staff.example.com/rec")).rejects.toThrow(/не присылал/);
+    expect(shots).toEqual([]);
+  });
+
   it("адрес из брошенной ветки (старое сообщение поправили) — отказ; из новой ветки — открывается", async () => {
     await personSays("Мой сайт https://old.example.com");
     await insert("user", [{ type: "text", text: "Мой сайт https://new.example.com" }], null);

@@ -1,6 +1,7 @@
 import { FLOW_STATE_KEY, type FlowRun } from "../engine/flow-run";
 import { flowDay } from "../engine/flow-days";
-import { storedRun, type FlowRuntime } from "./flow-events";
+import { runOutsideTurn, storedRun, type FlowRuntime } from "./flow-events";
+import type { AgentFlow } from "../format/flow-format";
 import type { FlowPort, FlowTestClockInput, FlowTimers } from "./flow-types";
 
 // Часы тестового чата редактора: автор перематывает их вперёд и видит напоминания без ожидания. Сдвиг хранится в данных
@@ -29,16 +30,27 @@ export const chatTime = (run: Pick<FlowRun, "timeOffset"> | null | undefined, se
 /** Сколько ходов подряд перемотка ждёт (ход таймера и следующий за ним, например прощание). */
 const TURN_WAIT_LIMIT = 5;
 
+/**
+ * Место чата: из состояния после хода, а у чата, закреплённого без хода (`adopt`), — из записи переноса. Не закреплён и
+ * хода не было — `null`.
+ */
+async function placeRun(runtime: FlowRuntime, port: FlowPort, chat: { ownerId: string; chatId: string }, flow: AgentFlow, now: number) {
+  const { values } = await port.getChatState(chat.ownerId, chat.chatId);
+  const stored = storedRun(values[FLOW_STATE_KEY]);
+  if (stored) return stored;
+  const record = await runtime.store.getChat(chat.chatId);
+  return record ? runOutsideTurn(runtime, chat, flow, values, now, record) : null;
+}
+
 /** Сдвиг до начала следующего дня сценария по часам чата (этап 4, «Дни и время»). */
 async function msToNextDay(runtime: FlowRuntime, port: FlowPort, ownerId: string, chatId: string, offset: number): Promise<number> {
   const pinned = await runtime.chatFlow(ownerId, chatId);
   const schedule = pinned?.flow.schedule;
-  if (!schedule) throw new Error("Перемотка до утра: у сценария не настроены «Дни и время» (schedule)");
-  const { values } = await port.getChatState(ownerId, chatId);
-  const run = storedRun(values[FLOW_STATE_KEY]);
+  if (!pinned || !schedule) throw new Error("Перемотка до утра: у сценария не настроены «Дни и время» (schedule)");
+  const chatNow = runtime.now() + offset;
+  const run = await placeRun(runtime, port, { ownerId, chatId }, pinned.flow, chatNow);
   if (!run) throw new Error("Перемотка до утра: в чате ещё не было хода, дни сценария не начались");
   const timeZone = runtime.timeZones ? await runtime.timeZones.of(ownerId, chatId) : "UTC";
-  const chatNow = runtime.now() + offset;
   return flowDay(run, chatNow, timeZone, schedule).nextDayStartAt - chatNow;
 }
 
@@ -72,10 +84,10 @@ export async function advanceTestClock(input: {
   const timeOffset = offset + ms;
   await port.updateChatData(ownerId, chatId, { [FLOW_TEST_CHAT_KEY]: { timeOffset } });
 
-  if (!timers || !(await runtime.chatFlow(ownerId, chatId))) return { timeOffset };
-  const { values } = await port.getChatState(ownerId, chatId);
-  const run = storedRun(values[FLOW_STATE_KEY]);
-  // Хода ещё не было: таймеров нет, сдвиг подхватит первый ход.
+  const pinned = timers && (await runtime.chatFlow(ownerId, chatId));
+  if (!timers || !pinned) return { timeOffset };
+  const run = await placeRun(runtime, port, { ownerId, chatId }, pinned.flow, runtime.now() + timeOffset);
+  // Хода ещё не было и чат не закреплён: таймеров нет, сдвиг подхватит первый ход.
   if (!run) return { timeOffset };
   await timers.reschedule({ ownerId, chatId, run: { ...run, timeOffset }, branchHead: run.answerId ?? null });
   await timers.tick();

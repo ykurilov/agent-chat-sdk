@@ -1,4 +1,4 @@
-import type { ComponentType, ReactNode } from "react";
+import type { ComponentType, CSSProperties, ReactNode } from "react";
 import type {
   ClientCardField,
   FlowAfterEnd,
@@ -124,6 +124,10 @@ export interface FlowHeaderProps {
   onSave?(): void;
   saving: boolean;
   dirty: boolean;
+  /** Приложение отказало в сохранении (без исключения или с ним): вместо «Сохранено» показать отказ. */
+  saveFailed?: boolean;
+  /** Только просмотр: показать плашку, не давать добавлять состояния и переименовывать. */
+  readOnly?: boolean;
   /** Есть, если приложение подключило перевод чатов и тестовый чат. */
   onOpenMigrate?(): void;
   onOpenTestChat?(): void;
@@ -336,6 +340,8 @@ export interface FlowJsonDialogProps {
   onDownload(): void;
   onLoad(text: string): void;
   onClose(): void;
+  /** Только просмотр: JSON можно смотреть, копировать и скачивать, но не загружать. */
+  readOnly?: boolean;
 }
 
 export interface FlowMigrateDialogProps {
@@ -387,6 +393,9 @@ export interface FlowEditorFrameProps {
   panel: ReactNode | null;
   /** Окно поверх: JSON, перевод чатов, тестовый чат. */
   dialog: ReactNode | null;
+  /** Класс и стиль корня, которые приложение передало в `FlowEditor`. Корень сам занимает высоту родителя, не меньше разумной. */
+  className?: string;
+  style?: CSSProperties;
 }
 
 /** Договор скина редактора сценария, версия 1. */

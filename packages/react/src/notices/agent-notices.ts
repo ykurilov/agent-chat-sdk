@@ -16,13 +16,35 @@ export interface AgentNotice {
 
 export const AGENT_NOTICE_PART_TYPE = "data-agent-notice";
 
-/** Служебные сообщения из сообщения человека; пусто — это обычное сообщение. */
+/** Служебные сообщения из сообщения человека, кроме реплик сотрудника; пусто — это обычное сообщение или реплика. */
 export function agentNoticesOf(message: AgentChatMessage): AgentNotice[] {
+  return rawNoticesOf(message).filter((notice) => notice.kind !== STAFF_NOTICE_KIND) as AgentNotice[];
+}
+
+/** Реплика живого сотрудника человеку (служебное сообщение вида `staff`, с 0.53). */
+export interface StaffReply {
+  text: string;
+  staffName?: string;
+}
+
+const STAFF_NOTICE_KIND = "staff";
+
+/** Реплики сотрудника из сообщения; пусто — их нет. */
+export function staffRepliesOf(message: AgentChatMessage): StaffReply[] {
+  return rawNoticesOf(message)
+    .filter((notice) => notice.kind === STAFF_NOTICE_KIND)
+    .map((notice) => {
+      const { title, staffName } = notice as { title?: unknown; staffName?: unknown };
+      return { text: typeof title === "string" ? title : "", ...(typeof staffName === "string" && staffName && { staffName }) };
+    });
+}
+
+function rawNoticesOf(message: AgentChatMessage): Array<{ kind: string }> {
   if (message.role !== "user") return [];
   return message.parts.flatMap((part) => {
     if (part.type !== AGENT_NOTICE_PART_TYPE) return [];
     const notices = (part as { data?: { notices?: unknown } }).data?.notices;
-    return Array.isArray(notices) ? (notices.filter(isAgentNotice) as AgentNotice[]) : [];
+    return Array.isArray(notices) ? (notices.filter(isAgentNotice) as Array<{ kind: string }>) : [];
   });
 }
 
@@ -69,7 +91,7 @@ export function noticeViewOf(notice: AgentNotice, controls: NoticeTaskControls):
   };
 }
 
-const statusLabel: Record<AgentNoticeViewKind, keyof Omit<NoticeLabels, "line">> = {
+const statusLabel: Record<AgentNoticeViewKind, keyof Omit<NoticeLabels, "line" | "staffSaid">> = {
   task_done: "taskDone",
   task_failed: "taskFailed",
   task_canceled: "taskCanceled",

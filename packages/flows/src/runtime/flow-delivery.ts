@@ -1,4 +1,4 @@
-import { ChatNotFoundError } from "@ykurilov/agent-chat-core";
+import { answerText, ChatNotFoundError, deliverableParts, type StoredMessage } from "@ykurilov/agent-chat-core";
 import type { FlowFirstReason } from "../engine/nudges";
 import type { FlowChatRecord } from "../store/flow-store";
 import type { FirstMessageRules, FlowAttachment, FlowDeliveryOutcome, FlowDeliveryReport, FlowOutgoing, FlowPort } from "./flow-types";
@@ -16,13 +16,15 @@ const RETRY_DELAYS_MS = [60_000, 5 * 60_000, 30 * 60_000] as const;
 
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
 const isoOf = (at: number) => new Date(at).toISOString();
+/** Есть что доставить: текст или другие части (карточка ролика, картинка, файл). */
+const hasContent = (answer: { text: string; parts: StoredMessage["parts"] }) => answer.text.trim() !== "" || answer.parts.some((part) => part.type !== "text");
 
 /** Ход «пишет первым» закончен: что ушло и когда. */
 export interface FirstTurnAnswer {
   ownerId: string;
   chatId: string;
   /** Готовый ответ хода (`awaitAnswer`); нет — каналы SDK. */
-  answer: { messageId: string; text: string; status: string } | undefined;
+  answer: { messageId: string; text: string; status: string; parts: StoredMessage["parts"] } | undefined;
   reasons: FlowFirstReason[];
   /** Момент хода по часам чата и пояс человека: счётчик дня. */
   at: number;
@@ -141,9 +143,9 @@ export function createFlowDelivery(input: {
         await input.firstMessages?.()?.record({ ownerId, at, timeZone });
         return null;
       }
-      // Ход прервался или не дал текста — отдавать нечего.
-      if (!answer || answer.status !== "complete" || answer.text.trim() === "") return null;
-      return sendAndSettle({ ownerId, chatId, messageId: answer.messageId, text: answer.text, reasons, attempt: 1 }, { at, timeZone });
+      // Ход прервался или не дал ни текста, ни карточек — отдавать нечего.
+      if (!answer || answer.status !== "complete" || !hasContent(answer)) return null;
+      return sendAndSettle({ ownerId, chatId, messageId: answer.messageId, text: answer.text, parts: answer.parts, reasons, attempt: 1 }, { at, timeZone });
     },
 
     async retry(record, serverAt) {
@@ -157,10 +159,11 @@ export function createFlowDelivery(input: {
         await store.setDelivery(chatId, null);
         return null;
       }
-      const text = answer.parts.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("");
+      const text = answerText(answer.parts);
+      const parts = deliverableParts(answer.parts);
       const reasons = pending.reasons.map((reason) => JSON.parse(reason) as FlowFirstReason);
       const timeZone = (await input.timeZoneOf?.(ownerId, chatId)) ?? record.timeZone;
-      return sendAndSettle({ ownerId, chatId, messageId: pending.messageId, text, reasons, attempt: pending.attempt }, { at: serverAt, timeZone });
+      return sendAndSettle({ ownerId, chatId, messageId: pending.messageId, text, parts, reasons, attempt: pending.attempt }, { at: serverAt, timeZone });
     },
 
     async report({ chatId, messageId, outcome }) {

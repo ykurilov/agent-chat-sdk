@@ -101,6 +101,19 @@ describe("T805: пауза при живом сотруднике", () => {
     expect(prompt).toContain("не противореч");
   });
 
+  it("реплика идёт путём ядра (`appendStaffMessage`): сообщение сотрудника с именем, модель видит имя", async () => {
+    const { chat, id } = await started();
+    await chat.flow.noteStaffReply({ ownerId: OWNER, chatId: id, text: "Запись эфира: https://staff.example/rec", staffName: "Мария" });
+    expect(await chat.store.getChat(id)).toMatchObject({ pausedUntil: iso(msk(13, 17)) });
+    const { messages } = (await chat.service.getHistory(OWNER, id))!;
+    expect(messages.at(-1)!.parts).toEqual([
+      expect.objectContaining({ data: expect.objectContaining({ notices: [{ kind: "staff", title: "Запись эфира: https://staff.example/rec", staffName: "Мария" }] }) }),
+    ]);
+    await chat.flow.resume({ ownerId: OWNER, chatId: id });
+    await human(chat, id, "Спасибо");
+    expect(promptText(chat.model.doStreamCalls.at(-1)!)).toContain("Живой сотрудник «Мария»");
+  });
+
   it("таймеры стоят на паузе; после неё дни идут как шли (SC-105)", async () => {
     const { chat, id } = await started();
     expect(await chat.store.getChat(id)).toMatchObject({ dueAt: iso(msk(14, 9)), dueExitId: "intro_day" });

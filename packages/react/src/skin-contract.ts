@@ -304,8 +304,19 @@ export type WorkStepsView =
   | { state: "live"; phrase: string }
   | { state: "done"; steps: Array<{ phrase: string; failed: boolean }>; count: number; open: boolean; onOpenChange: (open: boolean) => void };
 
+/** Реплика живого сотрудника человеку (версия 25, `ChatService.appendStaffMessage`): сказано от имени компании, не агентом. */
+export interface StaffMessageView {
+  /** Что сотрудник написал человеку: обычный текст, без разметки. */
+  text: string;
+  /** Имя сотрудника («Ольга»); нет — подписать просто «сотрудник». */
+  staffName?: string;
+}
+
 /**
- * Договор скина, версия 24 (в версии 24 добавилось только необязательное `AgentMessage.undelivered` — отметка
+ * Договор скина, версия 25 (в версии 25 добавилось только необязательное `StaffMessage` — реплика живого сотрудника,
+ * docs/skin-v25.md; скин версии 24 работает без правок: реплика показывается ответом агента с подписью
+ * `labels.notices.staffSaid`).
+ * Версия 24 (в версии 24 добавилось только необязательное `AgentMessage.undelivered` — отметка
  * «не доставлено», docs/skin-v24.md; скин версии 23 работает без правок: отметки нет).
  * Версия 23 (в версии 23 добавилось только необязательное `WorkSteps` — простой вид работы агента,
  * docs/work-view.md; скин версии 22 работает без правок: в простом виде шаги рисуются строкой `ToolCallRow` с фразой
@@ -559,6 +570,8 @@ export interface ChatSkin {
   TaskCard?: ComponentType<TaskCardView>;
   /** Версия 17. Служебное сообщение: результат задачи, подтверждение, «агент написал первым». Нет — обычное сообщение. */
   AgentNoticeView?: ComponentType<AgentNoticeViewProps>;
+  /** Версия 25. Реплика живого сотрудника. Нет — ответом агента с подписью «Сотрудник Ольга» (`labels.notices.staffSaid`). */
+  StaffMessage?: ComponentType<StaffMessageView>;
   /** Версия 23. Простой вид работы агента: живая строка и свёрнутые шаги. Нет — то же строкой `ToolCallRow`. */
   WorkSteps?: ComponentType<WorkStepsView>;
   /** Версия 13. Окно просмотра картинок и схем. Нет — картинки и схемы не открываются. */

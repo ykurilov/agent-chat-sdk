@@ -11,7 +11,8 @@ import "../src/styles.css";
 
 /*
  * Витрина редактора сценария (этап 5 плана 058): без сервера. Адрес: theme=light|dark, flow=sales-review|shop-support|
- * sheets-lesson|marathon-days (сценарий по дням, поля и проверка приложения). Сохранение и перевод идущих чатов — заглушки в памяти страницы.
+ * sheets-lesson|marathon-days (сценарий по дням, поля и проверка приложения), readonly=1 (только просмотр), save=reject|throw
+ * (приложение отказывает в сохранении), host=auto (родитель без высоты: редактор берёт высоту сам), root=custom (свои className и style у корня). Сохранение и перевод идущих чатов — заглушки в памяти страницы.
  */
 
 const params = new URLSearchParams(location.search);
@@ -64,13 +65,21 @@ function Gallery() {
     migrate: async () => ({ moved: 7 }),
     stateTitle: (_versionId, stateId) => (stateId === "old_offer" ? "Старое предложение" : undefined),
   };
+  const save = params.get("save");
+  const onSave = async (): Promise<{ ok: false; issues: Array<{ path: string; message: string }> } | undefined> => {
+    if (save === "throw") throw new Error("Сервер недоступен");
+    if (save === "reject") return { ok: false, issues: [{ path: "states[0]", message: "Приложение: название ноды занято." }] };
+    return undefined;
+  };
   return (
-    <div style={{ height: "100dvh" }}>
+    <div style={params.get("host") === "auto" ? undefined : { height: "100dvh" }}>
       <FlowEditor
         skin={tandemFlowEditorSkin}
         value={flow}
         onChange={setFlow}
-        onSave={async () => undefined}
+        onSave={onSave}
+        readOnly={params.get("readonly") === "1"}
+        {...(params.get("root") === "custom" ? { className: "gallery-custom-root", style: { height: 500, minHeight: 0 } } : {})}
         catalog={catalog}
         checks={checks}
         migration={migration}

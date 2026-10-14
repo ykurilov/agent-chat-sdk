@@ -40,23 +40,26 @@ flow.start();
 | `judge.fallback` | запасная модель судьи из каталога | обязательна |
 | `judge.model`, `judge.threshold`, `judge.timeoutMs` | основной судья, порог «выполнено», срок | decision-1, 0,7, 5000 мс |
 | `judge.openrouter` | `{ apiKey, baseUrl, headers }`: свой прокси и его заголовки | из окружения |
-| `firstMessages` | тихие часы, потолок в сутки, `canWriteNow`; `false` — без часов и потолка; запрет — `canWriteNow: () => false`. «Дни и время» сценария главнее | 21:00–09:00, 3 в сутки |
+| `firstMessages` | тихие часы, потолок в сутки, `canWriteNow`; `false` — без часов и потолка. `canWriteNow` → `false` — «не сейчас», касание через час, `{ retryAt }` — в свой момент; конец разговора от него не зависит. «Дни и время» сценария главнее | 21:00–09:00, 3 в сутки |
 | `onTransition` | каждый переход: `from`, `to`, `exitId`, `decidedBy`, `tags`, `reason`, `day` | — |
 | `onFinish` | конец разговора: `reason` (`final`, `deadline`, `abandoned`, `blocked`), `day`, `state`, `tags`, `run` | — |
 | `clientCard` | карточка клиента в базе приложения: `read`, `write`, `forget` | таблица модуля |
 | `clientFacts` | свободные факты о человеке в карточке («ведёт блог»): `flow_note { fact }`, список в блоке `flow:client`, «забудь» стирает. Свои таблицы фактов — `clientCard.facts`; правило делит факты (карточка) и правила общения (память SDK) | выключено |
 | `people` | пояс человека в базе приложения: `readTimeZone`, `writeTimeZone` | таблица модуля |
+| `defaultTimeZone` | пояс, пока пояс человека неизвестен: человек → страница → он → `agent.timeZone` → сервер | — |
 | `pause.staffSilenceHours` | через сколько часов молчания сотрудника пауза снимается сама | 2 |
 | `timers` | `tickMs` — как часто смотреть таймеры, `leaseMs` — аренда копией сервера | 15 000 и 60 000 мс |
 | `logError` | строки журнала | `console.error` |
 | `now` | часы: тесты подменяют время целиком | сейчас |
 
 Что есть у `flow`: `withChat`, `attach`, `start`, `stop`, `settled`, `signal`, `adopt`, `end`, `admit`, `pause`, `resume`,
-`noteStaffReply`, `reportDelivery`, `readRun`, `chatsByState`, `migrateChats`, `readClientCard`, `forgetClientCard`,
-`advanceTestClock`.
+`noteStaffReply` (реплика сотрудника — путём `service.appendStaffMessage`), `reportDelivery`, `readRun`, `chatsByState`,
+`migrateChats`, `readClientCard`, `forgetClientCard`, `advanceTestClock`, `tick` (один обход таймеров: тесты, свой
+планировщик). Из пакета — ещё `factId(text)`: id факта карточки.
 
 - `attach(service)` — одна служба на всё приложение. `attach({ portFor, deliver })` — служба на чат и своя доставка
-  того, что агент пишет первым; `deliver` возвращает исход: `delivered`, `retry`, `window_closed`, `blocked`, `failed`.
+  того, что агент пишет первым. `deliver` получает текст (`text`) и все части ответа для человека (`parts`: карточка
+  ролика, картинка, файл, виджет — с 0.53) и возвращает исход: `delivered`, `retry`, `window_closed`, `blocked`, `failed`.
 - Каналы SDK сообщают исход сами: `createMessengers({ onAnswerDelivery: (report) => flow.reportDelivery(report) })`.
 - Недоставленное касание (`failed`, `window_closed`) не засчитывается: тот же шаг повторится через свой срок от момента
   отказа. Пока ждёт повтор доставки, новых ходов нет.
@@ -77,6 +80,10 @@ flow.start();
 `service.createChat(userId, { data: flowTestChatData() })`, `flow.advanceTestClock` и `flow.readRun`. Кнопка «К началу
 следующего дня» — необязательный `advanceToNextDay`: на сервере `flow.advanceTestClock({ ownerId, chatId, to:
 "next_day_start" })`.
+
+`FlowEditor`: `readOnly` — доска только для просмотра, пока сценарий правит внешний агент; `onSave` может вернуть
+`{ ok: false, issues }` — отказ без исключения, находки встают у нод; `className` и `style` идут на корень, высота по
+умолчанию — родителя, не меньше разумной. Подробно — [docs/flows.md](../../docs/flows.md).
 
 Свои проверки приложения: `checks` у `FlowEditor` и `FlowTestChat`, на сервере те же — `checkFlow(flow, catalog, {
 checks })`. Поля приложения для карточки и попутных задач — `catalog.fields`.

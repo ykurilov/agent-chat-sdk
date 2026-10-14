@@ -22,6 +22,8 @@ export function noticeText(notice: AgentNotice): string {
       return `Начни разговор: ${notice.title}`;
     case "app":
       return notice.title;
+    case "staff":
+      return staffNoticeText(notice);
   }
 }
 
@@ -36,4 +38,10 @@ export function noticesOfPart(part: { type: string; data?: unknown }): AgentNoti
 export function noticePartForModel(part: { type: string; data?: unknown }): TextPart | undefined {
   if (part.type !== AGENT_NOTICE_PART_TYPE) return undefined;
   return { type: "text", text: noticesOfPart(part).map(noticeText).join("\n\n") };
+}
+
+/** Реплика сотрудника для модели: от чьего имени сказано и что делать дальше. */
+function staffNoticeText(notice: AgentNotice): string {
+  const who = notice.staffName ? `Живой сотрудник «${notice.staffName}»` : "Живой сотрудник";
+  return `${who} ответил человеку вместо тебя: «${notice.title}». Это сказано от вашего имени: продолжай разговор с учётом этого и не противоречь сотруднику.`;
 }

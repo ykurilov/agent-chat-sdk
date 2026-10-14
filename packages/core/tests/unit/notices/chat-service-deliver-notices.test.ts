@@ -94,6 +94,18 @@ describe("T042: deliverNotices", () => {
     await waitTurn(service, chat.id);
   });
 
+  it("свой потолок ходов сервера подряд: `false` — без потолка, число — свой предел", async () => {
+    const model = scriptedModel();
+    const { service } = noticeService(model);
+    const chat = await askInNewChat(service);
+    for (let index = 1; index <= 7; index++) {
+      expect(await service.deliverNotices({ ...deliver(chat.id, `k${index}`), maxServerTurnsInRow: false })).toMatchObject({ turnStarted: true });
+      await waitTurn(service, chat.id);
+    }
+    expect(await service.deliverNotices({ ...deliver(chat.id, "k8"), maxServerTurnsInRow: 7 })).toMatchObject({ turnStarted: false });
+    expect(model.doStreamCalls).toHaveLength(8);
+  });
+
   it("лимит трат исчерпан — сообщение пишется, хода нет", async () => {
     const model = scriptedModel();
     let reached = false;

@@ -4,7 +4,7 @@ import { activeExits, stateById } from "./flow-graph";
 import { exitTarget } from "./targets";
 import { nextClockTime, parseClock } from "./zoned-time";
 import { deadlineAt, stateDaysDue } from "./flow-days";
-import { nextMorning, nextNightReply, nextNudge, type FirstWakeContext, type FlowFirstReason } from "./nudges";
+import { giveUpAt, nextMorning, nextNightReply, nextNudge, type FirstWakeContext, type FlowFirstReason } from "./nudges";
 
 /** `exitId` срока «срок вышел» в `FlowDue`: это не выход ноды, а конец разговора (`schedule.lengthDays`). */
 export const FLOW_DEADLINE_EXIT = "@deadline";
@@ -115,11 +115,57 @@ export function dueReasons(flow: AgentFlow, run: FlowRun, now: number, timeZone:
   const none: DueReasons = { deadline: false, giveUp: false, exitId: null, reasons: [] };
   if (run.endedAt !== undefined) return none;
   const exit = nextDue(flow, run, now, timeZone);
-  if (exit && exit.at <= now && exit.exitId === FLOW_DEADLINE_EXIT) return { ...none, deadline: true };
+  // Срок — сам по себе: переход ноды, который наступил раньше, но ждёт хода (касание отложено), его не заслоняет.
+  const deadline = flow.schedule ? deadlineAt(run, timeZone, flow.schedule) : null;
+  if (deadline !== null && deadline <= now) return { ...none, deadline: true };
   const { dues, giveUp } = firstMessageDues(flow, run, now, timeZone, context);
   if (giveUp !== null && giveUp <= now) return { ...none, giveUp: true };
   const exitId = exit && exit.at <= now ? exit.exitId : null;
   // Новая нода — свой разговор: касание по тишине старой ноды уже не к месту.
   const reasons = dues.filter((due) => due.at <= now && !(exitId && (due.reason.kind === "silence" || due.reason.kind === "daily"))).map((due) => due.reason);
   return { ...none, exitId, reasons };
+}
+
+/** Ближайший срок «пишет первым» строго после `now`: касание, утреннее, накопленное. Нет — `null`. */
+export function nextFirstMessageAfter(flow: AgentFlow, run: FlowRun, now: number, timeZone: string, context: FirstWakeContext = {}): number | null {
+  if (run.endedAt !== undefined) return null;
+  const ahead = firstMessageDues(flow, run, now, timeZone, context).dues.filter((due) => due.at > now);
+  return ahead.length === 0 ? null : Math.min(...ahead.map((due) => due.at));
+}
+
+/** Ближайший конец разговора после `now`: «срок вышел» или «не завершил». Нет — `null`. */
+export function endingWake(flow: AgentFlow, run: FlowRun, now: number, timeZone: string, context: FirstWakeContext): FlowDue | null {
+  if (run.endedAt !== undefined) return null;
+  const deadline = flow.schedule ? deadlineAt(run, timeZone, flow.schedule) : null;
+  const giveUp = giveUpAt(flow, run, context);
+  const candidates: FlowDue[] = [
+    ...(deadline !== null && deadline > now ? [{ at: deadline, exitId: FLOW_DEADLINE_EXIT }] : []),
+    ...(giveUp !== null && giveUp > now ? [{ at: giveUp, exitId: FLOW_GIVE_UP_EXIT }] : []),
+  ];
+  return earliest(candidates);
+}
+
+const earliest = (dues: FlowDue[]): FlowDue | null => dues.reduce<FlowDue | null>((best, due) => (best === null || due.at < best.at ? due : best), null);
+
+/**
+ * Касание отложено (нельзя писать сейчас, ход не начался): срок — повтор `retry`, но не позже ближайшего срока, который не
+ * касание: выход ноды, «срок вышел», «не завершил». Конец разговора не зависит от того, дошло ли касание. Сроки не позже
+ * `now` (наступивший выход, который ждёт хода) не в счёт. `retry.at: null` — повтора нет. Ничего нет — `null`.
+ */
+export function deferredWake(
+  flow: AgentFlow,
+  run: FlowRun,
+  now: number,
+  timeZone: string,
+  context: FirstWakeContext,
+  retry: { at: number | null; exitId: string },
+): FlowDue | null {
+  if (run.endedAt !== undefined) return null;
+  const exit = nextDue(flow, run, now, timeZone);
+  const ending = endingWake(flow, run, now, timeZone, context);
+  return earliest([
+    ...(exit && exit.at > now && exit.exitId !== FLOW_DEADLINE_EXIT ? [exit] : []),
+    ...(ending ? [ending] : []),
+    ...(retry.at !== null ? [{ at: Math.max(retry.at, now), exitId: retry.exitId }] : []),
+  ]);
 }

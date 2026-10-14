@@ -152,7 +152,8 @@ describe("T071 тик: занятый чат, удалённый чат, пов�
     clockAt(T0 + 3 * HOUR);
     await tick(chat, id);
     expect(await stateOfChat(chat.service, id)).toBe("intro");
-    expect((await chat.store.getChat(id))?.dueAt).toBeNull();
+    // Касание — через час: отказ хода не снимает сроки.
+    expect((await chat.store.getChat(id))?.dueAt).toBe(iso(T0 + 4 * HOUR));
     expect(await chat.flow.readRun(OWNER, id)).toMatchObject({ state: "remind" });
 
     clockAt(T0 + 4 * HOUR);
@@ -214,7 +215,7 @@ describe("T072 правила «писать первым» в тике", () => 
     expect(await chat.store.countFirstMessages(OWNER, localDay(msk(22), MSK))).toBe(0);
   });
 
-  it("canWriteNow вернул false — агент первым не пишет, таймер только переводит состояние к следующему ходу", async () => {
+  it("canWriteNow вернул false — агент первым не пишет, таймер переводит состояние к следующему ходу, касание — через час", async () => {
     const chat = timerChat({ firstMessages: { canWriteNow: () => false } });
     const { id } = await chat.service.createChat(OWNER);
     await human(chat, id, "привет");
@@ -222,7 +223,7 @@ describe("T072 правила «писать первым» в тике", () => 
     await tick(chat, id);
     expect(await appNotices(chat.storage, id)).toEqual([]);
     expect(await chat.flow.readRun(OWNER, id)).toMatchObject({ state: "remind" });
-    expect((await chat.store.getChat(id))?.dueAt).toBeNull();
+    expect((await chat.store.getChat(id))?.dueAt).toBe(iso(T0 + 4 * HOUR));
   });
 
   it("человек ответил, пока таймер проверял правила, — точный текст не уходит, срок по новому ответу", async () => {

@@ -18,6 +18,8 @@ export type {
   StoredCompaction,
   StoredMessage,
   TokenUsage,
+  UsageByChatFilter,
+  UsageChatSum,
   UsageFilter,
   UsageRecord,
   UsageSource,
@@ -37,7 +39,8 @@ export type {
 } from "./helpers/helper-types";
 export { runHelper } from "./helpers/run-helper";
 export { AGENT_NOTICE_PART_TYPE } from "./notices/agent-notice";
-export type { AgentNotice, AgentNoticeKind, DeliverNotices, DeliverNoticesInput, DeliverNoticesResult } from "./notices/agent-notice";
+export type { AgentNotice, AgentNoticeKind, AppendStaffMessageInput, DeliverNotices, DeliverNoticesInput, DeliverNoticesResult } from "./notices/agent-notice";
+export { MAX_SERVER_TURNS_IN_ROW } from "./notices/deliver-notices";
 export type {
   AskModel,
   AskModelInput,
@@ -61,6 +64,7 @@ export { withoutGlueFragments } from "./conversation/glue-fragments";
 export { loadCurrentBranch, loadCurrentBranchLinks } from "./conversation/load-current-branch";
 export type { AnswerEdit, AnswerEditErrorKind } from "./conversation/answer-edit";
 export { AnswerEditError, answerText, EDITED_TOOL_OUTPUT_MAX_BYTES } from "./conversation/edit-answer-parts";
+export { deliverableParts } from "./conversation/deliverable-parts";
 export { activeCompaction } from "./compaction/compaction-plan";
 export type { ActiveCompaction } from "./compaction/compaction-plan";
 

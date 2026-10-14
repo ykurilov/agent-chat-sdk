@@ -6,6 +6,7 @@ export {
   type FlowMigrateController,
   type FlowMigrateRow,
   type FlowMigration,
+  type FlowSaveResult,
   type FlowSelection,
   type UseFlowEditorOptions,
 } from "./use-flow-editor";

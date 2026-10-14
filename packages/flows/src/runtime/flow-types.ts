@@ -13,6 +13,7 @@ import type {
   ReplyChecksSetting,
   StateChangedHandler,
   StepContextInput,
+  StoredMessage,
 } from "@ykurilov/agent-chat-core";
 import type { ToolSet } from "ai";
 import type { AgentFlow, FlowAfterEnd, FlowSchedule } from "../format/flow-format";
@@ -161,6 +162,12 @@ export interface FlowTimerSettings {
   tickMs?: number;
   /** Аренда таймера копией сервера, мс. По умолчанию 60 000. */
   leaseMs?: number;
+  /**
+   * Мягкий потолок ходов сервера подряд без сообщения человека (касания, переходы по таймерам), с 0.53. Дошли — строка в
+   * журнал, касания и переходы по таймерам ждут сообщения человека; «срок вышел» и «не завершил» — в свой срок.
+   * По умолчанию 50; `false` — без потолка.
+   */
+  maxServerTurnsInRow?: number | false;
 }
 
 export interface FlowTimers {
@@ -245,8 +252,14 @@ export interface FlowOutgoing {
   chatId: string;
   /** Ключ повтора: тот же текст при `retry` уходит с тем же `messageId`. */
   messageId: string;
-  /** Готовый, проверенный текст. */
+  /** Готовый, проверенный текст: текстовые части ответа подряд. */
   text: string;
+  /**
+   * Все части ответа, которые надо доставить человеку (с 0.53): текст, файлы, вызовы инструментов с результатом —
+   * карточка ролика (`tool-show_video`), картинка, виджет. Без рассуждений модели и служебных частей (`deliverableParts`).
+   * Карточки строит приложение, как для обычного ответа.
+   */
+  parts: StoredMessage["parts"];
   reasons: FlowFirstReason[];
   /** Номер попытки, с 1. */
   attempt: number;
@@ -314,8 +327,13 @@ export interface FlowPauseSettings {
 export interface FlowStaffReply {
   ownerId: string;
   chatId: string;
-  /** Что он написал: агент увидит это в своём контексте и продолжит, не противореча. Нет — только продление паузы. */
+  /**
+   * Что он написал: ложится в историю сообщением сотрудника (`ChatService.appendStaffMessage`, с 0.53) — агент увидит
+   * его в своём контексте и продолжит, не противореча; словами человека оно не считается. Нет — только продление паузы.
+   */
   text?: string;
+  /** Имя сотрудника (с 0.53): модель и экран назовут его. */
+  staffName?: string;
 }
 
 export interface FlowPauseInput {
@@ -401,7 +419,7 @@ export interface AgentFlowOptions {
   /** `memoryFlowStore()`, `sqliteFlowStore(path)`, `postgresFlowStore(pool)`. */
   store: FlowStore;
   judge: JudgeSettings;
-  /** Правила «писать первым». По умолчанию тихие часы 21:00–09:00 и не больше 3 в сутки; `false` — без ограничений; запрет — `canWriteNow`, вернувший `false`. */
+  /** Правила «писать первым». По умолчанию тихие часы 21:00–09:00 и не больше 3 в сутки; `false` — без ограничений; «не сейчас» — `canWriteNow`. */
   firstMessages?: FirstMessagesSetting;
   onTransition?: (event: FlowTransitionEvent) => void | Promise<void>;
   /** Разговор закончился (`final`, `deadline`, `abandoned`, `blocked`). Ошибка приложения не ломает сценарий. */
@@ -415,6 +433,12 @@ export interface AgentFlowOptions {
   clientFacts?: boolean;
   /** Пояс человека в хранилище приложения. Нет — таблица модуля. */
   people?: FlowPeople;
+  /**
+   * Пояс по умолчанию (IANA, «Europe/Moscow»), с 0.53: по нему дни, тихие часы и касания, пока пояс человека неизвестен
+   * (до первого хода, мессенджер без страницы). Порядок: человек → страница → `defaultTimeZone` → пояс службы
+   * (`agent.timeZone`) → сервер. Не пояс — `TypeError` при создании.
+   */
+  defaultTimeZone?: string;
   pause?: FlowPauseSettings;
   timers?: FlowTimerSettings;
   logError?: (message: string) => void;
@@ -471,6 +495,11 @@ export interface AgentFlowHandle {
   advanceTestClock(input: FlowTestClockInput): Promise<{ timeOffset: number }>;
   start(): void;
   stop(): Promise<void>;
+  /**
+   * Один обход таймеров сейчас: сработает всё, чей срок наступил. Для тестов и ручного обхода (свой планировщик вместо
+   * `start()`); в обычной работе обходы идут сами после `start()`.
+   */
+  tick(): Promise<void>;
   /** Дождаться фоновой работы: судья после хода, доставка, `onTransition`, `onFinish`. Для тестов и остановки. */
   settled(): Promise<void>;
 }

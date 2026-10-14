@@ -203,7 +203,7 @@ describe("T706: лимит денег при ходе по таймеру (SC-10
     clockAt(msk(14, 9));
     await tick(chat, id);
     expect(chat.model.doStreamCalls).toHaveLength(1);
-    expect(await chat.store.getChat(id)).toMatchObject({ dueAt: iso(msk(15, 9)), dueExitId: "@first" });
+    expect(await chat.store.getChat(id)).toMatchObject({ dueAt: iso(msk(15, 9)), dueExitId: "intro_day" });
     expect((await chat.store.getChat(id))!.pending).toEqual([expect.objectContaining({ kind: "transition" })]);
 
     exhausted = false;

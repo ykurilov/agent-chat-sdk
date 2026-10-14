@@ -78,6 +78,7 @@ export type {
   MediaViewerProps,
   MessageActionView,
   ModelChoiceView,
+  StaffMessageView,
   TaskCardView,
   TaskStatusView,
   ToolApprovalView,

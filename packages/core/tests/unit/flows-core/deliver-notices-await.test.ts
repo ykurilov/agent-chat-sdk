@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import { tool } from "ai";
+import { z } from "zod";
 import type { ChatEvent, PrepareTurn, UsageRecord } from "../../../src/index";
 import { SpendingLimitReachedError } from "../../../src/spending/spending-limits";
 import type { SpendingLimits } from "../../../src/spending/spending-limits";
@@ -65,7 +67,7 @@ describe("061 T203: deliverNotices({ awaitAnswer: true })", () => {
     const { messages, running } = await service.getHistory("anna", chat.id);
     expect(running).toBe(false);
     const answer = messages.at(-1)!;
-    expect(result.answer).toEqual({ messageId: answer.id, text: "ответ 1", status: "complete" });
+    expect(result.answer).toEqual({ messageId: answer.id, text: "ответ 1", status: "complete", parts: [expect.objectContaining({ type: "text", text: "ответ 1" })] });
     // Доставит приложение: каналы SDK по этому событию ход не провожают.
     expect(events).toContainEqual(expect.objectContaining({ type: "turn-started", messageId: answer.id, trigger: "notice", deliveredByApp: true }));
   });
@@ -85,6 +87,28 @@ describe("061 T203: deliverNotices({ awaitAnswer: true })", () => {
     const chat = await service.createChat("anna");
     const result = await service.deliverNotices(notice(chat.id, { awaitAnswer: true }));
     expect(result.answer?.text).toBe("Привет, Анна.");
+  });
+
+  it("части ответа для человека: текст и вызов инструмента с результатом (карточка ролика), без рассуждений и отметок шагов", async () => {
+    const showVideo = tool({ description: "Показать ролик", inputSchema: z.object({ id: z.string() }), execute: async ({ id }) => ({ видео: { id, название: "Акварель" } }) });
+    const { service } = setup({ agent: { tools: { show_video: showVideo } } }, [
+      [
+        streamStart,
+        { type: "reasoning-start", id: "r1" },
+        { type: "reasoning-delta", id: "r1", delta: "покажу ролик" },
+        { type: "reasoning-end", id: "r1" },
+        { type: "tool-call", toolCallId: "v1", toolName: "show_video", input: JSON.stringify({ id: "v-7" }) },
+        finishPart("tool-calls"),
+      ],
+      [streamStart, ...textParts(["Вот ролик про акварель."]), finishPart()],
+    ]);
+    const chat = await service.createChat("anna");
+    const result = await service.deliverNotices(notice(chat.id, { awaitAnswer: true }));
+    expect(result.answer?.text).toBe("Вот ролик про акварель.");
+    expect(result.answer?.parts).toEqual([
+      expect.objectContaining({ type: "tool-show_video", toolCallId: "v1", state: "output-available", output: { видео: { id: "v-7", название: "Акварель" } } }),
+      expect.objectContaining({ type: "text", text: "Вот ролик про акварель." }),
+    ]);
   });
 
   it("готовый текст (reply) с awaitAnswer — он же в ответе", async () => {

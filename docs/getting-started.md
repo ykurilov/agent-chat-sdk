@@ -409,6 +409,8 @@ process.on("SIGTERM", shutdown);
   Для подтверждения действий ещё два: `updateAwaitingMessage(messageId, patch)` (переписать части ответа, который ждёт решения, и при продолжении вернуть ему статус «пишется») и `getMessage(messageId)` (сообщение по номеру или `null`).
   Для веток ответов два метода: `insertBranchSelection` (дописать запись «выбран этот вариант») и `listBranchSelections` (отдать записи чата по порядку добавления).
   Журнал расхода: `sumUsage(filter)` принимает поля `ownerId`, `chatId`, `messageId`, `source` и `since`; свои хранилища обязаны учитывать все (общие тесты это проверяют).
+  Сумма по списку чатов одним запросом — необязательный `sumUsageByChat({ chatIds, ownerId?, source?, since? })` (с 0.53):
+  строки по чату и паре «модель × провайдер», чатов без расхода в ответе нет. Есть у памяти, SQLite и PostgreSQL.
   Для нескольких копий сервера — знак жизни идущего ответа: поле записи `alive` (`"now"` — время ставит само хранилище,
   `"released"` — ответ брошен штатной остановкой), лёгкая отметка `markAnswerAlive(messageId)` и
   `listSilentAnswerIds({ silentForMs, chatId? })` (идущие ответы без отметки дольше `silentForMs`). Без
@@ -678,7 +680,7 @@ const skin = { ...tandemSkin, ToolCallRow: MyToolCallRow };
 То же у `Reasoning` (рассуждения агента).
 
 Какие данные получает каждый компонент — в типе `ChatSkin` (`packages/react/src/skin-contract.ts`) и в описаниях
-последних версий договора ([версия 24](./skin-v24.md), [23](./skin-v23.md), [22](./skin-v22.md), [21](./skin-v21.md), [20](./skin-v20.md), [19](./skin-v19.md), [18](./skin-v18.md)); `Composer.voice` появился в версии 5 ([contracts/voice.md](contracts/voice-input/voice.md)); `BranchSwitcher`, `MessageEditor` и свойства сообщений для веток — в версии 6 ([contracts/branches-and-edit.md](contracts/branches-and-edit/branches-and-edit.md)); `ChatWorkspace` и `ChatList` — в версии 7 (раздел «Список чатов»); `CompactionDivider` появился в версии 4 —
+последних версий договора ([версия 25](./skin-v25.md), [24](./skin-v24.md), [23](./skin-v23.md), [22](./skin-v22.md), [21](./skin-v21.md), [20](./skin-v20.md), [19](./skin-v19.md), [18](./skin-v18.md)); `Composer.voice` появился в версии 5 ([contracts/voice.md](contracts/voice-input/voice.md)); `BranchSwitcher`, `MessageEditor` и свойства сообщений для веток — в версии 6 ([contracts/branches-and-edit.md](contracts/branches-and-edit/branches-and-edit.md)); `ChatWorkspace` и `ChatList` — в версии 7 (раздел «Список чатов»); `CompactionDivider` появился в версии 4 —
 [contracts/compaction-and-search.md](contracts/compaction-and-search/compaction-and-search.md). Свой `Composer` получает `modelChoice`
 (меню моделей и уровни рассуждений); если он его не рисует, выбора модели в чате нет.
 Живой пример — `apps/demo/src/custom-tool-call-row.tsx` и переключатель «Свой ToolCallRow» в демо.

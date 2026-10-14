@@ -69,6 +69,8 @@ export interface FlowRun {
   dayCounts?: Record<string, number>;
   /** Какой шаг ряда касаний следующий; сообщение человека возвращает к 0. */
   nudgeStep?: number;
+  /** Ходов сервера подряд (по служебным сообщениям) после последнего сообщения человека, с 0.53; нет — 0. */
+  serverTurns?: number;
   /** Последний ход «пишет первым», после которого человек не писал, и счёт до него: не доставлен — не засчитан (FR-309). */
   touch?: FlowTouch;
   /** Когда разговор закончился. После конца таймеров и касаний нет. */
@@ -110,11 +112,19 @@ export interface FirstMessagesRules {
   quietHours: { from: string; to: string };
   /** Не больше стольких сообщений первым за сутки человека. */
   maxPerDay: number;
-  /** Своя проверка приложения: например, человек отписался. */
-  canWriteNow?: (input: { ownerId: string; chatId: string; at: Date }) => boolean | Promise<boolean>;
+  /**
+   * Своя проверка приложения: например, человек отписался или остановлены расходы. `true` — писать. `false` — не сейчас:
+   * касание повторится через час. `"never"` — молчать до сообщения человека. `{ retryAt }` — повторить в этот момент
+   * (негодная дата — как `false`, прошедшая — через минуту). Конец разговора («срок вышел», «не завершил») и переходы нод
+   * по таймерам от ответа не зависят: наступают в свой срок.
+   */
+  canWriteNow?: (input: { ownerId: string; chatId: string; at: Date }) => CanWriteNow | Promise<CanWriteNow>;
 }
 
-/** `false` — правила выключены: агент пишет первым без тихих часов и потолка. Запретить совсем — `canWriteNow: () => false`. */
+/** Ответ `canWriteNow`: писать, не сейчас (повтор через час), молчать до сообщения человека или повторить в названный момент (с 0.53). */
+export type CanWriteNow = boolean | "never" | { retryAt: Date };
+
+/** `false` — правила выключены: агент пишет первым без тихих часов и потолка. Не писать первым — `canWriteNow: () => "never"`. */
 export type FirstMessagesSetting = Partial<FirstMessagesRules> | false;
 
 export const DEFAULT_FIRST_MESSAGES: Readonly<Omit<FirstMessagesRules, "canWriteNow">> = {

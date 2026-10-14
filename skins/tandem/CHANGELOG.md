@@ -1,5 +1,43 @@
 # @ykurilov/agent-chat-skin-tandem
 
+## 0.53.0
+
+### Patch Changes
+
+- Updated dependencies [b6a7786]
+  - @ykurilov/agent-chat-flows@0.53.0
+  - @ykurilov/agent-chat-react@0.53.0
+  - @ykurilov/agent-chat-messengers@0.53.0
+  - @ykurilov/agent-chat-sandbox@0.53.0
+
+## 0.52.0
+
+### Minor Changes
+
+- d9b2ea5: Редактор сценариев (`FlowEditor`) для кабинета эксперта: три мелочи.
+  
+  - `readOnly` — доска только для просмотра, пока сценарий правит внешний агент. Нельзя двигать, соединять и удалять узлы,
+    править панели, сохранять, загружать JSON и переводить чаты. Открывать узлы, проверять граф, прогонять и смотреть JSON
+    можно. В шапке плашка «Только просмотр» (`labels.header.readOnly`).
+  - `onSave` может вернуть `{ ok: false, issues?: [{ path, message }] }`: отказ без исключения. Шапка пишет «Не
+    сохранено», `issues` встают у нод и выходов и видны в «Проверить граф». Ничего (`void`) и `{ ok: true }` — успех, как
+    раньше. Исключение из `onSave` — такой же отказ, без необработанной ошибки в консоли.
+  - `className` и `style` у `FlowEditor` идут на корень. Корень по умолчанию занимает высоту родителя, но не меньше 60%
+    экрана (не меньше 420 px), на телефоне — экрана целиком (не меньше 640 px): холст не схлопывается.
+  
+  Как обновить приложение: вместо обёртки «inert» на время правок агента передайте `readOnly`; из `onSave` возвращайте
+  `{ ok: false, issues }` при отказе сервера; ручную высоту у родителя редактора можно убрать. Договор скина редактора: все
+  новые поля необязательные (`saveFailed`, `readOnly` у шапки, `readOnly` у окна JSON, `className` и `style` у раскладки),
+  свой скин без них работает.
+
+### Patch Changes
+
+- Updated dependencies [d9b2ea5]
+  - @ykurilov/agent-chat-flows@0.52.0
+  - @ykurilov/agent-chat-messengers@0.52.0
+  - @ykurilov/agent-chat-react@0.52.0
+  - @ykurilov/agent-chat-sandbox@0.52.0
+
 ## 0.51.0
 
 ### Patch Changes

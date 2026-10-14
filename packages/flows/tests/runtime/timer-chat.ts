@@ -3,7 +3,7 @@ import { vi } from "vitest";
 import { noticeService, scriptedModel, userMessage, waitTurn } from "../../../core/tests/unit/support/notice-chat";
 import { mockModelId, readAll } from "../../../core/tests/unit/support/mock-model";
 import { buildAgentFlow } from "../../src/runtime/agent-flow";
-import type { AgentFlowOptions, FlowFinish } from "../../src/runtime/flow-types";
+import type { AgentFlowOptions, FlowChatOptions, FlowFinish } from "../../src/runtime/flow-types";
 import { memoryFlowStore } from "../../src/store/memory";
 import type { FlowStore } from "../../src/store/flow-store";
 import { fixtureJson } from "../flow-fixtures";
@@ -29,6 +29,10 @@ export interface TimerChatSetup {
   yes?: string[];
   /** Остальные настройки службы чата: лимиты расходов и т. п. */
   chatOptions?: Parameters<typeof noticeService>[1];
+  /** Свои ворота приложения: идут до ворот сценария. */
+  beforeTurn?: FlowChatOptions["beforeTurn"];
+  defaultTimeZone?: string;
+  timers?: AgentFlowOptions["timers"];
 }
 
 export function timerChat(setup: TimerChatSetup = {}) {
@@ -47,10 +51,12 @@ export function timerChat(setup: TimerChatSetup = {}) {
       logError,
       onFinish: (event) => void finished.push(event),
       ...(setup.firstMessages !== undefined && { firstMessages: setup.firstMessages }),
+      ...(setup.defaultTimeZone && { defaultTimeZone: setup.defaultTimeZone }),
+      ...(setup.timers && { timers: setup.timers }),
     },
     { judge, clientCard: emptyClientCard() },
   );
-  const options = flow.withChat({ agent: { instructions: "Ты помощник.", ...setup.agent } });
+  const options = flow.withChat({ agent: { instructions: "Ты помощник.", ...setup.agent }, ...(setup.beforeTurn && { beforeTurn: setup.beforeTurn }) });
   const { service, storage } = noticeService(model, { ...setup.chatOptions, ...options, logError, ...(setup.storage && { storage: setup.storage }) });
   flow.attach(service);
   return { model, store, storage, flow, service, logError, json, finished };

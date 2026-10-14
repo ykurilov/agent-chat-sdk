@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { memoryFlowStore } from "../../src/store/memory";
+import { flowTestChatData } from "../../src/runtime/test-clock";
 import { withoutSilenceTimers } from "../flow-fixtures";
 import { appNotices, clockAt, human, MSK, OWNER, stateOfChat, tick, timerChat, type TimerChatSetup } from "./timer-chat";
 import { daysChat, iso, msk } from "./days-chat";
@@ -152,5 +153,17 @@ describe("перенос идущего чата целиком (flow.adopt)", (
     const { id } = await chat.service.createChat(OWNER);
     await human(chat, id, "вернулся", MSK);
     expect(await chat.flow.readRun(OWNER, id)).toMatchObject({ state: "block", dayCounts: { "2026-10-14": 3 }, nudgeStep: 0, lastHumanAt: msk(14, 11) });
+  });
+
+  it("тестовый чат закреплён без хода: перемотка до утра работает, касание приходит по часам чата", async () => {
+    const chat = chatOf();
+    const { id } = await chat.service.createChat(OWNER, { data: flowTestChatData() });
+    await chat.flow.adopt({ ownerId: OWNER, chatId: id, ...moved, flow: chat.json });
+    const before = (await timerNotices(chat, id)).length;
+
+    expect(await chat.flow.advanceTestClock({ ownerId: OWNER, chatId: id, to: "next_day_start" })).toEqual({ timeOffset: msk(15, 9) - msk(14, 11) });
+    await chat.flow.settled();
+    expect((await timerNotices(chat, id)).length).toBeGreaterThan(before);
+    expect(chat.logError).not.toHaveBeenCalled();
   });
 });

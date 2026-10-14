@@ -4,16 +4,19 @@ import type { AgentFlow } from "../format/flow-format";
 import type { FlowRun, Transition } from "../engine/flow-run";
 import { FLOW_STATE_KEY } from "../engine/flow-run";
 import { noteAgentAnswer, withoutUndeliveredTouch } from "../engine/run-updates";
-import { nextDayStartAfter } from "../engine/flow-days";
+import { deadlineAt, nextDayStartAfter } from "../engine/flow-days";
 import type { FirstWakeContext, FlowFirstReason } from "../engine/nudges";
-import { dueReasons, FLOW_FIRST_EXIT, nextWake, type FlowDue } from "../engine/timers";
+import { dayStartHoldUntil } from "../engine/nudges";
+import { deferredWake, dueReasons, endingWake, FLOW_FIRST_EXIT, nextFirstMessageAfter, nextWake, type FlowDue } from "../engine/timers";
 import type { FlowChatRecord, FlowStore } from "../store/flow-store";
 import type { FirstMessageRules, FlowPort, FlowTimers, FlowTimerSettings } from "./flow-types";
 import { advance, chainLimitMessage, chatRun, exactFirstText, storedRun, type ChatFlowRun } from "./flow-events";
 import { chatWriteBlock } from "./first-message-rules";
+import { FIRST_MESSAGE_RETRY_MS } from "./first-message-retry";
 import { firstReasonsNotice } from "./first-reasons-notice";
 import { FLOW_DELIVERY_EXIT, type FlowDelivery } from "./flow-delivery";
 import { testChatOffset } from "./test-clock";
+import { withHeldHuman } from "./held-messages";
 
 export const DEFAULT_TIMER_TICK_MS = 15_000;
 export const DEFAULT_TIMER_LEASE_MS = 60_000;
@@ -22,6 +25,8 @@ const TIMER_BATCH = 50;
 /** Сколько из них идут одновременно: каждый — ход модели. */
 const TIMER_PARALLEL = 5;
 const DAY_MS = 86_400_000;
+/** Мягкий потолок ходов сервера подряд без сообщения человека у сценария (страховка от петли переходов по таймерам). */
+export const DEFAULT_FLOW_SERVER_TURNS_IN_ROW = 50;
 
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
 const isoOf = (at: number) => new Date(at).toISOString();
@@ -74,6 +79,7 @@ export function createFlowTimers(input: {
   const { store, firstMessages, port, logError } = input;
   const tickMs = input.settings.tickMs ?? DEFAULT_TIMER_TICK_MS;
   const leaseMs = input.settings.leaseMs ?? DEFAULT_TIMER_LEASE_MS;
+  const maxServerTurns = input.settings.maxServerTurnsInRow ?? DEFAULT_FLOW_SERVER_TURNS_IN_ROW;
   /** Эта копия сервера в арендах. */
   const owner = `flow-timers:${randomUUID()}`;
   let interval: ReturnType<typeof setInterval> | undefined;
@@ -95,10 +101,13 @@ export function createFlowTimers(input: {
   ): Promise<{ run: R; context: FirstWakeContext; undelivered: string | null }> {
     const pausedUntil = record.pausedUntil === null ? null : Date.parse(record.pausedUntil);
     const facts = await historyFacts(chatPort, record.ownerId, record.chatId, run.answerId);
-    const reverted = withoutUndeliveredTouch(run, facts.undelivered);
-    if (reverted.undeliveredAt === null) return { run, context: { pausedUntil, unanswered: facts.unanswered }, undelivered: null };
+    const context = { pausedUntil, unanswered: facts.unanswered };
+    // Сообщение, отложенное до утра, — слова человека: в месте чата их нет, ход их не записал.
+    const spoken = withHeldHuman(run, await chatPort.getChatData(record.ownerId, record.chatId));
+    const reverted = withoutUndeliveredTouch(spoken, facts.undelivered);
+    if (reverted.undeliveredAt === null) return { run: spoken, context, undelivered: null };
     const undeliveredAt = Math.max(reverted.undeliveredAt, failedAt ?? 0);
-    return { run: reverted.run as R, context: { pausedUntil, unanswered: facts.unanswered, undeliveredAt }, undelivered: run.touch!.answerId };
+    return { run: reverted.run as R, context: { ...context, undeliveredAt }, undelivered: run.touch!.answerId };
   }
 
   /** Пересчёты одного чата идут по очереди: поздний с устаревшим чтением не затрёт свежий. */
@@ -214,7 +223,9 @@ export function createFlowTimers(input: {
     if (due.deadline) {
       // Срок закрывает разговор без хода модели; прощание — отдельным ходом по правилам «писать первым».
       await store.setDue(chatId, null);
-      await input.onDeadline?.({ record, flow, run, at: wake.at, timeZone });
+      // Момент самого срока: ближайшим сроком могло быть отложенное касание до него.
+      const endAt = flow.schedule ? (deadlineAt(run, timeZone, flow.schedule) ?? wake.at) : wake.at;
+      await input.onDeadline?.({ record, flow, run, at: endAt, timeZone });
       return;
     }
     if (due.giveUp) {
@@ -233,12 +244,34 @@ export function createFlowTimers(input: {
       : run;
     const moved = transitions.length > 0;
     const reasons: FlowFirstReason[] = [...(moved ? [{ kind: "transition" as const, stateId: next.state }] : []), ...due.reasons];
+    /**
+     * Касание не сейчас: повтор в `retryAt` (`null` — до сообщения человека), но выход ноды, «срок вышел» и «не завершил»
+     * остаются в силе. Переход по таймеру ждёт следующего хода; повтор касания придёт с ним же.
+     */
+    const keep = async (wakeAt: FlowDue | null) => {
+      const deferred = wakeAt && dueInput(wakeAt, run.answerId ?? null, offset);
+      if (moved) await keepForNextTurn(chatId, run, transitions[0]!, deferred);
+      else await store.setDue(chatId, deferred);
+    };
+    const defer = (retryAt: number | null) => keep(deferredWake(flow, next, at, timeZone, context, { at: retryAt, exitId: moved ? due.exitId! : FLOW_FIRST_EXIT }));
     if (reasons.length === 0) {
-      // Срок наступил, а писать не о чем (предел переходов подряд): тот же срок крутился бы каждый тик.
-      await store.setDue(chatId, null);
+      // Срок наступил, а писать не о чем (предел переходов подряд): срок — ближайший настоящий (касание, конец), нет — снят.
+      await defer(nextFirstMessageAfter(flow, next, at, timeZone, context));
       return;
     }
-    const wakeExit = moved ? due.exitId! : FLOW_FIRST_EXIT;
+    const serverTurns = run.serverTurns ?? 0;
+    if (maxServerTurns !== false && serverTurns >= maxServerTurns) {
+      // Мягкий потолок против петли: касания и переходы по таймерам ждут сообщения человека, конец разговора — в свой срок.
+      logError(`[сценарий] чат=${chatId}: ${serverTurns} ходов сервера подряд без ответа человека — касания и переходы по таймерам ждут его сообщения`);
+      await keep(endingWake(flow, next, at, timeZone, context));
+      return;
+    }
+    // Человек писал до начала дня и недавно: касание без дела ждёт, как утреннее (переход ноды и ответ на ночные — нет).
+    const hold = dayStartHoldUntil(flow, run, at, timeZone, reasons);
+    if (hold !== null) {
+      await defer(hold);
+      return;
+    }
 
     // Правила «писать первым»: окно канала, пауза, закрытый день, затем ночь и потолок сценария и приложения.
     const chat = { dayClosedOn: record.dayClosedOn, pausedUntil: record.pausedUntil, windowClosed: record.windowClosed };
@@ -249,9 +282,7 @@ export function createFlowTimers(input: {
         ? { allowed: false as const, retryAt: block.retryAt }
         : { allowed: true as const };
     if (!allowed.allowed) {
-      if (allowed.retryAt !== null) await store.setDue(chatId, { at: isoOf(allowed.retryAt - offset), exitId: wakeExit, branchHead: run.answerId ?? null });
-      else if (moved) await keepForNextTurn(chatId, run, transitions[0]!);
-      else await store.setDue(chatId, null);
+      await defer(allowed.retryAt);
       return;
     }
 
@@ -262,10 +293,7 @@ export function createFlowTimers(input: {
     }
     if (await overSpendingLimit(chatPort, ownerId, chatId)) {
       // Как ход человека при исчерпанном лимите: агент молчит до начала следующего дня; переход применит следующий ход.
-      const retryAt = flow.schedule ? nextDayStartAfter(at, timeZone, flow.schedule) : at + DAY_MS;
-      const retry = { at: isoOf(retryAt - offset), exitId: FLOW_FIRST_EXIT };
-      if (moved) await keepForNextTurn(chatId, run, transitions[0]!, retry);
-      else await store.setDue(chatId, { ...retry, branchHead: run.answerId ?? null });
+      await defer(flow.schedule ? nextDayStartAfter(at, timeZone, flow.schedule) : at + DAY_MS);
       return;
     }
     const reasonsNotice = firstReasonsNotice(flow, reasons, moved ? due.exitId : null);
@@ -280,6 +308,8 @@ export function createFlowTimers(input: {
       wakeAgent: true,
       deliveryKey: moved ? timerKey(chatId, due.exitId!, run) : `flow:${chatId}:${FLOW_FIRST_EXIT}:${wake.at}`,
       usageSource: "first_message",
+      // Ходы сценария идут по его расписанию и правилам «писать первым»: потолок ядра против петли их не режет.
+      maxServerTurnsInRow: false,
       ...(delivery?.own() && { awaitAnswer: true }),
       ...(reply && { reply: { text: reply } }),
     });
@@ -293,9 +323,8 @@ export function createFlowTimers(input: {
       return;
     }
     if (!result.turnStarted) {
-      // Ход не начался (предел ходов сервера подряд): агент не пишет, место меняется к следующему ходу.
-      if (moved) await keepForNextTurn(chatId, run, transitions[0]!);
-      else await store.setDue(chatId, null);
+      // Ход не начался (ворота приложения, лимит, закрытый чат): касание позже, место меняется к следующему ходу.
+      await defer(at + FIRST_MESSAGE_RETRY_MS);
       return;
     }
     // Следующий срок — по месту после ответа агента; `afterTurn` пересчитает его ещё раз уже с ответом в ветке.

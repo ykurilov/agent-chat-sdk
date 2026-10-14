@@ -5,7 +5,7 @@ import type { StateMap } from "../../engine/migrate-run";
 import type { ChatsInState } from "../../store/flow-store";
 import type { FlowEditorMode, FlowIssueCount } from "../flow-editor-skin";
 import { useFlowLabels } from "../flow-labels";
-import { appIssues, type FlowAppChecks } from "../../check/app-checks";
+import { appIssues, type FlowAppChecks, type FlowAppIssue } from "../../check/app-checks";
 import {
   addExit,
   addState as addStateTo,
@@ -45,10 +45,22 @@ export interface FlowMigration {
   stateTitle?(versionId: string, stateId: string): string | undefined;
 }
 
+/**
+ * Ответ `onSave`. Ничего (`void`) и `{ ok: true }` — сохранено. `{ ok: false, issues }` — приложение отказало без
+ * исключения: шапка не пишет «Сохранено», `issues` встают у нод и выходов, как находки «Проверить граф».
+ */
+export type FlowSaveResult = void | { ok: true } | { ok: false; issues?: ReadonlyArray<Pick<FlowAppIssue, "path" | "message">> };
+
 export interface UseFlowEditorOptions {
   value: AgentFlow;
   onChange(flow: AgentFlow): void;
-  onSave?(flow: AgentFlow): void | Promise<void>;
+  /** Сохранить сценарий. Отказ — `{ ok: false, issues }` или исключение (оно не уходит в консоль необработанным). */
+  onSave?(flow: AgentFlow): FlowSaveResult | Promise<FlowSaveResult>;
+  /**
+   * Только просмотр: доску нельзя менять (двигать, соединять, удалять, править панели), нельзя сохранять и загружать
+   * JSON. Смотреть, проверять граф, прогонять и открывать JSON можно. Нужно, пока сценарий правит внешний агент.
+   */
+  readOnly?: boolean;
   /** Что объявило приложение: инструменты, события и кнопки, виджеты. */
   catalog: FlowCatalog;
   migration?: FlowMigration;
@@ -97,6 +109,8 @@ function runAppChecks(flow: AgentFlow, checks: FlowAppChecks | undefined, failed
   }
 }
 
+const NO_ISSUES: FlowIssue[] = [];
+
 const browserTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 
 /** Логика редактора сценария: правки, выбор, проверка, прогон, JSON, сохранение, перевод чатов. Скин только рисует. */
@@ -113,9 +127,17 @@ export function useFlowEditor(options: UseFlowEditorOptions) {
   const [simulation, setSimulation] = useState<Simulation | null>(null);
   const [saving, setSaving] = useState(false);
   const [savedJson, setSavedJson] = useState(() => flowToJson(flow));
+  // Отказ в сохранении держится, пока сценарий тот же: любая правка снимает его.
+  const [rejection, setRejection] = useState<{ flow: AgentFlow; issues: FlowIssue[] } | null>(null);
+  const readOnly = options.readOnly === true;
 
   const checks = options.checks;
-  const issues = useMemo(() => [...checkFlow(flow, catalog), ...runAppChecks(flow, checks, labels.checkPanel.appCheckFailed)], [flow, catalog, checks, labels]);
+  const saveFailed = rejection !== null && rejection.flow === flow;
+  const rejectedIssues = saveFailed ? rejection.issues : NO_ISSUES;
+  const issues = useMemo(
+    () => [...checkFlow(flow, catalog), ...runAppChecks(flow, checks, labels.checkPanel.appCheckFailed), ...rejectedIssues],
+    [flow, catalog, checks, labels, rejectedIssues],
+  );
   const issueCount = useMemo(() => countIssues(issues), [issues]);
   const json = useMemo(() => flowToJson(flow), [flow]);
   const dirty = json !== savedJson;
@@ -125,6 +147,7 @@ export function useFlowEditor(options: UseFlowEditorOptions) {
     selection.kind === "state" && !flow.states.some((state) => state.id === selection.stateId) ? { kind: "overview" } : selection;
 
   const edit = useCallback((change: (flow: AgentFlow) => AgentFlow) => {
+    if (latest.current.readOnly) return;
     onChange(change(latest.current.value));
   }, [onChange]);
 
@@ -135,6 +158,7 @@ export function useFlowEditor(options: UseFlowEditorOptions) {
 
   const addState = useCallback(
     (at?: FlowPoint): string => {
+      if (latest.current.readOnly) return "";
       const made = addStateTo(latest.current.value, { title: labels.board.newState, ...(at ? { at } : {}) });
       onChange(made.flow);
       setSelection({ kind: "state", stateId: made.stateId });
@@ -144,13 +168,16 @@ export function useFlowEditor(options: UseFlowEditorOptions) {
   );
 
   const connect = useCallback(
-    (owner: ExitOwner, exitId: string, to: string) => onChange(connectExit(latest.current.value, owner, exitId, to)),
+    (owner: ExitOwner, exitId: string, to: string) => {
+      if (!latest.current.readOnly) onChange(connectExit(latest.current.value, owner, exitId, to));
+    },
     [onChange],
   );
 
   /** Стрелку отпустили на пустом месте: новое состояние там же. Из узла без условия — новое условие словами. */
   const connectToNewState = useCallback(
     (owner: ExitOwner, exitId: string | null, at: FlowPoint) => {
+      if (latest.current.readOnly) return;
       const made = addStateTo(latest.current.value, { title: labels.board.newState, at });
       let next = made.flow;
       let fromExit = exitId;
@@ -165,7 +192,12 @@ export function useFlowEditor(options: UseFlowEditorOptions) {
     [labels, onChange],
   );
 
-  const removeState = useCallback((stateId: string) => onChange(removeStateFrom(latest.current.value, stateId)), [onChange]);
+  const removeState = useCallback(
+    (stateId: string) => {
+      if (!latest.current.readOnly) onChange(removeStateFrom(latest.current.value, stateId));
+    },
+    [onChange],
+  );
 
   const restartSimulation = useCallback(() => {
     const current = latest.current;
@@ -219,6 +251,7 @@ export function useFlowEditor(options: UseFlowEditorOptions) {
 
   const loadJson = useCallback(
     (text: string): boolean => {
+      if (latest.current.readOnly) return false;
       const loaded = loadFlowJson(text);
       if (!loaded.ok) {
         setJsonErrors(loaded.errors);
@@ -236,12 +269,21 @@ export function useFlowEditor(options: UseFlowEditorOptions) {
   );
 
   const save = useCallback(async () => {
-    const { onSave, value } = latest.current;
-    if (!onSave) return;
+    const { onSave, value, readOnly: viewOnly } = latest.current;
+    if (!onSave || viewOnly) return;
     setSaving(true);
     try {
-      await onSave(value);
+      const result = await onSave(value);
+      if (result && !result.ok) {
+        setRejection({ flow: value, issues: appIssues(value, (result.issues ?? []).map((issue) => ({ ...issue, code: "save_rejected" }))) });
+        return;
+      }
+      setRejection(null);
       setSavedJson(flowToJson(value));
+    } catch (error) {
+      // Исключение из `onSave` — тот же отказ, только без списка: шапка говорит «Не сохранено», консоль не засоряем.
+      console.warn("[flow] onSave failed", error);
+      setRejection({ flow: value, issues: [] });
     } finally {
       setSaving(false);
     }
@@ -274,7 +316,9 @@ export function useFlowEditor(options: UseFlowEditorOptions) {
     loadJson,
     save,
     saving,
+    saveFailed,
     dirty,
+    readOnly,
     migrate,
   };
 }

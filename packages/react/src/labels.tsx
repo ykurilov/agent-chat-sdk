@@ -139,6 +139,8 @@ export interface NoticeLabels {
   taskTimedOut: string;
   taskAwaitingApproval: string;
   conversationStarted: string;
+  /** Подпись реплики живого сотрудника у скина без `StaffMessage` (версия 25): «Сотрудник Ольга». */
+  staffSaid: (staffName: string | undefined) => string;
   /** Служебное сообщение одной строкой — у скина без `AgentNoticeView`: «Отчёт»: задача готова. Без названия — только `status`. */
   line: (title: string, status: string) => string;
 }
@@ -527,6 +529,7 @@ const russianNotices: NoticeLabels = {
   taskTimedOut: "задача не уложилась во время",
   taskAwaitingApproval: "задача ждёт подтверждения",
   conversationStarted: "агент написал первым",
+  staffSaid: (staffName) => (staffName ? `Сотрудник ${staffName}` : "Сотрудник"),
   line: (title, status) => (title ? `«${title}»: ${status}` : status),
 };
 
@@ -603,6 +606,7 @@ export const englishWorkLabels: Pick<ResolvedChatLabels, "helpers" | "tasks" | "
     taskTimedOut: "task ran out of time",
     taskAwaitingApproval: "task is waiting for approval",
     conversationStarted: "the agent wrote first",
+    staffSaid: (staffName) => (staffName ? `Staff: ${staffName}` : "Staff"),
     line: (title, status) => (title ? `“${title}”: ${status}` : status),
   },
   messengerStatus: {

@@ -27,7 +27,7 @@ import { chatHasExternalContent } from "./external-content/external-content";
 import type { ChatEvent, ChatEvents, ChatTurnTrigger } from "./chat-events/chat-events";
 import type { BackgroundPort, BackgroundTasks } from "./background/background-tasks";
 import { helperToolsModel, runHelper } from "./helpers/run-helper";
-import type { DeliverNoticesInput, DeliverNoticesResult } from "./notices/agent-notice";
+import type { AppendStaffMessageInput, DeliverNoticesInput, DeliverNoticesResult } from "./notices/agent-notice";
 import { deliveryKeyOf, MAX_SERVER_TURNS_IN_ROW, noticeMessageParts, serverTurnsInRow } from "./notices/deliver-notices";
 import { noticesOfPart } from "./notices/notices-for-model";
 import type { TurnObserver } from "./agent-run/turn-observer";
@@ -72,6 +72,7 @@ import { toAgentChatMessage } from "./conversation/to-agent-chat-message";
 import { newStoredMessage, subjectOfChat } from "./conversation/types";
 import type { AnswerEdit } from "./conversation/answer-edit";
 import { AnswerEditError, answerText, editAnswerParts } from "./conversation/edit-answer-parts";
+import { deliverableParts } from "./conversation/deliverable-parts";
 import { sumOfSteps } from "./agent-run/turn-usage";
 import { resolveReplyChecks } from "./agent-run/reply-check-types";
 import type { ReplyChecksSetting } from "./agent-run/reply-check-types";
@@ -766,6 +767,15 @@ export interface ChatService {
    * `wakeAgent`, после 5 ходов сервера подряд без человека или при исчерпанном лимите — сообщение без хода.
    */
   deliverNotices(input: DeliverNoticesInput): Promise<DeliverNoticesResult>;
+  /**
+   * Реплика живого сотрудника человеку — в конец текущей ветки (с 0.53): эксперт ответил из своих «Входящих», а агент
+   * должен это знать. Модель видит её словами сотрудника (не человека), экран — сообщением сотрудника. Проверки ответа
+   * агента её текст знают (агент вправе повторить ссылку сотрудника), а `person_link_view` ссылкой человека её не
+   * считает. Ход сама не начинает,
+   * с `wakeAgent: true` — как `deliverNotices`. Занятый чат — `busy`, ничего не записано; чата нет — `chat_gone`.
+   * @throws TypeError пустой текст.
+   */
+  appendStaffMessage(input: AppendStaffMessageInput): Promise<DeliverNoticesResult>;
   /**
    * Текст приложения вне хода модели (например, итог его инструмента) — через те же проверки ответа (`replyChecks`),
    * что и ответ агента. `seenTexts` те же: инструкция чата, блоки контекста, реплики человека и выводы инструментов на
@@ -1475,12 +1485,12 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     });
   }
 
-  /** Готовый ответ хода для `deliverNotices({ awaitAnswer })`: текст, как в итоге хода (`TurnResult.text`), и статус. */
+  /** Готовый ответ хода для `deliverNotices({ awaitAnswer })`: текст, как в итоге хода (`TurnResult.text`), части для человека и статус. */
   async function finalAnswerOf(answerId: string): Promise<NonNullable<DeliverNoticesResult["answer"]>> {
     const answer = await storage.getMessage(answerId);
     const text = answerText(answer?.parts ?? []);
     const status = answer?.status && answer.status !== "streaming" ? (answer.status as FinalAnswerStatus) : "interrupted";
-    return { messageId: answerId, text, status };
+    return { messageId: answerId, text, status, parts: deliverableParts(answer?.parts ?? []) };
   }
 
   /**
@@ -2206,7 +2216,8 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     // Данные чата — тоже инструментам и итогу хода; модели не уходят.
     const chatData = chatDataOfInput(chat);
     // Дата в запросе — по поясу человека; не пришёл или не настоящий — `agent.timeZone`, без него — пояс сервера.
-    const timeZone = resolveTimeZone(launch.timeZone) ?? resolveTimeZone(launch.page?.timeZone) ?? fallbackTimeZone;
+    const sentTimeZone = resolveTimeZone(launch.timeZone) ?? resolveTimeZone(launch.page?.timeZone);
+    const timeZone = sentTimeZone ?? fallbackTimeZone;
     const resumeMessage = launch.resume && toAgentChatMessage(launch.resume);
     if (resumeMessage && !launch.replay) resumeBases.set(chatId, resumeMessage);
     const toolQueue = chatToolQueues.get(chatId) ?? createToolQueue();
@@ -2271,6 +2282,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
                   // Ход по служебному сообщению — с ним; у остальных ходов пусто.
                   notices: launch.action === "notice" ? structuredClone((branch.at(-1)?.parts ?? []).flatMap(noticesOfPart)) : [],
                   timeZone: timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+                  pageTimeZone: sentTimeZone ?? null,
                   now: now(),
                 },
                 state,
@@ -2683,6 +2695,16 @@ export function createChatService(input: ChatServiceOptions): ChatService {
         logError,
       });
     },
+    async appendStaffMessage({ ownerId, chatId, text, staffName, wakeAgent = false, deliveryKey }) {
+      if (!text.trim()) throw new TypeError("appendStaffMessage: пустой текст реплики сотрудника");
+      return service.deliverNotices({
+        ownerId,
+        chatId,
+        notices: [{ kind: "staff", title: text, ...(staffName && { staffName }) }],
+        wakeAgent,
+        deliveryKey: deliveryKey ?? `staff:${crypto.randomUUID()}`,
+      });
+    },
     async deliverNotices(request) {
       const { ownerId, chatId } = request;
       const gone: DeliverNoticesResult = { status: "chat_gone", turnStarted: false };
@@ -2746,7 +2768,8 @@ export function createChatService(input: ChatServiceOptions): ChatService {
             const current = await storage.getChat(chatId);
             return Boolean(current && (await closureOf(current)));
           };
-          const wanted = request.wakeAgent && serverTurnsInRow(branch) < MAX_SERVER_TURNS_IN_ROW && !(await closedNow());
+          const turnsLimit = request.maxServerTurnsInRow ?? MAX_SERVER_TURNS_IN_ROW;
+          const wanted = request.wakeAgent && (turnsLimit === false || serverTurnsInRow(branch) < turnsLimit) && !(await closedNow());
           if (!wanted) return writeNotice(false);
           // Отказ `beforeTurn` — сообщение без хода. Пропуск закрывается ходом или `turnNotStarted`: лимит исчерпан или
           // чат закрыли, пока шла проверка, — сообщение пишется без хода.

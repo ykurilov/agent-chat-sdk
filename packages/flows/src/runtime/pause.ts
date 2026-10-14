@@ -10,8 +10,6 @@ import type { FlowRuntime } from "./flow-events";
 export const DEFAULT_PAUSE_STAFF_SILENCE_HOURS = 2;
 
 const HOUR_MS = 3_600_000;
-/** Служебное сообщение с репликой сотрудника: агент увидит его в следующем ходе. */
-export const FLOW_STAFF_REPLY_NOTICE = "flow_staff_reply";
 /** Паузы повторов, когда чат занят ходом, мс. */
 const BUSY_RETRY_MS = [50, 250, 1000, 3000];
 
@@ -23,10 +21,6 @@ export interface FlowPauseControl {
   /** Ответ сотрудника продлевает паузу на `staffSilenceHours` и попадает в контекст агента. */
   noteStaffReply(input: FlowStaffReply): Promise<void>;
 }
-
-/** Текст для модели: реплика сотрудника и как с ней быть, когда агент вернётся. */
-export const staffReplyTitle = (text: string) =>
-  `Живой сотрудник ответил человеку вместо тебя: «${text}». Это сказано от вашего имени: продолжай разговор с учётом этого и не противоречь сотруднику.`;
 
 export function createFlowPause({
   runtime,
@@ -45,14 +39,17 @@ export function createFlowPause({
     return record && record.ownerId === ownerId ? record : null;
   }
 
-  /** Реплика сотрудника — служебным сообщением без хода: модель прочтёт её в начале следующего хода. */
-  async function rememberStaffText(ownerId: string, chatId: string, text: string): Promise<void> {
+  /**
+   * Реплика сотрудника — сообщением сотрудника без хода, как `ChatService.appendStaffMessage`: модель прочтёт её в начале
+   * следующего хода, проверки ответа и `person_link_view` словами человека её не считают.
+   */
+  async function rememberStaffText(ownerId: string, chatId: string, text: string, staffName: string | undefined): Promise<void> {
     const deliveryKey = `flow:${chatId}:staff:${randomUUID()}`;
     for (let attempt = 0; ; attempt += 1) {
       const result = await (await port({ ownerId, chatId })).deliverNotices({
         ownerId,
         chatId,
-        notices: [{ kind: "app", name: FLOW_STAFF_REPLY_NOTICE, title: staffReplyTitle(text) }],
+        notices: [{ kind: "staff", title: text, ...(staffName && { staffName }) }],
         wakeAgent: false,
         deliveryKey,
       });
@@ -74,13 +71,13 @@ export function createFlowPause({
       if (!(await ownChat(ownerId, chatId))) return;
       await runtime.store.setPause(chatId, null);
     },
-    async noteStaffReply({ ownerId, chatId, text }) {
+    async noteStaffReply({ ownerId, chatId, text, staffName }) {
       const record = await ownChat(ownerId, chatId);
       if (!record) return;
       // Продление не укорачивает паузу, заданную приложением до более позднего момента.
       const current = record.pausedUntil ? Date.parse(record.pausedUntil) : 0;
       await runtime.store.setPause(chatId, new Date(Math.max(current, runtime.now() + spanMs)).toISOString());
-      if (text?.trim()) await rememberStaffText(ownerId, chatId, text.trim());
+      if (text?.trim()) await rememberStaffText(ownerId, chatId, text.trim(), staffName?.trim() || undefined);
     },
   };
 }

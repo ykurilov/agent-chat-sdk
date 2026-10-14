@@ -278,6 +278,19 @@ export interface UsageFilter {
   since?: string;
 }
 
+/** Фильтр суммы расхода по списку чатов (`sumUsageByChat`). */
+export interface UsageByChatFilter {
+  chatIds: readonly string[];
+  ownerId?: string;
+  source?: UsageSource;
+  since?: string;
+}
+
+/** Сумма расхода одного чата одной моделью у одного провайдера. */
+export interface UsageChatSum extends UsageSum {
+  chatId: string;
+}
+
 /** Сумма расхода одной моделью у одного провайдера: токены и деньги, записанные в момент расхода. */
 export interface UsageSum {
   modelId: string;

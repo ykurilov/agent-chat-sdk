@@ -12,8 +12,8 @@ import type { EditErrorKind } from "./labels";
 import { useFeedAnnouncement } from "./feed-announcement";
 import { isLiveTask, taskElapsedMs, useBackgroundTasks } from "./background-tasks/use-background-tasks";
 import { useChatLabels } from "./labels";
-import { agentNoticesOf, noticesAsText, noticeViewOf } from "./notices/agent-notices";
-import type { NoticeTaskControls } from "./notices/agent-notices";
+import { agentNoticesOf, noticesAsText, noticeViewOf, staffRepliesOf } from "./notices/agent-notices";
+import type { NoticeTaskControls, StaffReply } from "./notices/agent-notices";
 import type { ChatLabels, ResolvedChatLabels } from "./labels";
 import type { SpendingView } from "./spending-status";
 import { MessageFeed } from "./message-feed";
@@ -406,8 +406,11 @@ function AgentChatBody({ api, chatId, skin, liveness, voice, voiceDialog, attach
       const branchSwitcher = switcherOf(message.id);
       const NoticeView = skin.AgentNoticeView;
       const notices = agentNoticesOf(message);
+      const staffReplies = staffRepliesOf(message);
       const shown =
-        notices.length > 0 ? (
+        staffReplies.length > 0 ? (
+          <StaffReplies skin={skin} replies={staffReplies} label={labels.notices.staffSaid} />
+        ) : notices.length > 0 ? (
           NoticeView ? (
             <>
               {notices.map((notice, noticeIndex) => (
@@ -749,6 +752,24 @@ const EDIT_REFUSAL_ERRORS: Record<EditRefusalReason, EditErrorKind> = {
   // Текст сервера идёт в редактор как есть; надпись — на случай, если текста почему-то нет.
   server_refused: "rejected",
 };
+
+/** Реплики живого сотрудника: `StaffMessage` скина; скин без него (до версии 25) — ответом агента с подписью. */
+function StaffReplies({ skin, replies, label }: { skin: ChatSkin; replies: StaffReply[]; label: (staffName: string | undefined) => string }) {
+  const View = skin.StaffMessage;
+  return (
+    <>
+      {replies.map((reply, index) =>
+        View ? (
+          <View key={index} text={reply.text} {...(reply.staffName && { staffName: reply.staffName })} />
+        ) : (
+          <skin.AgentMessage key={index} status="complete" empty={false} onCopy={() => void navigator.clipboard?.writeText(reply.text)}>
+            <skin.AgentText markdown={`**${label(reply.staffName)}:** ${reply.text}`} streaming={false} />
+          </skin.AgentMessage>
+        ),
+      )}
+    </>
+  );
+}
 
 /*
  * Пока дописывается ответ, меняется только он: у остальных сообщений тот же объект.

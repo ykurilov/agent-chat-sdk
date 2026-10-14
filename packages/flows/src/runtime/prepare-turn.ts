@@ -62,9 +62,9 @@ export function flowPrepareTurn(runtime: FlowRuntime, appTimeZone: () => string 
 
     // Пояс человека → В10: со страницы, иначе известный пояс человека; ход без пояса страницы (мессенджер) его не затирает.
     const record = await runtime.store.getChat(ctx.chatId);
-    const page = pageTimeZone(ctx.timeZone, appTimeZone());
+    const page = pageTimeZone(ctx.timeZone, appTimeZone(), ctx.pageTimeZone);
     const known = page ?? (runtime.timeZones ? await runtime.timeZones.known(ctx.ownerId, ctx.chatId) : record?.timeZone || null);
-    const timeZone = known ?? ctx.timeZone;
+    const timeZone = known ?? runtime.defaultTimeZone ?? ctx.timeZone;
 
     let run = currentRun(pinned.flow, ctx.state, now);
     const previousAnswer = run.answerId;
@@ -139,6 +139,8 @@ export function flowPrepareTurn(runtime: FlowRuntime, appTimeZone: () => string 
         run = noteHumanMessage(run, now, schedule ? dayInProgress(now, timeZone, schedule) : undefined);
         if (!ended) run = await step(run, { type: "event", event: "message" });
       }
+      // Ход по служебному сообщению — ход сервера: счёт подряд для мягкого потолка таймеров; человек его обнулил выше.
+      if (ctx.action === "notice" && !ctx.resumed) run = { ...run, serverTurns: (run.serverTurns ?? 0) + 1 };
       // Продолжение после подтверждения или виджета — тот же ответ: агент ещё не ответил заново.
       if (ctx.action !== "approval" && ctx.action !== "widget") run = noteAgentAnswer(run, now);
       // Снимок касания живёт до следующего хода; продолжение того же ответа его сохраняет.

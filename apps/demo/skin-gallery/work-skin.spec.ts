@@ -4,7 +4,7 @@ import type { Page } from "@playwright/test";
 
 /*
  * T023 плана 027: части фона и мессенджеров скина Тандем — строка помощника, карточка задачи во всех статусах, плашки,
- * панель подключения. Светлая и тёмная тема — снимками; компьютер и узкий экран 320 px без сдвига вбок.
+ * реплика сотрудника (запасной вид без `StaffMessage`, 0.53), панель подключения. Светлая и тёмная тема — снимками; компьютер и узкий экран 320 px без сдвига вбок.
  * Снимки лежат в /tmp/agent-chat-skin-work для просмотра глазами (эталонных снимков нет).
  */
 
@@ -26,6 +26,9 @@ for (const theme of ["light", "dark"] as const) {
       await open(page, theme);
       await expect(page.locator("[data-task-id]")).toHaveCount(9);
       await expect(page.getByRole("note")).toHaveCount(8);
+      const staff = page.locator('[data-gallery="staff-reply"]');
+      await expect(staff.getByText("Сотрудник Ольга:")).toBeVisible();
+      await expect(staff.getByText("Сотрудник:", { exact: true })).toBeVisible();
       await expect(page.getByRole("group", { name: "Telegram" }).getByText("Подключено")).toBeVisible();
       await expect(page.getByRole("link", { name: "Открыть в мессенджере" })).toBeVisible();
       expect(await noHorizontalScroll(page)).toBeLessThanOrEqual(0);

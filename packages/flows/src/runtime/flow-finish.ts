@@ -152,6 +152,7 @@ export function createFlowFinish(input: { runtime: FlowRuntime; onFinish?: (even
         wakeAgent: true,
         deliveryKey: `flow:${chatId}:deadline`,
         usageSource: "first_message",
+        maxServerTurnsInRow: false,
         timeZone,
         ...(delivery?.own() && { awaitAnswer: true }),
         ...(text && { reply: { text } }),

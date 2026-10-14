@@ -20,6 +20,7 @@ export function TandemFlowJsonDialog(props: FlowJsonDialogProps) {
         </DialogHeader>
         <textarea
           aria-label={labels.title}
+          readOnly={props.readOnly}
           spellCheck={false}
           value={text}
           onChange={(event) => setText(event.target.value)}
@@ -63,10 +64,12 @@ export function TandemFlowJsonDialog(props: FlowJsonDialogProps) {
             <Download aria-hidden="true" className="size-4" />
             {labels.download}
           </Button>
-          <Button variant={edited ? "primary" : "secondary"} onClick={() => (edited ? props.onLoad(text) : file.current?.click())}>
-            <Upload aria-hidden="true" className="size-4" />
-            {labels.load}
-          </Button>
+          {!props.readOnly && (
+            <Button variant={edited ? "primary" : "secondary"} onClick={() => (edited ? props.onLoad(text) : file.current?.click())}>
+              <Upload aria-hidden="true" className="size-4" />
+              {labels.load}
+            </Button>
+          )}
           <Button variant="ghost" onClick={props.onClose}>
             {labels.close}
           </Button>

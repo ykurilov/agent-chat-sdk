@@ -32,7 +32,7 @@ import type {
   LoadedFlow,
 } from "./flow-types";
 import { createClientCard } from "./client-card";
-import { createChatTimeZones, createFirstMessageRules, createFlowTimeZones, pageTimeZone, UNKNOWN_TIME_ZONE } from "./first-message-rules";
+import { createChatTimeZones, createFirstMessageRules, createFlowTimeZones, ianaTimeZone, pageTimeZone, UNKNOWN_TIME_ZONE } from "./first-message-rules";
 import { createFlowJudge } from "./judge";
 import { createFlowTimers } from "./flow-timers";
 import { createChatMigrator } from "./migrate-chats";
@@ -71,8 +71,6 @@ export interface FlowModules {
 }
 
 export interface BuiltAgentFlow extends AgentFlowHandle {
-  /** Один обход таймеров (тесты, ручной запуск). */
-  tick(): Promise<void>;
   /** Дождаться фоновой работы: судья после хода, доставка точного первого текста, `onTransition`. Для тестов и остановки. */
   settled(): Promise<void>;
 }
@@ -123,6 +121,8 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
   const now = () => clock().getTime();
   const iso = () => clock().toISOString();
   const logError = options.logError ?? ((message: string) => console.error(message));
+  const defaultTimeZone = options.defaultTimeZone === undefined ? undefined : ianaTimeZone(options.defaultTimeZone);
+  if (defaultTimeZone === null) throw new TypeError(`createAgentFlow: defaultTimeZone «${options.defaultTimeZone}» — не пояс IANA`);
 
   let port: FlowPort | undefined;
   let attachment: FlowAttachment | undefined;
@@ -194,7 +194,7 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
     const key = appZone ?? "";
     let table = zoneTables.get(key);
     if (!table) {
-      table = createChatTimeZones({ appTimeZone: () => appZone, warn: logError });
+      table = createChatTimeZones({ appTimeZone: () => appZone, ...(defaultTimeZone && { defaultTimeZone }), warn: logError });
       zoneTables.set(key, table);
     }
     return table;
@@ -457,6 +457,7 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
     track,
     chatFlow,
     timeZones,
+    ...(defaultTimeZone && { defaultTimeZone }),
     async cardValues(ownerId) {
       // Карточка у приложения (`options.clientCard`): читаем её, а не свою таблицу. Сбой его хранилища не рвёт ход.
       const app = options.clientCard ? clientCard() : null;
@@ -659,7 +660,7 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
     const record = await store.getChat(context.chatId);
     if (!pinned || !record?.placement) return context;
     // Счёт дня — по поясу, по которому его продолжит ход: страница, иначе известный, иначе пояс хода.
-    const timeZone = pageTimeZone(context.timeZone, appZone) ?? (await timeZones.known(context.ownerId, context.chatId)) ?? context.timeZone;
+    const timeZone = pageTimeZone(context.timeZone, appZone, context.pageTimeZone) ?? (await timeZones.known(context.ownerId, context.chatId)) ?? defaultTimeZone ?? context.timeZone;
     placedNow.add(context.chatId);
     return { ...context, state: { ...context.state, [FLOW_STATE_KEY]: chatRun(pinned.flow, context.state, record, now(), timeZone) } };
   }
@@ -707,8 +708,10 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
 
   return {
     withChat<T extends FlowChatOptions>(chat: T): T {
-      const { agent } = chat;
-      const appZone = agent.timeZone ?? (chat as { limits?: { timeZone?: string } }).limits?.timeZone;
+      const ownZone = chat.agent.timeZone ?? (chat as { limits?: { timeZone?: string } }).limits?.timeZone;
+      // Своего пояса у службы нет — дата в запросе к модели тоже по `defaultTimeZone`, как дни и касания сценария.
+      const agent = ownZone === undefined && defaultTimeZone ? { ...chat.agent, timeZone: defaultTimeZone } : chat.agent;
+      const appZone = agent.timeZone ?? ownZone;
       lastAppTimeZone = appZone;
       const flowPrepare = flowPrepareTurn(runtime, () => appZone, finish);
       const gate = flowTurnGate((input) => admit()(input));

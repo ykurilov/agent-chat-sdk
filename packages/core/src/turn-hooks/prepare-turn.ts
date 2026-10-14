@@ -30,6 +30,11 @@ export interface PrepareTurnContext {
   notices: AgentNotice[];
   /** Часовой пояс человека (IANA), как у даты в запросе. */
   timeZone: string;
+  /**
+   * С 0.53: пояс, который прислали страница или приложение (`deliverNotices({ timeZone })`); `null` — не прислали, и
+   * `timeZone` запасной (`agent.timeZone` или сервер). Нет поля — служба старше 0.53.
+   */
+  pageTimeZone?: string | null;
   /** Отменяется «Стопом» и сроком `prepareTurn`. */
   abortSignal: AbortSignal;
   now: Date;

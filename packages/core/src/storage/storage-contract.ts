@@ -50,6 +50,8 @@ export function describeChatStorageContract(
     chatClosure?: "required";
     /** `partsOfTypes: "required"` — лёгкое чтение частей нужных типов (`listMessagePartsOfTypes`) обязано быть. */
     partsOfTypes?: "required";
+    /** `usageByChat: "required"` — сумма расхода по списку чатов одним запросом (`sumUsageByChat`) обязана быть. */
+    usageByChat?: "required";
   } = {},
 ): void {
   const chatInput = { id: "chat-1", ownerId: "anna", modelId: "deepseek-4.1-flash", providerId: "deepseek" };
@@ -1050,6 +1052,58 @@ export function describeChatStorageContract(
         const storage = await storageWithChat();
         await Promise.all(Array.from({ length: 10 }, (_, index) => storage.insertUsageRecord(usageRecord(`p${index}`, { outputTokens: 3 }))));
         expect((await storage.sumUsage({ ownerId: "anna" }))[0]?.outputTokens).toBe(30);
+      });
+
+      describe("сумма по списку чатов (sumUsageByChat, необязательный)", () => {
+        async function storageWithUsageByChat(context: { skip: () => never }) {
+          const storage = await createStorage();
+          if (!storage.sumUsageByChat) {
+            if (options.usageByChat === "required") throw new Error("У хранилища нет sumUsageByChat");
+            context.skip();
+          }
+          return storage as ChatStorage & Required<Pick<ChatStorage, "sumUsageByChat">>;
+        }
+        const byChat = <T extends { chatId: string; modelId: string }>(sums: T[]) =>
+          [...sums].sort((left, right) => `${left.chatId}:${left.modelId}`.localeCompare(`${right.chatId}:${right.modelId}`));
+
+        it("по чату и паре «модель × провайдер»; чужие чаты из списка не попадают, чаты без записей — тоже", async (context) => {
+          const storage = await storageWithUsageByChat(context);
+          await storage.insertUsageRecord(usageRecord("r1", { chatId: "chat-1" }));
+          await storage.insertUsageRecord(usageRecord("r2", { chatId: "chat-1", outputTokens: 5, costUsd: 0.5 }));
+          await storage.insertUsageRecord(usageRecord("r3", { chatId: "chat-1", modelId: "gpt-x", providerId: "openai", outputTokens: 7 }));
+          await storage.insertUsageRecord(usageRecord("r4", { chatId: "chat-2", outputTokens: 11 }));
+          await storage.insertUsageRecord(usageRecord("r5", { chatId: "chat-3", outputTokens: 13 }));
+          const sums = byChat(await storage.sumUsageByChat({ chatIds: ["chat-1", "chat-2", "chat-empty"] }));
+          expect(sums.map(({ chatId, modelId, outputTokens }) => [chatId, modelId, outputTokens])).toEqual([
+            ["chat-1", "deepseek-4.1-flash", 205],
+            ["chat-1", "gpt-x", 7],
+            ["chat-2", "deepseek-4.1-flash", 11],
+          ]);
+          expect(sums[0]).toEqual({
+            chatId: "chat-1",
+            modelId: "deepseek-4.1-flash",
+            providerId: "deepseek",
+            inputTokens: 2000,
+            cachedInputTokens: 800,
+            cacheWriteTokens: 0,
+            outputTokens: 205,
+            reasoningTokens: 100,
+            costUsd: 0.75,
+          });
+        });
+
+        it("фильтры source, ownerId и since; пустой список — пустая сумма", async (context) => {
+          const storage = await storageWithUsageByChat(context);
+          await storage.insertUsageRecord(usageRecord("r1", { chatId: "chat-1", source: "first_message", outputTokens: 3 }));
+          await storage.insertUsageRecord(usageRecord("r2", { chatId: "chat-1", outputTokens: 5, createdAt: "2099-03-01T00:00:00.000Z" }));
+          await storage.insertUsageRecord(usageRecord("r3", { chatId: "chat-2", ownerId: "boris", source: "first_message", outputTokens: 7 }));
+          const outputs = async (filter: Parameters<typeof storage.sumUsageByChat>[0]) =>
+            byChat(await storage.sumUsageByChat(filter)).map(({ chatId, outputTokens }) => [chatId, outputTokens]);
+          expect(await outputs({ chatIds: ["chat-1", "chat-2"], source: "first_message" })).toEqual([["chat-1", 3], ["chat-2", 7]]);
+          expect(await outputs({ chatIds: ["chat-1", "chat-2"], ownerId: "anna" })).toEqual([["chat-1", 8]]);
+          expect(await outputs({ chatIds: ["chat-1", "chat-2"], since: "2099-02-01T00:00:00.000Z" })).toEqual([["chat-1", 5]]);
+          expect(await storage.sumUsageByChat({ chatIds: [] })).toEqual([]);
+        });
       });
     });
 

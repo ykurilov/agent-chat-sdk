@@ -408,6 +408,31 @@ export function createDrizzleChatStorage(db: ChatDatabase): ChatStorage {
         .groupBy(usageRecords.modelId, usageRecords.providerId);
     },
 
+    async sumUsageByChat({ chatIds, ownerId, source, since }) {
+      if (chatIds.length === 0) return [];
+      const filters = [
+        inArray(usageRecords.chatId, [...chatIds]),
+        ...(ownerId !== undefined ? [eq(usageRecords.ownerId, ownerId)] : []),
+        ...(source !== undefined ? [eq(usageRecords.source, source)] : []),
+        ...(since !== undefined ? [gte(usageRecords.createdAt, since)] : []),
+      ];
+      return db
+        .select({
+          chatId: usageRecords.chatId,
+          modelId: usageRecords.modelId,
+          providerId: usageRecords.providerId,
+          inputTokens: sql<number>`sum(${usageRecords.inputTokens})`.mapWith(Number),
+          cachedInputTokens: sql<number>`sum(${usageRecords.cachedInputTokens})`.mapWith(Number),
+          cacheWriteTokens: sql<number>`sum(${usageRecords.cacheWriteTokens})`.mapWith(Number),
+          outputTokens: sql<number>`sum(${usageRecords.outputTokens})`.mapWith(Number),
+          reasoningTokens: sql<number>`sum(${usageRecords.reasoningTokens})`.mapWith(Number),
+          costUsd: sql<number>`sum(${usageRecords.costUsd})`.mapWith(Number),
+        })
+        .from(usageRecords)
+        .where(and(...filters))
+        .groupBy(usageRecords.chatId, usageRecords.modelId, usageRecords.providerId);
+    },
+
     async getUserModelChoice(ownerId) {
       const [row] = await db.select().from(userModelChoices).where(eq(userModelChoices.ownerId, ownerId));
       if (!row) return null;

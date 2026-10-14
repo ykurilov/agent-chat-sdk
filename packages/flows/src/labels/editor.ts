@@ -27,6 +27,12 @@ export interface FlowEditorLabels {
     save: string;
     saved: string;
     unsaved: string;
+    /** Сохранение отклонено: приложение отказало или упало. */
+    saveFailed: string;
+    saveFailedHint: string;
+    /** Плашка «только просмотр»: сценарий сейчас правит не человек. */
+    readOnly: string;
+    readOnlyHint: string;
     migrate: string;
   };
   board: {
@@ -272,6 +278,10 @@ export const russianFlowEditorLabels: FlowEditorLabels = {
     save: "Сохранить",
     saved: "Сохранено",
     unsaved: "Есть несохранённые правки",
+    saveFailed: "Не сохранено",
+    saveFailedHint: "Сохранение отклонено. Что не так — в «Проверить граф» и на нодах.",
+    readOnly: "Только просмотр",
+    readOnlyHint: "Сценарий сейчас правит агент. Смотреть и прогонять можно, править нельзя.",
     migrate: "Перевести чаты",
   },
   board: {
@@ -501,6 +511,10 @@ export const englishFlowEditorLabels: FlowEditorLabels = {
     save: "Save",
     saved: "Saved",
     unsaved: "Unsaved changes",
+    saveFailed: "Not saved",
+    saveFailedHint: "Saving was rejected. See what is wrong in “Check flow” and on the nodes.",
+    readOnly: "View only",
+    readOnlyHint: "An agent is editing this flow right now. You can look and run it, but not edit.",
     migrate: "Move chats",
   },
   board: {

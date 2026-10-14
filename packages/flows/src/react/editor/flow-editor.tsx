@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from "react";
+import { useMemo, type CSSProperties, type ReactNode } from "react";
 import {
   FLOW_OPS_BY_FIELD_TYPE,
   FLOW_DATA_OPS,
@@ -52,10 +52,13 @@ import { useFlowEditor, type FlowEditorController, type UseFlowEditorOptions } f
 export interface FlowEditorProps extends UseFlowEditorOptions {
   /** Части экрана: `tandemFlowEditorSkin` из `@ykurilov/agent-chat-skin-tandem/flows` или свои по договору. */
   skin: FlowEditorSkin;
+  /** Класс и стиль корня редактора. По умолчанию он занимает высоту родителя, но не меньше разумной (на телефоне тоже). */
+  className?: string;
+  style?: CSSProperties;
 }
 
 /** Редактор сценария: доска, панели, проверка, прогон, JSON. Управляемый: сценарий хранит приложение. */
-export function FlowEditor({ skin, ...options }: FlowEditorProps) {
+export function FlowEditor({ skin, className, style, ...options }: FlowEditorProps) {
   const editor = useFlowEditor(options);
   const labels = useFlowLabels().editor;
   const { flow } = editor;
@@ -70,10 +73,12 @@ export function FlowEditor({ skin, ...options }: FlowEditorProps) {
       onAddState={() => editor.addState(freeSpot(flow))}
       onOpenCard={() => editor.select({ kind: "card" })}
       onOpenJson={editor.openJson}
-      {...(options.onSave ? { onSave: () => void editor.save() } : {})}
+      {...(options.onSave && !editor.readOnly ? { onSave: () => void editor.save() } : {})}
       saving={editor.saving}
       dirty={editor.dirty}
-      {...(editor.migrate ? { onOpenMigrate: editor.migrate.open } : {})}
+      saveFailed={editor.saveFailed}
+      readOnly={editor.readOnly}
+      {...(editor.migrate && !editor.readOnly ? { onOpenMigrate: editor.migrate.open } : {})}
     />
   );
 
@@ -83,6 +88,8 @@ export function FlowEditor({ skin, ...options }: FlowEditorProps) {
       board={<FlowBoard editor={editor} skin={skin} />}
       panel={<EditorPanel editor={editor} skin={skin} labels={labels} />}
       dialog={<EditorDialog editor={editor} skin={skin} />}
+      {...(className !== undefined ? { className } : {})}
+      {...(style !== undefined ? { style } : {})}
     />
   );
 }
@@ -168,6 +175,17 @@ function FieldRows({ editor, skin, list }: { editor: FlowEditorController; skin:
 }
 
 function EditorPanel({ editor, skin, labels }: { editor: FlowEditorController; skin: FlowEditorSkin; labels: FlowEditorLabels }): ReactNode {
+  const panel = <EditablePanel editor={editor} skin={skin} labels={labels} />;
+  // Только просмотр: поля и кнопки панели правок выключены сразу, а не молча возвращают прежнее значение.
+  if (!editor.readOnly || editor.mode !== "edit") return panel;
+  return (
+    <fieldset disabled data-flow-read-only="" className="m-0 flex min-h-0 min-w-0 flex-1 flex-col border-0 p-0">
+      {panel}
+    </fieldset>
+  );
+}
+
+function EditablePanel({ editor, skin, labels }: { editor: FlowEditorController; skin: FlowEditorSkin; labels: FlowEditorLabels }): ReactNode {
   const { flow, selection } = editor;
 
   if (editor.mode === "check") {
@@ -435,6 +453,7 @@ function EditorDialog({ editor, skin }: { editor: FlowEditorController; skin: Fl
         onDownload={() => download(`${editor.flow.id}.json`, editor.json)}
         onLoad={(text) => void editor.loadJson(text)}
         onClose={editor.closeDialog}
+        {...(editor.readOnly ? { readOnly: true } : {})}
       />
     );
   }

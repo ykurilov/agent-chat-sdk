@@ -20,6 +20,24 @@ import type { ChatListOptions, ChatStorage, ChatSubjectFilter, SpendingLimitStat
 /** Хранилище в памяти процесса — для тестов. Копирует данные на входе и выходе, как база. */
 type StoredNote = MemoryNote & { mergedInto?: string };
 
+/** Сумма записей расхода по ключу (`group` — поля ключа: пара «модель × провайдер», у суммы по чатам — ещё чат). */
+function sumRecords<K extends Pick<UsageSum, "modelId" | "providerId">>(records: readonly UsageRecord[], group: (record: UsageRecord) => K): Array<K & UsageSum> {
+  const sums = new Map<string, K & UsageSum>();
+  for (const record of records) {
+    const fields = group(record);
+    const key = Object.values(fields).join("\u0000");
+    const sum = sums.get(key) ?? { ...fields, inputTokens: 0, cachedInputTokens: 0, cacheWriteTokens: 0, outputTokens: 0, reasoningTokens: 0, costUsd: 0 };
+    sum.inputTokens += record.inputTokens;
+    sum.cachedInputTokens += record.cachedInputTokens;
+    sum.cacheWriteTokens += record.cacheWriteTokens;
+    sum.outputTokens += record.outputTokens;
+    sum.reasoningTokens += record.reasoningTokens;
+    sum.costUsd += record.costUsd;
+    sums.set(key, sum);
+  }
+  return [...sums.values()];
+}
+
 export function createInMemoryChatStorage(): ChatStorage {
   const chats = new Map<string, Chat>();
   const messages = new Map<string, StoredMessage>();
@@ -371,33 +389,31 @@ export function createInMemoryChatStorage(): ChatStorage {
     },
 
     async sumUsage({ ownerId, chatId, messageId, source, since }) {
-      const sums = new Map<string, UsageSum>();
-      for (const record of usageRecords) {
-        if (ownerId !== undefined && record.ownerId !== ownerId) continue;
-        if (chatId !== undefined && record.chatId !== chatId) continue;
-        if (messageId !== undefined && record.messageId !== messageId) continue;
-        if (source !== undefined && record.source !== source) continue;
-        if (since !== undefined && record.createdAt < since) continue;
-        const key = `${record.modelId}\u0000${record.providerId}`;
-        const sum = sums.get(key) ?? {
-          modelId: record.modelId,
-          providerId: record.providerId,
-          inputTokens: 0,
-          cachedInputTokens: 0,
-          cacheWriteTokens: 0,
-          outputTokens: 0,
-          reasoningTokens: 0,
-          costUsd: 0,
-        };
-        sum.inputTokens += record.inputTokens;
-        sum.cachedInputTokens += record.cachedInputTokens;
-        sum.cacheWriteTokens += record.cacheWriteTokens;
-        sum.outputTokens += record.outputTokens;
-        sum.reasoningTokens += record.reasoningTokens;
-        sum.costUsd += record.costUsd;
-        sums.set(key, sum);
-      }
-      return [...sums.values()];
+      return sumRecords(
+        usageRecords.filter(
+          (record) =>
+            (ownerId === undefined || record.ownerId === ownerId) &&
+            (chatId === undefined || record.chatId === chatId) &&
+            (messageId === undefined || record.messageId === messageId) &&
+            (source === undefined || record.source === source) &&
+            (since === undefined || record.createdAt >= since),
+        ),
+        (record) => ({ modelId: record.modelId, providerId: record.providerId }),
+      );
+    },
+
+    async sumUsageByChat({ chatIds, ownerId, source, since }) {
+      const wanted = new Set(chatIds);
+      return sumRecords(
+        usageRecords.filter(
+          (record) =>
+            wanted.has(record.chatId) &&
+            (ownerId === undefined || record.ownerId === ownerId) &&
+            (source === undefined || record.source === source) &&
+            (since === undefined || record.createdAt >= since),
+        ),
+        (record) => ({ chatId: record.chatId, modelId: record.modelId, providerId: record.providerId }),
+      );
     },
 
     async setVoiceCut({ ownerId, chatId, messageId, voiceCut }) {

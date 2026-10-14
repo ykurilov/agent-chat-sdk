@@ -1,10 +1,11 @@
 import type { FlowSchedule } from "../format/flow-format";
-import type { FirstMessagesRules, FirstMessagesSetting } from "../engine/flow-run";
+import type { CanWriteNow, FirstMessagesRules, FirstMessagesSetting } from "../engine/flow-run";
 import { firstMessageSlot, localDay, resolveFirstMessages } from "../engine/first-messages";
 import { nextDayStartAfter } from "../engine/flow-days";
 import { dayClosedToday } from "../engine/day-frame";
 import type { FlowChatRecord, FlowStore } from "../store/flow-store";
 import type { FirstMessageRules, FlowPeople } from "./flow-types";
+import { FIRST_MESSAGE_MIN_RETRY_MS, FIRST_MESSAGE_RETRY_MS } from "./first-message-retry";
 
 /** Что в записи чата запрещает писать первым. */
 export type FlowChatWriteState = Pick<FlowChatRecord, "dayClosedOn" | "pausedUntil" | "windowClosed">;
@@ -41,14 +42,27 @@ export function createFirstMessageRules(setting: FirstMessagesSetting | undefine
       const sentToday = await store.countFirstMessages(ownerId, localDay(at, timeZone));
       const slot = firstMessageSlot(scenarioRules(rules, schedule), { at, timeZone, sentToday });
       if (!slot.allowed) return slot;
-      // Приложение спрашивается только тогда, когда остальные правила уже разрешили: «нет» — срока повтора нет.
-      if (rules.canWriteNow && !(await rules.canWriteNow({ ownerId, chatId, at: new Date(at) }))) return { allowed: false, retryAt: null };
-      return { allowed: true };
+      // Приложение спрашивается только тогда, когда остальные правила уже разрешили.
+      const answer = rules.canWriteNow ? await rules.canWriteNow({ ownerId, chatId, at: new Date(at) }) : true;
+      if (answer === true) return { allowed: true };
+      // Конец разговора от ответа не зависит: повтор только у касаний.
+      return { allowed: false, retryAt: retryAtOf(answer, at) };
     },
     async record({ ownerId, at, timeZone }) {
       await store.addFirstMessage(ownerId, localDay(at, timeZone));
     },
   };
+}
+
+/**
+ * Когда спросить снова после «нет» приложения: `"never"` — до сообщения человека (`null`); `false` и негодная дата — через
+ * час; дата в прошлом — не раньше чем через минуту, а не каждый обход.
+ */
+function retryAtOf(answer: Exclude<CanWriteNow, true>, at: number): number | null {
+  if (answer === "never") return null;
+  const retryAt = typeof answer === "object" && answer !== null && answer.retryAt instanceof Date ? answer.retryAt.getTime() : Number.NaN;
+  if (!Number.isFinite(retryAt)) return at + FIRST_MESSAGE_RETRY_MS;
+  return Math.max(retryAt, at + FIRST_MESSAGE_MIN_RETRY_MS);
 }
 
 // ---------- Пояс человека → В10: страница → пояс приложения → пояс сервера ----------
@@ -59,25 +73,31 @@ export const UNKNOWN_TIME_ZONE = "";
 export const serverTimeZone = (): string => Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 /**
- * Пояс страницы из пояса хода. Ядро без пояса страницы подставляет запасной (приложения или сервера), поэтому совпадение
- * с запасным — «страница пояс не прислала»: такой пояс не затирает известный пояс чата.
+ * Пояс страницы из пояса хода. Ядро с 0.53 говорит его прямо (`pageTimeZone`). Без этого поля: ядро без пояса страницы
+ * подставляет запасной (приложения или сервера), поэтому совпадение с запасным — «страница пояс не прислала»: такой пояс
+ * не затирает известный пояс чата.
  */
-export function pageTimeZone(turnZone: string, appZone: string | undefined): string | null {
+export function pageTimeZone(turnZone: string, appZone: string | undefined, sent?: string | null): string | null {
+  if (sent !== undefined) return sent;
   return turnZone === (appZone ?? serverTimeZone()) ? null : turnZone;
 }
 
-/** Пояс чата для таймеров: известный (человека или со страницы), иначе приложения, иначе сервера — с предупреждением один раз на чат. */
-export function createChatTimeZones(input: { appTimeZone: () => string | undefined; warn: (message: string) => void }) {
+/**
+ * Пояс чата для таймеров: известный (человека или со страницы), иначе `defaultTimeZone`, иначе приложения, иначе
+ * сервера — с предупреждением один раз на чат.
+ */
+export function createChatTimeZones(input: { appTimeZone: () => string | undefined; defaultTimeZone?: string; warn: (message: string) => void }) {
   const warned = new Set<string>();
   return {
     of(chatId: string, stored: string): string {
       if (stored) return stored;
+      if (input.defaultTimeZone) return input.defaultTimeZone;
       const app = input.appTimeZone();
       if (app) return app;
       const server = serverTimeZone();
       if (!warned.has(chatId)) {
         warned.add(chatId);
-        input.warn(`[сценарий] чат=${chatId}: пояс человека неизвестен (нет ни со страницы, ни agent.timeZone) — тихие часы и «время суток» по поясу сервера ${server}`);
+        input.warn(`[сценарий] чат=${chatId}: пояс человека неизвестен (нет ни со страницы, ни defaultTimeZone, ни agent.timeZone) — тихие часы и «время суток» по поясу сервера ${server}`);
       }
       return server;
     },

@@ -37,10 +37,13 @@ describe("T072 правила «писать первым»", () => {
     expect(await rules.check({ ...anna, at: msk(11) })).toEqual({ allowed: false, retryAt: msk(8, 0, 14) });
   });
 
-  it("canWriteNow приложения: «нет» — писать нельзя и срока нет; зовётся только днём, с чатом и временем", async () => {
-    const canWriteNow = vi.fn(async ({ chatId }: { ownerId: string; chatId: string; at: Date }) => chatId !== "отписался");
+  it("canWriteNow приложения: «нет» — не сейчас, повтор через час; { retryAt } — в названный момент; зовётся только днём, с чатом и временем", async () => {
+    const canWriteNow = vi.fn(async ({ chatId }: { ownerId: string; chatId: string; at: Date }) =>
+      chatId === "отписался" ? false : chatId === "стоп" ? { retryAt: new Date(msk(18)) } : true,
+    );
     const rules = createFirstMessageRules({ canWriteNow }, memoryFlowStore())!;
-    expect(await rules.check({ ...anna, chatId: "отписался", at: msk(15) })).toEqual({ allowed: false, retryAt: null });
+    expect(await rules.check({ ...anna, chatId: "отписался", at: msk(15) })).toEqual({ allowed: false, retryAt: msk(16) });
+    expect(await rules.check({ ...anna, chatId: "стоп", at: msk(15) })).toEqual({ allowed: false, retryAt: msk(18) });
     expect(await rules.check({ ...anna, at: msk(15) })).toEqual({ allowed: true });
     expect(canWriteNow).toHaveBeenCalledWith({ ownerId: "anna", chatId: "c1", at: new Date(msk(15)) });
     canWriteNow.mockClear();
@@ -62,6 +65,9 @@ describe("T072 пояс человека: страница → пояс прил
     expect(pageTimeZone("Asia/Makassar", MSK)).toBe("Asia/Makassar");
     expect(pageTimeZone(MSK, MSK)).toBeNull();
     expect(pageTimeZone(serverTimeZone(), undefined)).toBeNull();
+    // Ядро 0.53 говорит прямо: пояс страницы, совпавший с поясом службы, — всё равно пояс страницы.
+    expect(pageTimeZone(MSK, MSK, MSK)).toBe(MSK);
+    expect(pageTimeZone("Asia/Makassar", MSK, null)).toBeNull();
   });
 
   it("известный пояс чата главнее; нет — пояс приложения; нет и его — пояс сервера и предупреждение один раз на чат", () => {
