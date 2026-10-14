@@ -20,7 +20,7 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { ANY_STATE_LAYOUT_KEY, RETURN_TARGET, type AgentFlow, type FlowExit, type FlowIssue, type FlowPoint } from "../../format/flow-format";
+import { ANY_STATE_LAYOUT_KEY, RETURN_TARGET, type AgentFlow, type FlowCatalog, type FlowExit, type FlowIssue, type FlowPoint } from "../../format/flow-format";
 import { activeExits, isFinal, stateById } from "../../engine/flow-graph";
 import type { FlowEditorLabels } from "../../labels/editor";
 import { useFlowLabels } from "../flow-labels";
@@ -32,7 +32,9 @@ import type {
   FlowExitRowView,
   FlowIssueCount,
   FlowStateNodeProps,
+  FlowBoardToggleProps,
 } from "../flow-editor-skin";
+import type { BoardSpace } from "./board-space";
 import { FLOW_BOARD_CSS } from "./board-styles";
 import { addExit, connectExit, placeNode, type ExitOwner } from "./editor-model";
 import { conditionText, edgeKind, stateGoal, targetTitle } from "./exit-text";
@@ -117,11 +119,11 @@ function countFor(issues: FlowIssue[], match: (issue: FlowIssue) => boolean): Fl
   return { errors: found.filter((issue) => issue.level === "error").length, warnings: found.filter((issue) => issue.level === "warning").length };
 }
 
-function exitRows(flow: AgentFlow, exits: FlowExit[], issues: FlowIssue[], labels: FlowEditorLabels): FlowExitRowView[] {
+function exitRows(flow: AgentFlow, catalog: FlowCatalog, exits: FlowExit[], issues: FlowIssue[], labels: FlowEditorLabels): FlowExitRowView[] {
   return exits.map((exit) => ({
     exitId: exit.id,
     kind: edgeKind(exit),
-    text: conditionText(flow, exit.when, labels),
+    text: conditionText(flow, exit.when, labels, catalog),
     target: targetTitle(flow, exit.to, labels),
     issues: countFor(issues, (issue) => issue.place.exitId === exit.id),
   }));
@@ -143,7 +145,7 @@ function runMarks(editor: FlowEditorController) {
 
 function useBoardModel(editor: FlowEditorController) {
   const labels = useFlowLabels().editor;
-  const { flow, issues, selection, mode, select, readOnly } = editor;
+  const { flow, catalog, issues, selection, mode, select, readOnly } = editor;
   return useMemo(() => {
     const marks = runMarks(editor);
     // Выбирать ноду и стрелку можно вне прогона; двигать и соединять — ещё и не в режиме «только просмотр».
@@ -162,7 +164,7 @@ function useBoardModel(editor: FlowEditorController) {
           stateId: state.id,
           title: state.title || state.id,
           goal: stateGoal(state.instructions),
-          exits: exitRows(flow, state.exits, issues, labels),
+          exits: exitRows(flow, catalog, state.exits, issues, labels),
           tags: state.tags,
           start: flow.start === state.id,
           final: isFinal(state),
@@ -186,7 +188,7 @@ function useBoardModel(editor: FlowEditorController) {
           draggable: editable,
           view: {
             except: flow.anyState.except.map((id) => stateById(flow, id)?.title ?? id),
-            exits: exitRows(flow, flow.anyState.exits, issues, labels),
+            exits: exitRows(flow, catalog, flow.anyState.exits, issues, labels),
             selected: selection.kind === "any",
             dimmed: marks !== null,
             issues: countFor(issues, (issue) => !issue.place.stateId && flow.anyState.exits.some((exit) => exit.id === issue.place.exitId)),
@@ -212,7 +214,7 @@ function useBoardModel(editor: FlowEditorController) {
           targetHandle: INPUT_HANDLE,
           data: {
             kind: edgeKind(exit),
-            label: conditionText(flow, exit.when, labels),
+            label: conditionText(flow, exit.when, labels, catalog),
             selected: selectedExit === exit.id,
             dimmed: marks !== null && !marks.traversed.has(exit.id) && !(marks.live.has(exit.id) && nodeId === marks.current),
             traversed: marks?.traversed.has(exit.id) ?? false,
@@ -224,7 +226,35 @@ function useBoardModel(editor: FlowEditorController) {
     return { nodes, edges };
     // `editor` целиком меняется на каждом рендере; от прогона берём `simulation` и `mode`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [flow, issues, selection, mode, readOnly, editor.simulation, labels, select]);
+  }, [flow, catalog, issues, selection, mode, readOnly, editor.simulation, labels, select]);
+}
+
+/** Кнопка места на доске: у скина своя (`FlowBoardToggle`), без неё — простая на токенах `--flow-board-*`. */
+function BoardToggle(props: FlowBoardToggleProps) {
+  const skin = useSkin();
+  if (skin.FlowBoardToggle) return <skin.FlowBoardToggle {...props} />;
+  return (
+    <button
+      type="button"
+      aria-label={props.label}
+      title={props.label}
+      aria-expanded={props.expanded}
+      data-flow-board-toggle={props.kind}
+      onClick={props.onClick}
+      style={{
+        font: "inherit",
+        fontSize: 12,
+        padding: "6px 10px",
+        borderRadius: 8,
+        cursor: "pointer",
+        color: "inherit",
+        background: "var(--flow-board-handle-fill, #fff)",
+        border: "1px solid var(--flow-board-handle, currentColor)",
+      }}
+    >
+      {props.showText ? props.label : props.kind === "legend" ? "?" : props.expanded ? "×" : "+"}
+    </button>
+  );
 }
 
 /** Кнопки масштаба скина: ведут доску через `useReactFlow`. */
@@ -252,7 +282,8 @@ function clientPoint(event: MouseEvent | TouchEvent): { x: number; y: number } |
 
 const ignoreNodeClick = () => {};
 
-function Board({ editor }: { editor: FlowEditorController }) {
+function Board({ editor, space }: { editor: FlowEditorController; space: BoardSpace }) {
+  const spaceLabels = useFlowLabels().editor.board.space;
   const skin = useSkin();
   const model = useBoardModel(editor);
   const { screenToFlowPosition } = useReactFlow();
@@ -340,24 +371,51 @@ function Board({ editor }: { editor: FlowEditorController }) {
       proOptions={{ hideAttribution: true }}
     >
       <Background variant={BackgroundVariant.Dots} gap={22} size={1.2} />
-      <Panel position="bottom-left" className="flow-board__legend">
-        <skin.FlowLegend kinds={LEGEND_KINDS} />
-      </Panel>
+      {!space.legendHidden && (
+        <Panel position="bottom-left" className="flow-board__legend">
+          <div className="flow-board__legend-stack" style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 8 }}>
+            {space.legendOpen && <skin.FlowLegend kinds={LEGEND_KINDS} />}
+            <BoardToggle kind="legend" label={spaceLabels.legend} expanded={space.legendOpen} showText onClick={space.toggleLegend} />
+          </div>
+        </Panel>
+      )}
+      {space.inspectorToggleable && (
+        <Panel position="top-right">
+          <BoardToggle
+            kind="inspector"
+            label={space.inspectorOpen ? spaceLabels.hideInspector : spaceLabels.showInspector}
+            expanded={space.inspectorOpen}
+            onClick={space.toggleInspector}
+          />
+        </Panel>
+      )}
       <Panel position="bottom-right">
-        <ZoomControls />
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {!space.minimapHidden && (
+            <span className="flow-board__minimap-toggle" style={{ display: "contents" }}>
+              <BoardToggle
+                kind="minimap"
+                label={space.minimapOpen ? spaceLabels.hideMinimap : spaceLabels.showMinimap}
+                expanded={space.minimapOpen}
+                onClick={space.toggleMinimap}
+              />
+            </span>
+          )}
+          <ZoomControls />
+        </div>
       </Panel>
-      <MiniMap className="flow-board__minimap" pannable zoomable position="bottom-right" style={{ marginBottom: 76 }} />
+      {space.minimapOpen && <MiniMap className="flow-board__minimap" pannable zoomable position="bottom-right" style={{ marginBottom: 76 }} />}
     </ReactFlow>
   );
 }
 
 /** Доска редактора. Свой `ReactFlowProvider`: другой сценарий — доска заново и «весь граф» в экран. */
-export function FlowBoard({ editor, skin }: { editor: FlowEditorController; skin: FlowEditorSkin }) {
+export function FlowBoard({ editor, skin, space }: { editor: FlowEditorController; skin: FlowEditorSkin; space: BoardSpace }) {
   return (
     <SkinContext.Provider value={skin}>
       <style>{FLOW_BOARD_CSS}</style>
       <ReactFlowProvider key={editor.flow.id}>
-        <Board editor={editor} />
+        <Board editor={editor} space={space} />
       </ReactFlowProvider>
     </SkinContext.Provider>
   );

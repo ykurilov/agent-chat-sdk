@@ -63,7 +63,7 @@ describe("ретранслятор голоса: допуск", () => {
 
   it("вошедшему — допуск; нет пользователя — 401", async () => {
     const { relay } = relayWith();
-    expect(await relay.authorize(upgradeRequest())).toEqual({ user: { id: "anna" } });
+    expect(await relay.authorize(upgradeRequest())).toEqual({ user: { id: "anna" }, chatId: "voice" });
 
     const denied = await relayWith({ resolveUser: async () => null }).relay.authorize(upgradeRequest());
     expect("refusal" in denied && denied.refusal.status).toBe(401);
@@ -525,7 +525,7 @@ describe("ретранслятор голоса: лимиты", () => {
       first.connection.closed();
       const third = await setup.relay.authorize(upgradeRequest());
 
-      expect(third).toEqual({ user: { id: "anna" } });
+      expect(third).toEqual({ user: { id: "anna" }, chatId: "voice" });
     });
 
     it("закончил сервер (Soniox отвалился) — место тоже освобождается, и один раз", async () => {
@@ -548,7 +548,7 @@ describe("ретранслятор голоса: лимиты", () => {
 
       const free = relayWith({ rateLimit: false, maxConnectionsPerUser: false });
       for (let index = 0; index < 5; index++) await open(free);
-      expect(await free.relay.authorize(upgradeRequest())).toEqual({ user: { id: "anna" } });
+      expect(await free.relay.authorize(upgradeRequest())).toEqual({ user: { id: "anna" }, chatId: "voice" });
     });
 
     it("предел у каждого человека свой", async () => {

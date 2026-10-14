@@ -249,7 +249,7 @@ describe("AgentChat: ошибки голоса", () => {
     ["no_microphone", russianLabels.voiceErrors.no_microphone],
     ["network", russianLabels.voiceErrors.network],
     ["rate_limited", russianLabels.voiceErrors.rate_limited],
-    ["time_limit", russianLabels.voiceErrors.time_limit],
+    ["time_limit", "Запись остановлена: предел 5 минут"],
   ])("%s: понятное сообщение из словаря, кнопка в покое", async (kind, message) => {
     const voice = await renderWithVoice();
     pressMic();

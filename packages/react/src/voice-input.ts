@@ -7,7 +7,25 @@ export type VoiceErrorKind =
   | "service_unavailable"
   | "rate_limited"
   | "time_limit"
+  /** Лимит расходов исчерпан. */
+  | "limit"
+  /** Нет доступа: не вошёл или приложение отказало. */
+  | "forbidden"
+  /** Запись слишком длинная. */
+  | "too_long"
   | "other";
+
+/** Подробности ошибки для подписи. */
+export interface VoiceErrorDetails {
+  /** У `time_limit`: предел записи в секундах, как его назвал сервер. */
+  maxSessionSeconds?: number;
+}
+
+/** О какой записи речь: чат, на который ляжет расход, и язык человека (`AgentChat` передаёт язык словаря). */
+export interface VoiceStartContext {
+  chatId?: string;
+  language?: string;
+}
 
 /** Продиктованный текст целиком: подтверждённая часть и часть, которая ещё может измениться. */
 export interface DictatedText {
@@ -21,7 +39,7 @@ export interface VoiceListener {
   onConnected(): void;
   /** Накопленный текст диктовки целиком. */
   onText(text: DictatedText): void;
-  onError(kind: VoiceErrorKind): void;
+  onError(kind: VoiceErrorKind, details?: VoiceErrorDetails): void;
   /** Диктовка закончена, ресурсы освобождены. */
   onEnd(): void;
   /** Текст закреплён, сервер причёсывает его моделью (только режим `relay` с чисткой). Дальше `onPolished` или сразу `onEnd`. */
@@ -39,5 +57,5 @@ export interface VoiceSession {
 
 /** Голосовой ввод для `AgentChat`; настоящий делает `createVoiceInput` из `@ykurilov/agent-chat-voice`. */
 export interface VoiceInput {
-  start(listener: VoiceListener): VoiceSession;
+  start(listener: VoiceListener, context?: VoiceStartContext): VoiceSession;
 }

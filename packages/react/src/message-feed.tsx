@@ -88,6 +88,12 @@ function MessageFeedView({ scrollRef, messages, renderMessage, keepLastMounted, 
   const rootRef = useRef<HTMLDivElement>(null);
   const virtualizerRef = useRef<VirtualizerHandle>(null);
   const stuck = useRef(true);
+  // То же прилипание для разметки: окно ленты держит запас над экраном, пока лента едет за низом.
+  const [followingBottom, setFollowingBottom] = useState(true);
+  const stick = useCallback((value: boolean) => {
+    stuck.current = value;
+    setFollowingBottom(value);
+  }, []);
   // Высота списка при прошлой проверке: рост и прокрутка приходят в одном кадре, и отход от низа
   // надо мерить и по новой высоте, и по прежней, иначе рост сам «отодвигает» читателя от низа.
   const lastHeight = useRef(0);
@@ -163,11 +169,11 @@ function MessageFeedView({ scrollRef, messages, renderMessage, keepLastMounted, 
       }
       // Шаг вверх после ввода читателя снимает прилипание сразу, без порога: медленный тачпад шагает мельче 96 px,
       // а каждый шаг окно ленты встречает перестановкой разметки, и прилипание, оставшееся стоять, возвращало бы читателя вниз.
-      if (step < 0) stuck.current = readerActed ? false : near;
+      if (step < 0) stick(readerActed ? false : near);
       else if (step > 0) {
         // Читатель повернул вниз: вверх он больше не ведёт.
         readerUpUntil.current = 0;
-        if (near && (step <= scroller.clientHeight || performance.now() < userJumpUntil.current)) stuck.current = true;
+        if (near && (step <= scroller.clientHeight || performance.now() < userJumpUntil.current)) stick(true);
       }
     };
     const onKeyDown = (event: KeyboardEvent) => {
@@ -216,7 +222,7 @@ function MessageFeedView({ scrollRef, messages, renderMessage, keepLastMounted, 
       window.removeEventListener("pointerup", onPointerUp);
       window.removeEventListener("pointercancel", onPointerUp);
     };
-  }, [scrollRef, scrollerReady]);
+  }, [scrollRef, scrollerReady, stick]);
 
   // Лента выросла или скроллер стал ниже, а читатель у низа: довести низ до края.
   useEffect(() => {
@@ -275,7 +281,7 @@ function MessageFeedView({ scrollRef, messages, renderMessage, keepLastMounted, 
     if (!scrollerReady || !scroller || openedAtBottom.current) return;
     openedAtBottom.current = true;
     const focusIndex = openAtMessageId === undefined ? -1 : messages.findIndex((message) => message.id === openAtMessageId);
-    stuck.current = focusIndex < 0 || focusIndex === lastIndex;
+    stick(focusIndex < 0 || focusIndex === lastIndex);
     // Доводка окна ленты переживает первый показ, если замеры не затихают: ответ пришёл и сразу отправлен
     // следующий вопрос. Цель «низ» не стареет; цель «сообщение» заменяет отправка (`scrollToBottom`).
     if (focusIndex >= 0 && focusIndex < lastIndex) {
@@ -314,15 +320,26 @@ function MessageFeedView({ scrollRef, messages, renderMessage, keepLastMounted, 
   // Исключение — ещё живая доводка первого показа к сообщению: она тянула бы ленту обратно к нему.
   // Её можно только заменить новой, и цель новой — низ.
   const scrollToBottom = useCallback(() => {
-    stuck.current = true;
+    stick(true);
     if (performance.now() < openingScrollUntil.current) virtualizerRef.current?.scrollTo(BOTTOM_SCROLL_TARGET);
     openingScrollUntil.current = 0;
     const scroller = scrollRef.current;
     if (scroller) scroller.scrollTop = scroller.scrollHeight;
-  }, [scrollRef]);
+  }, [scrollRef, stick]);
   useImperativeHandle(ref, () => ({ scrollToBottom }), [scrollToBottom]);
 
-  const keepMounted = useMemo(() => (keepLastMounted && lastIndex >= 0 ? [lastIndex] : []), [keepLastMounted, lastIndex]);
+  // Пока лента едет вниз, окно ленты не держит запаса над экраном, а через 150 мс тишины возвращает его: готовые
+  // сообщения над экраном снимались бы с каждым шагом за растущим ответом и разбирались заново. Пока лента прилипла
+  // к низу, запас над экраном держится здесь.
+  const virtualizer = virtualizerRef.current;
+  const tailStart =
+    positioned && followingBottom && virtualizer && lastIndex >= 0
+      ? Math.min(lastIndex, Math.max(0, virtualizer.findItemIndex(virtualizer.scrollOffset - BUFFER_PX)))
+      : lastIndex + 1;
+  const keepMounted = useMemo(() => {
+    const kept = Array.from({ length: Math.max(0, lastIndex + 1 - tailStart) }, (_, offset) => tailStart + offset);
+    return keepLastMounted && lastIndex >= 0 && kept.at(-1) !== lastIndex ? [...kept, lastIndex] : kept;
+  }, [keepLastMounted, lastIndex, tailStart]);
 
   return (
     <div ref={rootRef}>

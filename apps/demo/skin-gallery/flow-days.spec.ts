@@ -52,9 +52,20 @@ test("дни и время, «Длится», касания, попутные �
   await expect(timing.getByRole("combobox", { name: "Длится", exact: true })).toHaveValue("d");
   await timing.getByLabel("Длится: дней").fill("3");
   await expect(timing.locator("[data-flow-nudges]")).toBeVisible();
+  // Свои касания — только в день входа, дальше общие касания сценария.
+  await timing.getByRole("combobox", { name: "Свои касания действуют" }).selectOption("days");
+  await expect(timing.getByLabel("Свои касания действуют: дн., считая день входа")).toHaveValue("1");
+  await expect(node(page, "День 2: практика").locator("[data-flow-node-timing]")).toHaveText("3 дня · касания 30 мин · 12:00 в день входа");
   await page.screenshot({ path: `${shots}/light-state.png` });
+  await timing.locator("[data-flow-nudges-days]").scrollIntoViewIfNeeded();
+  await timing.screenshot({ path: `${shots}/light-state-nudges.png` });
   await timing.getByRole("radio", { name: "Выкл" }).click();
   await expect(node(page, "День 2: практика").locator("[data-flow-node-timing]")).toHaveText("3 дня · без касаний");
+  // «До дня N программы»: номер дня — после варианта, подпись — «с дня N».
+  await timing.getByRole("combobox", { name: "Длится", exact: true }).selectOption("program_day");
+  await timing.getByLabel("Длится: до дня программы").fill("4");
+  await expect(node(page, "День 2: практика").locator("[data-flow-node-timing]")).toHaveText("с дня 4 · без касаний");
+  await page.screenshot({ path: `${shots}/light-program-day.png` });
   // Выход «Длится» не дублируется среди карточек условий.
   await expect(page.locator("[data-exit-card]")).toHaveCount(0);
 
@@ -80,7 +91,7 @@ test("дни и время, «Длится», касания, попутные �
   expect(json.schedule.lengthDays).toBe(5);
   expect(json.sideTasks[1]).toMatchObject({ text: "Узнать тариф", field: "tariff" });
   expect(json.clientCard.map((field: { id: string }) => field.id)).toContain("tariff");
-  expect(json.states[1].exits[0].when).toEqual({ type: "timer", from: "state_days", days: 3 });
+  expect(json.states[1].exits[0].when).toEqual({ type: "timer", from: "program_day", day: 4 });
   expect(json.states[1].nudges).toBe("off");
   expect(json.states[0].exits[0].when.value).toBe(false);
 });
@@ -108,4 +119,15 @@ test.describe("телефон", () => {
     expect(await noHorizontalScroll(page)).toBeLessThanOrEqual(0);
     await page.screenshot({ path: `${shots}/phone-state.png` });
   });
+});
+
+test("подписи событий приложения: на доске и в карточке условия — подпись, в JSON — имя", async ({ page }) => {
+  await page.goto("/flow-editor.html?theme=light&flow=shop-support");
+  await page.locator(".react-flow__node").first().waitFor();
+  const refund = node(page, "Оформление возврата");
+  await expect(refund).toContainText("Нажата кнопка «Возврат оформлен»");
+  await refund.locator('[role="button"]').first().click();
+  const card = page.locator('[data-exit-card="refund_done"]');
+  await expect(card.getByLabel("Что именно").locator("option:checked")).toHaveText("Возврат оформлен");
+  await expect(card.getByLabel("Что именно")).toHaveValue("start_refund");
 });

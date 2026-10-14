@@ -6,7 +6,7 @@ import { stateById } from "../engine/flow-graph";
 import { nextTransition } from "../engine/next-transition";
 import { applyTransition, claimAllowed, noteRejectedClaim } from "../engine/run-updates";
 import { judgeExits, stateGoal } from "../prompt/state-card";
-import { advance, chainLimitMessage, currentRun, transitionReport, type ChatFlowRun, type FlowRuntime, type PinnedFlow } from "./flow-events";
+import { advance, chainLimitMessage, currentRun, personTimeZone, transitionReport, type ChatFlowRun, type FlowRuntime, type PinnedFlow } from "./flow-events";
 import type { ClientCardTools, FlowJudge, JudgeMessage } from "./flow-types";
 import { chatTime } from "./test-clock";
 import type { FlowExtraTool } from "./extra-tool";
@@ -59,6 +59,7 @@ async function afterToolCall(runtime: FlowRuntime, model: AgentToolsModel, name:
   const transitions: Transition[] = [];
   const input = {
     now,
+    timeZone: await personTimeZone(runtime, model),
     card: await runtime.cardValues(model.ownerId),
     out: transitions,
     onChainLimit: (stopped: ChatFlowRun) => runtime.logError(chainLimitMessage(model.chatId, stopped)),
@@ -169,6 +170,7 @@ function flowExitTool(input: FlowToolsInput, model: AgentToolsModel): Tool {
       const card = await runtime.cardValues(model.ownerId);
       const run = advance(flow, applyTransition(flow, turn.run, transition), { type: "data", card }, {
         now,
+        timeZone: await personTimeZone(runtime, model),
         card,
         out: transitions,
         onChainLimit: (stopped) => runtime.logError(chainLimitMessage(model.chatId, stopped)),

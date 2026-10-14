@@ -2,6 +2,9 @@ export { createVoiceHandler } from "./server/voice-handler";
 export type { VoiceHandler, VoiceHandlerOptions } from "./server/voice-handler";
 export { createVoiceRelay } from "./server/voice-relay";
 export type { RelayAccess, RelayClientSocket, RelayConnection, VoiceRelay, VoiceRelayOptions } from "./server/voice-relay";
+export { RELAY_CLOSE } from "./relay-close";
+export type { VoiceSpending } from "./server/voice-spending";
+export { acceptedLanguageHints } from "./server/language-hints";
 export { createSonioxSession } from "./server/soniox-session";
 export type {
   SonioxAudioFormat,
@@ -19,4 +22,12 @@ export { createRateLimiter } from "./server/access";
 export type { RateLimit } from "./server/access";
 export type { SonioxContext } from "./soniox-messages";
 export { createTextPolisher, DEFAULT_POLISH_MODEL } from "./server/polish";
-export type { CustomPolishOptions, PolishOptions, TextPolisher, TogetherPolishOptions } from "./server/polish";
+export type {
+  ChatModelPolishOptions,
+  CustomPolishOptions,
+  PolishOptions,
+  PolishPayer,
+  PolishUsage,
+  TextPolisher,
+  TogetherPolishOptions,
+} from "./server/polish";

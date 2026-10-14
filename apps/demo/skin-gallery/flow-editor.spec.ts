@@ -96,6 +96,67 @@ test("сценарий: новое состояние, связь на доск�
   await page.screenshot({ path: `${screenshotDir}/light-json.png` });
 });
 
+test("место доски: свернуть и развернуть, запомнить, полный экран, Esc", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open(page, "light");
+  const board = page.locator("[data-flow-board]");
+  const wide = (await board.boundingBox())!.width;
+
+  // Легенда по умолчанию — маленькая кнопка; открывается и закрывается.
+  const legend = page.getByRole("button", { name: "Легенда" });
+  await expect(legend).toHaveAttribute("aria-expanded", "false");
+  await expect(page.locator(".flow-board__legend ul")).toHaveCount(0);
+  await legend.click();
+  await expect(page.locator(".flow-board__legend ul")).toBeVisible();
+  await legend.click();
+  await expect(page.locator(".flow-board__legend ul")).toHaveCount(0);
+
+  // Правая панель и мини-карта сворачиваются, холст становится шире; выбор запоминается после перезагрузки.
+  await page.getByRole("button", { name: "Скрыть панель «Сценарий»" }).click();
+  await expect(page.locator("aside")).toHaveCount(0);
+  expect((await board.boundingBox())!.width).toBeGreaterThan(wide + 300);
+  await page.getByRole("button", { name: "Скрыть мини-карту" }).click();
+  await expect(page.locator(".react-flow__minimap")).toHaveCount(0);
+  await page.reload();
+  await page.locator(".react-flow__node").first().waitFor();
+  await expect(page.locator("aside")).toHaveCount(0);
+  await expect(page.locator(".react-flow__minimap")).toHaveCount(0);
+  await page.screenshot({ path: `${screenshotDir}/light-space-collapsed.png` });
+  await page.getByRole("button", { name: "Показать панель «Сценарий»" }).click();
+  await page.getByRole("button", { name: "Показать мини-карту" }).click();
+  await expect(page.locator("aside")).toHaveCount(1);
+  await expect(page.locator(".react-flow__minimap")).toBeVisible();
+
+  // Полный экран: редактор поверх страницы, страница под ним не прокручивается, Esc и та же кнопка выходят.
+  const enter = page.getByRole("button", { name: "На весь экран" });
+  await enter.click();
+  const region = page.getByRole("dialog", { name: "Редактор сценария на весь экран" });
+  await expect(region).toBeVisible();
+  expect(await page.evaluate(() => getComputedStyle(document.body).overflow)).toBe("hidden");
+  const box = (await region.boundingBox())!;
+  expect(box).toMatchObject({ x: 0, y: 0, width: 1440, height: 900 });
+  await page.screenshot({ path: `${screenshotDir}/light-fullscreen.png` });
+  await page.keyboard.press("Escape");
+  await expect(region).toHaveCount(0);
+  await expect(enter).toBeFocused();
+  expect(await page.evaluate(() => getComputedStyle(document.body).overflow)).not.toBe("hidden");
+  await enter.click();
+  await page.getByRole("button", { name: "Выйти из полного экрана" }).click();
+  await expect(region).toHaveCount(0);
+});
+
+test("узкая шапка и свёрнутая панель: граф получает место", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/flow-editor.html?theme=light&header=compact&inspector=collapsible");
+  await page.locator(".react-flow__node").first().waitFor();
+  await expect(page.locator("[data-flow-editor] input")).toHaveCount(0);
+  await expect(page.locator("aside")).toHaveCount(0);
+  expect((await page.locator("[data-flow-board]").boundingBox())!.y).toBeLessThanOrEqual(49);
+  await page.screenshot({ path: `${screenshotDir}/light-compact.png` });
+  await page.locator(".react-flow__node").first().locator('[role="button"]').first().click();
+  await expect(page.locator("aside")).toHaveCount(1);
+});
+
 for (const theme of ["light", "dark"] as const) {
   test(`${theme}, компьютер: доска и панель`, async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
@@ -108,6 +169,23 @@ for (const theme of ["light", "dark"] as const) {
     await page.screenshot({ path: `${screenshotDir}/${theme}-desktop-state.png` });
   });
 }
+
+test.describe("телефон, полный экран", () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+
+  test("редактор занимает окно, кнопки в экране", async ({ page }) => {
+    await open(page, "dark", "shop-support");
+    await page.getByRole("button", { name: "На весь экран" }).tap();
+    const region = page.getByRole("dialog", { name: "Редактор сценария на весь экран" });
+    await expect(region).toBeVisible();
+    const box = (await region.boundingBox())!;
+    expect(box.width).toBe(390);
+    expect(await noHorizontalScroll(page)).toBeLessThanOrEqual(0);
+    await page.screenshot({ path: `${screenshotDir}/dark-phone-fullscreen.png` });
+    await page.getByRole("button", { name: "Выйти из полного экрана" }).tap();
+    await expect(region).toHaveCount(0);
+  });
+});
 
 test.describe("телефон", () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });

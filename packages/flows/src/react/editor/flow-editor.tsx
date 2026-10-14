@@ -1,4 +1,4 @@
-import { useMemo, type CSSProperties, type ReactNode } from "react";
+import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import {
   FLOW_OPS_BY_FIELD_TYPE,
   FLOW_DATA_OPS,
@@ -10,6 +10,7 @@ import {
   type FlowNudges,
   type FlowState,
 } from "../../format/flow-format";
+import { catalogEventLabel, catalogEventNames } from "../../format/catalog-events";
 import { fieldById, isFinal, stateById } from "../../engine/flow-graph";
 import { isFieldStale } from "../../engine/side-questions";
 import type { FlowEditorLabels } from "../../labels/editor";
@@ -33,6 +34,7 @@ import {
   type FieldList,
 } from "./editor-model";
 import { conditionText, edgeKind, stateGoal, targetTitle } from "./exit-text";
+import { useBoardSpace, useFullscreenBehavior, type FlowBoardSpaceProps } from "./board-space";
 import { FlowBoard } from "./flow-board";
 import {
   durationOf,
@@ -41,6 +43,8 @@ import {
   setDuration,
   setScheduleOn,
   setStateNudges,
+  setStateNudgesDays,
+  stateNudgesDays,
   updateSchedule,
   updateScheduleNudges,
   updateStateNudges,
@@ -49,7 +53,7 @@ import { addCatalogField, addSideTask, catalogFieldsToAdd, removeSideTask, setSi
 import { nextQuestionField, simulationChoices } from "./flow-simulation";
 import { useFlowEditor, type FlowEditorController, type UseFlowEditorOptions } from "./use-flow-editor";
 
-export interface FlowEditorProps extends UseFlowEditorOptions {
+export interface FlowEditorProps extends UseFlowEditorOptions, FlowBoardSpaceProps {
   /** Части экрана: `tandemFlowEditorSkin` из `@ykurilov/agent-chat-skin-tandem/flows` или свои по договору. */
   skin: FlowEditorSkin;
   /** Класс и стиль корня редактора. По умолчанию он занимает высоту родителя, но не меньше разумной (на телефоне тоже). */
@@ -58,10 +62,24 @@ export interface FlowEditorProps extends UseFlowEditorOptions {
 }
 
 /** Редактор сценария: доска, панели, проверка, прогон, JSON. Управляемый: сценарий хранит приложение. */
-export function FlowEditor({ skin, className, style, ...options }: FlowEditorProps) {
+export function FlowEditor({ skin, className, style, header: headerMode, legend, minimap, inspector, fullscreen, storageKey, ...options }: FlowEditorProps) {
   const editor = useFlowEditor(options);
   const labels = useFlowLabels().editor;
   const { flow } = editor;
+  const space = useBoardSpace(
+    {
+      ...(headerMode !== undefined ? { header: headerMode } : {}),
+      ...(legend !== undefined ? { legend } : {}),
+      ...(minimap !== undefined ? { minimap } : {}),
+      ...(inspector !== undefined ? { inspector } : {}),
+      ...(fullscreen !== undefined ? { fullscreen } : {}),
+      ...(storageKey !== undefined ? { storageKey } : {}),
+    },
+    editor,
+  );
+  const [root, setRoot] = useState<HTMLDivElement | null>(null);
+  const { setFullscreen } = space;
+  const onTab = useFullscreenBehavior(space.fullscreen, () => setFullscreen(false), editor.dialog !== null, root);
 
   const header = (
     <skin.FlowHeader
@@ -79,20 +97,41 @@ export function FlowEditor({ skin, className, style, ...options }: FlowEditorPro
       saveFailed={editor.saveFailed}
       readOnly={editor.readOnly}
       {...(editor.migrate && !editor.readOnly ? { onOpenMigrate: editor.migrate.open } : {})}
+      {...(space.header === "compact" ? { compact: true } : {})}
+      {...(space.fullscreenAllowed ? { fullscreen: { active: space.fullscreen, onToggle: () => setFullscreen(!space.fullscreen) } } : {})}
     />
   );
 
+  // Обёртка стоит всегда, чтобы доска не пересоздавалась при выходе на весь экран; в обычном виде она не влияет на вёрстку.
   return (
-    <skin.FlowEditorFrame
-      header={header}
-      board={<FlowBoard editor={editor} skin={skin} />}
-      panel={<EditorPanel editor={editor} skin={skin} labels={labels} />}
-      dialog={<EditorDialog editor={editor} skin={skin} />}
-      {...(className !== undefined ? { className } : {})}
-      {...(style !== undefined ? { style } : {})}
-    />
+    <div
+      ref={setRoot}
+      data-flow-fullscreen={space.fullscreen ? "" : undefined}
+      {...(space.fullscreen ? { role: "dialog", "aria-modal": true, "aria-label": labels.board.space.fullscreenRegion, onKeyDown: onTab } : {})}
+      style={space.fullscreen ? FULLSCREEN_STYLE : { display: "contents" }}
+    >
+      <skin.FlowEditorFrame
+        header={header}
+        board={<FlowBoard editor={editor} skin={skin} space={space} />}
+        panel={space.inspectorOpen ? <EditorPanel editor={editor} skin={skin} labels={labels} /> : null}
+        dialog={<EditorDialog editor={editor} skin={skin} />}
+        {...(space.header === "compact" ? { compact: true } : {})}
+        // Свои класс и стиль приложения рассчитаны на место в странице; на весь экран редактор занимает окно.
+        {...(space.fullscreen ? { style: { height: "100%", minHeight: 0 } } : { ...(className !== undefined ? { className } : {}), ...(style !== undefined ? { style } : {}) })}
+      />
+    </div>
   );
 }
+
+const FULLSCREEN_STYLE: CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  zIndex: 2000,
+  height: "100dvh",
+  overflow: "auto",
+  background: "var(--canvas, Canvas)",
+  color: "var(--foreground, CanvasText)",
+};
 
 function stateLinks(editor: FlowEditorController): FlowStateLinkView[] {
   return editor.flow.states.map((state) => ({
@@ -117,10 +156,15 @@ function ExitCards({ editor, skin, labels, owner }: { editor: FlowEditorControll
   const exits: FlowExit[] = (owner === null ? flow.anyState.exits : (state?.exits ?? [])).filter((exit) => exit.id !== durationExitId);
   const fields: FlowField[] = [...flow.clientCard, ...flow.chatNotes];
   const eventNames = {
-    button: [...new Set([...catalog.events, ...catalog.widgets])],
+    button: [...new Set([...catalogEventNames(catalog), ...catalog.widgets])],
     tool: [...catalog.tools],
-    app: [...catalog.events],
+    app: catalogEventNames(catalog),
   };
+  const eventLabels: Record<string, string> = {};
+  for (const name of eventNames.app) {
+    const label = catalogEventLabel(catalog, name);
+    if (label) eventLabels[name] = label;
+  }
   const targets = targetOptions(flow, labels, owner !== null);
   return (
     <>
@@ -135,6 +179,7 @@ function ExitCards({ editor, skin, labels, owner }: { editor: FlowEditorControll
             fields={fields}
             ops={fieldType ? [...FLOW_OPS_BY_FIELD_TYPE[fieldType]] : [...FLOW_DATA_OPS]}
             eventNames={eventNames}
+            eventLabels={eventLabels}
             targets={targets}
             issues={editor.issues.filter((issue) => issue.place.exitId === exit.id)}
             canMoveUp={index > 0}
@@ -351,7 +396,7 @@ function StateTiming({ editor, skin, labels, state }: { editor: FlowEditorContro
   return (
     <skin.FlowStateTiming
       duration={duration && { amount: duration.amount, unit: duration.unit, to: duration.to }}
-      daysAvailable={flow.schedule !== undefined || duration?.unit === "d"}
+      daysAvailable={flow.schedule !== undefined || (duration !== null && duration.unit !== "h")}
       targets={targetOptions(flow, labels, true)}
       issues={duration ? editor.issues.filter((issue) => issue.place.exitId === duration.exitId) : []}
       onDurationChange={(value) => editor.edit((current) => setDuration(current, state.id, value))}
@@ -364,6 +409,8 @@ function StateTiming({ editor, skin, labels, state }: { editor: FlowEditorContro
       }}
       nudgesMode={mode}
       onNudgesModeChange={(next) => editor.edit((current) => setStateNudges(current, state.id, next))}
+      nudgesDays={stateNudgesDays(state)}
+      onNudgesDaysChange={(days) => editor.edit((current) => setStateNudgesDays(current, state.id, days))}
       nudges={
         own && (
           <NudgesEditor
@@ -409,7 +456,7 @@ function RunPanel({ editor, skin, labels }: { editor: FlowEditorController; skin
         return {
           exitId: choice.exitId,
           kind: edgeKind(exit),
-          text: conditionText(flow, exit.when, labels),
+          text: conditionText(flow, exit.when, labels, editor.catalog),
           target: choice.target ? targetTitle(flow, choice.target, labels) : null,
           onChoose: () => editor.simulate.choose(choice.exitId),
         };
@@ -422,7 +469,7 @@ function RunPanel({ editor, skin, labels }: { editor: FlowEditorController; skin
         return {
           stateId: step.stateId,
           title: stateById(flow, step.stateId)?.title || step.stateId,
-          via: step.nothing ? labels.runPanel.nothingHappened : exit ? conditionText(flow, exit.when, labels) : null,
+          via: step.nothing ? labels.runPanel.nothingHappened : exit ? conditionText(flow, exit.when, labels, editor.catalog) : null,
         };
       })}
       canGoBack={sim.previous !== null}

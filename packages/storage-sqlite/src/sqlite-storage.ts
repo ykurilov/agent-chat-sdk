@@ -21,7 +21,7 @@ import Database from "better-sqlite3";
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { readMigrationFiles } from "drizzle-orm/migrator";
-import { branchSelections, chats, compactions, memoryNotes, memoryOptimizationRuns, messages, spendingLimitStates, usageRecords, userModelChoices, voiceChoices } from "./schema";
+import { branchSelections, chats, chatTurnLeases, compactions, memoryNotes, memoryOptimizationRuns, messages, spendingLimitStates, usageRecords, userModelChoices, voiceChoices } from "./schema";
 
 export interface SqliteChatStorage extends ChatStorage {
   /** Закрывает файл базы. */
@@ -332,7 +332,32 @@ export function createSqliteChatStorage(options: { filePath: string }): SqliteCh
         tx.delete(branchSelections).where(eq(branchSelections.chatId, chatId)).run();
         tx.delete(messages).where(eq(messages.chatId, chatId)).run();
         tx.delete(chats).where(eq(chats.id, chatId)).run();
+        tx.delete(chatTurnLeases).where(eq(chatTurnLeases.chatId, chatId)).run();
       }, { behavior: "immediate" });
+    },
+
+    async claimChatTurn(chatId, holder, leaseMs) {
+      const now = Date.now();
+      // Одной записью: свободный чат — вставка; своя или просроченная чужая — замена; живая чужая — ничего.
+      const claimed = db
+        .insert(chatTurnLeases)
+        .values({ chatId, holder, until: now + leaseMs })
+        .onConflictDoUpdate({
+          target: chatTurnLeases.chatId,
+          set: { holder, until: now + leaseMs },
+          setWhere: sql`${chatTurnLeases.holder} = ${holder} or ${chatTurnLeases.until} <= ${now}`,
+        })
+        .returning({ chatId: chatTurnLeases.chatId })
+        .all();
+      return claimed.length > 0;
+    },
+
+    async releaseChatTurn(chatId, holder) {
+      db.delete(chatTurnLeases).where(and(eq(chatTurnLeases.chatId, chatId), eq(chatTurnLeases.holder, holder))).run();
+    },
+
+    async clearChatTurnLeases() {
+      db.delete(chatTurnLeases).run();
     },
 
     async getMessage(messageId) {

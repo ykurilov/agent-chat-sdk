@@ -2,8 +2,9 @@ import { requestSession } from "./request-session";
 import type { VoiceSessionParameters } from "./request-session";
 import { buildFinalizeMessage, buildStartMessage, createTranscript } from "./soniox-messages";
 import type { DictatedText } from "./soniox-messages";
+import { RELAY_CLOSE } from "./relay-close";
 import { classifyMicrophoneError, VoiceError } from "./voice-errors";
-import type { VoiceErrorKind } from "./voice-errors";
+import type { VoiceErrorDetails, VoiceErrorKind } from "./voice-errors";
 
 /** Кто слушает диктовку. После `onError` всегда приходит `onEnd`. */
 export interface VoiceListener {
@@ -11,7 +12,8 @@ export interface VoiceListener {
   onConnected(): void;
   /** Накопленный с начала диктовки текст целиком. */
   onText(text: DictatedText): void;
-  onError(kind: VoiceErrorKind): void;
+  /** `details` — подробности для подписи: у `time_limit` предел записи, названный сервером. */
+  onError(kind: VoiceErrorKind, details?: VoiceErrorDetails): void;
   /** Диктовка закончена, микрофон и соединение освобождены. */
   onEnd(): void;
   /** Только режим `relay` с чисткой: текст закреплён, сервер чистит его моделью. Дальше придёт `onPolished` или сразу `onEnd`. */
@@ -27,8 +29,15 @@ export interface VoiceSession {
   cancel(): void;
 }
 
+/** О какой записи речь: чат, на который ляжет расход (режим `relay`), и язык человека (например, язык экрана). */
+export interface VoiceStartContext {
+  chatId?: string;
+  /** Код языка, например `"ru"` или `"en-US"`. Сервер проверит его сам и возьмёт только годное. */
+  language?: string;
+}
+
 export interface VoiceInput {
-  start(listener: VoiceListener): VoiceSession;
+  start(listener: VoiceListener, context?: VoiceStartContext): VoiceSession;
 }
 
 export interface VoiceInputOptions {
@@ -47,6 +56,11 @@ export interface VoiceInputOptions {
   mode?: "direct" | "relay";
   /** Адрес WebSocket сервера приложения для режима `relay`. По умолчанию `{api}/stream` на адресе страницы. */
   relayUrl?: string;
+  /**
+   * Языки каждой записи, например `["ru", "en"]` или функция от состояния приложения. Важнее языка из `start`.
+   * Не задано — язык из `start` (язык экрана), а нет и его — подсказка сервера.
+   */
+  languageHints?: string[] | (() => string[] | undefined);
   /** Подмены среды для тестов; по умолчанию — браузерные. `undefined` — «такого нет в браузере». */
   fetch?: typeof fetch;
   WebSocket?: typeof WebSocket | undefined;
@@ -63,19 +77,24 @@ const DEFAULT_MAX_SESSION_SECONDS = 300;
 const LIMIT_MARGIN_SECONDS = 2;
 /** Форматы записи по порядку предпочтения: Chrome и Firefox — webm/opus, Safari — mp4/AAC. Soniox распознаёт все (`audio_format: auto`). */
 const RECORDER_FORMATS = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/mp4"];
-/** Коды закрытия соединения с сервером приложения в режиме `relay` (см. contracts/voice.md). */
-const RELAY_CLOSE_PROTOCOL = 4400;
-const RELAY_CLOSE_UNAUTHORIZED = 4401;
-const RELAY_CLOSE_TIME_LIMIT = 4408;
-const RELAY_CLOSE_RATE_LIMITED = 4429;
-const RELAY_CLOSE_UPSTREAM = 4502;
+/** Вид ошибки по коду закрытия соединения с сервером приложения (режим `relay`, см. contracts/voice.md). */
+const KIND_BY_CLOSE_CODE: Record<number, VoiceErrorKind> = {
+  [RELAY_CLOSE.messageTooBig]: "too_long",
+  [RELAY_CLOSE.protocol]: "other",
+  [RELAY_CLOSE.unauthorized]: "forbidden",
+  [RELAY_CLOSE.limit]: "limit",
+  [RELAY_CLOSE.forbidden]: "forbidden",
+  [RELAY_CLOSE.tooLong]: "too_long",
+  [RELAY_CLOSE.rateLimited]: "rate_limited",
+  [RELAY_CLOSE.upstream]: "service_unavailable",
+};
 const WEBSOCKET_CONNECTING = 0;
 const WEBSOCKET_OPEN = 1;
 const NORMAL_CLOSE = 1000;
 
 /** Голосовой ввод: микрофон браузера → Soniox по WebSocket с временным ключом от сервера приложения. */
 export function createVoiceInput(options: VoiceInputOptions): VoiceInput {
-  return { start: (listener) => startDictation(options, listener) };
+  return { start: (listener, context) => startDictation(options, listener, context ?? {}) };
 }
 
 function pickRecorderFormat(RecorderClass: typeof MediaRecorder): string | undefined {
@@ -84,12 +103,32 @@ function pickRecorderFormat(RecorderClass: typeof MediaRecorder): string | undef
 }
 
 /** Адрес WebSocket сервера приложения: явный, из абсолютного `api` или от адреса страницы. */
-function relayAddress(options: VoiceInputOptions): string | undefined {
+function relayBaseAddress(options: VoiceInputOptions): string | undefined {
   if (options.relayUrl) return options.relayUrl;
   const base = options.api.replace(/\/+$/, "");
   if (/^https?:\/\//.test(base)) return `${base.replace(/^http/, "ws")}/stream`;
   const page = globalThis.location;
   return page ? `${page.protocol === "https:" ? "wss:" : "ws:"}//${page.host}${base}/stream` : undefined;
+}
+
+/** Адрес с чатом записи (`?chat=`): по нему сервер относит расход к чату. */
+function relayAddress(options: VoiceInputOptions, chatId: string | undefined): string | undefined {
+  const base = relayBaseAddress(options);
+  if (!base || !chatId) return base;
+  // Относительный адрес (`/api/voice/stream`) достраиваем от страницы: WebSocket нужен полный `ws(s)://`.
+  const page = globalThis.location;
+  if (!/^wss?:\/\//i.test(base) && !page) return `${base}${base.includes("?") ? "&" : "?"}chat=${encodeURIComponent(chatId)}`;
+  const url = new URL(base, page ? `${page.protocol}//${page.host}` : undefined);
+  url.protocol = url.protocol.replace(/^http/, "ws");
+  url.searchParams.set("chat", chatId);
+  return url.toString();
+}
+
+/** Языки записи: настройка приложения, иначе язык из `start`. Пусто — решает сервер. */
+function recordingLanguages(options: VoiceInputOptions, context: VoiceStartContext): string[] | undefined {
+  const own = typeof options.languageHints === "function" ? options.languageHints() : options.languageHints;
+  if (own && own.length > 0) return own;
+  return context.language ? [context.language] : undefined;
 }
 
 function readReady(raw: string): { maxSessionSeconds: number; polish: boolean } | null {
@@ -116,7 +155,7 @@ function readPolished(raw: string): { text: string | null } | undefined {
   }
 }
 
-function startDictation(options: VoiceInputOptions, listener: VoiceListener): VoiceSession {
+function startDictation(options: VoiceInputOptions, listener: VoiceListener, context: VoiceStartContext): VoiceSession {
   const mediaDevices = "mediaDevices" in options ? options.mediaDevices : globalThis.navigator?.mediaDevices;
   const RecorderClass = "MediaRecorder" in options ? options.MediaRecorder : globalThis.MediaRecorder;
   const SocketClass = "WebSocket" in options ? options.WebSocket : globalThis.WebSocket;
@@ -133,6 +172,9 @@ function startDictation(options: VoiceInputOptions, listener: VoiceListener): Vo
   let finishTimer: ReturnType<typeof setTimeout> | undefined;
   let limitTimer: ReturnType<typeof setTimeout> | undefined;
   let limitReached = false;
+  /** Предел записи, названный сервером: для подписи «запись остановлена». */
+  let maxSessionSecondsInUse = DEFAULT_MAX_SESSION_SECONDS;
+  const languages = recordingLanguages(options, context);
   /** Сервер сказал в «готово», что чистит текст после «стоп». */
   let polishOffered = false;
   let awaitingPolish = false;
@@ -167,7 +209,7 @@ function startDictation(options: VoiceInputOptions, listener: VoiceListener): Vo
     flushText();
     release();
     // Дошли до предела записи: слова сохранены, человеку объясняем, почему запись остановилась.
-    if (limitReached) listener.onError("time_limit");
+    if (limitReached) listener.onError("time_limit", { maxSessionSeconds: maxSessionSecondsInUse });
     listener.onEnd();
   }
 
@@ -207,6 +249,7 @@ function startDictation(options: VoiceInputOptions, listener: VoiceListener): Vo
     const activeSocket = socket!;
     const format = pickRecorderFormat(RecorderClass!);
     const activeRecorder = new RecorderClass!(stream!, format ? { mimeType: format } : undefined);
+    maxSessionSecondsInUse = maxSessionSeconds;
     recorder = activeRecorder;
     activeRecorder.addEventListener("dataavailable", (event) => {
       const chunk = event.data;
@@ -231,13 +274,8 @@ function startDictation(options: VoiceInputOptions, listener: VoiceListener): Vo
     startRecorder(session.maxSessionSeconds ?? DEFAULT_MAX_SESSION_SECONDS);
   }
 
-  /** Как понять закрытие соединения с сервером приложения (режим `relay`). */
-  function closeKind(code: number): VoiceErrorKind {
-    if (code === RELAY_CLOSE_RATE_LIMITED) return "rate_limited";
-    if (code === RELAY_CLOSE_UNAUTHORIZED || code === RELAY_CLOSE_UPSTREAM) return "service_unavailable";
-    if (code === RELAY_CLOSE_PROTOCOL) return "other";
-    return "network";
-  }
+  /** Как понять закрытие соединения с сервером приложения (режим `relay`). Неизвестный код — сбой связи. */
+  const closeKind = (code: number): VoiceErrorKind => (relayed ? KIND_BY_CLOSE_CODE[code] : undefined) ?? "network";
 
   /** `session` — параметры диктовки напрямую; в режиме `relay` их нет: сервер приложения знает всё сам. */
   function connect(address: string, session?: VoiceSessionParameters) {
@@ -252,7 +290,7 @@ function startDictation(options: VoiceInputOptions, listener: VoiceListener): Vo
       socketOpened = true;
       try {
         if (session) beginRecording(session);
-        else socket!.send(JSON.stringify({ audio_format: "auto" }));
+        else socket!.send(JSON.stringify({ audio_format: "auto", ...(languages && { language_hints: languages }) }));
       } catch {
         fail("other");
       }
@@ -293,10 +331,10 @@ function startDictation(options: VoiceInputOptions, listener: VoiceListener): Vo
     });
     socket.addEventListener("close", (event) => {
       if (phase === "ended") return;
-      if (relayed && event.code === RELAY_CLOSE_TIME_LIMIT) {
+      if (relayed && event.code === RELAY_CLOSE.timeLimit) {
         limitReached = true;
         complete();
-      } else if (relayed && event.code >= 4000) fail(closeKind(event.code));
+      } else if (relayed && (event.code >= 4000 || event.code === RELAY_CLOSE.messageTooBig)) fail(closeKind(event.code));
       else if (phase === "stopping" || (socketOpened && event.code === NORMAL_CLOSE)) complete();
       else fail(closeKind(event.code));
     });
@@ -310,13 +348,13 @@ function startDictation(options: VoiceInputOptions, listener: VoiceListener): Vo
       });
       if (isEnded()) return releaseMicrophone();
       if (relayed) {
-        const address = relayAddress(options);
+        const address = relayAddress(options, context.chatId);
         if (!address) throw new VoiceError("other");
         connect(address);
         return;
       }
       // Ключ живёт недолго, поэтому просим его только после разрешения на микрофон.
-      const session = await requestSession(options.api, fetchImpl);
+      const session = await requestSession(options.api, fetchImpl, languages);
       if (isEnded()) return releaseMicrophone();
       connect(session.websocketUrl, session);
     } catch (error) {

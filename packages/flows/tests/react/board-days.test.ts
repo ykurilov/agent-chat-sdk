@@ -12,12 +12,15 @@ import {
   setDuration,
   setScheduleOn,
   setStateNudges,
+  setStateNudgesDays,
+  stateNudgesDays,
   stateTimingText,
   updateSchedule,
   updateStateNudges,
 } from "../../src/react/editor/schedule-model";
 import { addCatalogField, addSideTask, catalogFieldsToAdd, removeSideTask, setSideTaskField, updateSideTask } from "../../src/react/editor/side-task-model";
 import { formatDayLine } from "../../src/react/test-chat/flow-test-chat";
+import { conditionText } from "../../src/react/editor/exit-text";
 import { fixtureFlow } from "../flow-fixtures";
 
 // Этап 10 сценариев: логика доски для формата v2 — «Дни и время», «Длится», касания, попутные задачи, «да/нет»,
@@ -81,6 +84,23 @@ describe("нода «Длится»", () => {
     expect(state(flow, "intro").exits.some((exit) => exit.id === made.exitId)).toBe(false);
   });
 
+  it("«до дня N программы» — выход program_day; подпись на доске и в условии — «с дня N»", () => {
+    let flow = setScheduleOn(fixtureFlow("sales-review"), true);
+    flow = setDuration(flow, "block", { amount: 3, unit: "program_day" });
+    const made = durationOf(state(flow, "block"))!;
+    expect(made).toMatchObject({ amount: 3, unit: "program_day", to: null });
+    const exit = state(flow, "block").exits.find((candidate) => candidate.id === made.exitId)!;
+    expect(exit.when).toEqual({ type: "timer", from: "program_day", day: 3 });
+    expect(stateTimingText(flow, state(flow, "block"), labels)).toBe("с дня 3");
+    expect(conditionText(flow, exit.when, labels)).toBe("с дня 3");
+    expect(roundTrip(flow).states).toEqual(flow.states);
+
+    flow = setDuration(flow, "block", { amount: 2, unit: "d" });
+    expect(state(flow, "block").exits.find((candidate) => candidate.id === made.exitId)!.when).toEqual({ type: "timer", from: "state_days", days: 2 });
+    expect(normalizeCondition(flow, { type: "timer", from: "state_days", days: 2 }, { type: "timer", from: "program_day", days: 2 } as never)).toEqual({ type: "timer", from: "program_day", day: 2 });
+    expect(normalizeCondition(flow, { type: "timer", from: "program_day", day: 3 }, { type: "timer", from: "state_days", day: 3 } as never)).toEqual({ type: "timer", from: "state_days", days: 3 });
+  });
+
   it("минуты в этом состоянии — обычный таймер, не «Длится»", () => {
     // У «Сомнений» есть таймер 20 мин в состоянии — его «Длится» не забирает.
     expect(durationOf(state(fixtureFlow("sales-review"), "doubts"))).toBeNull();
@@ -103,6 +123,19 @@ describe("касания ноды", () => {
     expect(state(flow, "intro").nudges).toBe("off");
     flow = setStateNudges(flow, "intro", "inherit");
     expect(state(flow, "intro")).not.toHaveProperty("nudges");
+  });
+
+  it("свои касания на N дней: срок сохраняется при правке ряда, «всё время» его снимает, подпись на карточке", () => {
+    let flow = setStateNudges(setScheduleOn(fixtureFlow("sales-review"), true), "intro", "own");
+    expect(stateNudgesDays(state(flow, "intro"))).toBeNull();
+    flow = setStateNudgesDays(flow, "intro", 1);
+    flow = updateStateNudges(flow, "intro", { afterSilence: [{ amount: 15, unit: "min" }] });
+    expect(roundTrip(flow).states.find((candidate) => candidate.id === "intro")!.nudges).toEqual({ afterSilence: [{ amount: 15, unit: "min" }], days: 1 });
+    expect(stateTimingText(flow, state(flow, "intro"), labels)).toBe("касания 15 мин в день входа");
+    expect(stateTimingText(setStateNudgesDays(flow, "intro", 2), state(setStateNudgesDays(flow, "intro", 2), "intro"), labels)).toBe("касания 15 мин первые 2 дн.");
+    flow = setStateNudgesDays(flow, "intro", null);
+    expect(state(flow, "intro").nudges).toEqual({ afterSilence: [{ amount: 15, unit: "min" }] });
+    expect(checkFlow(setStateNudgesDays(setStateNudges(flow, "intro", "own"), "intro", 3), catalog).filter((issue) => issue.code === "nudges_days_invalid")).toEqual([]);
   });
 
   it("свои касания берут за образец общие, если они есть", () => {

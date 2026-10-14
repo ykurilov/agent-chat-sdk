@@ -1,5 +1,5 @@
 import type { FlowEditorSkin } from "@ykurilov/agent-chat-flows/react";
-import { TandemFlowAnyStateNode, TandemFlowEdge, TandemFlowLegend, TandemFlowStateNode, TandemFlowZoomControls } from "./flow-board-parts";
+import { TandemFlowAnyStateNode, TandemFlowBoardToggle, TandemFlowEdge, TandemFlowLegend, TandemFlowStateNode, TandemFlowZoomControls } from "./flow-board-parts";
 import { TandemFlowJsonDialog, TandemFlowTestChatFrame } from "./flow-dialogs";
 import { TandemFlowExitCard } from "./flow-exit-card";
 import { TandemFlowEditorFrame, TandemFlowHeader } from "./flow-frame";
@@ -24,6 +24,7 @@ export const tandemFlowEditorSkin: FlowEditorSkin = {
   FlowEdge: TandemFlowEdge,
   FlowLegend: TandemFlowLegend,
   FlowZoomControls: TandemFlowZoomControls,
+  FlowBoardToggle: TandemFlowBoardToggle,
   FlowOverviewPanel: TandemFlowOverviewPanel,
   FlowStatePanel: TandemFlowStatePanel,
   FlowAnyStatePanel: TandemFlowAnyStatePanel,

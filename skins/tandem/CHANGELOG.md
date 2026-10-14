@@ -1,5 +1,50 @@
 # @ykurilov/agent-chat-skin-tandem
 
+## 0.55.0
+
+### Minor Changes
+
+- 7b5ed35: Сценарии: подписи событий приложения — `catalog.events` принимает `{ name, label }`; доска, прогон, карточка условия и
+  `describeCondition` с каталогом показывают подпись.
+- b17e389: Сценарии: таймер «наступил день N программы» (`{ type: "timer", from: "program_day", day }`) — выход в начале дня N
+  по нумерации `readRun().day`, без хода приложения. Дополнение к формату v2; `checkFlow` проверяет день против
+  `lengthDays`; на доске «Длится» → «до дня программы», подпись «с дня N».
+  Вошёл в ноду уже в день N или позже — выход в том же ходе, один ответ из новой ноды; так же `since_start`, чей срок
+  прошёл к входу.
+- f1151a6: Сценарии: свои касания ноды на N дней (`nudges.days`) — потом утреннее и общий ряд сценария с начала. Доска:
+  «Свои касания действуют», подпись на карточке.
+
+### Patch Changes
+
+- Updated dependencies [7b5ed35]
+- Updated dependencies [98e1e86]
+- Updated dependencies [b17e389]
+- Updated dependencies [f1151a6]
+- Updated dependencies [cdc7dd7]
+  - @ykurilov/agent-chat-flows@0.55.0
+  - @ykurilov/agent-chat-react@0.55.0
+  - @ykurilov/agent-chat-messengers@0.55.0
+  - @ykurilov/agent-chat-sandbox@0.55.0
+
+## 0.54.0
+
+### Minor Changes
+
+- bc3cef1: Доска сценария: больше места графу. Узкая шапка (`header="compact"`), легенда «Условий выхода» по умолчанию свёрнута в кнопку
+  (`legend`), панель «Сценарий» сворачивается (`inspector`), мини-карта сворачивается (`minimap`), редактор разворачивается на
+  весь экран (`fullscreen`). Свёрнутое запоминается в localStorage (`storageKey`). Договор скина: необязательные `compact` и
+  `fullscreen` у шапки, `compact` у рамки, часть `FlowBoardToggle`.
+
+### Patch Changes
+
+- Updated dependencies [c8fb0dd]
+- Updated dependencies [73d3aaa]
+- Updated dependencies [bc3cef1]
+  - @ykurilov/agent-chat-react@0.54.0
+  - @ykurilov/agent-chat-flows@0.54.0
+  - @ykurilov/agent-chat-messengers@0.54.0
+  - @ykurilov/agent-chat-sandbox@0.54.0
+
 ## 0.53.0
 
 ### Patch Changes

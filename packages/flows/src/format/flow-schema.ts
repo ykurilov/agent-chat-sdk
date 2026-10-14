@@ -66,6 +66,8 @@ const timerCondition = z.discriminatedUnion("from", [
   z.strictObject({ type: z.literal("timer"), from: z.literal("time_of_day"), at: clock }),
   // `days` < 1 — не ошибка формы: недописанный сценарий сохраняется, находку показывает `checkFlow`.
   z.strictObject({ type: z.literal("timer"), from: z.literal("state_days"), days: z.int() }),
+  // Дробный и меньше 1 — тоже находка `checkFlow`.
+  z.strictObject({ type: z.literal("timer"), from: z.literal("program_day"), day: z.number() }),
 ]);
 
 const duration = z.strictObject({ amount: z.number().positive(), unit: z.enum(FLOW_TIMER_UNITS) });
@@ -123,7 +125,7 @@ const flowState = z.strictObject({
   tools: names,
   tags: names,
   exits,
-  nudges: z.union([nudges, z.literal("off")]).optional(),
+  nudges: z.union([nudges.extend({ days: z.number().optional() }), z.literal("off")]).optional(),
 });
 
 export const DEFAULT_SIDE_QUESTION_EVERY_MESSAGES = 5;

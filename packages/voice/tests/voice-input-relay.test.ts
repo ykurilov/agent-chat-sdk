@@ -71,8 +71,18 @@ describe("диктовка через сервер приложения", () => 
     expect(harness.socket().url).toBe("wss://app.test/api/voice/stream");
   });
 
+  it("относительный relayUrl — адрес от страницы, с чатом записи", async () => {
+    vi.stubGlobal("location", { protocol: "https:", host: "app.test", origin: "https://app.test", href: "https://app.test/chat/1" });
+    const harness = createHarness();
+
+    createVoiceInput({ ...harness.options, mode: "relay", relayUrl: "/api/voice/stream" }).start(harness.listener, { chatId: "c1" });
+    await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1));
+
+    expect(harness.socket().url).toBe("wss://app.test/api/voice/stream?chat=c1");
+  });
+
   it.each([
-    [4401, "service_unavailable"],
+    [4401, "forbidden"],
     [4429, "rate_limited"],
     [4502, "service_unavailable"],
     [4400, "other"],

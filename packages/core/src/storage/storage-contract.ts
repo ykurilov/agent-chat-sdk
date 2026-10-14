@@ -52,6 +52,11 @@ export function describeChatStorageContract(
     partsOfTypes?: "required";
     /** `usageByChat: "required"` — сумма расхода по списку чатов одним запросом (`sumUsageByChat`) обязана быть. */
     usageByChat?: "required";
+    /**
+     * `chatTurnLease: "required"` — аренда хода чата между копиями сервера (`claimChatTurn`, `releaseChatTurn`,
+     * `clearChatTurnLeases`) обязана быть.
+     */
+    chatTurnLease?: "required";
   } = {},
 ): void {
   const chatInput = { id: "chat-1", ownerId: "anna", modelId: "deepseek-4.1-flash", providerId: "deepseek" };
@@ -1674,6 +1679,75 @@ export function describeChatStorageContract(
         await storage.finishMessage("a1", { status: "complete", afterTurn: "pending" });
         await storage.deleteChat(chatInput.id);
         expect(await storage.listPendingAfterTurn()).toEqual([]);
+      });
+    });
+
+    describe("аренда хода чата (claimChatTurn, releaseChatTurn, clearChatTurnLeases; необязательные)", () => {
+      type LeaseStorage = ChatStorage & Required<Pick<ChatStorage, "claimChatTurn" | "releaseChatTurn">>;
+
+      async function leaseStorage(context: { skip: () => never }): Promise<LeaseStorage> {
+        const storage = await createStorage();
+        if (!storage.claimChatTurn || !storage.releaseChatTurn) {
+          if (options.chatTurnLease === "required") throw new Error("У хранилища нет аренды хода чата");
+          context.skip();
+        }
+        await storage.createChat(chatInput);
+        return storage as LeaseStorage;
+      }
+
+      const minute = 60_000;
+
+      it("свободный чат берётся; чужая аренда — false; своя продлевается; снятая своя — свободна, чужое снятие не действует", async (context) => {
+        const storage = await leaseStorage(context);
+        expect(await storage.claimChatTurn(chatInput.id, "copy-a", minute)).toBe(true);
+        expect(await storage.claimChatTurn(chatInput.id, "copy-b", minute)).toBe(false);
+        expect(await storage.claimChatTurn(chatInput.id, "copy-a", minute)).toBe(true);
+        await storage.releaseChatTurn(chatInput.id, "copy-b");
+        expect(await storage.claimChatTurn(chatInput.id, "copy-b", minute)).toBe(false);
+        await storage.releaseChatTurn(chatInput.id, "copy-a");
+        expect(await storage.claimChatTurn(chatInput.id, "copy-b", minute)).toBe(true);
+      });
+
+      it("просроченная аренда (копия упала) берётся другой копией — по часам хранилища", async (context) => {
+        const storage = await leaseStorage(context);
+        expect(await storage.claimChatTurn(chatInput.id, "copy-a", 20)).toBe(true);
+        expect(await storage.claimChatTurn(chatInput.id, "copy-b", minute)).toBe(false);
+        await new Promise((resolve) => setTimeout(resolve, 60));
+        expect(await storage.claimChatTurn(chatInput.id, "copy-b", minute)).toBe(true);
+        expect(await storage.claimChatTurn(chatInput.id, "copy-a", minute)).toBe(false);
+      });
+
+      it("гонка: десять копий берут один чат разом — берёт ровно одна; аренды разных чатов независимы", async (context) => {
+        const storage = await leaseStorage(context);
+        await storage.createChat({ ...chatInput, id: "chat-2" });
+        const copies = Array.from({ length: 10 }, (_, index) => `copy-${index}`);
+        const won = await Promise.all(copies.map((holder) => storage.claimChatTurn(chatInput.id, holder, minute)));
+        expect(won.filter(Boolean)).toHaveLength(1);
+        expect(await storage.claimChatTurn("chat-2", "copy-other", minute)).toBe(true);
+        const winner = copies[won.indexOf(true)]!;
+        expect(await storage.claimChatTurn(chatInput.id, winner, minute)).toBe(true);
+      });
+
+      it("удалённый чат — без аренды: новый чат с тем же id свободен", async (context) => {
+        const storage = await leaseStorage(context);
+        expect(await storage.claimChatTurn(chatInput.id, "copy-a", minute)).toBe(true);
+        await storage.deleteChat(chatInput.id);
+        await storage.createChat(chatInput);
+        expect(await storage.claimChatTurn(chatInput.id, "copy-b", minute)).toBe(true);
+      });
+
+      it("clearChatTurnLeases снимает все живые аренды всех чатов (старт единственной копии)", async (context) => {
+        const storage = await leaseStorage(context);
+        if (!storage.clearChatTurnLeases) {
+          if (options.chatTurnLease === "required") throw new Error("У хранилища нет clearChatTurnLeases");
+          context.skip();
+        }
+        await storage.createChat({ ...chatInput, id: "chat-2" });
+        expect(await storage.claimChatTurn(chatInput.id, "copy-a", minute)).toBe(true);
+        expect(await storage.claimChatTurn("chat-2", "copy-b", minute)).toBe(true);
+        await storage.clearChatTurnLeases!();
+        expect(await storage.claimChatTurn(chatInput.id, "copy-c", minute)).toBe(true);
+        expect(await storage.claimChatTurn("chat-2", "copy-c", minute)).toBe(true);
       });
     });
 

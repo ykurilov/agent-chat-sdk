@@ -4,7 +4,7 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import type { StateMap } from "../engine/migrate-run";
 import type { FlowChatRecord, FlowStore, PendingFlowChange, SideTaskRecord } from "./flow-store";
-import { byVersionAndState, compareText, migratePending } from "./flow-store-shared";
+import { appliedInTime, byVersionAndState, compareText, migratePending, pendingAdded } from "./flow-store-shared";
 import { FLOWS_MIGRATIONS_TABLE } from "./migration-settings";
 import { flowChats, flowClientCards, flowFirstMessages, flowPeople, flowSideTasks, flowVersions } from "./sqlite-schema";
 
@@ -119,14 +119,20 @@ export function createSqliteFlowStore(filePath: string, migrationsFolder: string
     },
 
     async addPending(chatId, change) {
-      db.update(flowChats).set({ pending: pendingWith(change) }).where(eq(flowChats.chatId, chatId)).run();
+      // Прочитать и дописать под захватом записи: две копии с одним ключом не дают двух записей.
+      const add = sqlite.transaction(() => {
+        const row = db.select({ pending: flowChats.pending }).from(flowChats).where(eq(flowChats.chatId, chatId)).get();
+        const next = row && pendingAdded(row.pending, change);
+        if (next) db.update(flowChats).set({ pending: next }).where(eq(flowChats.chatId, chatId)).run();
+      });
+      add.immediate();
     },
     async takePending(chatId) {
-      // Прочитать и очистить под захватом записи: вторая копия ждёт и видит уже пустой список.
+      // Прочитать и очистить под захватом записи: вторая копия ждёт и видит уже пустой список (кроме применённых в срок).
       const take = sqlite.transaction(() => {
         const row = db.select({ pending: flowChats.pending }).from(flowChats).where(eq(flowChats.chatId, chatId)).get();
         if (!row || row.pending.length === 0) return [];
-        db.update(flowChats).set({ pending: [] }).where(eq(flowChats.chatId, chatId)).run();
+        db.update(flowChats).set({ pending: row.pending.filter(appliedInTime) }).where(eq(flowChats.chatId, chatId)).run();
         return row.pending;
       });
       return take.immediate();

@@ -105,6 +105,8 @@ import type { ModelChoice, ModelMenu } from "./models/model-choice";
 import { createCacheMissWatch } from "./usage/cache-miss-watch";
 import { recordSpentTokens, usageMinusJournaled } from "./usage/record-usage";
 import { ChatBusyError, createRunningAnswerRegistry } from "./running-answers/running-answer-registry";
+import { BURST_BUSY_RETRY_MS, BURST_PART_TYPE, BURST_PENDING_GRACE_MS, burstPart, burstText, burstToAnswer, burstVerdict, createBurstWaits, isBurstPending, resolveQuietMs } from "./bursts/message-bursts";
+import { createChatTurnLeases } from "./chat-turn-lease";
 import { createTurnSteering, isCorrection, steerPart } from "./steering/turn-steering";
 import type { SteeringTurn } from "./steering/turn-steering";
 import type { RunningAnswerRegistry } from "./running-answers/running-answer-registry";
@@ -185,6 +187,8 @@ const STEER_ATTEMPTS = 5;
 const TURN_ACTION_CAPABILITY: Partial<Record<TurnAction, ChatCapability>> = { edit: "edit", retry: "retry", regenerate: "regenerate" };
 /** Ходы, которых нет в закрытом чате. Правка и «Переделать» уводят на другую ветку — закрытие там своё. */
 const OPEN_CHAT_ACTIONS: ReadonlySet<TurnAction> = new Set<TurnAction>(["send", "retry", "approval", "widget", "notice"]);
+/** Ходы, что отвечают на сообщение человека заново: у ответа на пачку в `prepareTurn` — её сообщения. */
+const BURST_ACTIONS: ReadonlySet<TurnAction> = new Set<TurnAction>(["send", "retry", "regenerate"]);
 /** Почему сменилось состояние после хода. */
 const STATE_CHANGE_REASON: Partial<Record<TurnAction, StateChangeReason>> = { edit: "editMessage", regenerate: "regenerate", retry: "retry" };
 
@@ -370,6 +374,27 @@ export interface SendMessageOptions {
    * `allowedTools`; имя автора — в хвосте сообщения человека. Список инструментов стабилен для чата группы.
    */
   group?: GroupTurn;
+}
+
+/** Как отправлено сообщение пачки (`sendBurstMessage`). */
+export interface SendBurstOptions extends SendMessageOptions {
+  /**
+   * Сколько ждать тишины после этого сообщения, прежде чем отвечать, мс: пришло следующее — ждём заново от него. По
+   * умолчанию 3000; целое от 0 до 600 000. 0 — без ожидания, но сообщения, пришедшие во время хода, всё равно склеиваются.
+   */
+  quietMs?: number;
+}
+
+/** Сообщение пачки записано; ход на пачку — позже. */
+export interface BurstMessageResult {
+  messageId: string;
+  /**
+   * Ход на пачку, когда человек замолчал: поток ответа (как у `sendMessage`; при `{ hold: true }` — кусок «ответ позже»),
+   * если ход начал этот вызов. `null` — отвечать не этому вызову: пришло следующее сообщение (ответит его вызов) или
+   * ответ уже есть. Отказ — те же ошибки, что у `sendMessage` при начале хода (`TurnRefusedError`, лимиты, закрытый чат);
+   * остановка службы посреди окна — `ChatBusyError`: повторите вызов с тем же сообщением после запуска.
+   */
+  turn: Promise<ReadableStream<UIMessageChunk> | null>;
 }
 
 export interface ChatServiceOptions {
@@ -935,6 +960,17 @@ export interface ChatService {
     options?: SendMessageOptions,
   ): Promise<ReadableStream<UIMessageChunk>>;
   /**
+   * Сообщение человека из пачки: человек пишет несколько сообщений подряд, агент отвечает одним ходом, когда человек
+   * замолчал на окно тишины (`quietMs`). Сообщение пишется сразу (идёт ответ этой копии — после него), в истории каждое
+   * отдельно; модель видит пачку одним сообщением. Ход начинает вызов последнего сообщения пачки: `beforeTurn` — один раз
+   * на пачку с `burstMessageIds`, касания сценария (`deliverNotices` с `wakeAgent`) пока ждут (`busy`). Решение — по
+   * общей истории: годится для нескольких копий сервера. Повтор с тем же id (сервер упал посреди окна) не пишет копию,
+   * а доводит ход. Права и закрытый чат — до записи, как у `sendMessage`; лимит расходов — при начале хода.
+   * @throws ChatBusyError ответ идёт на другой копии сервера или служба останавливается.
+   * @throws TypeError неверное `quietMs`.
+   */
+  sendBurstMessage(userId: string, chatId: string, message: IncomingUserMessage, options?: SendBurstOptions): Promise<BurstMessageResult>;
+  /**
    * Поправка, пока агент отвечает: сообщение человека пишется сразу (ребёнок идущего ответа или прошлой поправки), агент
    * берёт его на ближайшей границе шага — ответ закрывается, и ход продолжается новым ответом на поправки (поток —
    * `subscribe`). Ответ кончился раньше — новый ход на поправки сразу после него. Хода нет — обычное сообщение и ход
@@ -1367,6 +1403,12 @@ export function createChatService(input: ChatServiceOptions): ChatService {
   const steersInFlight = new Map<string, Promise<SteerResult>>();
   /** Работа под замком чата по чатам: поправка, пришедшая в это время, ждёт её конца. */
   const startingByChat = new Map<string, Promise<unknown>>();
+  /** Окна тишины пачек этой копии: касания ждут, остановка службы обрывает. */
+  const burstWaits = createBurstWaits();
+  /** Аренда хода чата в хранилище: один ход за раз на чат и между копиями сервера. */
+  const turnLeases = createChatTurnLeases({ storage, holder: crypto.randomUUID(), logError });
+  /** Запись сообщений пачки по чатам — по очереди вызовов: порядок в истории тот, в каком они пришли. */
+  const burstWrites = new Map<string, Promise<unknown>>();
   // Очереди инструментов «по одному» по чатам: живут, пока в них есть вызовы (FR-057).
   const chatToolQueues = new Map<string, ToolQueue>();
   /** Проверка брошенных ответов раз в `STALE_ANSWERS_SWEEP_EVERY_MS`: идёт после `recoverInterruptedAnswers`, до `flush`. */
@@ -1482,7 +1524,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
       if (OPEN_CHAT_ACTIONS.has(input.action)) await assertStillOpen(chatId);
       else await carryLegacyClosure(chatId);
       return start(pass);
-    });
+    }, input.action === "widget" || input.action === "approval" ? "optional" : "required");
   }
 
   /** Готовый ответ хода для `deliverNotices({ awaitAnswer })`: текст, как в итоге хода (`TurnResult.text`), части для человека и статус. */
@@ -1959,15 +2001,23 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     return (await loadTree(chatId)).branch;
   }
 
-  /** Держит чат занятым, пока ход запускается и ещё не попал в реестр. */
-  async function whileStarting<T>(chatId: string, start: () => Promise<T>): Promise<T> {
+  /**
+   * Держит чат занятым, пока ход запускается и ещё не попал в реестр. @throws ChatBusyError и когда ход ведёт другая
+   * копия. `lease: "optional"` — для ответа на ждущий ответ: его единственность стережёт условная запись в хранилище,
+   * а чужая аренда (другая копия как раз записывает сообщение или ответ) — не повод отказать.
+   */
+  async function whileStarting<T>(chatId: string, start: () => Promise<T>, lease: "required" | "optional" = "required"): Promise<T> {
     if (closing || starting.has(chatId) || registry.isRunning(chatId)) throw new ChatBusyError(chatId);
-    return holdingChat(chatId, start);
+    return holdingChat(chatId, start, { lease });
   }
 
-  async function holdingChat<T>(chatId: string, work: () => Promise<T>): Promise<T> {
+  /**
+   * Чат занят работой `work`. С `lease` — ещё и аренда хода в хранилище: до конца работы, а начатый в ней ход — до
+   * своего конца. Аренду держит другая копия — `ChatBusyError`, работа не начинается (`"optional"` — идёт без аренды).
+   */
+  async function holdingChat<T>(chatId: string, work: () => Promise<T>, holding: { lease?: "required" | "optional" } = {}): Promise<T> {
     starting.add(chatId);
-    const running = work();
+    const running = holding.lease ? leasedWork(chatId, work, holding.lease) : work();
     startingWork.add(running);
     startingByChat.set(chatId, running);
     try {
@@ -1981,6 +2031,17 @@ export function createChatService(input: ChatServiceOptions): ChatService {
       forgetStopIfIdle(chatId);
       // Закрытие и пометки, пришедшие пока чат был занят, но ход так и не начался.
       writePendingRecords(chatId);
+    }
+  }
+
+  async function leasedWork<T>(chatId: string, work: () => Promise<T>, lease: "required" | "optional"): Promise<T> {
+    const leased = await turnLeases.enter(chatId, { optional: lease === "optional" });
+    try {
+      return await work();
+    } finally {
+      // Начатый ход держит аренду до конца; его продолжение (поправки) входит в неё же. Шёл без аренды — снимать нечего.
+      if (leased && registry.isRunning(chatId)) void registry.finished(chatId).finally(() => turnLeases.leave(chatId));
+      else if (leased) turnLeases.leave(chatId);
     }
   }
 
@@ -2198,6 +2259,8 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     // Канал и группа — по отметке последнего сообщения человека: так же идут и продолжения (подтверждение, «Повторить»).
     const { channel, group } = turnChannelOf(branch);
     const trigger: ChatTurnTrigger = launch.action === "notice" ? "notice" : "human";
+    // Ответ на пачку сообщений человека (и «Повторить», «Переделать» его): сколько сообщений он закрывает.
+    const burstMessageIds = BURST_ACTIONS.has(launch.action) ? burstToAnswer(branch)?.map((message) => message.id) : undefined;
     let finalStatus: AnswerStatus = "interrupted";
     // Инструкция чата — до запуска: не удалось взять — ход не начинается, как при сбое чтения чата.
     const instructions = instructionsOfChat && (await instructionsOfChat(chat, { audience: group ? "group" : "private" }));
@@ -2281,6 +2344,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
                   ...(staff && { staff: structuredClone(staff) }),
                   // Ход по служебному сообщению — с ним; у остальных ходов пусто.
                   notices: launch.action === "notice" ? structuredClone((branch.at(-1)?.parts ?? []).flatMap(noticesOfPart)) : [],
+                  ...(burstMessageIds && { burstMessageIds: [...burstMessageIds] }),
                   timeZone: timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
                   pageTimeZone: sentTimeZone ?? null,
                   now: now(),
@@ -2474,9 +2538,28 @@ export function createChatService(input: ChatServiceOptions): ChatService {
       await closeUnansweredHumanInput(before);
       return answer([...before, repeated]);
     }
+    const question = await writingHumanMessage(userId, chatId, branch, message, text, files, sendOptions);
+    return answer([...branch, question]);
+  }
+
+  /**
+   * Новое сообщение человека в конец ветки (`branch` — ветка до него; обновляется на месте, если закрылся запрос
+   * подтверждения): место в окне сообщений, файлы, запись, название чата. Зовётся под замком чата.
+   */
+  async function writingHumanMessage(
+    userId: string,
+    chatId: string,
+    branch: StoredMessage[],
+    message: IncomingUserMessage,
+    text: string,
+    files: IncomingFilePart[],
+    sendOptions: SendMessageOptions | undefined,
+    burst?: { quietMs: number },
+  ): Promise<StoredMessage> {
     const question = await writingCountedMessage(userId, chatId, async () => {
       // Файлы принимаются, когда чат и место уже за ходом: при отказе по месту или занятости они не остаются ничьими.
       const fileParts = await acceptFiles(userId, chatId, files);
+      const writtenAt = now();
       const question = newStoredMessage({
         id: message.id,
         chatId,
@@ -2487,7 +2570,10 @@ export function createChatService(input: ChatServiceOptions): ChatService {
           ...(text.trim().length > 0 ? [{ type: "text" as const, text }] : []),
           ...(sendOptions?.voiceMode === true ? [voiceModePart(await currentVoice(userId), undefined, uniqueVoiceSounds(sendOptions.voiceSounds ?? []))] : []),
           ...[channelPart(sendOptions?.channel ?? "web", sendOptions?.group)].filter((part) => part !== undefined),
+          ...(burst ? [burstPart(burst.quietMs, writtenAt.getTime())] : []),
         ],
+        // Окно тишины пачки считается от этого времени: по часам службы.
+        ...(burst && { createdAt: writtenAt.toISOString() }),
       });
       await confirmFiles(question.id, fileParts);
       await storage.insertMessage(question);
@@ -2499,7 +2585,140 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     const chat = await storage.getChat(chatId);
     const title = chat && chat.title === undefined ? deriveChatTitle(text) : null;
     if (title) await storage.renameChat(chatId, title);
-    return answer([...branch, question]);
+    return question;
+  }
+
+  /** Ход этой копии в чате идёт, запускается или передаётся новому ответу: его конец. Чат свободен — `undefined`. */
+  function localTurnOf(chatId: string): Promise<unknown> | undefined {
+    return handOffs.get(chatId) ?? startingByChat.get(chatId) ?? (registry.isRunning(chatId) ? registry.finished(chatId) : undefined);
+  }
+
+  /**
+   * Запись сообщения пачки: после идущего хода этой копии (сообщения, пришедшие во время ответа, лягут после него и
+   * получат один общий ход). Ответ на другой копии — `ChatBusyError`. Повтор того же сообщения — записанное, без копии.
+   */
+  async function recordingBurstMessage(userId: string, chatId: string, message: IncomingUserMessage, sendOptions: SendBurstOptions | undefined, quietMs: number): Promise<StoredMessage> {
+    const chat = await ownChat(userId, chatId);
+    const { text, files } = validateUserMessage(message, Boolean(options.attachments));
+    await assertChatRules(userId, chat, { capabilities: messageCapabilities(files, sendOptions?.voiceMode), open: true });
+    const otherCopy = waitingForOtherCopy(chatId);
+    for (;;) {
+      const busy = localTurnOf(chatId);
+      if (busy && !closing) {
+        await busy.catch(() => {});
+        continue;
+      }
+      try {
+        await assertNoAnswerElsewhere(chatId);
+        if (localTurnOf(chatId) && !closing) continue;
+        return await whileStarting(chatId, async () => {
+          await assertStillOpen(chatId);
+          const earlier = await storage.getMessage(message.id);
+          if (earlier?.chatId === chatId && earlier.role === "user") return earlier;
+          const written = await writingHumanMessage(userId, chatId, await currentBranch(chatId), message, text, files, sendOptions, { quietMs });
+          chatEvents.emit({ type: "message-added", ownerId: userId, chatId, messageId: written.id });
+          return written;
+        });
+      } catch (error) {
+        if (await otherCopy(error)) continue;
+        throw error;
+      }
+    }
+  }
+
+  /**
+   * Чат занят другой копией сервера (её ход или аренда): пачка ждёт его конца, как хода этой копии, — пробует снова
+   * через `BURST_BUSY_RETRY_MS`. `false` — ошибка не та, остановка службы или ждём дольше запаса пачки: бросать дальше.
+   */
+  function waitingForOtherCopy(chatId: string): (error: unknown) => Promise<boolean> {
+    const giveUpAt = now().getTime() + BURST_PENDING_GRACE_MS;
+    return async (error) => {
+      if (!(error instanceof ChatBusyError) || closing || localTurnOf(chatId) || now().getTime() >= giveUpAt) return false;
+      await burstWaits.wait(chatId, BURST_BUSY_RETRY_MS, () => new ChatBusyError(chatId));
+      return true;
+    };
+  }
+
+  /**
+   * Ход на пачку, когда окно тишины сообщения `question` прошло: решает общая история (`burstVerdict`). Пришло новое
+   * сообщение или ответ уже есть — `null`. Иначе ход через `beforeTurn` (один на пачку) под замком чата; пока шла
+   * проверка, пачка выросла — ход не начат (`turnNotStarted` с `busy`), ответит более позднее сообщение.
+   */
+  async function answeringBurst(userId: string, chatId: string, question: StoredMessage, sendOptions: SendBurstOptions | undefined): Promise<ReadableStream<UIMessageChunk> | null> {
+    const otherCopy = waitingForOtherCopy(chatId);
+    for (;;) {
+      if (closing) throw new ChatBusyError(chatId);
+      const verdict = burstVerdict(await currentBranch(chatId), question.id, now().getTime());
+      if (verdict.kind === "skip") return null;
+      if (verdict.kind === "wait") {
+        // Остановка началась, пока читалась ветка: окно не заводится.
+        if (closing) throw new ChatBusyError(chatId);
+        await burstWaits.wait(chatId, verdict.ms, () => new ChatBusyError(chatId));
+        continue;
+      }
+      const busy = localTurnOf(chatId);
+      if (busy) {
+        await busy.catch(() => {});
+        continue;
+      }
+      const chat = await ownChat(userId, chatId);
+      const burstMessageIds = verdict.burst.map((message) => message.id);
+      try {
+        const stream = await startingTurn(
+          { userId, chat, action: "send", text: burstText(verdict.burst), messageId: question.id, burstMessageIds },
+          async (pass): Promise<ReadableStream<UIMessageChunk> | null> => {
+            const branch = await currentBranch(chatId);
+            if (burstVerdict(branch, question.id, now().getTime()).kind !== "start") return null;
+            if (pass.kind === "hold") return heldTurn(userId, chatId, question.id);
+            takeTurnSlot(userId, chatId);
+            return startAnswer("send", userId, chatId, branch, sendOptions?.page, undefined, undefined, replyOf(pass));
+          },
+          (result) => (result === null ? "busy" : undefined),
+        );
+        return stream && viewerStream(userId, chat, {}, async () => stream);
+      } catch (error) {
+        // Другой ход этой копии успел занять чат между проверкой и замком: ждём его и решаем заново.
+        if (error instanceof ChatBusyError && !closing && localTurnOf(chatId)) continue;
+        // Ход ведёт другая копия: ждём его конца и решаем заново (ответила на эту пачку — `null`).
+        if (await otherCopy(error)) continue;
+        throw error;
+      }
+    }
+  }
+
+  /**
+   * «Стоп», пока пачка ждёт окна тишины: пустой остановленный ответ после пачки. Её ход уже не начнётся ни на одной
+   * копии (`burstVerdict` видит ответ), сообщения остаются в истории, «Повторить» ответит на них. Пачки нет или чат
+   * занят ходом (здесь или на другой копии) — `false`.
+   */
+  async function stoppingPendingBurst(userId: string, chatId: string): Promise<boolean> {
+    if (!burstWaits.has(chatId) && !isBurstPending(await currentBranch(chatId), now().getTime())) return false;
+    try {
+      const stopped = await whileStarting(chatId, async () => {
+        const branch = await currentBranch(chatId);
+        if (!isBurstPending(branch, now().getTime())) return false;
+        const choice = effectiveChoiceOfChat(options.catalog, env, await ownChat(userId, chatId), defaultChoice);
+        const stoppedAnswer = newStoredMessage({
+          id: crypto.randomUUID(),
+          chatId,
+          parentId: branch.at(-1)!.id,
+          role: "assistant",
+          status: "stopped",
+          parts: [],
+          modelId: choice.modelId,
+          providerId: choice.providerId,
+        });
+        await storage.insertMessage(stoppedAnswer);
+        chatEvents.emit({ type: "message-added", ownerId: userId, chatId, messageId: stoppedAnswer.id });
+        return true;
+      });
+      // Окна этой копии решают заново: ответ уже есть — их вызовы кончаются без хода.
+      if (stopped) burstWaits.wake(chatId);
+      return stopped;
+    } catch (error) {
+      if (error instanceof ChatBusyError) return false;
+      throw error;
+    }
   }
 
   /**
@@ -2585,7 +2804,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
       // Место и заметки страницы — из запроса последней поправки: они свежее, чем в начале хода. Ложатся в хвост поправки,
       // начало запроса и кэш модели прежние.
       await launchTurn(ownerId, chatId, [...before, ...branch.slice(first)], { parentId: last.id, page: continuationRequestContext(page, turn.correctionPages()), action: "send", detached: true });
-    })
+    }, { lease: "required" })
       .catch((failure: unknown) => logError(`Ход по поправкам чата ${chatId} не начался: ${failure instanceof Error ? failure.message : String(failure)}`))
       .finally(() => {
         if (handOffs.get(chatId) === handOff) handOffs.delete(chatId);
@@ -2713,6 +2932,8 @@ export function createChatService(input: ChatServiceOptions): ChatService {
       if (!chat || chat.ownerId !== ownerId || deleting.has(chatId)) return gone;
       // Занятый чат или остановка службы: ничего не пишем, фон повторит доставку по `turn-finished` или после запуска.
       if (closing || starting.has(chatId) || registry.isRunning(chatId)) return busy;
+      // Ждёт пачка сообщений человека: ход по служебному сообщению начнётся после ответа на неё.
+      if (request.wakeAgent && burstWaits.has(chatId)) return busy;
       // Ход, который ждёт `awaitAnswer`: его конец ждётся уже вне замка чата.
       let launched: { answerId: string; finished: Promise<void> } | undefined;
       let result: DeliverNoticesResult;
@@ -2725,6 +2946,8 @@ export function createChatService(input: ChatServiceOptions): ChatService {
             if ((await recoverStaleAnswers({ chatId })) === 0) return busy;
             ({ messages, branch } = await loadTree(chatId));
           }
+          // Пачку ждёт другая копия сервера: по истории видно так же.
+          if (request.wakeAgent && isBurstPending(branch, now().getTime())) return busy;
           // Ключ проверяется под замком чата: две доставки одного результата не запишут его дважды.
           const earlier = messages.find((message) => deliveryKeyOf(message) === request.deliveryKey);
           // Сообщение записано, а ход не начался (сбой запуска) и после него в ветке пусто: повтор будит агента.
@@ -2784,9 +3007,10 @@ export function createChatService(input: ChatServiceOptions): ChatService {
             () => writeNotice(false),
             () => skipped,
           );
-        });
+        }, { lease: "required" });
       } catch (error) {
-        if (error instanceof TooManyTurnsError) return busy;
+        // Ход ведёт другая копия (её аренда): фон повторит доставку, как при занятом чате здесь.
+        if (error instanceof TooManyTurnsError || error instanceof ChatBusyError) return busy;
         if (error instanceof ChatNotFoundError) return gone;
         throw error;
       }
@@ -2960,6 +3184,25 @@ export function createChatService(input: ChatServiceOptions): ChatService {
       );
     },
 
+    async sendBurstMessage(userId, chatId, message, burstOptions) {
+      const quietMs = resolveQuietMs(burstOptions?.quietMs);
+      // Очередь записи встаёт до первого ожидания: сообщения ложатся в порядке вызовов.
+      const recording = (burstWrites.get(chatId) ?? Promise.resolve())
+        .catch(() => {})
+        .then(() => recordingBurstMessage(userId, chatId, message, burstOptions, quietMs));
+      burstWrites.set(chatId, recording);
+      void recording
+        .finally(() => {
+          if (burstWrites.get(chatId) === recording) burstWrites.delete(chatId);
+        })
+        .catch(() => {});
+      const question = await recording;
+      const turn = burstWaits.holding(chatId, () => answeringBurst(userId, chatId, question, burstOptions));
+      // Вызывающий может не ждать хода (ответит более позднее сообщение): отказ не становится «необработанным».
+      turn.catch(() => {});
+      return { messageId: question.id, turn };
+    },
+
     async steer(userId, chatId, message, steerOptions) {
       const chat = await ownChat(userId, chatId);
       const { text, files } = validateUserMessage(message, Boolean(options.attachments));
@@ -3035,6 +3278,8 @@ export function createChatService(input: ChatServiceOptions): ChatService {
                     ),
                   ]
                 : []),
+              // Правленое сообщение пачки остаётся в своей пачке: отметка с прежним временем записи.
+              ...edited.parts.filter((part) => part.type === BURST_PART_TYPE),
             ],
             createdAt: nextSiblingTime(messages, selections, edited.parentId),
           });
@@ -3260,6 +3505,8 @@ export function createChatService(input: ChatServiceOptions): ChatService {
       if (registry.abort(chatId) || check !== undefined) return true;
       // Ответ уже кончился, ход переходит к поправкам: «Стоп» был для прежнего ответа, новый ход по поправкам идёт.
       if (handOffs.has(chatId)) return true;
+      // Хода нет, а пачка ждёт окна тишины: «Стоп» отменяет её ход.
+      if (await stoppingPendingBurst(userId, chatId)) return true;
       // Ход ещё запускается (проверки до хода): остановка ждёт его в реестре и срабатывает сразу после старта.
       if (!starting.has(chatId) && !admittingTurns.has(chatId)) return false;
       stopsWhileStarting.add(chatId);
@@ -3304,6 +3551,8 @@ export function createChatService(input: ChatServiceOptions): ChatService {
       }
       // Пока идёт остановка, новые ходы не начинаются — ни от человека, ни от фона.
       closing = true;
+      // Окна тишины обрываются: вызовы пачек получат `ChatBusyError` и повторят после запуска.
+      burstWaits.cancelAll();
       try {
         // Идущая проверка брошенных ответов может закрыть ответ или позвать хук итога: её тоже ждём.
         await sweeping;
@@ -3311,6 +3560,8 @@ export function createChatService(input: ChatServiceOptions): ChatService {
         while (startingWork.size > 0) await Promise.allSettled([...startingWork]);
         // Остановленный ход сам пишет итог; не прошла конечная запись — ход помечает ответ брошенным.
         const unfinished = await liveTurns.drain(waitForAnswersMs);
+        // Решения по пачкам видят остановку и кончаются без хода.
+        await burstWaits.settled();
         if (unfinished > 0) {
           // Ход, висящий до конечной записи, помечается брошенным: следующий старт прервёт его сразу. Висящий на самой
           // конечной записи пометит себя сам, когда повторы кончатся, — иначе его прервут по порогу.
@@ -3331,6 +3582,8 @@ export function createChatService(input: ChatServiceOptions): ChatService {
           memoryAfterAnswer.drain(),
           ...(options.background ? [options.background.flush()] : []),
         ]);
+        // Ходов больше нет: аренды чатов снимаются, другие копии берут чаты сразу, а не через срок аренды.
+        await turnLeases.releaseAll();
       } finally {
         closing = false;
       }
@@ -3371,7 +3624,10 @@ export function createChatService(input: ChatServiceOptions): ChatService {
         };
         next();
       }
-      return soleServer ? interruptAnswers(await storage.listStreamingMessageIds()) : recoverStaleAnswers();
+      if (!soleServer) return recoverStaleAnswers();
+      // Других копий нет: аренды хода в базе — от упавшего прошлого запуска, чаты свободны сразу, а не через срок аренды.
+      await turnLeases.clearForeign();
+      return interruptAnswers(await storage.listStreamingMessageIds());
   }
 
   /** Прерывает брошенные ответы (FR-060): без знака жизни дольше порога; можно только ответы одного чата. */

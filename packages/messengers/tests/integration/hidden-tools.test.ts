@@ -25,16 +25,20 @@ async function chatWith(toolDetails: boolean) {
     server: { agent: { instructions: "Ты помощник.", tools: { lookup } }, chatCapabilities: () => ({ toolDetails }) },
   });
   await real.link(anna, "anna");
-  // Куски, которые служба отдала мессенджеру.
+  // Куски, которые служба отдала мессенджеру (сообщение лички идёт пачкой: поток — у хода на пачку).
   const received: UIMessageChunk[] = [];
-  const send = real.service.sendMessage.bind(real.service);
-  vi.spyOn(real.service, "sendMessage").mockImplementation(async (...args) => {
-    const [mine, copy] = (await send(...args)).tee();
+  const copied = (stream: ReadableStream<UIMessageChunk>) => {
+    const [mine, copy] = stream.tee();
     void (async () => {
       const reader = copy.getReader();
       for (let read = await reader.read(); !read.done; read = await reader.read()) received.push(read.value);
     })();
     return mine;
+  };
+  const sendBurst = real.service.sendBurstMessage.bind(real.service);
+  vi.spyOn(real.service, "sendBurstMessage").mockImplementation(async (...args) => {
+    const sent = await sendBurst(...args);
+    return { ...sent, turn: sent.turn.then((stream) => stream && copied(stream)) };
   });
   real.model.script({ tool: { name: "lookup", input: { q: "цены" } } }, { text: "Тариф — 100 ₽." });
   await real.human({ type: "text", chat: annaChat, from: anna, text: "Сколько стоит?" });

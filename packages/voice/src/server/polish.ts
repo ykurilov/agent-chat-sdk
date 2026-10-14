@@ -1,10 +1,29 @@
+import type { AskModel, ModelChoice } from "@ykurilov/agent-chat-core";
+
 /**
  * Чистка надиктованного текста моделью: единственное место, где сервер зовёт модель.
  * Убирает «э-э», повторы и оговорки, расставляет знаки и заглавные. Не пересказывает и не отвечает.
  * Любой сбой, тишина дольше срока или подозрительный ответ — `null`: остаётся текст Soniox.
  */
 
-export type TextPolisher = (text: string) => Promise<string | null>;
+/** Чей расход: человек и чат диктовки. */
+export interface PolishPayer {
+  ownerId: string;
+  chatId: string;
+}
+
+/** Расход одной чистки. */
+export interface PolishUsage {
+  inputTokens: number;
+  outputTokens: number;
+  /** Доллары. */
+  costUsd: number;
+  modelId: string;
+  providerId?: string;
+}
+
+/** `payer` — чей расход (его передаёт ретранслятор): без него чистка через `askModel` не идёт, а расход не пишется. */
+export type TextPolisher = (text: string, payer?: PolishPayer) => Promise<string | null>;
 
 interface PolishTimingOptions {
   /** Сколько ждать модель, мс (5000). Дольше — остаётся текст Soniox. */
@@ -22,15 +41,38 @@ export interface TogetherPolishOptions extends PolishTimingOptions {
   baseUrl?: string;
   /** Свои заголовки к запросу, например `{ "X-Proxy-Token": process.env.PROXY_TOKEN }`. `Authorization` среди них — ошибка: ключ Together задаётся отдельно. */
   headers?: Record<string, string>;
+  /**
+   * Цена модели, доллары за миллион токенов: по токенам ответа Together расход пишется видом `voice_polish`.
+   * С учётом расходов ретранслятора (`spending`) обязательна.
+   */
+  pricing?: { inputPerMillion: number; outputPerMillion: number };
   fetch?: typeof fetch;
 }
 
 export interface CustomPolishOptions extends PolishTimingOptions {
-  /** Своя чистка. Вернуть исправленный текст; пусто или сбой — текст останется как есть. */
-  clean: (text: string, signal: AbortSignal) => Promise<string | null | undefined>;
+  /**
+   * Своя чистка. Вернуть исправленный текст; пусто или сбой — текст останется как есть. Вместе с текстом можно вернуть
+   * расход (`{ text, usage }`): с учётом расходов ретранслятора он пишется видом `voice_polish`.
+   */
+  clean: (text: string, signal: AbortSignal) => Promise<string | null | undefined | { text: string | null | undefined; usage?: PolishUsage }>;
 }
 
-export type PolishOptions = TogetherPolishOptions | CustomPolishOptions;
+/**
+ * Чистка моделью каталога через службу чата: `askModel` проверяет лимит до вызова и пишет расход видом `voice_polish`
+ * в тот же журнал, что у ходов агента. Ключи и цены — из каталога и окружения службы.
+ */
+export interface ChatModelPolishOptions extends PolishTimingOptions {
+  askModel: AskModel;
+  model: ModelChoice;
+}
+
+export type PolishOptions = TogetherPolishOptions | CustomPolishOptions | ChatModelPolishOptions;
+
+/** Что вернула модель: текст и, если известен, расход. */
+type CleanResult = { text: string | null | undefined; usage?: PolishUsage | undefined };
+type Clean = (text: string, signal: AbortSignal, payer: PolishPayer | undefined) => Promise<CleanResult>;
+/** Запись расхода чистки; её даёт ретранслятор с учётом расходов. */
+export type RecordPolishUsage = (usage: PolishUsage, payer: PolishPayer) => void;
 
 export const DEFAULT_POLISH_MODEL = "deepseek-ai/DeepSeek-V4.1-Flash";
 const DEFAULT_POLISH_TIMEOUT_MS = 5_000;
@@ -59,9 +101,30 @@ const INSTRUCTION = [
 const openingTag = "<dictation>";
 const closingTag = "</dictation>";
 
-export function createTextPolisher(options: PolishOptions, logError: (message: string) => void): TextPolisher | null {
+/** Чистка идёт через службу чата: лимит и расход она ведёт сама. */
+export function polishesThroughChat(options: PolishOptions): options is ChatModelPolishOptions {
+  return "askModel" in options;
+}
+
+export function createTextPolisher(options: PolishOptions, logError: (message: string) => void, recordUsage?: RecordPolishUsage): TextPolisher | null {
   const timeoutMs = options.timeoutMs ?? DEFAULT_POLISH_TIMEOUT_MS;
-  if ("clean" in options) return guarded(options.clean, timeoutMs, [], logError);
+  if (polishesThroughChat(options)) {
+    const { askModel, model } = options;
+    const clean: Clean = async (text, signal, payer) => {
+      if (!payer) throw new Error("чистке через askModel нужен человек и чат диктовки");
+      const answer = await askModel({ ownerId: payer.ownerId, chatId: payer.chatId, model, system: INSTRUCTION, prompt: wrapped(text), source: "voice_polish", signal });
+      return { text: answer.text };
+    };
+    return guarded(clean, timeoutMs, [], logError);
+  }
+  if ("clean" in options) {
+    const own = options.clean;
+    const clean: Clean = async (text, signal) => {
+      const answer = await own(text, signal);
+      return typeof answer === "object" && answer !== null ? answer : { text: answer };
+    };
+    return guarded(clean, timeoutMs, [], logError, recordUsage);
+  }
 
   const apiKey = options.apiKey ?? (options.env ?? process.env).TOGETHER_API_KEY;
   if (!apiKey) {
@@ -75,7 +138,11 @@ export function createTextPolisher(options: PolishOptions, logError: (message: s
   const model = options.model ?? DEFAULT_POLISH_MODEL;
   const send = options.fetch ?? fetch;
 
-  const clean = async (text: string, signal: AbortSignal): Promise<string | null> => {
+  const pricing = options.pricing;
+  if (pricing && ![pricing.inputPerMillion, pricing.outputPerMillion].every((price) => Number.isFinite(price) && price >= 0)) {
+    throw new Error("Голос: pricing чистки — доллары за миллион токенов, числа не меньше нуля");
+  }
+  const clean: Clean = async (text, signal) => {
     const response = await send(url, {
       method: "POST",
       signal,
@@ -84,7 +151,7 @@ export function createTextPolisher(options: PolishOptions, logError: (message: s
         model,
         messages: [
           { role: "system", content: INSTRUCTION },
-          { role: "user", content: `${openingTag}\n${text}\n${closingTag}` },
+          { role: "user", content: wrapped(text) },
         ],
         temperature: 0,
         max_tokens: Math.min(MAX_OUTPUT_TOKENS, Math.max(256, text.length)),
@@ -92,25 +159,35 @@ export function createTextPolisher(options: PolishOptions, logError: (message: s
       }),
     });
     if (!response.ok) throw new Error(`модель ответила кодом ${response.status}`);
-    const body = (await response.json()) as { choices?: Array<{ message?: { content?: unknown } }> };
+    const body = (await response.json()) as {
+      choices?: Array<{ message?: { content?: unknown } }>;
+      usage?: { prompt_tokens?: unknown; completion_tokens?: unknown };
+    };
     const content = body.choices?.[0]?.message?.content;
-    return typeof content === "string" ? content : null;
+    const inputTokens = tokenCount(body.usage?.prompt_tokens);
+    const outputTokens = tokenCount(body.usage?.completion_tokens);
+    const usage: PolishUsage | undefined =
+      pricing && (inputTokens > 0 || outputTokens > 0)
+        ? { inputTokens, outputTokens, costUsd: (inputTokens * pricing.inputPerMillion + outputTokens * pricing.outputPerMillion) / 1_000_000, modelId: model, providerId: "together" }
+        : undefined;
+    return { text: typeof content === "string" ? content : null, usage };
   };
-  return guarded(clean, timeoutMs, [apiKey, ...Object.values(options.headers ?? {}).filter(Boolean)], logError);
+  return guarded(clean, timeoutMs, [apiKey, ...Object.values(options.headers ?? {}).filter(Boolean)], logError, recordUsage);
 }
 
-function guarded(
-  clean: (text: string, signal: AbortSignal) => Promise<string | null | undefined>,
-  timeoutMs: number,
-  secrets: string[],
-  logError: (message: string) => void,
-): TextPolisher {
+const wrapped = (text: string) => `${openingTag}\n${text}\n${closingTag}`;
+
+function tokenCount(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.round(value) : 0;
+}
+
+function guarded(clean: Clean, timeoutMs: number, secrets: string[], logError: (message: string) => void, recordUsage?: RecordPolishUsage): TextPolisher {
   const fail = (reason: string): null => {
     logError(`Голос: чистка не удалась, остаётся текст Soniox (${mask(reason, secrets)})`);
     return null;
   };
 
-  return async (text) => {
+  return async (text, payer) => {
     if (text.length > MAX_INPUT_CHARS) return fail(`текст длиннее ${MAX_INPUT_CHARS} знаков`);
 
     const controller = new AbortController();
@@ -122,9 +199,14 @@ function guarded(
       }, timeoutMs);
     });
     try {
-      const answer = await Promise.race([clean(text, controller.signal), silence]);
+      // Расход пишется, как только модель ответила, даже если ответ отброшен: деньги уже потрачены.
+      const work = clean(text, controller.signal, payer).then((result) => {
+        if (result.usage && payer && recordUsage) recordUsage(result.usage, payer);
+        return result;
+      });
+      const answer = await Promise.race([work, silence]);
       if (answer === "timeout") return fail(`модель не ответила за ${timeoutMs / 1000} с`);
-      return acceptable(text, answer) ?? fail("пустой или подозрительный ответ модели");
+      return acceptable(text, answer.text) ?? fail("пустой или подозрительный ответ модели");
     } catch (error) {
       return fail(controller.signal.aborted ? `модель не ответила за ${timeoutMs / 1000} с` : errorText(error));
     } finally {

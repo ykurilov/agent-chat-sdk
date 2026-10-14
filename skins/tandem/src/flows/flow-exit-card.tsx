@@ -89,7 +89,7 @@ export function TandemFlowExitCard(props: FlowExitCardProps) {
                 <option value="" />
                 {[...new Set([...props.eventNames[when.event], ...(when.name ? [when.name] : [])])].map((name) => (
                   <option key={name} value={name}>
-                    {name}
+                    {(when.event !== "tool" && props.eventLabels?.[name]) || name}
                   </option>
                 ))}
               </Select>
@@ -108,22 +108,23 @@ export function TandemFlowExitCard(props: FlowExitCardProps) {
                 </option>
               ))}
               <option value="state_days">{`${labels.statePanel.duration}, ${labels.statePanel.durationUnits.d}`}</option>
+              <option value="program_day">{`${labels.statePanel.duration}, ${labels.statePanel.durationUnits.program_day}`}</option>
             </Select>
           </Labeled>
           {when.from === "time_of_day" ? (
             <Labeled label={labels.exitCard.at}>
               <Input type="time" value={when.at} onChange={(event) => event.target.value && change({ ...when, at: event.target.value })} />
             </Labeled>
-          ) : when.from === "state_days" ? (
+          ) : when.from === "state_days" || when.from === "program_day" ? (
             <Labeled label={labels.exitCard.amount}>
               <Input
                 type="number"
                 min={1}
                 inputMode="numeric"
-                value={when.days}
+                value={when.from === "state_days" ? when.days : when.day}
                 onChange={(event) => {
                   const days = Number(event.target.value);
-                  if (Number.isInteger(days) && days > 0) change({ ...when, days });
+                  if (Number.isInteger(days) && days > 0) change(when.from === "state_days" ? { ...when, days } : { ...when, day: days });
                 }}
               />
             </Labeled>

@@ -9,9 +9,10 @@ import type { FlowAdmit } from "./admit";
  * `silent` — сообщение записано, агент молчит.
  */
 export function flowTurnGate(admit: FlowAdmit): BeforeTurnHandler {
-  return async ({ chat, action, text }): Promise<BeforeTurnDecision | void> => {
+  return async ({ chat, action, text, burstMessageIds }): Promise<BeforeTurnDecision | void> => {
     if (action !== "send") return;
-    const decision = await admit({ ownerId: chat.ownerId, chatId: chat.id, ...(text !== undefined && { text }) });
+    // Пачка сообщений (`sendBurstMessage`) решается разом: в рамки дня идёт каждое её сообщение.
+    const decision = await admit({ ownerId: chat.ownerId, chatId: chat.id, ...(text !== undefined && { text }), ...(burstMessageIds && { messages: burstMessageIds.length }) });
     switch (decision.kind) {
       case "answer":
         return;

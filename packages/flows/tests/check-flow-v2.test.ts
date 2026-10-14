@@ -39,6 +39,32 @@ describe("проверка графа v2: «Дни и время»", () => {
     ).toContainEqual({ level: "error", code: "state_days_below_one", place: { stateId: "block", exitId: "block_day" } });
   });
 
+  it("«наступил день N программы»: без «Дней и времени» — предупреждение; дальше срока, меньше 1, не целое — ошибка", () => {
+    const programDay = (day: number, schedule?: Record<string, unknown>) =>
+      check((json) => {
+        if (schedule) json.schedule = schedule;
+        stateOf(json, "block").exits.push({ id: "block_day3", when: { type: "timer", from: "program_day", day }, to: "offer" });
+      });
+    const place = { stateId: "block", exitId: "block_day3" };
+    expect(programDay(3, { dayStart: "09:00", lengthDays: 3 })).toEqual([]);
+    expect(programDay(3, { dayStart: "09:00" })).toEqual([]);
+    expect(programDay(3)).toContainEqual({ level: "warning", code: "program_day_without_schedule", place });
+    expect(programDay(4, { dayStart: "09:00", lengthDays: 3 })).toContainEqual({ level: "error", code: "program_day_after_end", place });
+    expect(programDay(0, { dayStart: "09:00" })).toContainEqual({ level: "error", code: "program_day_invalid", place });
+    expect(programDay(2.5, { dayStart: "09:00" })).toContainEqual({ level: "error", code: "program_day_invalid", place });
+  });
+
+  it("свои касания ноды на N дней: целое число с 1, иначе ошибка", () => {
+    const ownFor = (days: number) =>
+      check((json) => {
+        json.schedule = { dayStart: "09:00", nudges: { afterSilence: [{ amount: 3, unit: "h" }] } };
+        stateOf(json, "block").nudges = { afterSilence: [{ amount: 15, unit: "min" }], days };
+      });
+    expect(ownFor(1)).toEqual([]);
+    expect(ownFor(0)).toContainEqual({ level: "error", code: "nudges_days_invalid", place: { stateId: "block" } });
+    expect(ownFor(1.5)).toContainEqual({ level: "error", code: "nudges_days_invalid", place: { stateId: "block" } });
+  });
+
   it("ночь начинается не позже начала дня", () => {
     expect(check((json) => (json.schedule = { dayStart: "09:00", nightFrom: "08:00" }))).toContainEqual({
       level: "error",

@@ -36,6 +36,11 @@ interface Inbound {
   messageId: string;
   /** Повтор: сообщение могло уже дойти до чата — сначала сверка с историей. */
   retry: boolean;
+  /**
+   * Работа после очереди разговора: обновление закончено, когда кончится и она, но следующее сообщение её не ждёт
+   * (ход на пачку ждёт тишины уже вне очереди).
+   */
+  later?(work: () => Promise<void>): void;
 }
 
 /**
@@ -64,6 +69,8 @@ interface Turn {
   key: ConversationKey;
   ctx: ConversationContext;
   group?: { allowedTools: readonly string[]; author: string };
+  /** Сообщение лички, которое склеивается с соседними в один ход (`messageBursts`). */
+  burst?: boolean;
 }
 
 const errorNamed = (error: unknown, name: string) => error instanceof Error && error.name === name;
@@ -88,7 +95,8 @@ function refusalText(error: unknown, texts: MessengerTexts): string {
 
 /**
  * Приём обновлений (T028): вебхук или опрос → запись обновления (повтор не обрабатывается) → очередь разговора.
- * Сообщения одного внешнего чата идут по одному: новое ждёт конца ответа. Шлюз о настройках не знает —
+ * Сообщения одного внешнего чата идут по одному: новое ждёт конца ответа. Сообщение лички со склейкой пачки
+ * (`messageBursts`) освобождает очередь, как только записано: ход на пачку ждёт тишины вне очереди. Шлюз о настройках не знает —
  * решения за привязкой, правилами разговора, группами, файлами и голосом.
  */
 export function createMessengerGateway(deps: {
@@ -113,12 +121,15 @@ export function createMessengerGateway(deps: {
   holder?: string;
   /** Исход доставки каждого ответа агента (`MessengersOptions.onAnswerDelivery`). */
   onAnswerDelivery?(report: AnswerDeliveryReport): Promise<void> | void;
+  /** Склейка пачки в личке (`MessengersOptions.messageBursts`); по умолчанию включена. */
+  messageBursts?: false | { quietMs?: number };
   logError?(error: unknown): void;
 }) {
   const { store, service, policy, groups, buttons } = deps;
   const textsOf = deps.textsOf ?? defaultTextsOf;
   const logError = (error: unknown) => deps.logError?.(error);
   const chatEnabled = deps.chatEnabled ?? true;
+  const bursts = deps.messageBursts === false ? undefined : (deps.messageBursts ?? {});
   /** Хвост очереди каждого разговора. */
   const lanes = new Map<string, Promise<void>>();
   const running = new Map<string, RunningTurn>();
@@ -189,11 +200,27 @@ export function createMessengerGateway(deps: {
       return;
     }
     const id = idOf(key);
-    const work = (lanes.get(id) ?? Promise.resolve()).then(() => finish(update, () => handle(bot, update, key, inbound)));
-    lanes.set(id, work);
-    track(work);
-    void work.finally(() => {
-      if (lanes.get(id) === work) lanes.delete(id);
+    // Работа после очереди (ход на пачку) держит обновление в работе: упадёт копия — повтор узнает сделанное по истории.
+    const after: Promise<void>[] = [];
+    const later = (work: () => Promise<void>) => {
+      const running = work();
+      running.catch(() => {});
+      after.push(running);
+    };
+    const handled = (lanes.get(id) ?? Promise.resolve()).then(() => handle(bot, update, key, { ...inbound, later }));
+    const lane = handled.then(
+      () => {},
+      () => {},
+    );
+    lanes.set(id, lane);
+    track(
+      finish(update, async () => {
+        await handled;
+        await Promise.all(after);
+      }),
+    );
+    void lane.finally(() => {
+      if (lanes.get(id) === lane) lanes.delete(id);
     });
   }
 
@@ -309,7 +336,7 @@ export function createMessengerGateway(deps: {
       const byWords = await buttons.answerByWords(key, ctx.userId, update.text);
       if (byWords) return afterPress(bot, update, ctx, byWords, inbound);
     }
-    return talk({ bot, update, inbound, key, ctx });
+    return talk({ bot, update, inbound, key, ctx, burst: true });
   }
 
   /** Службы чата нет: нажатие подтверждается без текста (иначе вечный значок загрузки), в ответ — `notifyOnly`. */
@@ -390,11 +417,14 @@ export function createMessengerGateway(deps: {
     const message: MessengerUserMessage = { id: inbound.messageId, role: "user", parts: prepared.parts };
     const options = { channel: key.messenger, ...(turn.group && { group: turn.group }) };
 
-    let stream: ReadableStream<AnswerChunk> | undefined;
-    for (let attempt = 1; !stream; attempt++) {
+    const sendBurstMessage = turn.burst && bursts ? service.sendBurstMessage : undefined;
+    let sent: ReadableStream<AnswerChunk> | { turn: Promise<ReadableStream<AnswerChunk> | null> } | undefined;
+    for (let attempt = 1; !sent; attempt++) {
       await running.get(idOf(key))?.done;
       try {
-        stream = await service.sendMessage(ctx.userId, opened.chatId, message, options);
+        sent = sendBurstMessage
+          ? await sendBurstMessage.call(service, ctx.userId, opened.chatId, message, { ...options, ...(bursts?.quietMs !== undefined && { quietMs: bursts.quietMs }) })
+          : await service.sendMessage(ctx.userId, opened.chatId, message, options);
       } catch (error) {
         if (errorNamed(error, "ChatNotFoundError") && attempt === 1) {
           try {
@@ -409,16 +439,43 @@ export function createMessengerGateway(deps: {
           await waitForTurnEnd(ctx.userId, opened.chatId);
           continue;
         }
-        if (errorNamed(error, "SpendingLimitReachedError")) return reply(bot, key, update.chat, texts.limitReached(error as { resetsAt: string | null; timeZone?: string; unit?: "usd" | "messages" }));
-        if (errorNamed(error, "TooManyTurnsError")) return reply(bot, key, update.chat, texts.tooManyTurns);
-        // Приложение отказало в ходе своими словами: человеку — текст отказа, в журнал не пишем.
-        if (isAppRefusal(error)) return reply(bot, key, update.chat, refusalText(error, texts));
-        logError(error);
-        return reply(bot, key, update.chat, texts.answerFailed);
+        return replyToTurnError(bot, key, update.chat, error);
       }
     }
     const authorId = turn.group ? update.account.externalUserId : undefined;
-    await printTurn({ bot, key, chat: update.chat, userId: ctx.userId, chatId: opened.chatId, stream, inputWasVoice: prepared.voice, trigger: "human", ...(authorId && { authorId }) });
+    const print = (stream: ReadableStream<AnswerChunk>) =>
+      printTurn({ bot, key, chat: update.chat, userId: ctx.userId, chatId: opened.chatId, stream, inputWasVoice: prepared.voice, trigger: "human", ...(authorId && { authorId }) });
+    if (sent instanceof ReadableStream) return print(sent);
+    // Сообщение пачки записано — очередь разговора свободна: следующее сообщение человека ляжет в ту же пачку. Ход
+    // начнёт вызов последнего сообщения, когда человек замолчит; у остальных — `null`.
+    const { turn: burstTurn } = sent;
+    const answerBurst = async () => {
+      let stream: ReadableStream<AnswerChunk> | null;
+      try {
+        stream = await burstTurn;
+      } catch (error) {
+        // Служба останавливается или чат занят другой копией: обновление уйдёт на повтор и доведёт ход.
+        if (errorNamed(error, "ChatBusyError")) throw error;
+        return replyToTurnError(bot, key, update.chat, error);
+      }
+      if (!stream) return;
+      // Предыдущий ответ ещё допечатывается: этот — после него.
+      await running.get(idOf(key))?.done;
+      await print(stream);
+    };
+    if (inbound.later) inbound.later(answerBurst);
+    else await answerBurst();
+  }
+
+  /** Ход не начался: человеку — понятный текст (лимит, занятость, отказ приложения), остальное — в журнал и «не вышло». */
+  function replyToTurnError(bot: MessengerBot, key: ConversationKey, chat: ExternalChat, error: unknown): Promise<void> {
+    const texts = textsOf(key);
+    if (errorNamed(error, "SpendingLimitReachedError")) return reply(bot, key, chat, texts.limitReached(error as { resetsAt: string | null; timeZone?: string; unit?: "usd" | "messages" }));
+    if (errorNamed(error, "TooManyTurnsError")) return reply(bot, key, chat, texts.tooManyTurns);
+    // Приложение отказало в ходе своими словами: человеку — текст отказа, в журнал не пишем.
+    if (isAppRefusal(error)) return reply(bot, key, chat, refusalText(error, texts));
+    logError(error);
+    return reply(bot, key, chat, texts.answerFailed);
   }
 
   /**

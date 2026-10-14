@@ -377,26 +377,28 @@ export function TandemFlowSideTasksSection(props: FlowSideTasksSectionProps) {
 export function TandemFlowStateTiming(props: FlowStateTimingProps) {
   const labels = useFlowLabels().editor.statePanel;
   const { duration } = props;
-  const units: DurationUnit[] = props.daysAvailable ? ["h", "d"] : ["h"];
+  const units: DurationUnit[] = props.daysAvailable ? ["h", "d", "program_day"] : ["h"];
+  // «3 дней», но «до дня программы 3»: номер дня — после варианта.
+  const amount = duration && (
+    <Input
+      aria-label={`${labels.duration}: ${labels.durationUnits[duration.unit]}`}
+      type="number"
+      min={1}
+      inputMode="numeric"
+      className="w-20"
+      value={duration.amount}
+      onChange={(event) => Number(event.target.value) > 0 && props.onDurationChange({ amount: Number(event.target.value), unit: duration.unit })}
+    />
+  );
   return (
     <section aria-label={labels.duration} data-flow-state-timing="" className="flex flex-col gap-3 border-t border-[var(--border)] pt-4">
       <div className="flex flex-col gap-1.5">
         <span className="text-sm font-medium text-[var(--foreground)]">{labels.duration}</span>
         <div className="flex items-center gap-1.5">
-          {duration && (
-            <Input
-              aria-label={`${labels.duration}: ${labels.durationUnits[duration.unit]}`}
-              type="number"
-              min={1}
-              inputMode="numeric"
-              className="w-20"
-              value={duration.amount}
-              onChange={(event) => Number(event.target.value) > 0 && props.onDurationChange({ amount: Number(event.target.value), unit: duration.unit })}
-            />
-          )}
+          {duration?.unit !== "program_day" && amount}
           <Select
             aria-label={labels.duration}
-            className={duration ? "w-28" : undefined}
+            className={duration ? (duration.unit === "program_day" ? "w-44" : "w-28") : undefined}
             value={duration?.unit ?? ""}
             onChange={(event) => {
               const unit = event.target.value as DurationUnit | "";
@@ -410,6 +412,7 @@ export function TandemFlowStateTiming(props: FlowStateTimingProps) {
               </option>
             ))}
           </Select>
+          {duration?.unit === "program_day" && amount}
         </div>
         <span className="text-xs text-[var(--foreground-muted)]">{labels.durationHint}</span>
       </div>
@@ -449,7 +452,36 @@ export function TandemFlowStateTiming(props: FlowStateTimingProps) {
         </div>
         <span className="text-xs text-[var(--foreground-muted)]">{labels.nudgesHint}</span>
         {props.nudges}
+        {props.nudgesMode === "own" && <NudgesDays days={props.nudgesDays} onChange={props.onNudgesDaysChange} />}
       </div>
     </section>
+  );
+}
+
+/** «Свои касания действуют»: всё время в ноде или N дней, считая день входа. */
+function NudgesDays({ days, onChange }: { days: number | null; onChange(days: number | null): void }) {
+  const labels = useFlowLabels().editor.statePanel;
+  return (
+    <div data-flow-nudges-days="" className="flex flex-col gap-1.5">
+      <span className="text-sm font-medium text-[var(--foreground)]">{labels.nudgesDays}</span>
+      <div className="flex items-center gap-1.5">
+        {days !== null && (
+          <Input
+            aria-label={`${labels.nudgesDays}: ${labels.nudgesDaysModes.days}`}
+            type="number"
+            min={1}
+            inputMode="numeric"
+            className="w-20"
+            value={days}
+            onChange={(event) => Number(event.target.value) > 0 && onChange(Number(event.target.value))}
+          />
+        )}
+        <Select aria-label={labels.nudgesDays} value={days === null ? "always" : "days"} onChange={(event) => onChange(event.target.value === "days" ? 1 : null)}>
+          <option value="always">{labels.nudgesDaysModes.always}</option>
+          <option value="days">{labels.nudgesDaysModes.days}</option>
+        </Select>
+      </div>
+      {days !== null && <span className="text-xs text-[var(--foreground-muted)]">{labels.nudgesDaysHint}</span>}
+    </div>
   );
 }

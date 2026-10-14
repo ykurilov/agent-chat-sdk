@@ -5,8 +5,9 @@ import { stateById } from "../engine/flow-graph";
 import { describeCondition, nextTransition, type FlowEvent } from "../engine/next-transition";
 import { applyTransition, startRun } from "../engine/run-updates";
 import { dayInProgress } from "../engine/flow-days";
+import { overdueOnEntry } from "../engine/timers";
 import { stateCard } from "../prompt/state-card";
-import type { FlowChatRecord, FlowStore } from "../store/flow-store";
+import type { FlowChatRecord, FlowStore, PendingFlowChange } from "../store/flow-store";
 import type { FlowNotice, FlowTransitionEvent } from "./flow-types";
 import type { FlowFirstReason } from "../engine/nudges";
 import type { FlowTimeZones } from "./first-message-rules";
@@ -146,6 +147,15 @@ export function chatRun(
   return placement ? placedRun(flow, placement, now, timeZone) : startRun(flow, now);
 }
 
+/**
+ * Пояс человека для шага движка вне подготовки хода, как в `runOutsideTurn`: пояса модуля, без них — из записи чата;
+ * неизвестен — `defaultTimeZone`, иначе сервера.
+ */
+export async function personTimeZone(runtime: Pick<FlowRuntime, "store" | "timeZones" | "defaultTimeZone">, chat: { ownerId: string; chatId: string }): Promise<string> {
+  const known = runtime.timeZones ? await runtime.timeZones.of(chat.ownerId, chat.chatId) : (await runtime.store.getChat(chat.chatId))?.timeZone;
+  return known || runtime.defaultTimeZone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+}
+
 /** `chatRun` для частей сценария вне хода: запись чата (если не передана) и пояс человека читаются тут. */
 export async function runOutsideTurn(
   runtime: Pick<FlowRuntime, "store" | "timeZones">,
@@ -163,26 +173,61 @@ export async function runOutsideTurn(
   return chatRun(flow, values, found, now, timeZone);
 }
 
-/** Шаг движка с проверкой условий по данным в новом состоянии: переходы складываются в `out`. */
+/**
+ * Шаг движка с проверкой нового состояния: условия по данным и наступившие таймеры, чей срок не зависит от входа
+ * (`overdueOnEntry`). Переходы складываются в `out`. `timeZone` — пояс человека: по нему считаются дни программы.
+ */
 export function advance(
   flow: AgentFlow,
   run: ChatFlowRun,
   event: FlowEvent,
-  input: { now: number; card: Record<string, unknown>; out: Transition[]; onChainLimit: (run: FlowRun) => void },
+  input: { now: number; card: Record<string, unknown>; out: Transition[]; onChainLimit: (run: FlowRun) => void; timeZone: string },
 ): ChatFlowRun {
   let current = run;
   let step: FlowEvent | null = event;
+  let entered = false;
+  let stopped = false;
   while (step) {
     const transition = nextTransition(flow, current, step, input.now);
     if (!transition) {
-      // Движок молчит из-за предела переходов подряд, а без предела переход был бы: сценарий зациклился.
-      if (current.chain >= FLOW_CHAIN_LIMIT && nextTransition(flow, { ...current, chain: 0 }, step, input.now)) input.onChainLimit(current);
-      break;
+      // Движок молчит из-за предела переходов подряд, а без предела переход был бы: сценарий зациклился. Одна запись.
+      if (current.chain >= FLOW_CHAIN_LIMIT && nextTransition(flow, { ...current, chain: 0 }, step, input.now)) {
+        if (!stopped) input.onChainLimit(current);
+        stopped = true;
+      }
+      // Вошли в состояние, а его срок уже наступил («с дня 3», вошли в день 4): дальше сразу, человек получит один ответ.
+      const overdue: string | null = entered && !stopped && step.type === "data" ? overdueOnEntry(flow, current, input.now, input.timeZone) : null;
+      step = overdue ? { type: "timer", exitId: overdue, timeZone: input.timeZone } : null;
+      continue;
     }
     current = applyTransition(flow, current, transition);
     input.out.push(transition);
+    entered = true;
     // В новом состоянии могли уже выполниться условия по данным: поле узнали раньше.
     step = { type: "data", card: input.card };
+  }
+  return current;
+}
+
+/** Событие движка для ожидающего перехода: таймер проверяется заново по своему сроку, судья — как вердикт. */
+export function pendingEvent(transition: Transition, timeZone: string): FlowEvent {
+  if (transition.decidedBy === "timer") return { type: "timer", exitId: transition.exitId, timeZone };
+  return { type: "verdict", exitId: transition.exitId, probability: transition.probability ?? 1, decidedBy: "judge" };
+}
+
+/**
+ * Ожидающее вне хода поверх места ветки — каким место станет к ходу: переходы своей ветки из того же состояния и
+ * события приложения. Само ожидание не трогается.
+ */
+export function withPending(flow: AgentFlow, run: ChatFlowRun, pending: readonly PendingFlowChange[], input: Parameters<typeof advance>[3]): ChatFlowRun {
+  let current = run;
+  for (const change of pending) {
+    if (change.kind === "transition") {
+      if (change.branchHead !== run.answerId || current.state !== change.transition.from) continue;
+      current = advance(flow, current, pendingEvent(change.transition, input.timeZone), input);
+    } else if (change.kind === "event") {
+      current = advance(flow, current, { type: "event", event: "app", name: change.name }, input);
+    }
   }
   return current;
 }

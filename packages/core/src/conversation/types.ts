@@ -224,21 +224,35 @@ export interface StoredBranchSelection {
  * У веб-службы все счётчики 0, а вместо модели — имя инструмента; у картинок все счётчики 0, а `modelId` — модель картинок. `answer_correction` — поправка оценки ответа до настоящего
  * расхода, который провайдер сообщил позже (FR-058): разница, числа и деньги могут быть меньше нуля. `judge` — судья
  * переходов сценария агента (`@ykurilov/agent-chat-flows`).
+ * `first_message` — ход, в котором агент пишет первым (касание, утро сценария): `deliverNotices({ usageSource })`.
+ * `voice_input` — диктовка через сервер (`@ykurilov/agent-chat-voice`, режим `relay`): `inputTokens` — секунды звука,
+ * `modelId` — модель распознавания. `voice_polish` — чистка надиктованного текста моделью.
  */
-/** `first_message` — ход, в котором агент пишет первым (касание, утро сценария): `deliverNotices({ usageSource })`. */
-export type UsageSource =
-  | "answer"
-  | "answer_correction"
-  | "compaction"
-  | "memory"
-  | "speech"
-  | "sounds"
-  | "web_tools"
-  | "images"
-  | "helper"
-  | "background"
-  | "judge"
-  | "first_message";
+export const BUILT_IN_USAGE_SOURCES = [
+  "answer",
+  "answer_correction",
+  "compaction",
+  "memory",
+  "speech",
+  "sounds",
+  "web_tools",
+  "images",
+  "helper",
+  "background",
+  "judge",
+  "first_message",
+  "voice_input",
+  "voice_polish",
+] as const;
+
+/** Штатные виды расхода SDK. */
+export type BuiltInUsageSource = (typeof BUILT_IN_USAGE_SOURCES)[number];
+
+/**
+ * Вид расхода: штатный или свой вид приложения (`"font_download"`) — строкой, без приведения типа; подсказки редактора
+ * для штатных остаются. Хранилища держат вид текстом, лимиты суммируют все виды.
+ */
+export type UsageSource = BuiltInUsageSource | (string & {});
 
 /**
  * Один расход токенов одной моделью у одного провайдера. Записи только добавляются и переживают удаление чата:

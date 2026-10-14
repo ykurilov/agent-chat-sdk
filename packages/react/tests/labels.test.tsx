@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { ChatLabelsProvider, russianLabels, useChatLabels } from "../src/labels";
+import { ChatLabelsProvider, russianLabels, useChatLabels, voiceErrorText } from "../src/labels";
 import { stubSkin } from "./support/stub-skin";
 
 function SendAndStop() {
@@ -44,7 +44,7 @@ describe("словарь надписей", () => {
   });
 
   it("русские надписи по умолчанию: все литералы на месте", () => {
-    const { reasoningDone, thinkingElapsed, toolRunning, toolDone, toolError, approvalRequested, branchPosition, spendingWarning, spendingExhausted, spendingMessagesLeft, spendingMessagesExhausted, chatListRowMenu, chatListDeleteBody, voiceDialog, memoryCount, memoryShownHint, memoryEditNote, memoryDeleteNote, memoryGroupLabel, memoryDeleteBody, memoryClearBody, memoryMergeDate, memoryMergeRevertFor, widgets, diagram, demo, images, videos, viewer, voice, helpers, tasks, notices, messengerStatus, workView, ...texts } = russianLabels;
+    const { reasoningDone, thinkingElapsed, toolRunning, toolDone, toolError, approvalRequested, branchPosition, spendingWarning, spendingExhausted, spendingMessagesLeft, spendingMessagesExhausted, chatListRowMenu, chatListDeleteBody, voiceDialog, memoryCount, memoryShownHint, memoryEditNote, memoryDeleteNote, memoryGroupLabel, memoryDeleteBody, memoryClearBody, memoryMergeDate, memoryMergeRevertFor, widgets, diagram, demo, images, videos, viewer, voice, helpers, tasks, notices, messengerStatus, workView, voiceErrors, ...texts } = russianLabels;
     const { interruptedMark, ...dialogTexts } = voiceDialog;
     expect(demo.loading).toBe("Готовлю демонстрацию…");
     const info = { scope: "user" as const, period: "month" as const, share: 0.8, resetsAt: new Date("2026-11-01T00:00:00Z") };
@@ -64,6 +64,7 @@ describe("словарь надписей", () => {
       chatListRowMenu: chatListRowMenu("Отпуск"),
       chatListDeleteBody: chatListDeleteBody("Отпуск"),
       voiceDialog: { ...dialogTexts, interruptedMark: interruptedMark("Длинный") },
+      voiceErrors: { ...voiceErrors, time_limit: voiceErrorText(voiceErrors, "time_limit", { maxSessionSeconds: 300 }) },
       memoryCount: memoryCount(12, 200),
       memoryShownHint: memoryShownHint(40, 57),
       memoryEditNote: memoryEditNote("Любит чай"),
@@ -214,6 +215,9 @@ describe("словарь надписей", () => {
         other: "Не удалось начать диктовку",
         rate_limited: "Слишком много диктовок подряд, попробуйте через минуту",
         time_limit: "Запись остановлена: предел 5 минут",
+        limit: "Лимит расходов исчерпан, диктовка недоступна",
+        forbidden: "Нет доступа к диктовке",
+        too_long: "Запись слишком длинная",
       },
       chatListHeading: "Чаты",
       chatListNewChat: "Новый чат",

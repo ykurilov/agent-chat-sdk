@@ -1,5 +1,5 @@
 import type { ChatsInState, ClientCardEntry, FlowChatRecord, FlowStore, SavedFlowVersion, SideTaskRecord } from "./flow-store";
-import { byVersionAndState, compareText, mappedState, migratePending, normalizeTime } from "./flow-store-shared";
+import { appliedInTime, byVersionAndState, compareText, mappedState, migratePending, normalizeTime, pendingAdded } from "./flow-store-shared";
 
 interface ChatRow extends FlowChatRecord {
   leaseUntil: string | null;
@@ -84,14 +84,14 @@ export function memoryFlowStore(): FlowStore {
 
     async addPending(chatId, change) {
       const row = chats.get(chatId);
-      if (!row || row.pending.some((item) => item.key === change.key)) return;
-      row.pending.push(copy(change));
+      const next = row && pendingAdded(row.pending, copy(change));
+      if (next) row.pending = next;
     },
     async takePending(chatId) {
       const row = chats.get(chatId);
       if (!row) return [];
       const taken = row.pending;
-      row.pending = [];
+      row.pending = taken.filter(appliedInTime).map(copy);
       return taken;
     },
 

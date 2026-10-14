@@ -63,8 +63,8 @@ describe("голос: страницы с чужих сайтов", () => {
 
   it("WebSocket своей страницы: старый браузер без Sec-Fetch-Site, Origin совпадает с Host (порт только в Host)", async () => {
     const { relay } = relayWith();
-    expect(await relay.authorize(upgrade({ origin: "http://localhost:5173", host: "localhost:5173" }))).toEqual({ user: { id: "anna" } });
-    expect(await relay.authorize(upgrade({ origin: "http://localhost:5173", "sec-fetch-site": "same-origin" }))).toEqual({ user: { id: "anna" } });
+    expect(await relay.authorize(upgrade({ origin: "http://localhost:5173", host: "localhost:5173" }))).toEqual({ user: { id: "anna" }, chatId: "voice" });
+    expect(await relay.authorize(upgrade({ origin: "http://localhost:5173", "sec-fetch-site": "same-origin" }))).toEqual({ user: { id: "anna" }, chatId: "voice" });
   });
 
   it("неверная запись в allowedOrigins — ошибка при создании", () => {

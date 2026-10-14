@@ -69,8 +69,11 @@ export interface SonioxSessionEvents {
  * голосовой режим надстраиваются над ней.
  */
 export interface SonioxSession {
-  /** Начать: как только соединение открыто, уходит первое сообщение с настройками и форматом звука. */
-  begin(audio: SonioxAudioFormat): void;
+  /**
+   * Начать: как только соединение открыто, уходит первое сообщение с настройками и форматом звука. `languageHints` —
+   * язык этой записи вместо заданного при создании (уже проверенный).
+   */
+  begin(audio: SonioxAudioFormat, overrides?: { languageHints?: string[] }): void;
   sendAudio(chunk: Uint8Array): void;
   /** Закрепить всё сказанное: закреплённые слова и метка `<fin>` придут ответом; соединение остаётся. */
   finalize(): void;
@@ -135,6 +138,8 @@ export function createSonioxSession(options: SonioxSessionOptions, events: Sonio
     }, keepaliveIntervalMs);
   }
 
+  let languageHints: string[] | undefined;
+
   function startIfReady() {
     if (!audio || !upstreamOpen || ready || ended) return;
     ready = true;
@@ -144,7 +149,7 @@ export function createSonioxSession(options: SonioxSessionOptions, events: Sonio
         ...buildStartMessage({
           apiKey,
           model: options.model,
-          languageHints: options.languageHints,
+          languageHints: languageHints ?? options.languageHints,
           context: options.context,
           endpointLatencyLevel: options.endpointLatencyLevel,
           maxEndpointDelayMs: options.maxEndpointDelayMs,
@@ -183,8 +188,9 @@ export function createSonioxSession(options: SonioxSessionOptions, events: Sonio
   }) as (event: never) => void);
 
   return {
-    begin(format) {
+    begin(format, overrides) {
       audio = format;
+      languageHints = overrides?.languageHints;
       startIfReady();
     },
     sendAudio(chunk) {

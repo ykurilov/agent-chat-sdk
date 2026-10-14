@@ -10,6 +10,8 @@ export type ChatWatchEvent =
   | { type: "turn-finished"; messageId?: string }
   | { type: "tasks-changed" }
   | { type: "notice-added"; messageId: string }
+  /** Сообщение записано без хода (пачка из мессенджера ждёт тишины, «Стоп» отменил пачку). */
+  | { type: "message-added"; messageId: string }
   | { type: "chat-closed"; closed: { code: string; message: string } }
   | { type: "chat-reopened" }
   /** Состояние чата сменилось (ход, смена ветки, правка ответа — в том числе в другой вкладке). */

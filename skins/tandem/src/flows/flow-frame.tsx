@@ -1,7 +1,7 @@
 import { Badge, Button, TandemMark, cn } from "@tandem/ui";
 import type { FlowEditorFrameProps, FlowHeaderProps } from "@ykurilov/agent-chat-flows/react";
 import { useFlowLabels } from "@ykurilov/agent-chat-flows/react";
-import { Braces, Eye, IdCard, MessagesSquare, Play, Plus, Save, ShieldCheck, Shuffle } from "lucide-react";
+import { Braces, Eye, IdCard, Maximize2, MessagesSquare, Minimize2, Play, Plus, Save, ShieldCheck, Shuffle } from "lucide-react";
 import type { CSSProperties } from "react";
 import { useEffect, useState } from "react";
 
@@ -21,12 +21,17 @@ const BOARD_COLORS = {
  * Высота — родителя, но не меньше разумной: у родителя без высоты и на телефоне холст не схлопывается. Свои `className`
  * и `style` приложения идут последними и перебивают это (`min-h-0`, `style={{ height: 720 }}`).
  */
-export function TandemFlowEditorFrame({ header, board, panel, dialog, className, style }: FlowEditorFrameProps) {
+export function TandemFlowEditorFrame({ header, board, panel, dialog, className, style, compact }: FlowEditorFrameProps) {
+  const withPanel = panel !== null;
   return (
     <div
       data-flow-editor=""
+      data-flow-compact={compact ? "" : undefined}
       className={cn(
-        "grid h-full min-h-[max(420px,60vh)] w-full grid-cols-[minmax(0,1fr)_400px] grid-rows-[64px_minmax(0,1fr)] bg-[var(--canvas)] text-[var(--foreground)] max-[860px]:min-h-[max(640px,100svh)] max-[860px]:grid-cols-1 max-[860px]:grid-rows-[auto_minmax(0,1fr)_46vh]",
+        "grid h-full min-h-[max(420px,60vh)] w-full bg-[var(--canvas)] text-[var(--foreground)] max-[860px]:min-h-[max(640px,100svh)] max-[860px]:grid-cols-1",
+        withPanel ? "grid-cols-[minmax(0,1fr)_400px]" : "grid-cols-[minmax(0,1fr)]",
+        compact ? "grid-rows-[48px_minmax(0,1fr)]" : "grid-rows-[64px_minmax(0,1fr)]",
+        withPanel ? "max-[860px]:grid-rows-[auto_minmax(0,1fr)_46vh]" : "max-[860px]:grid-rows-[auto_minmax(0,1fr)]",
         className,
       )}
       style={{ ...BOARD_COLORS, ...style }}
@@ -71,22 +76,22 @@ function FlowName({ name, onRename, readOnly }: Pick<FlowHeaderProps, "name" | "
 
 export function TandemFlowHeader(props: FlowHeaderProps) {
   const { editor: labels, testChat: testChatLabels } = useFlowLabels();
-  const { mode, onModeChange, issues } = props;
+  const { mode, onModeChange, issues, compact: narrow } = props;
   const toggle = (target: "check" | "run") => onModeChange(mode === target ? "edit" : target);
   const compact = "max-[1100px]:[&>span.label]:hidden";
   // На телефоне подписи прячутся у всех кнопок, иначе «Сохранить» уезжает за край.
   const phone = "max-[860px]:[&>span.label]:hidden";
   return (
     <div className="flex h-full min-w-0 items-center gap-2 px-4 max-[860px]:flex-wrap max-[860px]:gap-1.5 max-[860px]:py-2">
-      <TandemMark className="size-7 shrink-0" />
-      <FlowName name={props.name} onRename={props.onRename} readOnly={props.readOnly} />
+      {!narrow && <TandemMark className="size-7 shrink-0" />}
+      {!narrow && <FlowName name={props.name} onRename={props.onRename} readOnly={props.readOnly} />}
       {props.readOnly && (
         <Badge variant="warm" className="shrink-0" title={labels.header.readOnlyHint} data-flow-read-only-badge="">
           <Eye aria-hidden="true" className="mr-1 size-3.5" />
           {labels.header.readOnly}
         </Badge>
       )}
-      <div className="flex shrink-0 items-center gap-1.5 max-[860px]:w-full max-[860px]:overflow-x-auto">
+      <div className="flex shrink-0 items-center gap-1.5 max-[860px]:w-full max-[860px]:gap-1 max-[860px]:overflow-x-auto">
         <Button variant="secondary" size="sm" className={compact} onClick={props.onAddState} disabled={mode === "run" || props.readOnly} title={labels.header.state}>
           <Plus aria-hidden="true" className="size-4" />
           <span className="label">{labels.header.state}</span>
@@ -128,6 +133,19 @@ export function TandemFlowHeader(props: FlowHeaderProps) {
         {props.onOpenMigrate && (
           <Button variant="ghost" size="sm" onClick={props.onOpenMigrate} title={labels.header.migrate} aria-label={labels.header.migrate}>
             <Shuffle aria-hidden="true" className="size-4" />
+          </Button>
+        )}
+        {props.fullscreen && (
+          <Button
+            variant="ghost"
+            size="sm"
+            data-flow-fullscreen-toggle=""
+            aria-pressed={props.fullscreen.active}
+            onClick={props.fullscreen.onToggle}
+            title={props.fullscreen.active ? labels.board.space.exitFullscreen : labels.board.space.enterFullscreen}
+            aria-label={props.fullscreen.active ? labels.board.space.exitFullscreen : labels.board.space.enterFullscreen}
+          >
+            {props.fullscreen.active ? <Minimize2 aria-hidden="true" className="size-4" /> : <Maximize2 aria-hidden="true" className="size-4" />}
           </Button>
         )}
         {props.onOpenTestChat && (

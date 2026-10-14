@@ -54,8 +54,16 @@ const jsonb = (value: unknown): SQL => sql`${JSON.stringify(value)}::jsonb`;
  * запись и перепроверяет его уже на новой версии строки.
  */
 const pendingWith = (change: PendingFlowChange): SQL =>
-  sql`case when ${flowChats.pending} @> ${jsonb([{ key: change.key }])} then ${flowChats.pending}
+  sql`case when ${flowChats.pending} @> ${jsonb([{ key: change.key }])} then ${keptWith(change)}
     else ${flowChats.pending} || ${jsonb([change])} end`;
+
+/** Тот же ключ: прежнее остаётся, но `appliedAt` перехода дописывается к ожидающему без него (как `pendingAdded`). */
+function keptWith(change: PendingFlowChange): SQL {
+  if (change.kind !== "transition" || change.appliedAt === undefined) return sql`${flowChats.pending}`;
+  return sql`(select jsonb_agg(case when item->>'key' = ${change.key} and item->'appliedAt' is null and item->>'kind' = 'transition'
+      then item || jsonb_build_object('appliedAt', ${change.appliedAt}::text) else item end order by place)
+    from jsonb_array_elements(${flowChats.pending}) with ordinality as list(item, place))`;
+}
 
 /** Состояние по карте перевода: удалённые — в выбранные, остальные как были. */
 function mappedStateSql(map: StateMap): SQL {
@@ -157,10 +165,15 @@ export function createPostgresFlowStore(pool: Pool, migrationsFolder: string): P
     },
     async takePending(chatId) {
       await ready;
-      // Старое значение — из строки, захваченной `for update`: вторая копия ждёт её и получает уже пустой список.
+      // Старое значение — из строки, захваченной `for update`: вторая копия ждёт её и получает уже пустой список
+      // (кроме переходов, применённых в срок: они остаются).
       const result = await db.execute<{ pending: PendingFlowChange[] }>(sql`
         with taken as (select chat_id, pending from ${flowChats} where chat_id = ${chatId} for update)
-        update ${flowChats} set pending = '[]'::jsonb from taken
+        update ${flowChats} set pending = (
+          select coalesce(jsonb_agg(item order by place), '[]'::jsonb)
+          from jsonb_array_elements(taken.pending) with ordinality as list(item, place)
+          where item->>'kind' = 'transition' and item->'appliedAt' is not null
+        ) from taken
         where ${flowChats.chatId} = taken.chat_id
         returning taken.pending`);
       return result.rows[0]?.pending ?? [];

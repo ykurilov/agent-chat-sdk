@@ -19,6 +19,8 @@ export function createDeepSeekProvider(connectionOptions: ProviderConnection = {
       if (level === "on") return { providerOptions: { deepseek: { thinking: { type: "enabled" } } } };
       throw new Error(`DeepSeek не задаёт силу рассуждений (уровень «${level}»), только «off» и «on»`);
     },
+    // Обрезки хвоста (`min_p`) в API DeepSeek нет (api-docs.deepseek.com: только temperature и top_p), а пакет провайдера
+    // незнакомые поля не шлёт: `samplingRequest` нет, `sampling.minP` модели сюда не уходит.
     // Кончившиеся деньги DeepSeek описывает телом ответа; код бывает не только 402.
     errorHints: [{ match: /insufficient balance/i, kind: "insufficient_funds" }],
     ...connectionField(connection),

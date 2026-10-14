@@ -7,7 +7,7 @@ import { isStateMessage } from "../app-state/state-messages";
 import { closeHangingToolCalls } from "../conversation/hanging-tool-calls";
 import { selectReasoningForModel } from "../conversation/select-reasoning";
 import type { AgentChatMessage } from "../conversation/types";
-import { findModel, resolveLanguageModel } from "../models/model-catalog";
+import { findModel, mergeProviderOptions, profileProviderOptions, resolveLanguageModel } from "../models/model-catalog";
 import type { ModelCatalog, ProviderDescription, ProviderOptionsByProvider, ReasoningRequest } from "../models/model-catalog";
 import { effectiveReasoningLevel } from "../models/reasoning-level";
 import { createTransientRetryMiddleware } from "../provider-errors/transient-retry-middleware";
@@ -27,6 +27,7 @@ import { noticePartForModel } from "../notices/notices-for-model";
 import type { ModeNotes } from "./mode-notes";
 import { withAssistantFilesAsText, withGreetingLead } from "./greeting-lead";
 import { withUnansweredMarked } from "./unanswered-messages";
+import { withBurstsJoined } from "../bursts/message-bursts";
 import { withCorrectionsJoined } from "../steering/turn-steering";
 import { holdNoteAfterApprovals, withFrozenContext } from "../frozen-context/frozen-context-messages";
 import type { FrozenContextData } from "../frozen-context/context-blocks";
@@ -141,7 +142,7 @@ export async function buildModelRequest(input: {
   });
   const tools = input.tools ? sortToolsByName(input.tools) : undefined;
   const sendable = input.switchableTools ? withSwitchedOffCallsAsText(sendableHistory(input.history), input.switchableTools, tools) : sendableHistory(input.history);
-  const noted = withChannelNotes(withModeNotes(withCorrectionsJoined(sendable), input.modeNotes));
+  const noted = withChannelNotes(withModeNotes(withBurstsJoined(withCorrectionsJoined(sendable)), input.modeNotes));
   const held: { messages: readonly AgentChatMessage[]; note?: AgentChatMessage } = input.frozenContext
     ? holdNoteAfterApprovals(withFrozenContext(noted, input.frozenContext))
     : { messages: noted };
@@ -167,7 +168,8 @@ export async function buildModelRequest(input: {
       : undefined;
   const providerOptions = mergeProviderOptions(
     providerRequest.providerOptions,
-    profile.providerOptions,
+    // Модель добавит их и сама (`resolveLanguageModel`); здесь — чтобы они были видны в запросе и журнале хода.
+    profileProviderOptions(profile, provider),
     reasoningRequest?.providerOptions,
   );
 
@@ -321,18 +323,6 @@ function withLastMessageMark(messages: ModelMessage[], options: ProviderOptionsB
 
 function sortToolsByName(tools: ToolSet): ToolSet {
   return Object.fromEntries(Object.entries(tools).sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)));
-}
-
-function mergeProviderOptions(
-  ...sources: Array<ProviderOptionsByProvider | undefined>
-): ProviderOptionsByProvider | undefined {
-  const merged: ProviderOptionsByProvider = {};
-  for (const source of sources) {
-    for (const [providerKey, options] of Object.entries(source ?? {})) {
-      merged[providerKey] = { ...merged[providerKey], ...options };
-    }
-  }
-  return Object.keys(merged).length > 0 ? merged : undefined;
 }
 
 /** Для `convertToModelMessages`: отметка обрыва и служебные сообщения — текстом, остальные части-данные в запрос не идут. */

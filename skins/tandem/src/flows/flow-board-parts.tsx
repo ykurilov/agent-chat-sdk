@@ -3,12 +3,13 @@ import type {
   FlowAnyStateNodeProps,
   FlowEdgeProps,
   FlowExitRowView,
+  FlowBoardToggleProps,
   FlowLegendProps,
   FlowStateNodeProps,
   FlowZoomControlsProps,
 } from "@ykurilov/agent-chat-flows/react";
 import { useFlowLabels } from "@ykurilov/agent-chat-flows/react";
-import { Clock, Flag, Maximize, Minus, MoonStar, Plus, Shuffle, Tag } from "lucide-react";
+import { CircleHelp, Clock, Flag, Map as MapIcon, Maximize, Minus, MoonStar, PanelRightClose, PanelRightOpen, Plus, Shuffle, Tag } from "lucide-react";
 import type { KeyboardEvent, ReactNode } from "react";
 import { IssueBadge, KIND_COLOR, KIND_DASH, KindIcon } from "./flow-parts";
 
@@ -223,5 +224,28 @@ export function TandemFlowZoomControls({ zoom, onZoomIn, onZoomOut, onFit }: Flo
         <Maximize aria-hidden="true" className="size-4" />
       </button>
     </div>
+  );
+}
+
+/** Кнопка места на доске: легенда, мини-карта, панель «Сценарий». */
+export function TandemFlowBoardToggle({ kind, label, expanded, showText, onClick }: FlowBoardToggleProps) {
+  const Icon = kind === "legend" ? CircleHelp : kind === "minimap" ? MapIcon : expanded ? PanelRightClose : PanelRightOpen;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      aria-expanded={expanded}
+      data-flow-board-toggle={kind}
+      className={cn(
+        "inline-flex h-9 items-center justify-center gap-1.5 rounded-[var(--radius-control)] border border-[var(--border)] bg-[var(--surface)] text-xs text-[var(--foreground-muted)] shadow-[var(--shadow-sm)] hover:bg-[var(--surface-hover)] hover:text-[var(--foreground)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]",
+        showText ? "px-3" : "w-9",
+        expanded && "text-[var(--foreground)]",
+      )}
+    >
+      <Icon aria-hidden="true" className="size-4" />
+      {showText && <span>{label}</span>}
+    </button>
   );
 }

@@ -2,6 +2,7 @@ import {
   DEFAULT_LATE_START_HOURS,
   type AgentFlow,
   type FlowAfterEnd,
+  type FlowCondition,
   type FlowDuration,
   type FlowExit,
   type FlowNudges,
@@ -59,9 +60,12 @@ export function setAfterEnd(flow: AgentFlow, mode: FlowAfterEnd): AgentFlow {
 
 // ---------- «Длится» ----------
 
-export type DurationUnit = "h" | "d";
+export type DurationUnit = "h" | "d" | "program_day";
 
-/** Продолжительность ноды: выход «длится N дней сценария» (`state_days`) или «N часов в этом состоянии». */
+/**
+ * Продолжительность ноды: выход «длится N дней сценария» (`state_days`), «до дня N программы» (`program_day`, `amount` —
+ * номер дня) или «N часов в этом состоянии».
+ */
 export interface StateDuration {
   exitId: string;
   amount: number;
@@ -73,6 +77,7 @@ function durationExit(exit: FlowExit): StateDuration | null {
   const { when } = exit;
   if (when.type !== "timer") return null;
   if (when.from === "state_days") return { exitId: exit.id, amount: when.days, unit: "d", to: exit.to };
+  if (when.from === "program_day") return { exitId: exit.id, amount: when.day, unit: "program_day", to: exit.to };
   if (when.from === "in_state" && when.unit === "h") return { exitId: exit.id, amount: when.amount, unit: "h", to: exit.to };
   return null;
 }
@@ -86,7 +91,7 @@ export function durationOf(state: FlowState): StateDuration | null {
   return null;
 }
 
-/** «Длится»: дни — `state_days`, часы — `in_state`. Правится тот же выход; `null` — выход убирается. */
+/** «Длится»: дни — `state_days`, день программы — `program_day`, часы — `in_state`. Правится тот же выход; `null` — выход убирается. */
 export function setDuration(flow: AgentFlow, stateId: string, value: { amount: number; unit: DurationUnit } | null): AgentFlow {
   const state = flow.states.find((candidate) => candidate.id === stateId);
   if (!state) return flow;
@@ -96,7 +101,12 @@ export function setDuration(flow: AgentFlow, stateId: string, value: { amount: n
     return { ...flow, states: flow.states.map((candidate) => (candidate.id === stateId ? { ...candidate, exits: candidate.exits.filter((exit) => exit.id !== current.exitId) } : candidate)) };
   }
   const amount = Math.max(1, Math.round(value.amount) || 1);
-  const when = value.unit === "d" ? ({ type: "timer", from: "state_days", days: amount } as const) : ({ type: "timer", from: "in_state", amount, unit: "h" } as const);
+  const when: FlowCondition =
+    value.unit === "d"
+      ? { type: "timer", from: "state_days", days: amount }
+      : value.unit === "program_day"
+        ? { type: "timer", from: "program_day", day: amount }
+        : { type: "timer", from: "in_state", amount, unit: "h" };
   if (current) return updateExit(flow, stateId, current.exitId, { when, to: current.to });
   const made = addExit(flow, stateId, "timer");
   return updateExit(made.flow, stateId, made.exitId, { when, to: null });
@@ -124,9 +134,33 @@ export function setStateNudges(flow: AgentFlow, stateId: string, mode: NudgesMod
   };
 }
 
-/** Своё расписание касаний ноды: пустые части убираются. */
+/** Своё расписание касаний ноды: пустые части убираются, срок в днях остаётся. */
 export function updateStateNudges(flow: AgentFlow, stateId: string, nudges: FlowNudges): AgentFlow {
-  return { ...flow, states: flow.states.map((state) => (state.id === stateId ? { ...state, nudges: cleanNudges(nudges) } : state)) };
+  return {
+    ...flow,
+    states: flow.states.map((state) => {
+      if (state.id !== stateId) return state;
+      const days = state.nudges && state.nudges !== "off" ? state.nudges.days : undefined;
+      return { ...state, nudges: { ...cleanNudges(nudges), ...(days !== undefined && { days }) } };
+    }),
+  };
+}
+
+/** Сколько дней действуют свои касания ноды, считая день входа; `null` — всё время в ноде. */
+export function setStateNudgesDays(flow: AgentFlow, stateId: string, days: number | null): AgentFlow {
+  return {
+    ...flow,
+    states: flow.states.map((state) => {
+      if (state.id !== stateId || !state.nudges || state.nudges === "off") return state;
+      const { days: _days, ...rest } = state.nudges;
+      return { ...state, nudges: days === null ? rest : { ...rest, days: Math.max(1, Math.round(days) || 1) } };
+    }),
+  };
+}
+
+/** Срок своих касаний ноды в днях; всё время в ноде или касания не свои — `null`. */
+export function stateNudgesDays(state: FlowState): number | null {
+  return state.nudges && state.nudges !== "off" ? (state.nudges.days ?? null) : null;
 }
 
 /** Касания по умолчанию в «Днях и времени»; `null` — без общих касаний. */
@@ -152,12 +186,15 @@ export function durationText(duration: FlowDuration, labels: FlowEditorLabels): 
 export function stateTimingText(flow: AgentFlow, state: FlowState, labels: FlowEditorLabels): string {
   const parts: string[] = [];
   const duration = durationOf(state);
-  if (duration) parts.push(duration.unit === "d" ? labels.days(duration.amount) : `${duration.amount} ${labels.units.h}`);
+  if (duration) {
+    parts.push(duration.unit === "d" ? labels.days(duration.amount) : duration.unit === "program_day" ? labels.programDay(duration.amount) : `${duration.amount} ${labels.units.h}`);
+  }
   if (state.nudges === "off") parts.push(labels.board.noNudges);
   else if (state.nudges) {
     const steps = state.nudges.afterSilence.map((step) => durationText(step, labels));
     const daily = state.nudges.dailyAt ?? [];
-    if (steps.length + daily.length > 0) parts.push(`${labels.board.nudges} ${[...steps, ...daily].join(" · ")}`);
+    const days = state.nudges.days === undefined ? "" : ` ${labels.board.nudgesDays(state.nudges.days)}`;
+    if (steps.length + daily.length > 0) parts.push(`${labels.board.nudges} ${[...steps, ...daily].join(" · ")}${days}`);
   }
   return parts.join(" · ");
 }

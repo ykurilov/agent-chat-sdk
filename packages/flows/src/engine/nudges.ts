@@ -1,7 +1,7 @@
 import type { AgentFlow, FlowDuration, FlowNudges, FlowSchedule } from "../format/flow-format";
 import type { FlowRun } from "./flow-run";
 import { stateById } from "./flow-graph";
-import { flowDay } from "./flow-days";
+import { flowDay, programDayDue } from "./flow-days";
 import { nextClockTime, parseClock } from "./zoned-time";
 
 // Этап 7 сценариев: касания — ход агента в той же ноде, по plan.md, «Касания и „пишет первым“».
@@ -25,6 +25,8 @@ export type FlowFirstReason =
 export interface NudgeDue {
   at: number;
   reason: FlowFirstReason | { kind: "give_up" };
+  /** Касание своего ряда ноды на N дней (`nudges.days`): его шаг не идёт в счёт общего ряда. */
+  own?: boolean;
 }
 
 /** Касания ноды: свои, «off», общие из «Дней и времени», общие сценария. Нет ни тех, ни других — `null`. */
@@ -32,6 +34,28 @@ export function stateNudges(flow: AgentFlow, stateId: string): FlowNudges | null
   const own = stateById(flow, stateId)?.nudges;
   if (own === "off") return null;
   return own ?? flow.schedule?.nudges ?? flow.nudges ?? null;
+}
+
+/** Без «Дней и времени» дни своего ряда — календарные, по поясу человека. */
+const CALENDAR_DAYS: FlowSchedule = { dayStart: "00:00", lateStartHours: 0, farewellOnDeadline: false };
+
+/** Ряд касаний ноды и, если свой ряд ограничен днями, момент их конца и общий ряд после. */
+interface NudgeRings {
+  ring: FlowNudges;
+  /** Начало дня, с которого свой ряд уступает общему; нет — ряд на всё время в ноде. */
+  until?: number;
+  after?: FlowNudges | null;
+}
+
+function nudgeRings(flow: AgentFlow, run: FlowRun, timeZone: string): NudgeRings | null {
+  const own = stateById(flow, run.state)?.nudges;
+  if (own === "off") return null;
+  const common = flow.schedule?.nudges ?? flow.nudges ?? null;
+  if (!own) return common && { ring: common };
+  if (own.days === undefined) return { ring: own };
+  const schedule = flow.schedule ?? CALENDAR_DAYS;
+  const entryDay = flowDay(run, run.enteredAt, timeZone, schedule).day;
+  return { ring: own, until: programDayDue(run, entryDay + own.days, timeZone, schedule), after: common };
 }
 
 const UNIT_MS = { min: 60_000, h: 3_600_000, d: 86_400_000 } as const;
@@ -56,42 +80,55 @@ export interface FirstWakeContext {
  * человек ответил или писал без ответа, агент ещё не писал, разговор закончен — `null`.
  */
 export function nextNudge(flow: AgentFlow, run: FlowRun, now: number, timeZone: string, context: FirstWakeContext = {}): NudgeDue | null {
-  const nudges = nudgesRunning(flow, run, context);
-  if (!nudges || run.lastAgentAt === null) return null;
+  const rings = nudgesRunning(flow, run, timeZone, context);
+  if (!rings || run.lastAgentAt === null) return null;
   // Ответ сотрудника — слова агента (FR-507): тишина идёт от конца паузы.
   const base = Math.max(run.lastAgentAt, context.pausedUntil ?? 0, context.undeliveredAt ?? 0);
   const step = run.nudgeStep ?? 0;
   let nudge: NudgeDue | null = null;
-  const silence = nudges.afterSilence[step];
-  if (silence) nudge = { at: base + durationMs(silence), reason: { kind: "silence", step: step + 1 } };
+  if (rings.until === undefined) nudge = ringNudge(rings.ring, base, step, timeZone);
   else {
-    for (const clock of nudges.dailyAt ?? []) {
-      const minutes = parseClock(clock);
-      if (minutes === null) continue;
-      const at = nextClockTime(base, minutes, timeZone);
-      if (!nudge || at < nudge.at) nudge = { at, reason: { kind: "daily", at: clock } };
-    }
+    // Свой ряд — в свои дни; потом общий ряд с начала, тишина — не раньше начала того дня.
+    const own = base < rings.until ? ringNudge(rings.ring, base, step, timeZone) : null;
+    if (own && own.at < rings.until) nudge = { ...own, own: true };
+    else if (rings.after) nudge = ringNudge(rings.after, Math.max(base, rings.until), run.nudgeStepOwn || base < rings.until ? 0 : step, timeZone);
   }
-  const giveUp = giveUpAt(flow, run, context);
+  const giveUp = giveUpAt(flow, run, timeZone, context);
   // Сервер стоял дольше тишины: пропущенное касание уже не к месту — разговор кончается.
   if (giveUp !== null && (!nudge || giveUp <= nudge.at || giveUp <= now)) return { at: giveUp, reason: { kind: "give_up" } };
   return nudge;
 }
 
+/** Шаг ряда `step` от `base`: срок тишины, а после ряда — ближайшие часы `dailyAt`. Ряд кончился — `null`. */
+function ringNudge(ring: FlowNudges, base: number, step: number, timeZone: string): NudgeDue | null {
+  const silence = ring.afterSilence[step];
+  if (silence) return { at: base + durationMs(silence), reason: { kind: "silence", step: step + 1 } };
+  let nudge: NudgeDue | null = null;
+  for (const clock of ring.dailyAt ?? []) {
+    const minutes = parseClock(clock);
+    if (minutes === null) continue;
+    const at = nextClockTime(base, minutes, timeZone);
+    if (!nudge || at < nudge.at) nudge = { at, reason: { kind: "daily", at: clock } };
+  }
+  return nudge;
+}
+
 /** Касания ноды идут: они есть, разговор не кончен, агент писал последним и сообщений без ответа нет. */
-function nudgesRunning(flow: AgentFlow, run: FlowRun, context: FirstWakeContext): FlowNudges | null {
-  const nudges = stateNudges(flow, run.state);
-  if (!nudges || run.endedAt !== undefined || run.lastAgentAt === null) return null;
+function nudgesRunning(flow: AgentFlow, run: FlowRun, timeZone: string, context: FirstWakeContext): NudgeRings | null {
+  const rings = nudgeRings(flow, run, timeZone);
+  if (!rings || run.endedAt !== undefined || run.lastAgentAt === null) return null;
   if ((run.lastHumanAt !== null && run.lastHumanAt > run.lastAgentAt) || (context.unanswered ?? 0) > 0) return null;
-  return nudges;
+  return rings;
 }
 
 /**
  * Когда наступит «не завершил» (`giveUpAfter` тишины человека), независимо от касаний: отложенное или не начатое
  * касание конец разговора не двигает. Нет `giveUpAfter` или тишина не идёт — `null`.
  */
-export function giveUpAt(flow: AgentFlow, run: FlowRun, context: FirstWakeContext = {}): number | null {
-  const giveUpAfter = nudgesRunning(flow, run, context)?.giveUpAfter;
+export function giveUpAt(flow: AgentFlow, run: FlowRun, timeZone: string, context: FirstWakeContext = {}): number | null {
+  const rings = nudgesRunning(flow, run, timeZone, context);
+  // Свой ряд на N дней без своего «не завершил» — общий: тишина человека считается всё время в ноде.
+  const giveUpAfter = rings && (rings.ring.giveUpAfter ?? (rings.until !== undefined ? rings.after?.giveUpAfter : undefined));
   // Слова сотрудника на паузе — тоже разговор (FR-507): тишина человека считается и от конца паузы.
   return giveUpAfter ? Math.max(run.lastHumanAt ?? run.startedAt, context.pausedUntil ?? 0) + durationMs(giveUpAfter) : null;
 }

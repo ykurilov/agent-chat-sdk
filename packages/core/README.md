@@ -141,3 +141,6 @@ import type { ChatStorage } from "@ykurilov/agent-chat-core";
 Расход и лимиты: ядро пишет токены и стоимость в долларах (`costUsd`, по ценам модели на момент хода) каждого ответа и фонового сжатия в журнал расхода
 (`insertUsageRecord`, `sumUsage`, а сумма по списку чатов одним запросом — `sumUsageByChat({ chatIds, source? })`), цены лежат в профиле модели (`pricing`), а `createChatService({ limits })` проверяет лимит до хода.
 Лимиты и суммы считает `@ykurilov/agent-chat-limits`. Ручное `compactNow` лимит не проверяет.
+Вид расхода (`source`) — штатный (`BUILT_IN_USAGE_SOURCES`: ответ, сжатие, память, голос `voice_input`/`voice_polish` и другие)
+или свой вид приложения строкой, например `service.recordUsage({ …, source: "font_download" })`, без приведения типа. Лимиты
+считают все виды вместе; отчёт по одному виду — `sumUsage({ source })`.

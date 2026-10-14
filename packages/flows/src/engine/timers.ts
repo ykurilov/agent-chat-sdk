@@ -3,7 +3,7 @@ import type { FlowRun } from "./flow-run";
 import { activeExits, stateById } from "./flow-graph";
 import { exitTarget } from "./targets";
 import { nextClockTime, parseClock } from "./zoned-time";
-import { deadlineAt, stateDaysDue } from "./flow-days";
+import { deadlineAt, programDayDue, stateDaysDue } from "./flow-days";
 import { giveUpAt, nextMorning, nextNightReply, nextNudge, type FirstWakeContext, type FlowFirstReason } from "./nudges";
 
 /** `exitId` срока «срок вышел» в `FlowDue`: это не выход ноды, а конец разговора (`schedule.lengthDays`). */
@@ -25,7 +25,7 @@ function actualEntry(run: FlowRun): number {
 
 /**
  * Срок одного таймера в текущем состоянии чата; `null` — сейчас не идёт (тишины нет: человек ответил или агент ещё не писал).
- * «Нода длится N дней» считается по «Дням и времени»: без `schedule` не идёт.
+ * «Нода длится N дней» и «наступил день N» считаются по «Дням и времени»: без `schedule` не идут.
  */
 export function timerDueAt(condition: TimerCondition, run: FlowRun, timeZone: string, schedule?: FlowSchedule): number | null {
   switch (condition.from) {
@@ -43,7 +43,29 @@ export function timerDueAt(condition: TimerCondition, run: FlowRun, timeZone: st
     }
     case "state_days":
       return schedule ? stateDaysDue(run, condition.days, timeZone, schedule) : null;
+    case "program_day":
+      return schedule ? programDayDue(run, condition.day, timeZone, schedule) : null;
   }
+}
+
+/** Таймеры, чей срок не зависит от момента входа в состояние: от начала разговора или дня программы. */
+const ENTRY_FREE_TIMERS: ReadonlySet<TimerCondition["from"]> = new Set(["since_start", "program_day"]);
+
+/**
+ * Выход по таймеру, который уже наступил к входу в состояние и срок которого от входа не зависит: срабатывает сразу, в том
+ * же шаге, а не отдельным ходом. Тишина, время в состоянии, «длится N дней», время суток — нет: их срок от входа. Нет — `null`.
+ */
+export function overdueOnEntry(flow: AgentFlow, run: FlowRun, now: number, timeZone: string): string | null {
+  const state = stateById(flow, run.state);
+  if (!state) return null;
+  let best: FlowDue | null = null;
+  for (const { exit } of activeExits(flow, state)) {
+    if (exit.when.type !== "timer" || !ENTRY_FREE_TIMERS.has(exit.when.from) || !exitTarget(flow, run, exit.to)) continue;
+    const at = timerDueAt(exit.when, run, timeZone, flow.schedule);
+    // Как `nextDue`: самый ранний срок, при равенстве — порядок в ноде.
+    if (at !== null && at <= now && (best === null || at < best.at)) best = { at, exitId: exit.id };
+  }
+  return best?.exitId ?? null;
 }
 
 /**
@@ -82,7 +104,7 @@ function firstMessageDues(flow: AgentFlow, run: FlowRun, now: number, timeZone: 
   if (morning !== null) dues.push({ at: morning, reason: { kind: "morning" } });
   if (night !== null) dues.push({ at: night, reason: { kind: "night_messages", count: context.unanswered ?? 0 } });
   if (nudge && nudge.reason.kind !== "give_up") dues.push({ at: nudge.at, reason: nudge.reason });
-  return { dues, giveUp: nudge?.reason.kind === "give_up" ? nudge.at : null };
+  return { dues, giveUp: nudge?.reason.kind === "give_up" ? nudge.at : null, ownNudge: nudge?.own === true };
 }
 
 /**
@@ -109,6 +131,8 @@ export interface DueReasons {
   exitId: string | null;
   /** Утро, накопленное, касание — по порядку. Переход ноды в них не входит: его причину даёт сам переход. */
   reasons: FlowFirstReason[];
+  /** Касание в причинах — своего ряда ноды на N дней: шаг помечается, общий ряд потом начнётся сначала. */
+  ownNudge?: boolean;
 }
 
 export function dueReasons(flow: AgentFlow, run: FlowRun, now: number, timeZone: string, context: FirstWakeContext = {}): DueReasons {
@@ -118,12 +142,15 @@ export function dueReasons(flow: AgentFlow, run: FlowRun, now: number, timeZone:
   // Срок — сам по себе: переход ноды, который наступил раньше, но ждёт хода (касание отложено), его не заслоняет.
   const deadline = flow.schedule ? deadlineAt(run, timeZone, flow.schedule) : null;
   if (deadline !== null && deadline <= now) return { ...none, deadline: true };
-  const { dues, giveUp } = firstMessageDues(flow, run, now, timeZone, context);
+  const { dues, giveUp, ownNudge } = firstMessageDues(flow, run, now, timeZone, context);
   if (giveUp !== null && giveUp <= now) return { ...none, giveUp: true };
   const exitId = exit && exit.at <= now ? exit.exitId : null;
-  // Новая нода — свой разговор: касание по тишине старой ноды уже не к месту.
-  const reasons = dues.filter((due) => due.at <= now && !(exitId && (due.reason.kind === "silence" || due.reason.kind === "daily"))).map((due) => due.reason);
-  return { ...none, exitId, reasons };
+  // Новая нода — свой разговор: касание по тишине старой ноды уже не к месту. Утреннее тоже заменяет касание: ряд после
+  // него начинается заново, хвост вчерашнего ряда (ночь, потолок дня) не уходит.
+  const morning = dues.some((due) => due.at <= now && due.reason.kind === "morning");
+  const reasons = dues.filter((due) => due.at <= now && !((exitId || morning) && (due.reason.kind === "silence" || due.reason.kind === "daily"))).map((due) => due.reason);
+  const nudged = reasons.some((reason) => reason.kind === "silence" || reason.kind === "daily");
+  return { ...none, exitId, reasons, ...(ownNudge && nudged && { ownNudge: true }) };
 }
 
 /** Ближайший срок «пишет первым» строго после `now`: касание, утреннее, накопленное. Нет — `null`. */
@@ -137,7 +164,7 @@ export function nextFirstMessageAfter(flow: AgentFlow, run: FlowRun, now: number
 export function endingWake(flow: AgentFlow, run: FlowRun, now: number, timeZone: string, context: FirstWakeContext): FlowDue | null {
   if (run.endedAt !== undefined) return null;
   const deadline = flow.schedule ? deadlineAt(run, timeZone, flow.schedule) : null;
-  const giveUp = giveUpAt(flow, run, context);
+  const giveUp = giveUpAt(flow, run, timeZone, context);
   const candidates: FlowDue[] = [
     ...(deadline !== null && deadline > now ? [{ at: deadline, exitId: FLOW_DEADLINE_EXIT }] : []),
     ...(giveUp !== null && giveUp > now ? [{ at: giveUp, exitId: FLOW_GIVE_UP_EXIT }] : []),

@@ -17,6 +17,8 @@ export interface FlowEditorLabels {
   no: string;
   /** «1 день», «3 дня», «5 дней». */
   days: (count: number) => string;
+  /** Подпись условия «наступил день N программы» на доске: «с дня 3». */
+  programDay: (day: number) => string;
 
   header: {
     state: string;
@@ -54,6 +56,20 @@ export interface FlowEditorLabels {
     /** Подпись касаний на карточке ноды: «касания 15 мин · 1 ч». */
     nudges: string;
     noNudges: string;
+    /** Срок своих касаний на карточке: «в день входа», «первые 2 дн.». */
+    nudgesDays: (days: number) => string;
+    /** Кнопки места на доске: легенда, мини-карта, панель «Сценарий», полный экран. */
+    space: {
+      legend: string;
+      showMinimap: string;
+      hideMinimap: string;
+      showInspector: string;
+      hideInspector: string;
+      enterFullscreen: string;
+      exitFullscreen: string;
+      /** Подпись области редактора в полном экране. */
+      fullscreenRegion: string;
+    };
   };
   overview: {
     title: string;
@@ -149,11 +165,15 @@ export interface FlowEditorLabels {
     duration: string;
     durationHint: string;
     durationNone: string;
-    durationUnits: Record<"h" | "d", string>;
+    durationUnits: Record<"h" | "d" | "program_day", string>;
     durationTo: string;
     nudges: string;
     nudgesModes: Record<"inherit" | "own" | "off", string>;
     nudgesHint: string;
+    /** Сколько действуют свои касания: всё время в ноде или N дней с дня входа. */
+    nudgesDays: string;
+    nudgesDaysModes: Record<"always" | "days", string>;
+    nudgesDaysHint: string;
   };
   exitCard: {
     when: string;
@@ -268,6 +288,7 @@ export const russianFlowEditorLabels: FlowEditorLabels = {
     const word = tens >= 11 && tens <= 14 ? "дней" : ones === 1 ? "день" : ones >= 2 && ones <= 4 ? "дня" : "дней";
     return `${count} ${word}`;
   },
+  programDay: (day) => `с дня ${day}`,
 
   header: {
     state: "Состояние",
@@ -299,6 +320,17 @@ export const russianFlowEditorLabels: FlowEditorLabels = {
     warnings: (count) => `Замечаний: ${count}`,
     nudges: "касания",
     noNudges: "без касаний",
+    nudgesDays: (days) => (days === 1 ? "в день входа" : `первые ${days} дн.`),
+    space: {
+      legend: "Легенда",
+      showMinimap: "Показать мини-карту",
+      hideMinimap: "Скрыть мини-карту",
+      showInspector: "Показать панель «Сценарий»",
+      hideInspector: "Скрыть панель «Сценарий»",
+      enterFullscreen: "На весь экран",
+      exitFullscreen: "Выйти из полного экрана",
+      fullscreenRegion: "Редактор сценария на весь экран",
+    },
   },
   overview: {
     title: "Сценарий",
@@ -393,13 +425,16 @@ export const russianFlowEditorLabels: FlowEditorLabels = {
     more: "Дополнительно",
     deleteState: "Удалить состояние",
     duration: "Длится",
-    durationHint: "Потом переход «Куда». Дни — дни сценария: новый день начинается в начале дня.",
+    durationHint: "Потом переход «Куда». Дни — дни сценария: новый день начинается в начале дня. «До дня программы» — до начала этого дня, когда бы человек ни пришёл в ноду.",
     durationNone: "не ограничено",
-    durationUnits: { h: "часов", d: "дней" },
+    durationUnits: { h: "часов", d: "дней", program_day: "до дня программы" },
     durationTo: "Потом — куда",
     nudges: "Касания",
     nudgesModes: { inherit: "Как у сценария", own: "Свои", off: "Выкл" },
     nudgesHint: "Агент пишет здесь сам, когда человек молчит.",
+    nudgesDays: "Свои касания действуют",
+    nudgesDaysModes: { always: "всё время в ноде", days: "дн., считая день входа" },
+    nudgesDaysHint: "Потом — касания сценария: утреннее и общий ряд с начала.",
   },
   exitCard: {
     when: "Когда",
@@ -501,6 +536,7 @@ export const englishFlowEditorLabels: FlowEditorLabels = {
   yes: "yes",
   no: "no",
   days: (count) => `${count} ${count === 1 ? "day" : "days"}`,
+  programDay: (day) => `from day ${day}`,
 
   header: {
     state: "State",
@@ -532,6 +568,17 @@ export const englishFlowEditorLabels: FlowEditorLabels = {
     warnings: (count) => `Warnings: ${count}`,
     nudges: "nudges",
     noNudges: "no nudges",
+    nudgesDays: (days) => (days === 1 ? "on the entry day" : `for the first ${days} days`),
+    space: {
+      legend: "Legend",
+      showMinimap: "Show the minimap",
+      hideMinimap: "Hide the minimap",
+      showInspector: "Show the flow panel",
+      hideInspector: "Hide the flow panel",
+      enterFullscreen: "Full screen",
+      exitFullscreen: "Exit full screen",
+      fullscreenRegion: "Flow editor, full screen",
+    },
   },
   overview: {
     title: "Flow",
@@ -626,13 +673,16 @@ export const englishFlowEditorLabels: FlowEditorLabels = {
     more: "More",
     deleteState: "Delete the state",
     duration: "Lasts",
-    durationHint: "Then goes to “Go to”. Days are flow days: a new day begins at the day start.",
+    durationHint: "Then goes to “Go to”. Days are flow days: a new day begins at the day start. “Until program day” lasts until that day starts, whenever the person entered the node.",
     durationNone: "no limit",
-    durationUnits: { h: "hours", d: "days" },
+    durationUnits: { h: "hours", d: "days", program_day: "until program day" },
     durationTo: "Then go to",
     nudges: "Nudges",
     nudgesModes: { inherit: "As in the flow", own: "Own", off: "Off" },
     nudgesHint: "The agent writes here by itself while the person is silent.",
+    nudgesDays: "Own nudges apply",
+    nudgesDaysModes: { always: "the whole time in the state", days: "days, counting the entry day" },
+    nudgesDaysHint: "Then the flow's nudges: the morning message and the common series from the start.",
   },
   exitCard: {
     when: "When",

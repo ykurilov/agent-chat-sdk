@@ -70,6 +70,13 @@ export async function settle() {
   });
 }
 
+/** Ждёт, пока окно ленты заметит конец прокрутки (150 мс тишины в virtua). */
+export async function waitForFeedScrollEnd() {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, SCROLL_TO_END_SETTLE_MS));
+  });
+}
+
 /** Ждёт, пока лента при первом показе встанет на низ. */
 export async function waitForFeedPositioned() {
   await act(async () => {

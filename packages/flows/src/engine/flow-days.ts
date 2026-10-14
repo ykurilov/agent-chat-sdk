@@ -99,6 +99,11 @@ export function stateDaysDue(run: FlowRun, days: number, timeZone: string, sched
   return dayStartAt(shiftDate(entered, days), timeZone, schedule);
 }
 
+/** Срок таймера «наступил день N сценария»: начало дня N от якоря первого дня. Уже наступил — срок в прошлом. */
+export function programDayDue(run: FlowRun, day: number, timeZone: string, schedule: FlowSchedule): number {
+  return dayStartAt(shiftDate(anchorDate(run, timeZone, schedule), day - 1), timeZone, schedule);
+}
+
 /** День сценария сейчас. Якорь — `dayAnchor`; порог позднего старта — `schedule.lateStartHours` (→ В1). */
 export function flowDay(run: FlowRun, now: number, timeZone: string, schedule: FlowSchedule): FlowDayInfo {
   const first = anchorDate(run, timeZone, schedule);

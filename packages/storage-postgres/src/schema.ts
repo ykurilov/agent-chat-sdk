@@ -170,6 +170,16 @@ export const spendingLimitStates = agentChatSchema.table("spending_limit_states"
 });
 
 /**
+ * Аренда хода чата между копиями сервера: кто держит (`holder`) и до какого времени (`until`, по часам базы). Внешним
+ * ключом с чатом не связана: удаление чата снимает её само.
+ */
+export const chatTurnLeases = agentChatSchema.table("chat_turn_leases", {
+  chatId: text("chat_id").primaryKey(),
+  holder: text("holder").notNull(),
+  until: timestamp("until", { withTimezone: true, mode: "string" }).notNull(),
+});
+
+/**
  * Долгая память: записи принадлежат человеку и с чатами не связаны внешним ключом, чтобы переживать их удаление.
  * `version` — замок правки и удаления: растёт на 1 при каждой правке.
  */

@@ -97,6 +97,21 @@ describe("формат v2: новые поля", () => {
     expect(flow.states[0]!.exits[0]!.when).toEqual({ type: "timer", from: "state_days", days: 1 });
   });
 
+  it("таймер «наступил день N программы» — дополнение к v2", () => {
+    const flow = parsed({
+      ...minimal(),
+      states: [{ id: "s1", title: "Сборка", exits: [{ id: "x1", when: { type: "timer", from: "program_day", day: 3 }, to: "s1" }] }],
+    });
+    expect(flow.version).toBe(2);
+    expect(flow.states[0]!.exits[0]!.when).toEqual({ type: "timer", from: "program_day", day: 3 });
+    expect(parsed(compactFlow(flow))).toEqual(flow);
+    // Без номера дня — ошибка формы; дробный и меньше 1 — находка `checkFlow`, черновик сохраняется.
+    const noDay = { ...minimal(), states: [{ id: "s1", title: "", exits: [{ id: "x1", when: { type: "timer", from: "program_day" } }] }] };
+    expect(errorsOf(parseFlow(noDay))[0]!.path).toBe("states[0].exits[0].when.day");
+    const fractional = { ...minimal(), states: [{ id: "s1", title: "", exits: [{ id: "x1", when: { type: "timer", from: "program_day", day: 2.5 } }] }] };
+    expect(parseFlow(fractional).ok).toBe(true);
+  });
+
   it("поле «да/нет»: операции «=» и «≠», значение — true/false", () => {
     expect(FLOW_OPS_BY_FIELD_TYPE.boolean).toEqual(["filled", "eq", "ne"]);
     const flow = parsed({

@@ -95,7 +95,17 @@ export interface StateDaysTimerCondition {
   days: number;
 }
 
-export type TimerCondition = SpanTimerCondition | TimeOfDayTimerCondition | StateDaysTimerCondition;
+/**
+ * Наступил день `day` сценария: начало этого дня (`schedule.dayStart`) по часам человека, по той же нумерации, что день в
+ * `readRun`. Нода вошла в день `day` или позже — выход сразу. Дополнение к версии 2 (0.55).
+ */
+export interface ProgramDayTimerCondition {
+  type: "timer";
+  from: "program_day";
+  day: number;
+}
+
+export type TimerCondition = SpanTimerCondition | TimeOfDayTimerCondition | StateDaysTimerCondition | ProgramDayTimerCondition;
 export type FlowCondition = JudgeCondition | DataCondition | EventCondition | TimerCondition;
 export type FlowConditionType = FlowCondition["type"];
 
@@ -127,7 +137,7 @@ export interface FlowState {
   /** Состояние без условий — конец сценария. */
   exits: FlowExit[];
   /** Свои касания ноды; `"off"` — без касаний; нет — общие `schedule.nudges`, затем `nudges` сценария. С версии 2. */
-  nudges?: FlowNudges | "off";
+  nudges?: FlowStateNudges | "off";
 }
 
 /** Общие переходы: работают из любого состояния, кроме перечисленных. */
@@ -160,6 +170,15 @@ export interface FlowNudges {
   dailyAt?: string[];
   /** Столько тишины — конец разговора «не завершил», без сообщения. */
   giveUpAfter?: FlowDuration;
+}
+
+/** Свои касания ноды: можно ограничить первыми днями в ноде. */
+export interface FlowStateNudges extends FlowNudges {
+  /**
+   * Свой ряд действует столько дней сценария, считая день входа в ноду (1 — только день входа). Потом — общие касания
+   * (`schedule.nudges`, затем `nudges` сценария), их ряд с начала. Нет — всё время в ноде. С 0.55.
+   */
+  days?: number;
 }
 
 /** Порог позднего старта по умолчанию: до ночи меньше 3 ч — первым днём считается завтра. */
@@ -262,12 +281,15 @@ export type ParseFlowResult = { ok: true; flow: AgentFlow } | { ok: false; error
 /** Что объявило приложение: по этим именам сценарий ссылается на инструменты, события и виджеты. */
 export interface FlowCatalog {
   tools: readonly string[];
-  /** Имена кнопок и событий приложения. */
-  events: readonly string[];
+  /** Кнопки и события приложения: имя или `{ name, label }` — подпись видна на доске вместо имени. */
+  events: readonly FlowCatalogEvent[];
   widgets: readonly string[];
   /** Словарь полей приложения: редактор предлагает их в карточке, заметках и попутных задачах. */
   fields?: readonly FlowCatalogField[];
 }
+
+/** Кнопка или событие приложения: просто имя или имя с подписью для доски («paid» → «Оплачено»). Объект — с 0.55. */
+export type FlowCatalogEvent = string | { name: string; label?: string };
 
 /** Поле из словаря приложения. */
 export interface FlowCatalogField {

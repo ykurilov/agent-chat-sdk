@@ -131,6 +131,10 @@ export interface FlowHeaderProps {
   /** Есть, если приложение подключило перевод чатов и тестовый чат. */
   onOpenMigrate?(): void;
   onOpenTestChat?(): void;
+  /** Узкая шапка: одна строка кнопок, без логотипа и названия сценария (приложение показывает своё). */
+  compact?: boolean;
+  /** Кнопка «На весь экран» / «Выйти»; нет — кнопки нет. */
+  fullscreen?: { active: boolean; onToggle(): void };
 }
 
 /** Строка списка в обзоре и панелях: состояние, на которое можно перейти. */
@@ -197,7 +201,7 @@ export interface FlowSideTasksSectionProps {
 export interface FlowStateTimingProps {
   /** Выход-продолжительность; `null` — не ограничено. */
   duration: { amount: number; unit: DurationUnit; to: string | null } | null;
-  /** Дни есть только при «Днях и времени»; иначе — часы. */
+  /** Дни и «до дня N программы» есть только при «Днях и времени»; иначе — часы. */
   daysAvailable: boolean;
   targets: FlowTargetOption[];
   /** Находки по выходу-продолжительности. */
@@ -208,6 +212,9 @@ export interface FlowStateTimingProps {
   onNudgesModeChange(mode: NudgesMode): void;
   /** Свои касания: `FlowNudgesEditor`; режим не «свои» — `null`. */
   nudges: ReactNode | null;
+  /** Свои касания действуют столько дней, считая день входа; `null` — всё время в ноде. С 0.55. */
+  nudgesDays: number | null;
+  onNudgesDaysChange(days: number | null): void;
 }
 
 /** Цель перехода в списке «Куда»: состояние или «назад». */
@@ -228,6 +235,8 @@ export interface FlowExitCardProps {
   ops: FlowDataOp[];
   /** Имена, объявленные приложением: кнопки и события, инструменты. */
   eventNames: { button: string[]; tool: string[]; app: string[] };
+  /** Подписи кнопок и событий от приложения: имя → подпись. Нет подписи — показывать имя. С 0.55. */
+  eventLabels?: Readonly<Record<string, string>>;
   targets: FlowTargetOption[];
   issues: FlowIssue[];
   canMoveUp: boolean;
@@ -396,6 +405,20 @@ export interface FlowEditorFrameProps {
   /** Класс и стиль корня, которые приложение передало в `FlowEditor`. Корень сам занимает высоту родителя, не меньше разумной. */
   className?: string;
   style?: CSSProperties;
+  /** Шапка в одну узкую строку. */
+  compact?: boolean;
+}
+
+/** Маленькая кнопка на доске или в шапке: свернуть и развернуть легенду, мини-карту, панель «Сценарий». */
+export interface FlowBoardToggleProps {
+  kind: "legend" | "minimap" | "inspector";
+  /** Что сделает нажатие: «Показать мини-карту», «Скрыть панель «Сценарий»». */
+  label: string;
+  /** Показывается сейчас то, чем кнопка управляет. */
+  expanded: boolean;
+  /** С подписью рядом со значком (легенда), без неё — только значок. */
+  showText?: boolean;
+  onClick(): void;
 }
 
 /** Договор скина редактора сценария, версия 1. */
@@ -418,6 +441,8 @@ export interface FlowEditorSkin {
   FlowJsonDialog: ComponentType<FlowJsonDialogProps>;
   FlowMigrateDialog: ComponentType<FlowMigrateDialogProps>;
   FlowTestChatFrame: ComponentType<FlowTestChatFrameProps>;
+  /** Кнопки места на доске. Нет — доска рисует простые кнопки на токенах `--flow-board-*`. */
+  FlowBoardToggle?: ComponentType<FlowBoardToggleProps>;
   /** Части формата v2 (сценарии 0.49). Нет — разделов нет, остальное работает. */
   FlowScheduleSection?: ComponentType<FlowScheduleSectionProps>;
   FlowSideTasksSection?: ComponentType<FlowSideTasksSectionProps>;

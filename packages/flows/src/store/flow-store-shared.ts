@@ -8,6 +8,21 @@ export function migratePending(input: MigrateBatchInput): PendingFlowChange {
   return { kind: "migrate", key: `migrate:${input.toVersionId}:${input.at}`, versionId: input.toVersionId, map: input.map, at: input.at };
 }
 
+/** Переход, применённый в срок без хода: «забрать» его не снимает — «Переделать» на той же ветке применит его снова. */
+export const appliedInTime = (change: PendingFlowChange): boolean => change.kind === "transition" && change.appliedAt !== undefined;
+
+/**
+ * Ожидающее после `addPending`: новый ключ — в конец; тот же ключ — прежний остаётся, но `appliedAt` нового дописывается,
+ * если его не было (переход отложили ночью, а утром применили в срок). Ничего не изменилось — `null`.
+ */
+export function pendingAdded(pending: readonly PendingFlowChange[], change: PendingFlowChange): PendingFlowChange[] | null {
+  const index = pending.findIndex((item) => item.key === change.key);
+  if (index === -1) return [...pending, change];
+  const existing = pending[index]!;
+  if (existing.kind !== "transition" || change.kind !== "transition" || change.appliedAt === undefined || existing.appliedAt !== undefined) return null;
+  return pending.map((item, at) => (at === index ? { ...existing, appliedAt: change.appliedAt } : item));
+}
+
 /** Состояние после перевода: удалённое — по карте, остальное как было. Зеркало для подсчёта до следующего хода. */
 export const mappedState = (stateId: string, map: StateMap): string => (Object.hasOwn(map, stateId) ? map[stateId]! : stateId);
 

@@ -1,5 +1,45 @@
 # @ykurilov/agent-chat-voice
 
+## 0.55.0
+
+### Minor Changes
+
+- cdc7dd7: Голос: расход в лимитах, причина отказа, Next.js, язык записи, предел из настройки.
+  
+  - `UsageSource` открыт для своих видов приложения (`"font_download"` без приведения типа), штатные — в
+    `BUILT_IN_USAGE_SOURCES`, тип `BuiltInUsageSource`. Новые штатные виды `voice_input` (секунды распознавания,
+    `inputTokens` — секунды) и `voice_polish` (чистка текста). Миграций нет.
+  - `createVoiceRelay({ spending: { service, recognitionUsdPerHour, chatId? } })`: лимит до диктовки, секунды звука в журнал
+    расхода. Чистка: `polish: { askModel, model }` через службу чата; у Together — `pricing`; своя `clean` может вернуть
+    `{ text, usage }`. Расход чистки — вид `voice_polish`.
+  - Причина отказа доходит до браузера кодом закрытия (`RELAY_CLOSE`): 4401 не вошёл, 4402 лимит, 4403 нет доступа,
+    4413 слишком длинно, 4429 часто, 4502 недоступен, 1009 кусок больше предела. Отказ приложения `{ refused: { code } }`
+    переводится по `code`. Новые виды ошибок `limit`, `forbidden`, `too_long`; 4401 теперь `forbidden` (был
+    `service_unavailable`).
+  - `@ykurilov/agent-chat-voice/node`: `createVoiceUpgrade({ path, relay, maxFrameBytes })` — голос на своём HTTP-сервере
+    Node.js (Next.js custom server), `shareVoiceRelay` / `sharedVoiceRelay` — мостик внутри процесса. Нужен `ws`.
+    Кривой путь — 400, обрыв во время проверки входа не роняет процесс, `authorizeTimeoutMs` (10 с) — 503.
+  - Ретранслятор: `helloTimeoutMs` (10 с без приветствия — 4400, место свободно), `maxFrameBytes` (1 МиБ, 1009) — единый
+    для Hono и node. Чат расхода из `?chat=` — только свой (`service.assertOwnChat`), иначе `"voice"`.
+    `allowedLanguageHints` с регионом (`pt-BR`) разрешает язык `pt`. Относительный `relayUrl` снова работает.
+  - Язык каждой записи: `voice.start(listener, { chatId, language })`, `createVoiceInput({ languageHints })`; сервер
+    проверяет значение сам (`allowedLanguageHints`). `AgentChat` передаёт текущий чат и язык словаря.
+  - react: подпись `time_limit` — строка или функция от предела сервера («предел 3 минуты»); `onError(kind, details)`;
+    подписи `limit`, `forbidden`, `too_long` необязательные в своём словаре; `voiceErrorText`.
+
+### Patch Changes
+
+- Updated dependencies [51f7b38]
+- Updated dependencies [cdc7dd7]
+  - @ykurilov/agent-chat-core@0.55.0
+
+## 0.54.0
+
+### Patch Changes
+
+- Updated dependencies [fa90219]
+  - @ykurilov/agent-chat-core@0.54.0
+
 ## 0.53.0
 
 ### Patch Changes

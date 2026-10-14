@@ -13,6 +13,12 @@ export const deepseek41FlashProfile: ModelProfile = {
   reasoning: { replayPastTurns: true, levels: ["off", "on"], defaultLevel: "on" },
   // Запрет стоит всегда, а не только при картинке: запрос одинаков в каждом ходе, кэш и выбранный хозяин не теряются.
   providerOptions: { openrouter: { provider: { ignore: ["deepinfra", "open-inference", "phala", "sail-research", "venice"] } } },
+  // В словаре модели есть склеенный токен «?\n\n». Together по умолчанию хвост не режет и изредка (≈1 ответ из 1400)
+  // берёт его в конце вместо «?» и конца ответа: модель не останавливается, пишет «user…» за собеседника, вторые
+  // рассуждения и новый ответ, а каша в истории провоцирует повтор. 0,05 отсекает такие слова (у них ≤0,6 % при ≥95 % у «?»):
+  // прогон 35 учеников обучающего приложения — каши 0 из 1036 ответов (было 2 случая). Уходит к Together и OpenRouter;
+  // DeepSeek напрямую обрезки не принимает.
+  sampling: { minP: 0.05 },
   providerModelIds: {
     deepseek: "deepseek-flash",
     fireworks: "accounts/fireworks/models/deepseek-v4p1-flash",

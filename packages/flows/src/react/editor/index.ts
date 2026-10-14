@@ -24,3 +24,4 @@ export {
   type SimulationStep,
 } from "./flow-simulation";
 export { DEFAULT_NUDGES, DEFAULT_SCHEDULE } from "./schedule-model";
+export type { FlowBoardSpaceProps, FlowHeaderMode, FlowInspectorMode, FlowLegendMode, FlowMinimapMode } from "./board-space";

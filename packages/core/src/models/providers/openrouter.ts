@@ -2,7 +2,7 @@ import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import type { JSONValue, LanguageModelV4Middleware } from "@ai-sdk/provider";
 import { wrapLanguageModel } from "ai";
 import { isCacheTtl } from "../model-catalog";
-import type { CacheTtl, GenerationUsage, ModelProfile, ProviderConnection, ProviderDescription } from "../model-catalog";
+import type { CacheTtl, GenerationUsage, ModelProfile, ProviderConnection, ProviderDescription, ProviderOptionsByProvider } from "../model-catalog";
 import { fetchWithCacheMarkLimit, openrouterCacheMarkLimit } from "./openrouter-cache-mark-limit";
 import { openrouterGeminiCacheMarkMiddleware } from "./openrouter-gemini-cache-mark";
 import { effortWithAnswerReserve, plainEffort, reasoningBudgetTokens } from "../reasoning-budget";
@@ -236,6 +236,8 @@ const openrouterBase: Omit<ProviderDescription, "id" | "displayName" | "createLa
       profile.reasoning.effortShareOfOutput && maxOutputTokens !== undefined ? effortWithAnswerReserve(level, maxOutputTokens) : plainEffort(level);
     return { providerOptions: { openrouter: { reasoning: { effort, ...summary } } } };
   },
+  // Поля `providerOptions.openrouter` пакет кладёт в тело запроса; `min_p` OpenRouter передаёт хозяину модели.
+  samplingRequest: ({ minP }): ProviderOptionsByProvider => (minP === undefined ? {} : { openrouter: { min_p: minP } }),
   // Деньги кончились: OpenRouter отвечает 402 и пишет «insufficient credits» в теле.
   errorHints: [{ match: /insufficient credits|insufficient funds/i, kind: "insufficient_funds" }],
 };

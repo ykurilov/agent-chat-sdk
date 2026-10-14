@@ -140,8 +140,15 @@ export async function startRealChat(options: RealChatOptions) {
 
   /** Человек что-то делает в мессенджере; ждём, пока бот закончит отвечать. */
   async function human(event: HumanEvent) {
-    const response = await messengers.handler.fetch(options.channel.webhookRequest(`http://app.test${BASE_PATH}${options.channel.webhookPath}`, event));
+    const response = await deliver(event);
     await settle();
+    return response;
+  }
+
+  /** Событие человека дошло до вебхука; бот отвечает сам по себе (без ожидания). */
+  async function deliver(event: HumanEvent) {
+    const response = await messengers.handler.fetch(options.channel.webhookRequest(`http://app.test${BASE_PATH}${options.channel.webhookPath}`, event));
+    await vi.advanceTimersByTimeAsync(0);
     return response;
   }
 
@@ -171,7 +178,7 @@ export async function startRealChat(options: RealChatOptions) {
     await options.channel.close();
   }
 
-  return { channel: options.channel, model, storage, server, service: server.service, messengerService: service, store, messengers, limits, background, errors, serverErrors, limitErrors, settle, until, human, link, web, textsIn, close };
+  return { channel: options.channel, model, storage, server, service: server.service, messengerService: service, store, messengers, limits, background, errors, serverErrors, limitErrors, settle, until, human, deliver, link, web, textsIn, close };
 }
 
 export type RealChat = Awaited<ReturnType<typeof startRealChat>>;

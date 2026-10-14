@@ -31,7 +31,7 @@ import type {
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
-import { branchSelections, chats, compactions, memoryNotes, memoryOptimizationRuns, messages, spendingLimitStates, usageRecords, userModelChoices, voiceChoices } from "./schema";
+import { branchSelections, chats, chatTurnLeases, compactions, memoryNotes, memoryOptimizationRuns, messages, spendingLimitStates, usageRecords, userModelChoices, voiceChoices } from "./schema";
 
 export const storageSchema = { chats, messages, compactions, branchSelections, usageRecords, userModelChoices, voiceChoices, spendingLimitStates, memoryNotes, memoryOptimizationRuns };
 
@@ -258,7 +258,32 @@ export function createDrizzleChatStorage(db: ChatDatabase): ChatStorage {
         await tx.delete(branchSelections).where(eq(branchSelections.chatId, chatId));
         await tx.delete(messages).where(eq(messages.chatId, chatId));
         await tx.delete(chats).where(eq(chats.id, chatId));
+        await tx.delete(chatTurnLeases).where(eq(chatTurnLeases.chatId, chatId));
       });
+    },
+
+    async claimChatTurn(chatId, holder, leaseMs) {
+      // Одной записью по часам базы: свободный чат — вставка; своя или просроченная чужая — замена; живая чужая — ничего.
+      // Две копии разом: вторая ждёт строку первой и видит её живой.
+      const until = sql`now() + ${leaseMs} * interval '1 millisecond'`;
+      const claimed = await db
+        .insert(chatTurnLeases)
+        .values({ chatId, holder, until })
+        .onConflictDoUpdate({
+          target: chatTurnLeases.chatId,
+          set: { holder, until },
+          setWhere: sql`${chatTurnLeases.holder} = ${holder} or ${chatTurnLeases.until} <= now()`,
+        })
+        .returning({ chatId: chatTurnLeases.chatId });
+      return claimed.length > 0;
+    },
+
+    async releaseChatTurn(chatId, holder) {
+      await db.delete(chatTurnLeases).where(and(eq(chatTurnLeases.chatId, chatId), eq(chatTurnLeases.holder, holder)));
+    },
+
+    async clearChatTurnLeases() {
+      await db.delete(chatTurnLeases);
     },
 
     async getMessage(messageId) {

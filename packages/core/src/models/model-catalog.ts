@@ -1,3 +1,4 @@
+import { wrapLanguageModel } from "ai";
 import type { JSONValue, LanguageModel } from "ai";
 import type { ChatErrorKind, TokenUsage } from "../conversation/types";
 import type { ModelSilenceSetting } from "../provider-errors/model-silence";
@@ -15,6 +16,18 @@ export interface ReasoningRequest {
   /** Общий параметр SDK `reasoning`. */
   reasoning?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "provider-default";
   providerOptions?: ProviderOptionsByProvider;
+}
+
+/**
+ * Параметры выбора слов моделью, общие для всех провайдеров. В запрос их переводит сам провайдер
+ * (`ProviderDescription.samplingRequest`): провайдер, который параметр не принимает, его не шлёт.
+ */
+export interface ModelSampling {
+  /**
+   * Обрезка хвоста: слова с шансом меньше этой доли от самого вероятного не выбираются (`min_p`), от 0 до 1 не включая.
+   * Спасает от редких маловероятных слов, после которых модель сбивается (у DeepSeek 4.1 Flash — склеенный «?\n\n»).
+   */
+  minP?: number;
 }
 
 /** Цены за миллион токенов, доллары США. Рассуждения идут по цене выхода. */
@@ -136,8 +149,16 @@ export interface ModelProfile {
   };
   /** Id модели у каждого провайдера. Провайдеры вне списка модель не обслуживают. */
   providerModelIds: Record<string, string>;
-  /** Опции провайдера именно для этой модели, если нужны. */
+  /**
+   * Опции провайдера именно для этой модели, если нужны. Ключ — имя опций пакета провайдера (`togetherai`, `openrouter`),
+   * а не id провайдера в каталоге. Главнее `sampling`: так один провайдер получает своё значение.
+   */
   providerOptions?: ProviderOptionsByProvider;
+  /**
+   * Параметры выбора слов для всех провайдеров модели (`{ minP: 0.05 }`). Как и `providerOptions`, уходят в каждый запрос
+   * к модели из каталога, в том числе в служебные (сжатие, память, помощники, `askModel`).
+   */
+  sampling?: ModelSampling;
   /** Цены по провайдерам. Читает расширение лимитов расходов; ядро деньги не считает. */
   pricing?: Record<string, ModelPrice>;
   /**
@@ -215,6 +236,11 @@ export interface ProviderDescription {
       maxOutputTokens?: number;
     },
   ): ReasoningRequest;
+  /**
+   * Перевод параметров выбора слов модели (`ModelProfile.sampling`) в опции запроса. Параметры, которых провайдер не
+   * принимает, не возвращает. Нет метода — провайдер их не шлёт.
+   */
+  samplingRequest?(sampling: ModelSampling): ProviderOptionsByProvider;
   /** Подсказки для вида ошибки по телу ответа, если кода HTTP мало. */
   errorHints?: Array<{ match: RegExp; kind: ChatErrorKind }>;
   /**
@@ -273,6 +299,7 @@ export function createModelCatalog(catalog: ModelCatalog): ModelCatalog {
     assertPricing(model);
     assertImageProviders(model);
     assertMaxOutputTokens(model);
+    assertSampling(model);
   }
   return { models, providers: [...catalog.providers] };
 }
@@ -373,6 +400,12 @@ function assertMaxOutputTokens(model: ModelProfile): void {
   throw new Error(`Потолок вывода модели «${model.id}» (maxOutputTokens) должен быть целым числом токенов от 1: ${maxOutputTokens}`);
 }
 
+function assertSampling(model: ModelProfile): void {
+  const minP = model.sampling?.minP;
+  if (minP === undefined || (Number.isFinite(minP) && minP > 0 && minP < 1)) return;
+  throw new Error(`Обрезка хвоста модели «${model.id}» (sampling.minP) — число больше 0 и меньше 1: ${minP}`);
+}
+
 function assertImageProviders(model: ModelProfile): void {
   for (const providerId of Object.keys(model.acceptsImagesByProvider ?? {})) {
     if (!(providerId in model.providerModelIds)) {
@@ -454,12 +487,46 @@ export function findModel(catalog: ModelCatalog, modelId: string, providerId: st
   return { profile, provider, providerModelId };
 }
 
+/**
+ * Модель для запросов. Опции модели (`ModelProfile.providerOptions` и `sampling`) она добавляет к каждому запросу сама:
+ * их получают и вызовы с готовой моделью мимо сборки запроса ядра (склейка памяти). Опции самого запроса главнее.
+ */
 export function resolveLanguageModel(
-  { provider, providerModelId }: ResolvedModel,
+  { profile, provider, providerModelId }: ResolvedModel,
   env: Record<string, string | undefined>,
   fetch?: typeof globalThis.fetch,
 ): LanguageModel {
   const apiKey = env[provider.apiKeyEnv];
   if (!apiKey) throw new MissingProviderKeyError(provider.id, provider.apiKeyEnv);
-  return provider.createLanguageModel(providerModelId, apiKey, { fetch });
+  const model = provider.createLanguageModel(providerModelId, apiKey, { fetch });
+  const options = profileProviderOptions(profile, provider);
+  // Строка — id модели шлюза SDK; каталог отдаёт готовые модели, строка сюда не приходит.
+  if (!options || typeof model === "string") return model;
+  return wrapLanguageModel({
+    model,
+    middleware: {
+      specificationVersion: "v4",
+      transformParams: async ({ params }) => ({ ...params, providerOptions: mergeProviderOptions(options, params.providerOptions as ProviderOptionsByProvider | undefined) }),
+    },
+  });
+}
+
+/** Опции модели для запроса к этому провайдеру: параметры выбора слов, поверх них — `providerOptions` профиля. */
+export function profileProviderOptions(
+  profile: Pick<ModelProfile, "providerOptions" | "sampling">,
+  provider: Pick<ProviderDescription, "samplingRequest">,
+): ProviderOptionsByProvider | undefined {
+  const sampling = profile.sampling && provider.samplingRequest?.(profile.sampling);
+  return mergeProviderOptions(sampling, profile.providerOptions);
+}
+
+/** Опции по провайдерам, слитые по ключу провайдера; поздний источник главнее. Пусто — `undefined`. */
+export function mergeProviderOptions(...sources: Array<ProviderOptionsByProvider | undefined>): ProviderOptionsByProvider | undefined {
+  const merged: ProviderOptionsByProvider = {};
+  for (const source of sources) {
+    for (const [providerKey, options] of Object.entries(source ?? {})) {
+      merged[providerKey] = { ...merged[providerKey], ...options };
+    }
+  }
+  return Object.keys(merged).length > 0 ? merged : undefined;
 }

@@ -28,6 +28,11 @@ export interface PrepareTurnContext {
   staff?: StaffActor;
   /** Служебные сообщения, с которыми пришёл ход (`deliverNotices`); у остальных ходов пусто. */
   notices: AgentNotice[];
+  /**
+   * Ход отвечает на пачку сообщений человека (`sendBurstMessage`): их id по порядку. Счёт сообщений человека за ход —
+   * длина списка; нет поля — одно сообщение.
+   */
+  burstMessageIds?: string[];
   /** Часовой пояс человека (IANA), как у даты в запросе. */
   timeZone: string;
   /**

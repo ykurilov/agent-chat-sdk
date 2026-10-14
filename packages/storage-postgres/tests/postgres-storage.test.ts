@@ -55,7 +55,7 @@ describe("PostgreSQL: запросы и миграции на встроенно
     const storage = await createPgliteChatStorage();
     openStorages.push(storage);
     return storage;
-  }, { choiceMemory: "required", voiceDialog: "required", memory: "required", memoryOptimization: "required", spendingLimitState: "required", subjectChats: "required", chatData: "required", importChat: "required", afterTurnState: "required", chatClosure: "required", partsOfTypes: "required", usageByChat: "required" });
+  }, { choiceMemory: "required", voiceDialog: "required", memory: "required", memoryOptimization: "required", spendingLimitState: "required", subjectChats: "required", chatData: "required", importChat: "required", afterTurnState: "required", chatClosure: "required", partsOfTypes: "required", usageByChat: "required", chatTurnLease: "required" });
 });
 
 /** Сообщение чата c1 с обычными значениями полей. */
@@ -678,7 +678,7 @@ describe.skipIf(!realPostgresUrl)("PostgreSQL (настоящий сервер)"
   describeChatStorageContract(async () => {
     await cleanSchema();
     return openStorageWithPool(realPostgresUrl!, 10);
-  }, { choiceMemory: "required", memory: "required", memoryOptimization: "required", spendingLimitState: "required", subjectChats: "required", chatData: "required", importChat: "required", afterTurnState: "required", chatClosure: "required", partsOfTypes: "required", usageByChat: "required" });
+  }, { choiceMemory: "required", memory: "required", memoryOptimization: "required", spendingLimitState: "required", subjectChats: "required", chatData: "required", importChat: "required", afterTurnState: "required", chatClosure: "required", partsOfTypes: "required", usageByChat: "required", chatTurnLease: "required" });
 
   it("два хранилища стартуют одновременно на пустой схеме (20 повторов)", async () => {
     for (let round = 0; round < 20; round++) {

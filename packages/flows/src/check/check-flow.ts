@@ -9,6 +9,7 @@ import {
   type FlowState,
 } from "../format/flow-format";
 import { appIssues, type FlowAppChecks } from "./app-checks";
+import { catalogEventNames } from "../format/catalog-events";
 import { commonApplies, fieldById, isFinal, sameText, stateById } from "../engine/flow-graph";
 import { parseClock } from "../engine/zoned-time";
 
@@ -64,8 +65,8 @@ function eventKnown(exit: FlowExit, catalog: FlowCatalog): boolean {
   if (exit.when.type !== "event" || exit.when.name === undefined) return true;
   const { event, name } = exit.when;
   if (event === "tool") return catalog.tools.includes(name);
-  if (event === "button") return catalog.widgets.includes(name) || catalog.events.includes(name);
-  if (event === "app") return catalog.events.includes(name);
+  if (event === "button") return catalog.widgets.includes(name) || catalogEventNames(catalog).includes(name);
+  if (event === "app") return catalogEventNames(catalog).includes(name);
   return true;
 }
 
@@ -109,6 +110,14 @@ function checkExit(flow: AgentFlow, catalog: FlowCatalog, issues: Issues, exit: 
     }
     if (when.days < 1) issues.error("state_days_below_one", `${what}: нода должна длиться хотя бы один день`, place);
   }
+  if (when.type === "timer" && when.from === "program_day") {
+    if (!Number.isInteger(when.day) || when.day < 1) {
+      issues.error("program_day_invalid", `${what}: день программы — целое число с 1`, place);
+    } else if (flow.schedule?.lengthDays !== undefined && when.day > flow.schedule.lengthDays) {
+      issues.error("program_day_after_end", `${what}: дня ${when.day} нет — программа длится ${flow.schedule.lengthDays} дн.`, place);
+    }
+    if (!flow.schedule) issues.warning("program_day_without_schedule", `${what}: «с дня ${when.day}» не сработает — у сценария нет «Дней и времени»`, place);
+  }
   if (when.type === "event" && when.event !== "message") {
     if (when.name === undefined || when.name.trim() === "") {
       issues.error("event_without_name", `${what}: не выбрано, какое событие ждать`, place);
@@ -134,6 +143,10 @@ function checkState(flow: AgentFlow, catalog: FlowCatalog, issues: Issues, state
   state.exits.forEach((exit, index) => checkExit(flow, catalog, issues, exit, index, state));
   if (state.nudges && state.nudges !== "off" && nudgesEmpty(state.nudges)) {
     issues.warning("empty_nudges", `${stateName(state)}: в касаниях нет ни одного срока — агент не напишет первым`, { stateId: state.id });
+  }
+  const days = state.nudges && state.nudges !== "off" ? state.nudges.days : undefined;
+  if (days !== undefined && (!Number.isInteger(days) || days < 1)) {
+    issues.error("nudges_days_invalid", `${stateName(state)}: свои касания действуют целое число дней, с 1`, { stateId: state.id });
   }
 }
 

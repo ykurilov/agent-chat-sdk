@@ -5,7 +5,7 @@ import type { MemoryFailure } from "./memory/memory-types";
 import type { ChatOriginView, HelperCallStatus, TaskStatusView } from "./skin-contract";
 import type { SpendingInfo } from "./spending-status";
 import type { VoiceDialogError, VoiceDialogState } from "./voice-dialog";
-import type { VoiceErrorKind } from "./voice-input";
+import type { VoiceErrorDetails, VoiceErrorKind } from "./voice-input";
 
 /** Почему правка не ушла или не принята: идёт ответ, нет связи, сервер не принял. */
 export type EditErrorKind = "busy" | "offline" | "rejected" | "spendingLimit" | "signedOut" | "tooManyTurns" | "forbiddenOrigin";
@@ -300,7 +300,7 @@ export interface ChatLabels {
   voiceConnecting: string;
   /** Кнопка микрофона, пока сервер причёсывает надиктованный текст (убирает «э-э», расставляет знаки). */
   voicePolishing: string;
-  voiceErrors: Record<VoiceErrorKind, string>;
+  voiceErrors: VoiceErrorLabels;
   voiceDialog: VoiceDialogLabels;
   /** Заголовок карточки: что агент хочет сделать (`action` — название действия). */
   approvalRequested: (action: string) => string;
@@ -478,6 +478,27 @@ export type ResolvedChatLabels = Omit<ChatLabels, "widgets" | "diagram" | "demo"
     messengerStatus: MessengerStatusLabels;
     workView: WorkViewLabels;
   };
+
+/**
+ * Подписи ошибок голоса. `time_limit` — строка или функция от предела записи, названного сервером (секунды).
+ * `limit`, `forbidden`, `too_long` можно не задавать: возьмутся подписи по умолчанию на языке словаря (`locale`).
+ */
+export type VoiceErrorLabels = Record<Exclude<VoiceErrorKind, "time_limit" | "limit" | "forbidden" | "too_long">, string> & {
+  time_limit: string | ((maxSessionSeconds: number) => string);
+  limit?: string;
+  forbidden?: string;
+  too_long?: string;
+};
+
+/** Предел записи, если сервер его не назвал (старый сервер): как у сервера по умолчанию. */
+const DEFAULT_VOICE_LIMIT_SECONDS = 300;
+
+/** Подпись ошибки голоса для человека. */
+export function voiceErrorText(errors: VoiceErrorLabels, kind: VoiceErrorKind, details?: VoiceErrorDetails): string {
+  if (kind !== "time_limit") return errors[kind] ?? errors.other;
+  const label = errors.time_limit;
+  return typeof label === "string" ? label : label(details?.maxSessionSeconds ?? DEFAULT_VOICE_LIMIT_SECONDS);
+}
 
 const russianPlural = new Intl.PluralRules("ru-RU");
 /** «1 сообщение», «2 сообщения», «5 сообщений». */
@@ -723,7 +744,11 @@ export const russianLabels: ResolvedChatLabels = {
     service_unavailable: "Сервис распознавания речи недоступен",
     other: "Не удалось начать диктовку",
     rate_limited: "Слишком много диктовок подряд, попробуйте через минуту",
-    time_limit: "Запись остановлена: предел 5 минут",
+    time_limit: (seconds) =>
+      `Запись остановлена: предел ${seconds % 60 === 0 ? russianCount(seconds / 60, { one: "минута", few: "минуты", many: "минут" }) : russianCount(seconds, { one: "секунда", few: "секунды", many: "секунд" })}`,
+    limit: "Лимит расходов исчерпан, диктовка недоступна",
+    forbidden: "Нет доступа к диктовке",
+    too_long: "Запись слишком длинная",
   },
   voiceDialog: {
     start: "Голосовой режим",
@@ -1032,7 +1057,11 @@ export const englishLabels: ResolvedChatLabels = {
     service_unavailable: "Speech recognition isn’t available",
     other: "Couldn’t start dictation",
     rate_limited: "Too many dictations in a row, please try again in a minute",
-    time_limit: "Recording stopped: the limit is 5 minutes",
+    time_limit: (seconds) =>
+      `Recording stopped: the limit is ${seconds % 60 === 0 ? englishCount(seconds / 60, "minute", "minutes") : englishCount(seconds, "second", "seconds")}`,
+    limit: "Spending limit reached, dictation is unavailable",
+    forbidden: "No access to dictation",
+    too_long: "The recording is too long",
   },
   voiceDialog: {
     start: "Voice mode",
@@ -1248,6 +1277,8 @@ export function ChatLabelsProvider({ labels, children }: { labels: ChatLabels; c
       videos: { ...russianLabels.videos, ...labels.videos },
       viewer: { ...russianLabels.viewer, ...labels.viewer },
       voice: { ...russianLabels.voice, ...labels.voice },
+      // Новые подписи ошибок голоса — на языке словаря, если свой словарь их не знает.
+      voiceErrors: { ...(labels.locale?.startsWith("en") ? englishLabels : russianLabels).voiceErrors, ...labels.voiceErrors },
       helpers: { ...russianLabels.helpers, ...labels.helpers },
       tasks: { ...russianLabels.tasks, ...labels.tasks },
       notices: { ...russianLabels.notices, ...labels.notices },

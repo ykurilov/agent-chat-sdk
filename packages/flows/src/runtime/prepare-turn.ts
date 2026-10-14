@@ -1,8 +1,8 @@
 import type { AgentNotice, PrepareTurn, TurnAction } from "@ykurilov/agent-chat-core";
 import { FLOW_STATE_KEY, type FlowTouch, type Transition } from "../engine/flow-run";
 import { migrateRun } from "../engine/migrate-run";
-import { noteAgentAnswer, noteHumanMessage, withoutUndeliveredTouch } from "../engine/run-updates";
-import { advance, chainLimitMessage, currentRun, transitionNotice, type ChatFlowRun, type FlowRuntime } from "./flow-events";
+import { noteAgentAnswer, noteHumanMessage, withNudgeStep, withoutUndeliveredTouch } from "../engine/run-updates";
+import { advance, chainLimitMessage, currentRun, pendingEvent, transitionNotice, type ChatFlowRun, type FlowRuntime } from "./flow-events";
 import type { PendingFlowChange } from "../store/flow-store";
 import { pageTimeZone } from "./first-message-rules";
 import { testChatOffset } from "./test-clock";
@@ -14,14 +14,11 @@ import type { FlowFirstReason } from "../engine/nudges";
 export const FLOW_TIMER_NOTICE = "flow_timer";
 export const FLOW_EVENT_NOTICE = "flow_event";
 
-/** Событие движка для ожидающего перехода: таймер проверяется заново по своему сроку, судья — как вердикт. */
-export function pendingEvent(transition: Transition, timeZone: string): Parameters<typeof advance>[2] {
-  if (transition.decidedBy === "timer") return { type: "timer", exitId: transition.exitId, timeZone };
-  return { type: "verdict", exitId: transition.exitId, probability: transition.probability ?? 1, decidedBy: "judge" };
-}
-
 /** Ходы, которые отвечают на сообщение человека. */
 const HUMAN_ACTIONS: ReadonlySet<TurnAction> = new Set<TurnAction>(["send", "edit", "regenerate", "retry"]);
+
+/** Переход по месту: из какой ноды и каким выходом. */
+const transitionKey = (transition: Pick<Transition, "from" | "exitId">) => `${transition.from}\u0000${transition.exitId}`;
 
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -52,12 +49,15 @@ export function flowPrepareTurn(runtime: FlowRuntime, appTimeZone: () => string 
     const now = runtime.now() + (timeOffset ?? 0);
     const transitions: Transition[] = [];
     let card: Record<string, unknown> | undefined;
-    const step = async (run: ChatFlowRun, event: Parameters<typeof advance>[2]) =>
+    // Переходы, применённые в срок без хода: сообщены тогда, ход только переносит их в состояние и показывает модели.
+    const applied: Transition[] = [];
+    const step = async (run: ChatFlowRun, event: Parameters<typeof advance>[2], out = transitions) =>
       advance(pinned!.flow, run, event, {
         now,
         card: (card ??= await runtime.cardValues(ctx.ownerId)),
-        out: transitions,
+        out,
         onChainLimit: (stopped) => runtime.logError(chainLimitMessage(ctx.chatId, stopped)),
+        timeZone,
       });
 
     // Пояс человека → В10: со страницы, иначе известный пояс человека; ход без пояса страницы (мессенджер) его не затирает.
@@ -69,6 +69,9 @@ export function flowPrepareTurn(runtime: FlowRuntime, appTimeZone: () => string 
     let run = currentRun(pinned.flow, ctx.state, now);
     const previousAnswer = run.answerId;
     const pending: PendingFlowChange[] = await runtime.store.takePending(ctx.chatId);
+    const appliedInTime = new Set(
+      pending.flatMap((change) => (change.kind === "transition" && change.appliedAt !== undefined && change.branchHead === previousAnswer ? [transitionKey(change.transition)] : [])),
+    );
     // Ход не записал место (сбой, срок, «Стоп») — взятое возвращается в очередь: ключи не дают двойных записей.
     let restored: Promise<unknown> | null = null;
     const restore = () => (restored ??= Promise.all(pending.map((change) => runtime.store.addPending(ctx.chatId, change))));
@@ -110,7 +113,10 @@ export function flowPrepareTurn(runtime: FlowRuntime, appTimeZone: () => string 
         } else if (change.kind === "transition") {
           // Переход судьи или таймера — только на той ветке, где он решён, и только из того же состояния.
           if (change.branchHead !== previousAnswer || run.state !== change.transition.from) continue;
-          run = await step(run, pendingEvent(change.transition, timeZone));
+          const out: Transition[] = [];
+          run = await step(run, pendingEvent(change.transition, timeZone), out);
+          // Применённые в срок уже сообщены; дотянутое ходом поверх них — новое.
+          for (const transition of out) (appliedInTime.has(transitionKey(transition)) ? applied : transitions).push(transition);
         } else {
           run = await step(run, { type: "event", event: "app", name: change.name });
         }
@@ -125,8 +131,8 @@ export function flowPrepareTurn(runtime: FlowRuntime, appTimeZone: () => string 
           if (typeof data.undelivered === "string") run = withoutUndeliveredTouch(run, new Set([data.undelivered])).run as ChatFlowRun;
           // Переход ноды (если есть) и шаг ряда касаний после него.
           if (typeof data.exitId === "string") run = await step(run, { type: "timer", exitId: data.exitId, timeZone });
-          touchBase = { lastAgentAt: run.lastAgentAt, nudgeStep: run.nudgeStep ?? 0, agentAnswers: run.agentAnswers };
-          if (typeof data.nudgeStep === "number") run = { ...run, nudgeStep: data.nudgeStep };
+          touchBase = { lastAgentAt: run.lastAgentAt, nudgeStep: run.nudgeStep ?? 0, ...(run.nudgeStepOwn && { nudgeStepOwn: true }), agentAnswers: run.agentAnswers };
+          if (typeof data.nudgeStep === "number") run = withNudgeStep(run, data.nudgeStep, data.nudgeStepOwn === true);
         } else if (notice.name === FLOW_EVENT_NOTICE && typeof data.name === "string") {
           run = await step(run, { type: "event", event: "app", name: data.name });
         }
@@ -136,7 +142,8 @@ export function flowPrepareTurn(runtime: FlowRuntime, appTimeZone: () => string 
       if (!ctx.resumed && HUMAN_ACTIONS.has(ctx.action)) {
         // Человек написал — окно канала снова открыто: агент может писать первым.
         if (record?.windowClosed) await runtime.store.setWindowClosed(ctx.chatId, false);
-        run = noteHumanMessage(run, now, schedule ? dayInProgress(now, timeZone, schedule) : undefined);
+        // Ход на пачку сообщений — в счёт каждое её сообщение.
+        run = noteHumanMessage(run, now, schedule ? dayInProgress(now, timeZone, schedule) : undefined, ctx.burstMessageIds?.length ?? 1);
         if (!ended) run = await step(run, { type: "event", event: "message" });
       }
       // Ход по служебному сообщению — ход сервера: счёт подряд для мягкого потолка таймеров; человек его обнулил выше.
@@ -162,7 +169,7 @@ export function flowPrepareTurn(runtime: FlowRuntime, appTimeZone: () => string 
       await runtime.afterTransitions({ ownerId: ctx.ownerId, chatId: ctx.chatId, pinned: pinned!, run, transitions });
       return {
         set: { [FLOW_STATE_KEY]: run },
-        ...(transitions.length > 0 && { notices: [transitionNotice(pinned!.flow, transitions)] }),
+        ...(applied.length + transitions.length > 0 && { notices: [transitionNotice(pinned!.flow, [...applied, ...transitions])] }),
       };
     }
   };

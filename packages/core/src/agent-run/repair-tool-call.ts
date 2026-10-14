@@ -1,6 +1,7 @@
 import { InvalidToolInputError, asSchema } from "ai";
 import type { JSONSchema7, ToolCallRepairFunction, ToolSet } from "ai";
 import { repairJson } from "./json-repair";
+import { addMissingClosers } from "./missing-closers";
 import { dropStrayClosers } from "./stray-closers";
 
 /** Что поправлено в аргументах одного вызова. Без самих аргументов: в них бывают личные данные. */
@@ -10,6 +11,8 @@ export interface ToolInputRepair {
   inputLength: number;
   /** Убранные лишние `}` и `]`: внутри JSON и после его конца. */
   strayClosers: { inside: number; end: number };
+  /** Дописанные забытые закрывающие `]` и `}`: там, где пропущена скобка после законченного значения. */
+  missingClosers: number;
   /** Поправлены записи в строках: сырые переводы строк, неверные `\`. */
   strings: boolean;
   /** Строки приведены к числам и булевым значениям по схеме. */
@@ -18,7 +21,7 @@ export interface ToolInputRepair {
 
 /**
  * Чинит вызов инструмента с кривыми аргументами (параметр `repairToolCall` у `streamText`):
- * исправляет сырые переводы строк и неверные `\`, убирает лишние закрывающие скобки, приводит `"2"` к числу
+ * исправляет сырые переводы строк и неверные `\`, убирает лишние и дописывает забытые закрывающие скобки, приводит `"2"` к числу
  * и `"true"` к булеву значению по схеме инструмента. Починенный вызов SDK заново проверяет схемой и только тогда
  * выполняет; в историю идёт он же. Что не вышло починить, возвращается как раньше — SDK сам скажет модели об ошибке.
  * `onRepaired` — только о починках, которые прошли схему.
@@ -27,7 +30,7 @@ export function createRepairToolCall(options: { onRepaired?: (repair: ToolInputR
   return async ({ toolCall, tools, error, inputSchema }) => {
     if (!InvalidToolInputError.isInstance(error)) return null;
     const escaped = repairJson(toolCall.input);
-    const parsed = parseWithStrayClosers(escaped);
+    const parsed = parseWithClosers(escaped);
     if (!parsed) return null;
     const schema = await inputSchema({ toolName: toolCall.toolName });
     const coerced = coerceBySchema(parsed.value, schema);
@@ -37,6 +40,7 @@ export function createRepairToolCall(options: { onRepaired?: (repair: ToolInputR
         toolName: toolCall.toolName,
         inputLength: toolCall.input.length,
         strayClosers: parsed.strayClosers,
+        missingClosers: parsed.missingClosers,
         strings: escaped !== toolCall.input,
         types: input !== JSON.stringify(parsed.value),
       });
@@ -50,6 +54,7 @@ export function describeToolInputRepair(repair: ToolInputRepair, where: { chatId
   const fixes = [
     ...(repair.strayClosers.inside > 0 ? [`лишние скобки внутри ×${repair.strayClosers.inside}`] : []),
     ...(repair.strayClosers.end > 0 ? [`лишние скобки в конце ×${repair.strayClosers.end}`] : []),
+    ...(repair.missingClosers > 0 ? [`дописаны скобки ×${repair.missingClosers}`] : []),
     ...(repair.strings ? ["записи в строках"] : []),
     ...(repair.types ? ["типы по схеме"] : []),
   ];
@@ -59,19 +64,28 @@ export function describeToolInputRepair(repair: ToolInputRepair, where: { chatId
   );
 }
 
-/** Разбор JSON; не разобрался — ещё раз без лишних закрывающих скобок. */
-function parseWithStrayClosers(json: string): { value: unknown; strayClosers: { inside: number; end: number } } | undefined {
-  try {
-    return { value: JSON.parse(json), strayClosers: { inside: 0, end: 0 } };
-  } catch {
-    const repaired = dropStrayClosers(json);
-    if (!repaired) return undefined;
+/** Разбор JSON; не разобрался — ещё раз без лишних закрывающих скобок, затем с дописанными забытыми. */
+function parseWithClosers(
+  json: string,
+): { value: unknown; strayClosers: { inside: number; end: number }; missingClosers: number } | undefined {
+  const none = { inside: 0, end: 0 };
+  const attempts = [
+    { text: json, strayClosers: none, missingClosers: 0 },
+    ...optional(dropStrayClosers(json), (fix) => ({ text: fix.text, strayClosers: { inside: fix.inside, end: fix.end }, missingClosers: 0 })),
+    ...optional(addMissingClosers(json), (fix) => ({ text: fix.text, strayClosers: none, missingClosers: fix.added })),
+  ];
+  for (const { text, ...rest } of attempts) {
     try {
-      return { value: JSON.parse(repaired.text), strayClosers: { inside: repaired.inside, end: repaired.end } };
+      return { value: JSON.parse(text), ...rest };
     } catch {
-      return undefined;
+      // следующая попытка
     }
   }
+  return undefined;
+}
+
+function optional<Fix, Attempt>(fix: Fix | undefined, toAttempt: (fix: Fix) => Attempt): Attempt[] {
+  return fix === undefined ? [] : [toAttempt(fix)];
 }
 
 /** Проходит ли значение схему инструмента — той же проверкой, что SDK сделает перед выполнением. */

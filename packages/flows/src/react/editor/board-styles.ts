@@ -53,6 +53,6 @@ svg.react-flow__connectionline { z-index: 1001; overflow: visible; position: abs
 }
 .flow-board__new-exit.react-flow__handle:hover { opacity: 1; }
 @media (max-width: 860px) {
-  .flow-board__legend, .flow-board__minimap { display: none; }
+  .flow-board__legend, .flow-board__minimap, .flow-board__minimap-toggle { display: none !important; }
 }
 `;

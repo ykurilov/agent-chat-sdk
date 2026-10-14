@@ -7,7 +7,19 @@ export type VoiceErrorKind =
   | "service_unavailable"
   | "rate_limited"
   | "time_limit"
+  /** Лимит расходов исчерпан. */
+  | "limit"
+  /** Нет доступа: не вошёл или приложение отказало. */
+  | "forbidden"
+  /** Запись слишком длинная: кусок больше предела сервера или отказ приложения по длине. */
+  | "too_long"
   | "other";
+
+/** Подробности ошибки для подписи. */
+export interface VoiceErrorDetails {
+  /** У `time_limit`: предел записи в секундах, как его назвал сервер. */
+  maxSessionSeconds?: number;
+}
 
 /** Ошибка подготовки диктовки: несёт готовый вид. */
 export class VoiceError extends Error {

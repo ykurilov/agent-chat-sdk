@@ -1,4 +1,4 @@
-export { CURRENT_FORMAT_VERSION } from "./conversation/types";
+export { BUILT_IN_USAGE_SOURCES, CURRENT_FORMAT_VERSION } from "./conversation/types";
 export type {
   AfterTurnState,
   AgentAudience,
@@ -23,6 +23,7 @@ export type {
   UsageFilter,
   UsageRecord,
   UsageSource,
+  BuiltInUsageSource,
   UsageSum,
   VoiceCut,
 } from "./conversation/types";
@@ -79,6 +80,7 @@ export type {
   ModelPriceRates,
   ModelPriceTier,
   ModelProfile,
+  ModelSampling,
   ProviderConnection,
   ProviderConnectionOptions,
   ProviderDescription,
@@ -241,9 +243,12 @@ export type {
   ModelMenu,
   RecoverInterruptedAnswersOptions,
   SendMessageOptions,
+  SendBurstOptions,
+  BurstMessageResult,
   SteerResult,
 } from "./chat-service";
 export { STEER_PART_TYPE, isCorrection } from "./steering/turn-steering";
+export { BURST_PART_TYPE, DEFAULT_BURST_QUIET_MS, isBurstMessage } from "./bursts/message-bursts";
 export { GREETING_LEAD } from "./agent-run/greeting-lead";
 export { GREETING_MAX_LENGTH, IMPORT_MAX_IMAGE_BYTES, IMPORT_MAX_IMAGES, IMPORT_MAX_MESSAGES, SUBJECT_DATA_MAX_BYTES, SUBJECT_KEY_MAX_LENGTH } from "./subject-chats/subject-chats";
 export type {

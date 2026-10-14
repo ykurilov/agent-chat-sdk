@@ -22,6 +22,8 @@ export function createScriptedModel() {
   const marked = new Map<string, ModelStep[]>();
   const calls: LanguageModelV4CallOptions[] = [];
   let answered = 0;
+  /** Следующий ответ модели ждёт этого обещания (`holdNextAnswer`). */
+  let held: Promise<void> | undefined;
 
   function partsOf(step: ModelStep): LanguageModelV4StreamPart[] {
     if ("text" in step) {
@@ -63,6 +65,9 @@ export function createScriptedModel() {
     },
     doStream: async (options) => {
       const step = nextStep(options);
+      const waiting = held;
+      held = undefined;
+      await waiting;
       return {
         stream: new ReadableStream<LanguageModelV4StreamPart>({
           start(controller) {
@@ -96,6 +101,12 @@ export function createScriptedModel() {
     /** Следующие ответы модели по порядку. */
     script(...next: ModelStep[]) {
       steps.push(...next);
+    },
+    /** Следующий ответ модели начнётся, когда тест позовёт возвращённую функцию: так видно, что приходит во время ответа. */
+    holdNextAnswer(): () => void {
+      let release!: () => void;
+      held = new Promise<void>((resolve) => (release = resolve));
+      return release;
     },
     /** Ответы модели на запросы, в которых есть `marker`. */
     scriptWhen(marker: string, ...next: ModelStep[]) {

@@ -100,6 +100,7 @@ export function createMessengers(options: MessengersOptions) {
     logError,
     ...(options.webChatUrl !== undefined && { webChatUrl: options.webChatUrl }),
     ...(options.onAnswerDelivery !== undefined && { onAnswerDelivery: options.onAnswerDelivery }),
+    ...(options.messageBursts !== undefined && { messageBursts: options.messageBursts }),
   });
   const taskReadyPing = createTaskReadyPing({
     store,

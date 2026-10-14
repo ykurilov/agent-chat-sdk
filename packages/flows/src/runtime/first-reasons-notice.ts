@@ -41,13 +41,16 @@ function reasonLine(reason: FlowFirstReason): string | null {
 /**
  * Служебное сообщение хода «пишет первым». Только переход ноды — прежнее «Сработало: …» (как в 0.48); есть другие
  * причины — их список и задача «новое и полезное». `data.exitId` — переход, который применит ход; `data.nudgeStep` —
- * шаг ряда касаний после хода.
+ * шаг ряда касаний после хода (после перехода и утреннего — 0, ряд заново); `data.nudgeStepOwn` — его насчитал свой ряд ноды на N дней (`ownNudge`).
  */
-export function firstReasonsNotice(flow: AgentFlow, reasons: readonly FlowFirstReason[], exitId: string | null): FlowNotice {
+export function firstReasonsNotice(flow: AgentFlow, reasons: readonly FlowFirstReason[], exitId: string | null, ownNudge = false): FlowNotice {
   const silence = reasons.find((reason) => reason.kind === "silence");
   const moved = exitId !== null && reasons.some((reason) => reason.kind === "transition");
-  const nudgeStep = silence?.kind === "silence" ? silence.step : moved ? 0 : undefined;
-  const data = { ...(moved && { exitId }), reasons: [...reasons], ...(nudgeStep !== undefined && { nudgeStep }) };
+  // Утреннее — новая точка отсчёта: ряд тишины после него с первого шага, каждый день заново.
+  const morning = reasons.some((reason) => reason.kind === "morning");
+  const nudgeStep = moved || morning ? 0 : silence?.kind === "silence" ? silence.step : undefined;
+  const own = ownNudge && silence !== undefined && !moved && !morning;
+  const data = { ...(moved && { exitId }), reasons: [...reasons], ...(nudgeStep !== undefined && { nudgeStep }), ...(own && { nudgeStepOwn: true }) };
   const others = reasons.flatMap((reason) => reasonLine(reason) ?? []);
   if (others.length === 0 && moved) return { kind: "app", name: FLOW_TIMER_NOTICE, title: transitionLine(flow, exitId), data };
   const lines = [...(moved ? [`${transitionLine(flow, exitId)}.`] : []), ...others, TASK];

@@ -172,6 +172,16 @@ export const spendingLimitStates = sqliteTable("spending_limit_states", {
 });
 
 /**
+ * Аренда хода чата между копиями сервера: кто держит (`holder`) и до какого времени (`until`, мс по часам машины с базой).
+ * Внешним ключом с чатом не связана: удаление чата снимает её само.
+ */
+export const chatTurnLeases = sqliteTable("chat_turn_leases", {
+  chatId: text("chat_id").primaryKey(),
+  holder: text("holder").notNull(),
+  until: integer("until").notNull(),
+});
+
+/**
  * Долгая память: записи человека. С чатами внешним ключом не связаны — удаление чата память не трогает.
  * Время в миллисекундах; `categories` — JSON-список из 1–3 разделов.
  */

@@ -36,21 +36,20 @@ function chatOf() {
 }
 
 describe("причины «пишет первым» в хвосте приложения", () => {
-  it("ход касания — все причины одного срока списком; обычный ход — без причин; инструкция та же", async () => {
+  it("ход «пишет первым» — причины в хвосте, касание утром заменено утренним; обычный ход — без причин; инструкция та же", async () => {
     const { chat, seen } = chatOf();
     const { id } = await chat.service.createChat(OWNER);
     await human(chat, id, "Привет", MSK);
     expect(seen).toEqual([undefined]);
 
-    // Касание по тишине в 21:05 — уже ночь: ждёт утра. В 9:00 — и оно, и утреннее: один ход на обе причины.
+    // Касание по тишине в 21:05 — уже ночь: ждёт утра. В 9:00 его заменяет утреннее: один ход, причина — только утро.
     clockAt(msk(14, 21, 5));
     await tick(chat, id);
     expect(chat.model.doStreamCalls).toHaveLength(1);
     clockAt(msk(15, 9));
     await tick(chat, id);
     expect(chat.model.doStreamCalls).toHaveLength(2);
-    expect(seen.at(-1)).toHaveLength(2);
-    expect(seen.at(-1)).toEqual(expect.arrayContaining([{ kind: "silence", step: 1 }, { kind: "morning" }]));
+    expect(seen.at(-1)).toEqual([{ kind: "morning" }]);
     const [answer, touch] = chat.model.doStreamCalls;
     expect(promptText(touch!)).toContain("Хвост: утро.");
     expect(systemOf(touch!)).toBe(systemOf(answer!));

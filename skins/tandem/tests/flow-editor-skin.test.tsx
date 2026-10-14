@@ -70,6 +70,31 @@ describe("скин редактора сценария Тандема", () => {
     expect((screen.getByRole("button", { name: "Выше" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it("карточка условия: событие приложения показано подписью, значение — имя", () => {
+    const onChange = vi.fn();
+    render(
+      <FlowExitCard
+        exitId="e1"
+        when={{ type: "event", event: "app", name: "paid" }}
+        to={null}
+        fields={[]}
+        ops={["filled"]}
+        eventNames={{ button: [], tool: [], app: ["booking_link", "paid"] }}
+        eventLabels={{ paid: "Оплачено" }}
+        targets={[]}
+        issues={[]}
+        canMoveUp={false}
+        canMoveDown={false}
+        onChange={onChange}
+        onMoveUp={vi.fn()}
+        onMoveDown={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+    const select = screen.getByRole("combobox", { name: "Что именно" }) as HTMLSelectElement;
+    expect([...select.options].map((option) => [option.value, option.textContent])).toEqual([["", ""], ["booking_link", "booking_link"], ["paid", "Оплачено"]]);
+  });
+
   it("прогон: выбор с целью, несработающий выбор недоступен, «ничего из этого»", () => {
     const choose = vi.fn();
     const props: FlowRunPanelProps = {

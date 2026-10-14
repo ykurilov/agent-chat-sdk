@@ -111,6 +111,17 @@ describe("useAgentChat: подписка на события чата", () => {
     expect(server.resumed).toHaveLength(0);
   });
 
+  it("message-added: сообщение из мессенджера, ждущее тишины (пачка), появляется без перезагрузки", async () => {
+    const server = watchingServer();
+    const { result } = renderChatHook(server);
+    await waitFor(() => expect(server.watches).toHaveLength(1));
+    const later: HistoryMessage = { id: "u2", role: "user", parts: [{ type: "text", text: "и ещё" }] };
+    server.state.history = [question, answer, later];
+    act(() => server.emit({ type: "message-added", messageId: "u2" }));
+    await waitFor(() => expect(result.current.messages.map((message) => message.id)).toEqual(["u1", "a1", "u2"]));
+    expect(server.resumed).toHaveLength(0);
+  });
+
   it("ответ на виджет: turn-started своего продолжения не перечитывает историю — виджет остаётся в ответе", async () => {
     const widgetPart = { type: "tool-ask_choice", toolCallId: "w1", state: "input-available", input: { question: "Куда?", options: ["Море", "Горы"] } };
     const waiting: HistoryMessage = { id: "a1", role: "assistant", parts: [{ type: "step-start" }, widgetPart], metadata: { status: "awaiting_approval" } };
@@ -155,6 +166,53 @@ describe("useAgentChat: подписка на события чата", () => {
     const last = result.current.messages.at(-1)!;
     expect(last.id).toBe("a1");
     expect(last.parts.some((part) => part.type === "tool-ask_choice")).toBe(true);
+  });
+
+  describe("два перечитывания подряд (открытие подписки, затем ход сервера)", () => {
+    const morning: HistoryMessage = { id: "a2", role: "assistant", parts: [{ type: "text", text: "Доброе утро!", state: "done" }], metadata: { status: "complete" } };
+
+    /**
+     * Сервер под нагрузкой: каждое перечитывание после загрузки читает историю сразу, а ответ отдаёт, когда тест его
+     * отпустит. Открытие подписки прочитало историю до хода сервера; ход по таймеру записал служебное сообщение и
+     * «Доброе утро!» и закончился раньше, чем вкладка прочитала историю по `turn-started`.
+     */
+    async function twoReads() {
+      const server = watchingServer();
+      const held: Array<() => void> = [];
+      let historyReads = 0;
+      const fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const response = await server.fetch(input, init);
+        if ((init?.method ?? "GET") === "GET" && String(input) === "/api/chat/c1" && ++historyReads > 1) {
+          await new Promise<void>((release) => held.push(release));
+        }
+        return response;
+      }) as typeof globalThis.fetch;
+      const hook = renderChatHook({ ...server, fetch });
+      await waitFor(() => expect(held).toHaveLength(1));
+      server.state.history = [question, answer, notice, morning];
+      act(() => server.emit({ type: "turn-started", messageId: "a2", trigger: "notice", channel: "web" }));
+      await waitFor(() => expect(held).toHaveLength(2));
+      return { ...hook, server, held };
+    }
+
+    it("старое пришло первым: лента показывает его, а следом — новое с утренним ответом", async () => {
+      const { result, server, held } = await twoReads();
+      const before = result.current.messages;
+      act(() => held[0]!());
+      await waitFor(() => expect(result.current.messages).not.toBe(before));
+      act(() => held[1]!());
+      await waitFor(() => expect(result.current.messages.map((message) => message.id)).toEqual(["u1", "a1", "n1", "a2"]));
+      expect(server.requestsTo("history")).toHaveLength(3);
+    });
+
+    it("новое пришло первым: запоздавшее старое его не стирает", async () => {
+      const { result, held } = await twoReads();
+      act(() => held[1]!());
+      await waitFor(() => expect(result.current.messages.map((message) => message.id)).toEqual(["u1", "a1", "n1", "a2"]));
+      const shown = result.current.messages;
+      await act(async () => held[0]!());
+      expect(result.current.messages).toBe(shown);
+    });
   });
 
   it("сервер без подписки (404): один запрос, больше не спрашивает, даже после хода", async () => {

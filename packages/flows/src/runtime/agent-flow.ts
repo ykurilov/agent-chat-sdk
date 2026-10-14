@@ -38,7 +38,7 @@ import { createFlowTimers } from "./flow-timers";
 import { createChatMigrator } from "./migrate-chats";
 import { sendFlowSignal } from "./flow-signals";
 import { withFlowKnownTexts } from "./flow-known-texts";
-import { flowPrepareTurn, pendingEvent } from "./prepare-turn";
+import { flowPrepareTurn } from "./prepare-turn";
 import { withFlowTools } from "./flow-tools";
 import { withStepTail } from "./step-tail";
 import { createFlowAdmit } from "./admit";
@@ -56,6 +56,7 @@ import {
   reportTransition,
   runOutsideTurn,
   storedRun,
+  withPending,
   type ChatFlowRun,
   type FlowRuntime,
   type PinnedFlow,
@@ -229,6 +230,8 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
         timeZoneOf,
         cardValues: (ownerId) => runtime.cardValues(ownerId),
         onDeadline: deadlineReached,
+        onAppliedTransitions: ({ record, flow, run, transitions }) =>
+          runtime.afterTransitions({ ownerId: record.ownerId, chatId: record.chatId, pinned: { flowId: record.flowId, versionId: record.versionId, flow }, run, transitions }),
         onGiveUp: async ({ record, flow, run, at }) => {
           await finish().end({ ownerId: record.ownerId, chatId: record.chatId, pinned: { flowId: record.flowId, versionId: record.versionId, flow }, run, reason: "abandoned", at });
         },
@@ -597,6 +600,7 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
     const run = currentRun(pinned.flow, { [FLOW_STATE_KEY]: context.state.get(FLOW_STATE_KEY) }, now());
     const next = advance(pinned.flow, run, { type: "event", event: "button", name: context.toolName }, {
       now: chatTime(run, now()),
+      timeZone: await timeZones.of(context.ownerId, context.chatId),
       card,
       out: transitions,
       onChainLimit: (stopped) => logError(chainLimitMessage(context.chatId, stopped)),
@@ -686,22 +690,16 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
     let run: ChatFlowRun = await runOutsideTurn(runtime, { ownerId, chatId }, pinned.flow, values, now(), record);
     const at = chatTime(run, now());
     // Ожидающее ещё не применено ходом — показать, каким место станет; само ожидание не трогается.
+    // Один пояс человека на всё чтение: ожидающие таймеры, цепочка при входе, номер дня.
+    const timeZone = await timeZones.of(ownerId, chatId);
     const transitions: Transition[] = [];
-    const input = { now: at, card: await runtime.cardValues(ownerId), out: transitions, onChainLimit: () => {} };
-    for (const change of record?.pending ?? []) {
-      if (change.kind === "transition") {
-        if (change.branchHead !== run.answerId || run.state !== change.transition.from) continue;
-        run = advance(pinned.flow, run, pendingEvent(change.transition, timeZoneOf(chatId, record!.timeZone)), input);
-      } else if (change.kind === "event") {
-        run = advance(pinned.flow, run, { type: "event", event: "app", name: change.name }, input);
-      }
-    }
+    const input = { now: at, card: await runtime.cardValues(ownerId), out: transitions, onChainLimit: () => {}, timeZone };
+    run = withPending(pinned.flow, run, record?.pending ?? [], input);
     const schedule = pinned.flow.schedule;
     if (record?.endedAt) run = endedRun(pinned.flow, run, { endedAt: Date.parse(record.endedAt), endReason: record.endReason ?? "final" });
     const { answerId: _answerId, firstReasons: _firstReasons, ...plain } = run;
     if (!schedule) return plain;
     // День сценария — по поясу человека; после конца — последний день программы.
-    const timeZone = await timeZones.of(ownerId, chatId);
     const anchored = withDayAnchor(plain, timeZone, schedule);
     return { ...anchored, day: flowDay(anchored, anchored.endedAt ?? at, timeZone, schedule) };
   }

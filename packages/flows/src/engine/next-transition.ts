@@ -1,4 +1,5 @@
-import type { AgentFlow, FlowCondition, FlowEventType } from "../format/flow-format";
+import type { AgentFlow, FlowCatalog, FlowCondition, FlowEventType } from "../format/flow-format";
+import { catalogEventLabel } from "../format/catalog-events";
 import { FLOW_CHAIN_LIMIT, type FlowRun, type Transition, type TransitionDecider, type TransitionReason } from "./flow-run";
 import { dataConditionHolds } from "./data-conditions";
 import { activeExits, fieldById, stateById } from "./flow-graph";
@@ -54,8 +55,8 @@ function daysText(days: number): string {
 
 const valueText = (value: string | number | boolean | undefined) => (value === true ? "да" : value === false ? "нет" : String(value));
 
-/** Условие человеческими словами: для служебного сообщения модели и для причины перехода. */
-export function describeCondition(flow: AgentFlow, when: FlowCondition): string {
+/** Условие человеческими словами: для служебного сообщения модели и для причины перехода. С каталогом — подписи событий. */
+export function describeCondition(flow: AgentFlow, when: FlowCondition, catalog?: Pick<FlowCatalog, "events">): string {
   switch (when.type) {
     case "judge":
       return when.text;
@@ -64,14 +65,16 @@ export function describeCondition(flow: AgentFlow, when: FlowCondition): string 
       const name = `«${field?.name ?? when.field}»`;
       return when.op === "filled" ? `узнали ${name}` : `${name} ${DATA_SIGNS[when.op]} ${valueText(when.value)}`;
     }
-    case "event":
+    case "event": {
       if (when.event === "message") return "человек написал";
-      if (when.event === "button") return `нажата кнопка «${when.name ?? ""}»`;
       if (when.event === "tool") return `вызван инструмент «${when.name ?? ""}»`;
-      return `событие «${when.name ?? ""}»`;
+      const name = (when.name && catalogEventLabel(catalog, when.name)) ?? when.name ?? "";
+      return when.event === "button" ? `нажата кнопка «${name}»` : `событие «${name}»`;
+    }
     case "timer":
       if (when.from === "time_of_day") return `наступило ${when.at}`;
       if (when.from === "state_days") return `нода длится ${daysText(when.days)}`;
+      if (when.from === "program_day") return `наступил день ${when.day}`;
       if (when.from === "silence") return `тишина ${when.amount} ${UNITS[when.unit]}`;
       if (when.from === "in_state") return `в состоянии ${when.amount} ${UNITS[when.unit]}`;
       return `с начала разговора ${when.amount} ${UNITS[when.unit]}`;

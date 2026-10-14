@@ -70,15 +70,15 @@ export function applyTransition(flow: AgentFlow, run: FlowRun, transition: Trans
  * Пришло сообщение человека: тишина прервана, счёт переходов подряд — заново, ряд касаний — с первого шага.
  * `dayKey` — местная дата дня сценария («ГГГГ-ММ-ДД»), только у сценариев с днями: по нему считаются рамки дня.
  */
-export function noteHumanMessage(run: FlowRun, now: number, dayKey?: string): FlowRun {
+export function noteHumanMessage(run: FlowRun, now: number, dayKey?: string, count = 1): FlowRun {
   return {
     ...run,
-    humanMessages: run.humanMessages + 1,
+    humanMessages: run.humanMessages + count,
     lastHumanAt: now,
     chain: 0,
     ...(run.nudgeStep === undefined ? {} : { nudgeStep: 0 }),
     ...(run.serverTurns === undefined ? {} : { serverTurns: 0 }),
-    ...(dayKey === undefined ? {} : { dayCounts: { [dayKey]: (run.dayCounts?.[dayKey] ?? 0) + 1 } }),
+    ...(dayKey === undefined ? {} : { dayCounts: { [dayKey]: (run.dayCounts?.[dayKey] ?? 0) + count } }),
   };
 }
 
@@ -97,7 +97,7 @@ export function withoutUndeliveredTouch(run: FlowRun, undelivered: ReadonlySet<s
   if (!touch || !undelivered.has(touch.answerId)) return { run, undeliveredAt: null };
   const { touch: _touch, ...rest } = run;
   return {
-    run: { ...rest, lastAgentAt: touch.lastAgentAt, nudgeStep: touch.nudgeStep, agentAnswers: touch.agentAnswers },
+    run: { ...withoutOwnStep(rest), lastAgentAt: touch.lastAgentAt, nudgeStep: touch.nudgeStep, ...(touch.nudgeStepOwn && { nudgeStepOwn: true }), agentAnswers: touch.agentAnswers },
     undeliveredAt: touch.at,
   };
 }
@@ -115,4 +115,15 @@ export function claimAllowed(run: FlowRun, exitId: string): boolean {
 /** Агент спросил о человеке между делом: следующий такой вопрос — по темпу сценария. */
 export function noteSideQuestion(run: FlowRun): FlowRun {
   return { ...run, sideQuestionAt: run.humanMessages };
+}
+
+/** Место без пометки «шаг насчитан своим рядом ноды». */
+export function withoutOwnStep<R extends FlowRun>(run: R): R {
+  const { nudgeStepOwn: _own, ...rest } = run;
+  return rest as R;
+}
+
+/** Шаг ряда касаний после хода «пишет первым»: `own` — его насчитал свой ряд ноды на N дней. */
+export function withNudgeStep<R extends FlowRun>(run: R, step: number, own: boolean): R {
+  return { ...withoutOwnStep(run), nudgeStep: step, ...(own && { nudgeStepOwn: true }) };
 }

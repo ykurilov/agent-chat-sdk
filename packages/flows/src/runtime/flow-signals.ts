@@ -3,7 +3,7 @@ import { ChatNotFoundError } from "@ykurilov/agent-chat-core";
 import type { Transition } from "../engine/flow-run";
 import type { PendingFlowChange } from "../store/flow-store";
 import type { FlowPort, FlowSignalInput } from "./flow-types";
-import { advance, exactFirstText, runOutsideTurn, type FlowRuntime } from "./flow-events";
+import { advance, exactFirstText, personTimeZone, runOutsideTurn, type FlowRuntime } from "./flow-events";
 import { FLOW_EVENT_NOTICE } from "./prepare-turn";
 import { chatTime } from "./test-clock";
 
@@ -35,6 +35,7 @@ export async function sendFlowSignal(input: { runtime: FlowRuntime; port: FlowPo
   const run = await runOutsideTurn(runtime, { ownerId, chatId }, pinned.flow, values, at);
   const next = advance(pinned.flow, run, { type: "event", event: "app", name }, {
     now: chatTime(run, at),
+    timeZone: await personTimeZone(runtime, { ownerId, chatId }),
     card: await runtime.cardValues(ownerId),
     out: transitions,
     onChainLimit: () => {},

@@ -12,7 +12,7 @@ import "../src/styles.css";
 /*
  * Витрина редактора сценария (этап 5 плана 058): без сервера. Адрес: theme=light|dark, flow=sales-review|shop-support|
  * sheets-lesson|marathon-days (сценарий по дням, поля и проверка приложения), readonly=1 (только просмотр), save=reject|throw
- * (приложение отказывает в сохранении), host=auto (родитель без высоты: редактор берёт высоту сам), root=custom (свои className и style у корня). Сохранение и перевод идущих чатов — заглушки в памяти страницы.
+ * (приложение отказывает в сохранении), header=compact, legend=open|hidden, minimap=collapsed|hidden, inspector=collapsible, fullscreen=off (место доски), host=auto (родитель без высоты: редактор берёт высоту сам), root=custom (свои className и style у корня). Сохранение и перевод идущих чатов — заглушки в памяти страницы.
  */
 
 const params = new URLSearchParams(location.search);
@@ -34,7 +34,7 @@ function loadFixture(name: string): AgentFlow {
 /** Что умеет «приложение» витрины: инструменты и события всех трёх примеров. */
 const catalog = {
   tools: ["give_booking_link", "call_expert", "find_order", "start_refund", "search_knowledge", "call_operator", "check_answer", "show_example"],
-  events: ["booking_link", "start_refund"],
+  events: ["booking_link", { name: "start_refund", label: "Возврат оформлен" }],
   widgets: [],
   fields: [
     { id: "city", title: "Город", type: "text" as const },
@@ -79,6 +79,11 @@ function Gallery() {
         onChange={setFlow}
         onSave={onSave}
         readOnly={params.get("readonly") === "1"}
+        {...(params.get("header") === "compact" ? { header: "compact" as const } : {})}
+        {...(params.get("legend") === "open" || params.get("legend") === "hidden" ? { legend: params.get("legend") as "open" | "hidden" } : {})}
+        {...(params.get("minimap") === "collapsed" || params.get("minimap") === "hidden" ? { minimap: params.get("minimap") as "collapsed" | "hidden" } : {})}
+        {...(params.get("inspector") === "collapsible" ? { inspector: "collapsible" as const } : {})}
+        {...(params.get("fullscreen") === "off" ? { fullscreen: false } : {})}
         {...(params.get("root") === "custom" ? { className: "gallery-custom-root", style: { height: 500, minHeight: 0 } } : {})}
         catalog={catalog}
         checks={checks}

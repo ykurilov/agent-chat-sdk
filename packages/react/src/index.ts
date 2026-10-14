@@ -37,7 +37,7 @@ export type {
   VoiceCut,
   VoiceSound,
 } from "./chat-types";
-export { ChatLabelsProvider, englishLabels, englishWorkLabels, englishWorkViewLabels, russianLabels, useChatLabels } from "./labels";
+export { ChatLabelsProvider, englishLabels, englishWorkLabels, englishWorkViewLabels, russianLabels, useChatLabels, voiceErrorText } from "./labels";
 export { useThinkingStatus } from "./thinking-status/thinking-status";
 export type { ThinkingStatus } from "./thinking-status/thinking-status";
 export type {
@@ -53,6 +53,7 @@ export type {
   VideoLabels,
   ViewerLabels,
   VoiceDialogLabels,
+  VoiceErrorLabels,
   VoiceSpeechLabels,
   WidgetLabels,
   WorkViewLabels,
@@ -97,7 +98,7 @@ export type { ServerRefusal } from "./server-refusal";
 export type { AgentChatState, ChatRefusal, ConnectionState, EditNotStartedReason, EditOutcome, EditRefusalReason, LivenessOptions, UseAgentChatOptions } from "./use-agent-chat";
 export { useModelChoice } from "./use-model-choice";
 export type { UseModelChoiceOptions } from "./use-model-choice";
-export type { DictatedText, VoiceErrorKind, VoiceInput, VoiceListener, VoiceSession } from "./voice-input";
+export type { DictatedText, VoiceErrorDetails, VoiceErrorKind, VoiceInput, VoiceListener, VoiceSession, VoiceStartContext } from "./voice-input";
 export { ChatWorkspace } from "./chat-list/chat-workspace";
 export type { ChatWorkspaceProps } from "./chat-list/chat-workspace";
 export type { ChatListDeleteRequestView, ChatListItemView, ChatListSkin } from "./chat-list/chat-list-skin";

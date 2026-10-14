@@ -13,6 +13,11 @@ export type PendingFlowChange =
       transition: Transition;
       /** Последнее сообщение ветки, на которой решён переход; `null` — пустой чат. Ветку сменили — ожидание снимается. */
       branchHead: string | null;
+      /**
+       * Переход по таймеру уже применён в срок без хода (писать первым нельзя): запись чата и `onTransition` сделаны,
+       * таймеры идут от новой ноды. Ход только переносит его в состояние чата, не сообщая заново.
+       */
+      appliedAt?: string;
     }
   | { kind: "event"; key: string; name: string; data?: unknown; at: string }
   | { kind: "migrate"; key: string; versionId: string; map: StateMap; at: string };
@@ -195,8 +200,9 @@ export interface FlowStore {
   updateChat(chatId: string, patch: FlowChatPatch, at: string): Promise<FlowChatRecord | null>;
   deleteChat(chatId: string): Promise<void>;
 
+  /** Новый ключ — в конец; тот же ключ — не дублируется, но `appliedAt` дописывается к ожидающему без него. */
   addPending(chatId: string, change: PendingFlowChange): Promise<void>;
-  /** Забрать и очистить всё ожидающее, в порядке добавления. */
+  /** Забрать всё ожидающее, в порядке добавления, и очистить; переходы, применённые в срок (`appliedAt`), остаются. */
   takePending(chatId: string): Promise<PendingFlowChange[]>;
 
   /** `null` — таймеров нет. Снимает аренду. */

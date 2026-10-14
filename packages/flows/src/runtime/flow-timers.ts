@@ -3,14 +3,14 @@ import { ChatNotFoundError, SpendingLimitReachedError } from "@ykurilov/agent-ch
 import type { AgentFlow } from "../format/flow-format";
 import type { FlowRun, Transition } from "../engine/flow-run";
 import { FLOW_STATE_KEY } from "../engine/flow-run";
-import { noteAgentAnswer, withoutUndeliveredTouch } from "../engine/run-updates";
+import { noteAgentAnswer, withNudgeStep, withoutUndeliveredTouch } from "../engine/run-updates";
 import { deadlineAt, nextDayStartAfter } from "../engine/flow-days";
 import type { FirstWakeContext, FlowFirstReason } from "../engine/nudges";
 import { dayStartHoldUntil } from "../engine/nudges";
 import { deferredWake, dueReasons, endingWake, FLOW_FIRST_EXIT, nextFirstMessageAfter, nextWake, type FlowDue } from "../engine/timers";
 import type { FlowChatRecord, FlowStore } from "../store/flow-store";
 import type { FirstMessageRules, FlowPort, FlowTimers, FlowTimerSettings } from "./flow-types";
-import { advance, chainLimitMessage, chatRun, exactFirstText, storedRun, type ChatFlowRun } from "./flow-events";
+import { advance, chainLimitMessage, chatRun, exactFirstText, storedRun, withPending, type ChatFlowRun } from "./flow-events";
 import { chatWriteBlock } from "./first-message-rules";
 import { FIRST_MESSAGE_RETRY_MS } from "./first-message-retry";
 import { firstReasonsNotice } from "./first-reasons-notice";
@@ -73,6 +73,8 @@ export function createFlowTimers(input: {
   onDeadline?: (input: { record: FlowChatRecord; flow: AgentFlow; run: ChatFlowRun; at: number; timeZone: string }) => Promise<void>;
   /** «Не завершил»: тишина человека дольше `giveUpAfter` — конец без сообщения. */
   onGiveUp?: (input: { record: FlowChatRecord; flow: AgentFlow; run: ChatFlowRun; at: number }) => Promise<void>;
+  /** Переход по таймеру применён в срок без хода: запись чата, `onTransition`, конечная нода. */
+  onAppliedTransitions?: (input: { record: FlowChatRecord; flow: AgentFlow; run: ChatFlowRun; transitions: Transition[] }) => Promise<void>;
   /** Доставка ответа в каналы приложения и счётчик дня. Нет — каналы SDK, счётчик сразу. */
   delivery?: () => FlowDelivery;
 }): FlowTimers {
@@ -142,15 +144,45 @@ export function createFlowTimers(input: {
     if (record.delivery) return store.setDue(chatId, { at: record.delivery.retryAt, exitId: FLOW_DELIVERY_EXIT, branchHead });
     const flow = await input.flowOf(record);
     const offset = run.timeOffset ?? 0;
-    const place = flow ? await placeOf(record, await port({ ownerId, chatId }), { ...run, answerId: branchHead ?? undefined }, failedAt === undefined ? undefined : failedAt + offset) : null;
-    const due = flow && place ? nextWake(flow, place.run, input.now().getTime() + offset, input.timeZoneOf(chatId, record.timeZone), place.context) : null;
+    const at = input.now().getTime() + offset;
+    const timeZone = input.timeZoneOf(chatId, record.timeZone);
+    const branch = flow ? await withApplied(record, flow, { ...run, answerId: branchHead ?? undefined }, at, timeZone) : null;
+    const place = flow && branch ? await placeOf(record, await port({ ownerId, chatId }), branch, failedAt === undefined ? undefined : failedAt + offset) : null;
+    const due = flow && place ? nextWake(flow, place.run, at, timeZone, place.context) : null;
     // Пока считали, ход по таймеру мог отдать ответ в доставку приложения: её срок не затирается (условие — в записи).
     await store.setDue(chatId, due ? dueInput(due, branchHead, offset) : null, { unlessDelivery: true });
   }
 
-  /** Переход по таймеру без сообщения агента: применится в начале следующего хода человека. */
-  async function keepForNextTurn(chatId: string, run: FlowRun & { answerId?: string }, transition: Transition, due: { at: string; exitId: string } | null = null): Promise<void> {
-    await store.addPending(chatId, { kind: "transition", key: timerKey(chatId, transition.exitId, run), transition, branchHead: run.answerId ?? null });
+  /** Переходы, применённые в срок без хода, — уже место чата: таймеры идут от новой ноды. */
+  async function withApplied<R extends ChatFlowRun>(record: FlowChatRecord, flow: AgentFlow, run: R, at: number, timeZone: string): Promise<R> {
+    const applied = record.pending.filter((change) => change.kind === "transition" && change.appliedAt !== undefined);
+    if (applied.length === 0) return run;
+    return withPending(flow, run, applied, { now: at, timeZone, card: await input.cardValues(record.ownerId), out: [], onChainLimit: () => {} }) as R;
+  }
+
+  /**
+   * Переход по таймеру без сообщения агента: в состояние чата его перенесёт следующий ход. `applied` — переход наступил
+   * в срок уже сейчас: запись чата и `onTransition`, следующие сроки — от новой ноды.
+   */
+  async function keepForNextTurn(
+    chatId: string,
+    run: FlowRun & { answerId?: string },
+    transition: Transition,
+    due: { at: string; exitId: string } | null = null,
+    applied: { record: FlowChatRecord; flow: AgentFlow; run: ChatFlowRun; transitions: Transition[]; at: number } | null = null,
+  ): Promise<void> {
+    // Применён в срок — вся цепочка: ход отличит сообщённые переходы от тех, что дотянет сам.
+    const key = timerKey(chatId, transition.exitId, run);
+    for (const [index, item] of (applied ? applied.transitions : [transition]).entries()) {
+      await store.addPending(chatId, {
+        kind: "transition",
+        key: index === 0 ? key : `${key}:${index}`,
+        transition: item,
+        branchHead: run.answerId ?? null,
+        ...(applied && { appliedAt: new Date(applied.at).toISOString() }),
+      });
+    }
+    if (applied) await input.onAppliedTransitions?.(applied);
     await store.setDue(chatId, due && { ...due, branchHead: run.answerId ?? null });
   }
 
@@ -212,7 +244,7 @@ export function createFlowTimers(input: {
     const at = serverAt + offset;
     const timeZone = input.timeZoneOf(chatId, record.timeZone);
     // Перенесённый чат до первого хода — с места из записи переноса.
-    const { run, context, undelivered } = await placeOf(record, chatPort, chatRun(flow, values, record, at, timeZone));
+    const { run, context, undelivered } = await placeOf(record, chatPort, await withApplied(record, flow, chatRun(flow, values, record, at, timeZone), at, timeZone));
     // Срок считается заново по месту ветки: строка могла отстать (смена ветки, перенос правилами «писать первым»).
     const wake = nextWake(flow, run, at, timeZone, context);
     if (!wake || wake.at > at) {
@@ -237,6 +269,7 @@ export function createFlowTimers(input: {
     const next = due.exitId
       ? advance(flow, run, { type: "timer", exitId: due.exitId, timeZone }, {
           now: at,
+          timeZone,
           card: await input.cardValues(ownerId),
           out: transitions,
           onChainLimit: (stopped) => logError(chainLimitMessage(chatId, stopped)),
@@ -248,12 +281,15 @@ export function createFlowTimers(input: {
      * Касание не сейчас: повтор в `retryAt` (`null` — до сообщения человека), но выход ноды, «срок вышел» и «не завершил»
      * остаются в силе. Переход по таймеру ждёт следующего хода; повтор касания придёт с ним же.
      */
-    const keep = async (wakeAt: FlowDue | null) => {
+    // Сообщения по таймеру не будет (повтора нет — до сообщения человека): переход наступает в свой срок без хода
+    // (`applyNow`). Отложенное сообщение (ночь, потолок, лимит, повтор хода) придёт вместе с переходом, как раньше.
+    const keep = async (wakeAt: FlowDue | null, applyNow: boolean) => {
       const deferred = wakeAt && dueInput(wakeAt, run.answerId ?? null, offset);
-      if (moved) await keepForNextTurn(chatId, run, transitions[0]!, deferred);
+      if (moved) await keepForNextTurn(chatId, run, transitions[0]!, deferred, applyNow ? { record, flow, run: next, transitions, at } : null);
       else await store.setDue(chatId, deferred);
     };
-    const defer = (retryAt: number | null) => keep(deferredWake(flow, next, at, timeZone, context, { at: retryAt, exitId: moved ? due.exitId! : FLOW_FIRST_EXIT }));
+    const defer = (retryAt: number | null) =>
+      keep(deferredWake(flow, next, at, timeZone, context, { at: retryAt, exitId: moved && retryAt !== null ? due.exitId! : FLOW_FIRST_EXIT }), retryAt === null);
     if (reasons.length === 0) {
       // Срок наступил, а писать не о чем (предел переходов подряд): срок — ближайший настоящий (касание, конец), нет — снят.
       await defer(nextFirstMessageAfter(flow, next, at, timeZone, context));
@@ -263,7 +299,7 @@ export function createFlowTimers(input: {
     if (maxServerTurns !== false && serverTurns >= maxServerTurns) {
       // Мягкий потолок против петли: касания и переходы по таймерам ждут сообщения человека, конец разговора — в свой срок.
       logError(`[сценарий] чат=${chatId}: ${serverTurns} ходов сервера подряд без ответа человека — касания и переходы по таймерам ждут его сообщения`);
-      await keep(endingWake(flow, next, at, timeZone, context));
+      await keep(endingWake(flow, next, at, timeZone, context), true);
       return;
     }
     // Человек писал до начала дня и недавно: касание без дела ждёт, как утреннее (переход ноды и ответ на ночные — нет).
@@ -296,7 +332,7 @@ export function createFlowTimers(input: {
       await defer(flow.schedule ? nextDayStartAfter(at, timeZone, flow.schedule) : at + DAY_MS);
       return;
     }
-    const reasonsNotice = firstReasonsNotice(flow, reasons, moved ? due.exitId : null);
+    const reasonsNotice = firstReasonsNotice(flow, reasons, moved ? due.exitId : null, due.ownNudge);
     // Прошлое касание не дошло: ход откатит его счёт и в месте чата.
     const notice = undelivered ? { ...reasonsNotice, data: { ...(reasonsNotice.data as object), undelivered } } : reasonsNotice;
     const reply = moved ? exactFirstText(flow, next.state) : null;
@@ -328,8 +364,8 @@ export function createFlowTimers(input: {
       return;
     }
     // Следующий срок — по месту после ответа агента; `afterTurn` пересчитает его ещё раз уже с ответом в ветке.
-    const nudgeStep = (notice.data as { nudgeStep?: number }).nudgeStep;
-    const answered = { ...noteAgentAnswer(next, at), ...(nudgeStep !== undefined && { nudgeStep }) };
+    const { nudgeStep, nudgeStepOwn } = notice.data as { nudgeStep?: number; nudgeStepOwn?: boolean };
+    const answered = nudgeStep === undefined ? noteAgentAnswer(next, at) : withNudgeStep(noteAgentAnswer(next, at), nudgeStep, nudgeStepOwn === true);
     const following = nextWake(flow, answered, at, timeZone, { pausedUntil: context.pausedUntil ?? null });
     await store.setDue(chatId, following ? dueInput(following, result.messageId ?? null, offset) : null, { unlessDelivery: true });
     if (!delivery) {

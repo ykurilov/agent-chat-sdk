@@ -43,6 +43,8 @@ export function createInMemoryChatStorage(): ChatStorage {
   const messages = new Map<string, StoredMessage>();
   /** Время последнего знака жизни идущих ответов по id: при чтении не отдаётся. */
   const aliveAt = new Map<string, string>();
+  /** Аренды хода по чатам: кто держит и до какого времени (мс по часам этой машины). */
+  const turnLeases = new Map<string, { holder: string; until: number }>();
   const compactions: StoredCompaction[] = [];
   const branchSelections: StoredBranchSelection[] = [];
   const usageRecords: UsageRecord[] = [];
@@ -267,6 +269,7 @@ export function createInMemoryChatStorage(): ChatStorage {
 
     async deleteChat(chatId) {
       if (!chats.delete(chatId)) return;
+      turnLeases.delete(chatId);
       for (const message of [...messages.values()]) {
         if (message.chatId !== chatId) continue;
         messages.delete(message.id);
@@ -359,6 +362,22 @@ export function createInMemoryChatStorage(): ChatStorage {
         .filter((message) => message.status === "streaming" && (chatId === undefined || message.chatId === chatId))
         .filter((message) => (aliveAt.get(message.id) ?? message.createdAt) < boundary)
         .map((message) => message.id);
+    },
+
+    async claimChatTurn(chatId, holder, leaseMs) {
+      const now = Date.now();
+      const lease = turnLeases.get(chatId);
+      if (lease && lease.holder !== holder && lease.until > now) return false;
+      turnLeases.set(chatId, { holder, until: now + leaseMs });
+      return true;
+    },
+
+    async releaseChatTurn(chatId, holder) {
+      if (turnLeases.get(chatId)?.holder === holder) turnLeases.delete(chatId);
+    },
+
+    async clearChatTurnLeases() {
+      turnLeases.clear();
     },
 
     async insertCompaction(record) {

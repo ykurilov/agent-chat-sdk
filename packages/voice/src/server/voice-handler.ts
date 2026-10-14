@@ -1,6 +1,7 @@
 import type { SonioxContext } from "../soniox-messages";
 import { createAccessGuard, refusal } from "./access";
 import type { AccessOptions, RateLimit } from "./access";
+import { acceptedLanguageHints } from "./language-hints";
 import { requestTemporaryKey, TemporaryKeyError } from "./temporary-key";
 
 export interface VoiceHandlerOptions {
@@ -20,8 +21,10 @@ export interface VoiceHandlerOptions {
   apiHeaders?: Record<string, string>;
   /** Модель распознавания. По умолчанию `stt-rt-v5`. */
   model?: string;
-  /** Подсказка языка. По умолчанию `["ru"]`. */
+  /** Подсказка языка по умолчанию (`["ru"]`). Браузер может прислать свою на каждую запись: тело `{ languageHints }`. */
   languageHints?: string[];
+  /** Какие языки браузер может назвать сам, например `["ru", "en"]`. Не задано — любой код языка из двух-трёх букв. */
+  allowedLanguageHints?: string[];
   /** Подсказка Soniox: тема разговора и термины. */
   context?: SonioxContext;
   /** Сколько секунд временный ключ ждёт начала диктовки. По умолчанию 60. */
@@ -99,7 +102,7 @@ export function createVoiceHandler(options: VoiceHandlerOptions): VoiceHandler {
             expiresAt: key.expiresAt,
             websocketUrl: options.websocketUrl ?? DEFAULT_WEBSOCKET_URL,
             model: options.model ?? DEFAULT_MODEL,
-            languageHints: options.languageHints ?? ["ru"],
+            languageHints: (await requestedLanguageHints(request, options.allowedLanguageHints)) ?? options.languageHints ?? ["ru"],
             maxSessionSeconds,
             ...(options.context && { context: options.context }),
           },
@@ -114,3 +117,13 @@ export function createVoiceHandler(options: VoiceHandlerOptions): VoiceHandler {
   };
 }
 
+
+/** Язык записи из тела запроса `{ languageHints }`, если браузер его прислал и он годный. Тело не JSON — подсказки нет. */
+async function requestedLanguageHints(request: Request, allowed: readonly string[] | undefined): Promise<string[] | null> {
+  try {
+    const body: unknown = await request.json();
+    return typeof body === "object" && body !== null ? acceptedLanguageHints((body as Record<string, unknown>).languageHints, allowed) : null;
+  } catch {
+    return null;
+  }
+}

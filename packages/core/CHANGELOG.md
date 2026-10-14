@@ -1,5 +1,59 @@
 # @ykurilov/agent-chat-core
 
+## 0.55.0
+
+### Minor Changes
+
+- 51f7b38: DeepSeek 4.1 Flash больше не пишет за собеседника: в профиле модели обрезка хвоста `sampling: { minP: 0.05 }`, она уходит
+  полем `min_p` к Together и OpenRouter (DeepSeek напрямую и Fireworks его не получают). Без неё Together изредка брал в
+  конце склеенное «?» с пустой строкой, и модель продолжала писать «user…», вторые рассуждения и новый ответ.
+  
+  Новое в профиле модели: `sampling` (параметры выбора слов, пока `minP`) и у провайдера `samplingRequest(sampling)` —
+  перевод в опции запроса. Опции профиля (`providerOptions` и `sampling`) теперь несёт сама модель из каталога
+  (`resolveLanguageModel`): их получают и служебные вызовы с готовой моделью — склейка памяти после ответа раньше шла без
+  них (в том числе без запрета хозяев OpenRouter из профиля).
+  
+  ### Как обновить приложение
+  
+  - Ничего делать не нужно. Если приложение само добавляло DeepSeek 4.1 Flash `min_p` (`addModels` с
+    `providerOptions.togetherai.min_p` / `providerOptions.openrouter.min_p`) — эту правку можно убрать: SDK делает то же.
+  - Выключить или поменять: `addModels: [{ ...профиль, sampling: { minP: 0.1 } }]` или профиль без `sampling`; одному
+    провайдеру — `providerOptions: { togetherai: { min_p: … } }` в профиле (главнее `sampling`). Подробно —
+    docs/getting-started.md, «Параметры выбора слов в профиле модели».
+- cdc7dd7: Голос: расход в лимитах, причина отказа, Next.js, язык записи, предел из настройки.
+  
+  - `UsageSource` открыт для своих видов приложения (`"font_download"` без приведения типа), штатные — в
+    `BUILT_IN_USAGE_SOURCES`, тип `BuiltInUsageSource`. Новые штатные виды `voice_input` (секунды распознавания,
+    `inputTokens` — секунды) и `voice_polish` (чистка текста). Миграций нет.
+  - `createVoiceRelay({ spending: { service, recognitionUsdPerHour, chatId? } })`: лимит до диктовки, секунды звука в журнал
+    расхода. Чистка: `polish: { askModel, model }` через службу чата; у Together — `pricing`; своя `clean` может вернуть
+    `{ text, usage }`. Расход чистки — вид `voice_polish`.
+  - Причина отказа доходит до браузера кодом закрытия (`RELAY_CLOSE`): 4401 не вошёл, 4402 лимит, 4403 нет доступа,
+    4413 слишком длинно, 4429 часто, 4502 недоступен, 1009 кусок больше предела. Отказ приложения `{ refused: { code } }`
+    переводится по `code`. Новые виды ошибок `limit`, `forbidden`, `too_long`; 4401 теперь `forbidden` (был
+    `service_unavailable`).
+  - `@ykurilov/agent-chat-voice/node`: `createVoiceUpgrade({ path, relay, maxFrameBytes })` — голос на своём HTTP-сервере
+    Node.js (Next.js custom server), `shareVoiceRelay` / `sharedVoiceRelay` — мостик внутри процесса. Нужен `ws`.
+    Кривой путь — 400, обрыв во время проверки входа не роняет процесс, `authorizeTimeoutMs` (10 с) — 503.
+  - Ретранслятор: `helloTimeoutMs` (10 с без приветствия — 4400, место свободно), `maxFrameBytes` (1 МиБ, 1009) — единый
+    для Hono и node. Чат расхода из `?chat=` — только свой (`service.assertOwnChat`), иначе `"voice"`.
+    `allowedLanguageHints` с регионом (`pt-BR`) разрешает язык `pt`. Относительный `relayUrl` снова работает.
+  - Язык каждой записи: `voice.start(listener, { chatId, language })`, `createVoiceInput({ languageHints })`; сервер
+    проверяет значение сам (`allowedLanguageHints`). `AgentChat` передаёт текущий чат и язык словаря.
+  - react: подпись `time_limit` — строка или функция от предела сервера («предел 3 минуты»); `onError(kind, details)`;
+    подписи `limit`, `forbidden`, `too_long` необязательные в своём словаре; `voiceErrorText`.
+
+## 0.54.0
+
+### Minor Changes
+
+- fa90219: Битые аргументы инструментов: дописываются забытые закрывающие `]` и `}`. Модель иногда не закрывает массив или
+  объект (`{"facts": ["a", "b"}`, `{"fields": [{…}`). Теперь ядро дописывает недостающие скобки в правильном порядке,
+  но только когда JSON оборван на законченном значении. Обрыв внутри строки, ключа, числа или слова `true`, после
+  запятой или двоеточия, а также больше трёх недостающих скобок — не чинятся. Починенный вызов, как и раньше, проверяется
+  схемой инструмента. В строке журнала `[аргументы починены]` — `правка=дописаны скобки ×N`; в `ToolInputRepair` — поле
+  `missingClosers`.
+
 ## 0.53.0
 
 ### Minor Changes

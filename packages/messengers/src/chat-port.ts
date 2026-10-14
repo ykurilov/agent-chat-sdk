@@ -68,6 +68,16 @@ export interface MessengerChatService {
     options: { channel: MessengerName; group?: { allowedTools: readonly string[]; author: string } },
   ): Promise<ReadableStream<AnswerChunk>>;
   /**
+   * Сообщение из пачки (`ChatService.sendBurstMessage`): человек пишет несколько сообщений подряд — один ход, когда он
+   * замолчал. Нет метода (старое ядро) — каждое сообщение через `sendMessage`.
+   */
+  sendBurstMessage?(
+    userId: string,
+    chatId: string,
+    message: MessengerUserMessage,
+    options: { channel: MessengerName; quietMs?: number },
+  ): Promise<{ messageId: string; turn: Promise<ReadableStream<AnswerChunk> | null> }>;
+  /**
    * Проверка перед ходом (`beforeTurn` приложения) без начала хода: бросает `TurnRefusedError`, если приложение
    * не пускает, `ChatClosedError` — чат закрыт. Шлюз зовёт её до разбора вложений: отказанному человеку не нужно платить за распознавание голоса.
    * Нет метода — проверка остаётся только в `sendMessage`.

@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { ChatSkin } from "../src/skin-contract";
 import { fakeChatServer } from "./support/fake-chat-server";
 import type { HistoryMessage } from "./support/fake-chat-server";
-import { kinds, renderAgentChat, sendQuestion, settle, setupChatDom, waitForFeedPositioned } from "./support/chat-dom";
+import { kinds, renderAgentChat, sendQuestion, settle, setupChatDom, waitForFeedPositioned, waitForFeedScrollEnd } from "./support/chat-dom";
 import { stubSkin } from "./support/stub-skin";
 
 const answered: HistoryMessage[] = [
@@ -213,6 +213,34 @@ describe("договор скина версии 2: лента и раскрыт
       await settle();
     }
     await waitFor(() => expect(byText("text", "Первое слово второе третье")).toBeDefined());
+
+    for (const [text, count] of before) expect([text, renders.get(text)]).toEqual([text, count]);
+    stream.finish("t1");
+  });
+
+  // Пока лента едет вниз, окно ленты (virtua) не держит запаса над экраном и возвращает его через 150 мс тишины:
+  // куски ответа реже этого срока снимали бы готовые сообщения над экраном и рисовали их заново.
+  it("готовые сообщения не перерисовываются, когда куски ответа приходят с паузами (FR-005)", async () => {
+    const renders = new Map<string, number>();
+    const UserMessage: ChatSkin["UserMessage"] = ({ text }) => {
+      renders.set(text, (renders.get(text) ?? 0) + 1);
+      return <p data-kind="user">{text}</p>;
+    };
+    const server = await renderLongChat(50, { ...stubSkin, UserMessage });
+    const stream = await sendQuestion(server, "новый вопрос");
+    stream.push({ type: "start", messageId: "a-new", messageMetadata: { status: "streaming" } });
+    stream.push({ type: "start-step" });
+    stream.push({ type: "text-start", id: "t1" });
+    stream.push({ type: "text-delta", id: "t1", delta: "Пер" });
+    await waitFor(() => expect(byText("text", "Пер")).toBeDefined());
+    const before = new Map(renders);
+
+    for (const delta of ["вое", " слово", " второе"]) {
+      await waitForFeedScrollEnd();
+      stream.push({ type: "text-delta", id: "t1", delta });
+      await settle();
+    }
+    await waitFor(() => expect(byText("text", "Первое слово второе")).toBeDefined());
 
     for (const [text, count] of before) expect([text, renders.get(text)]).toEqual([text, count]);
     stream.finish("t1");

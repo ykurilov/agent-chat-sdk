@@ -193,7 +193,7 @@ describe("createRepairToolCall: лишние закрывающие скобки
     expect(parts.some((part) => part.type === "tool-call" && part.invalid === true)).toBe(false);
     expect(historyToolCall(model)).toMatchObject({ toolName: "remember", input: expected });
     expect(repairs).toEqual([
-      { toolName: "remember", inputLength: extraCloserAtEnd.length, strayClosers: { inside: 0, end: 1 }, strings: false, types: false },
+      { toolName: "remember", inputLength: extraCloserAtEnd.length, strayClosers: { inside: 0, end: 1 }, missingClosers: 0, strings: false, types: false },
     ]);
   });
 
@@ -216,10 +216,45 @@ describe("createRepairToolCall: лишние закрывающие скобки
     expect(onRepaired).not.toHaveBeenCalled();
   });
 
-  it("недостающая скобка не чинится → ошибка как раньше", async () => {
+  it("забытая `]` перед `}` → инструмент выполнен, одна запись в журнал с числом дописанных скобок", async () => {
+    const execute = vi.fn((_input: unknown) => "ok");
+    const repairs: ToolInputRepair[] = [];
+    const raw = '{"facts": ["a", "b"}';
+    const { model } = await runCall(rememberTool(execute), raw, "remember", (repair) => repairs.push(repair));
+    expect(execute).toHaveBeenCalledExactlyOnceWith({ facts: ["a", "b"] });
+    expect(historyToolCall(model)).toMatchObject({ input: { facts: ["a", "b"] } });
+    expect(repairs).toEqual([
+      { toolName: "remember", inputLength: raw.length, strayClosers: { inside: 0, end: 0 }, missingClosers: 1, strings: false, types: false },
+    ]);
+  });
+
+  it("обрыв на законченном значении: нет `]}` в конце → дописаны обе", async () => {
+    const execute = vi.fn((_input: unknown) => "ok");
+    const repairs: ToolInputRepair[] = [];
+    const raw = '{"fields": [{"fieldId": "f-1", "value": "x"}';
+    await runCall(rememberTool(execute), raw, "remember", (repair) => repairs.push(repair));
+    expect(execute).toHaveBeenCalledExactlyOnceWith({ fields: [{ fieldId: "f-1", value: "x" }] });
+    expect(repairs[0]?.missingClosers).toBe(2);
+  });
+
+  it.each([
+    ["обрыв внутри строки", '{"facts": ["a", "b'],
+    ["обрыв после запятой", '{"facts": ["a", '],
+    ["обрыв после двоеточия", '{"facts": '],
+    ["обрыв посреди числа", '{"taskId": 12'],
+  ])("%s → не чинится, ошибка как раньше", async (_name, raw) => {
     const execute = vi.fn((_input: unknown) => "ok");
     const onRepaired = vi.fn();
-    const { parts } = await runCall(rememberTool(execute), '{"facts": ["a", "b"}', "remember", onRepaired);
+    const { parts } = await runCall(rememberTool(execute), raw, "remember", onRepaired);
+    expect(execute).not.toHaveBeenCalled();
+    expect(parts.some((part) => part.type === "tool-call" && part.invalid === true)).toBe(true);
+    expect(onRepaired).not.toHaveBeenCalled();
+  });
+
+  it("скобки дописаны, но схема не прошла → инструмент не вызван, ошибка модели как раньше, журнал молчит", async () => {
+    const execute = vi.fn((_input: unknown) => "ok");
+    const onRepaired = vi.fn();
+    const { parts } = await runCall(editTool(execute), '{"changes": [{"op": "set", "field": "name", "extra": 1}}', "edit_lead_magnet", onRepaired);
     expect(execute).not.toHaveBeenCalled();
     expect(parts.some((part) => part.type === "tool-call" && part.invalid === true)).toBe(true);
     expect(onRepaired).not.toHaveBeenCalled();
@@ -238,19 +273,19 @@ describe("createRepairToolCall: лишние закрывающие скобки
   it("старые починки тоже попадают в журнал: строки и типы", async () => {
     const repairs: ToolInputRepair[] = [];
     await runCall(updateTask(() => "ok"), '{"taskId":"2","done":"true"}', "update_task", (repair) => repairs.push(repair));
-    expect(repairs).toEqual([{ toolName: "update_task", inputLength: 28, strayClosers: { inside: 0, end: 0 }, strings: false, types: true }]);
+    expect(repairs).toEqual([{ toolName: "update_task", inputLength: 28, strayClosers: { inside: 0, end: 0 }, missingClosers: 0, strings: false, types: true }]);
   });
 });
 
 describe("describeToolInputRepair", () => {
   it("строка журнала: что поправлено и длина, без содержимого аргументов", () => {
     const line = describeToolInputRepair(
-      { toolName: "remember", inputLength: 237, strayClosers: { inside: 1, end: 2 }, strings: true, types: true },
+      { toolName: "remember", inputLength: 237, strayClosers: { inside: 1, end: 2 }, missingClosers: 3, strings: true, types: true },
       { chatId: "chat-1", modelId: "deepseek-v4.1-flash", providerId: "deepseek" },
     );
     expect(line).toBe(
       "[аргументы починены] чат=chat-1 инструмент=remember модель=deepseek-v4.1-flash провайдер=deepseek " +
-        "правка=лишние скобки внутри ×1, лишние скобки в конце ×2, записи в строках, типы по схеме длина=237",
+        "правка=лишние скобки внутри ×1, лишние скобки в конце ×2, дописаны скобки ×3, записи в строках, типы по схеме длина=237",
     );
   });
 });

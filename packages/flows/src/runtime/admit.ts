@@ -16,7 +16,7 @@ export type FlowAdmit = (input: FlowAdmitInput) => Promise<FlowAdmitDecision>;
  * дальше — молчание до начала следующего дня, а в его начале — ответ на накопленное. Без рамок дня, паузы и конца разговора — `answer`, как в 0.48.
  */
 export function createFlowAdmit({ runtime, port }: { runtime: FlowRuntime; port: (chat: { ownerId: string; chatId: string }) => Promise<FlowPort> }): FlowAdmit {
-  return async ({ ownerId, chatId }) => {
+  return async ({ ownerId, chatId, messages }) => {
     const record = await runtime.store.getChat(chatId);
     if (!record || record.ownerId !== ownerId) return { kind: "answer" };
     // Человек написал — окно канала снова открыто, даже если ответа не будет (пауза, рамка дня, конец разговора).
@@ -33,16 +33,16 @@ export function createFlowAdmit({ runtime, port }: { runtime: FlowRuntime; port:
     const run = await runOutsideTurn(runtime, { ownerId, chatId }, pinned.flow, values, runtime.now(), record);
     const at = chatTime(run, runtime.now());
     const timeZone = runtime.timeZones ? await runtime.timeZones.of(ownerId, chatId) : record.timeZone || "UTC";
-    switch (frameState(humanMessagesToday(run, at, timeZone, schedule) + 1, schedule.dayFrame)) {
-      case "last":
-        return { kind: "reply", text: hardFrameText(schedule.dayFrame) };
-      case "closed": {
-        const morningAt = flowDay(run, at, timeZone, schedule).nextDayStartAt - (run.timeOffset ?? 0);
-        await noteHeldUntilMorning({ store: runtime.store, port: chatPort, record, at, morningAt, logError: runtime.logError });
-        return { kind: "hold", until: new Date(morningAt) };
-      }
-      default:
-        return { kind: "answer" };
+    // Пачка сообщений — все разом: первое уже за рамкой — отложить до утра; пачка дошла до рамки — готовая фраза один раз.
+    const today = humanMessagesToday(run, at, timeZone, schedule);
+    const first = frameState(today + 1, schedule.dayFrame);
+    const last = frameState(today + Math.max(1, Math.floor(messages ?? 1)), schedule.dayFrame);
+    if (first === "closed") {
+      const morningAt = flowDay(run, at, timeZone, schedule).nextDayStartAt - (run.timeOffset ?? 0);
+      await noteHeldUntilMorning({ store: runtime.store, port: chatPort, record, at, morningAt, logError: runtime.logError });
+      return { kind: "hold", until: new Date(morningAt) };
     }
+    if (last === "last" || last === "closed") return { kind: "reply", text: hardFrameText(schedule.dayFrame) };
+    return { kind: "answer" };
   };
 }

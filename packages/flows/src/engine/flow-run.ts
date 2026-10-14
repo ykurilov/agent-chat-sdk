@@ -69,6 +69,8 @@ export interface FlowRun {
   dayCounts?: Record<string, number>;
   /** Какой шаг ряда касаний следующий; сообщение человека возвращает к 0. */
   nudgeStep?: number;
+  /** `nudgeStep` насчитан своим рядом ноды на N дней (`nudges.days`): после них общий ряд начинается сначала. С 0.55. */
+  nudgeStepOwn?: boolean;
   /** Ходов сервера подряд (по служебным сообщениям) после последнего сообщения человека, с 0.53; нет — 0. */
   serverTurns?: number;
   /** Последний ход «пишет первым», после которого человек не писал, и счёт до него: не доставлен — не засчитан (FR-309). */
@@ -86,6 +88,7 @@ export interface FlowTouch {
   at: number;
   lastAgentAt: number | null;
   nudgeStep: number;
+  nudgeStepOwn?: boolean;
   agentAnswers: number;
 }
 

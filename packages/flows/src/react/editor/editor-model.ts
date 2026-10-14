@@ -147,7 +147,10 @@ export function normalizeCondition(flow: AgentFlow, previous: FlowCondition, nex
   }
   if (next.type === "timer") {
     if (next.from === "time_of_day") return { type: "timer", from: "time_of_day", at: "at" in next && next.at ? next.at : "10:00" };
-    if (next.from === "state_days") return { type: "timer", from: "state_days", days: "days" in next && next.days ? next.days : 1 };
+    // Дни переносятся между «длится N дней» и «до дня N программы».
+    const days = "days" in next && next.days ? next.days : "day" in next && next.day ? next.day : 1;
+    if (next.from === "state_days") return { type: "timer", from: "state_days", days };
+    if (next.from === "program_day") return { type: "timer", from: "program_day", day: days };
     const span = next as Partial<typeof next>;
     return { type: "timer", from: next.from, amount: span.amount ?? 1, unit: span.unit ?? "h" };
   }

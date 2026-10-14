@@ -50,6 +50,11 @@ export type BeforeTurnHandler = (input: {
   text?: string;
   /** Id сообщения человека (`send`, `edit`): по нему приложение свяжет свой резерв с ходом. */
   messageId?: string;
+  /**
+   * Ход на пачку сообщений человека (`sendBurstMessage`): id всех её сообщений по порядку, последнее — `messageId`, а
+   * `text` — их тексты через пустую строку. Одно решение на всю пачку; счёт сообщений — по длине списка.
+   */
+  burstMessageIds?: string[];
 } & AbandonedAnswers) => Promise<BeforeTurnDecision | void> | BeforeTurnDecision | void;
 
 /**
@@ -96,6 +101,8 @@ export type TurnNotStartedHandler = (input: {
   action: TurnAction;
   messageId?: string;
   text?: string;
+  /** Пачка сообщений, как в `beforeTurn`. */
+  burstMessageIds?: string[];
   reason: TurnNotStartedReason;
 } & AbandonedAnswers) => Promise<void> | void;
 

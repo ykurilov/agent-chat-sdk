@@ -1242,16 +1242,26 @@ export function useAgentChat({
   const [approvalFailure, setApprovalFailure] = useState<{ id: string; kind: ApprovalFailureKind; text?: string } | null>(null);
   const approving = useRef(false);
 
+  /** Номер последнего перечитывания истории и номер самого нового из показанных. */
+  const historyReads = useRef({ started: 0, shown: 0 });
+
   /**
    * Перечитывает историю с сервера и показывает её; идущий ход подхватывается. `unlessFeedChanged` — для опроса: пока
-   * шёл запрос, человек отправил вопрос или нажал «Повторить» — старая история не стирает новое.
+   * шёл запрос, человек отправил вопрос или нажал «Повторить» — старая история не стирает новое. Ленту, сменённую другим
+   * перечитыванием, менял сервер, а не человек: более новое чтение её показывает, а запоздавшее старое — нет.
    */
   const refreshFromServer = useCallback(
     async (signal: AbortSignal, options: { unlessFeedChanged?: boolean } = {}): Promise<boolean> => {
       const shown = messagesRef.current;
+      const read = ++historyReads.current.started;
+      const shownBefore = historyReads.current.shown;
       const history = await loadHistory(signal);
       if (signal.aborted) return true;
-      if (options.unlessFeedChanged && (busyRef.current || messagesRef.current !== shown)) return true;
+      if (options.unlessFeedChanged) {
+        if (busyRef.current || historyReads.current.shown > read) return true;
+        if (messagesRef.current !== shown && historyReads.current.shown === shownBefore) return true;
+      }
+      if (typeof history !== "string") historyReads.current.shown = Math.max(historyReads.current.shown, read);
       if (history === "not_found") {
         setNotFound(true);
         return true;
@@ -1453,7 +1463,7 @@ export function useAgentChat({
           if (appEvent) reportAppEvent.current?.(appEvent, messageId);
           // Событие хука после «Стопа» уже лежит в ответе: перечитанная история покажет его в ленте.
           if (appEvent && messageId && !ownTurnStarting()) void refreshFromServer(chatSignal, { unlessFeedChanged: true });
-        } else if ((event.type === "turn-started" || event.type === "notice-added") && !ownTurnStarting()) {
+        } else if ((event.type === "turn-started" || event.type === "notice-added" || event.type === "message-added") && !ownTurnStarting()) {
           void refreshFromServer(chatSignal, { unlessFeedChanged: true });
         }
       },

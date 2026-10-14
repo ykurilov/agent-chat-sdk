@@ -340,6 +340,28 @@
                           "days"
                         ],
                         "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "const": "timer"
+                          },
+                          "from": {
+                            "type": "string",
+                            "const": "program_day"
+                          },
+                          "day": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "from",
+                          "day"
+                        ],
+                        "additionalProperties": false
                       }
                     ]
                   }
@@ -593,6 +615,28 @@
                             "days"
                           ],
                           "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "const": "timer"
+                            },
+                            "from": {
+                              "type": "string",
+                              "const": "program_day"
+                            },
+                            "day": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "from",
+                            "day"
+                          ],
+                          "additionalProperties": false
                         }
                       ]
                     }
@@ -671,6 +715,9 @@
                       "unit"
                     ],
                     "additionalProperties": false
+                  },
+                  "days": {
+                    "type": "number"
                   }
                 },
                 "required": [

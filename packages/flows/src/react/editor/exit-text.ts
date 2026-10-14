@@ -1,10 +1,11 @@
-import { RETURN_TARGET, type AgentFlow, type FlowCondition, type FlowExit } from "../../format/flow-format";
+import { RETURN_TARGET, type AgentFlow, type FlowCatalog, type FlowCondition, type FlowExit } from "../../format/flow-format";
+import { catalogEventLabel } from "../../format/catalog-events";
 import { fieldById } from "../../engine/flow-graph";
 import type { FlowEditorLabels } from "../../labels/editor";
 import type { FlowEdgeKind } from "../flow-editor-skin";
 
-/** Подпись условия для доски, прогона и проверки: «Понятны тема курса и продажи», «Тишина человека 3 ч». */
-export function conditionText(flow: AgentFlow, when: FlowCondition, labels: FlowEditorLabels): string {
+/** Подпись условия для доски, прогона и проверки: «Понятны тема курса и продажи», «Тишина человека 3 ч». С каталогом — подписи событий. */
+export function conditionText(flow: AgentFlow, when: FlowCondition, labels: FlowEditorLabels, catalog?: Pick<FlowCatalog, "events">): string {
   switch (when.type) {
     case "judge":
       return when.text.trim() || labels.board.emptyCondition;
@@ -15,10 +16,12 @@ export function conditionText(flow: AgentFlow, when: FlowCondition, labels: Flow
       return when.op === "filled" || when.value === undefined ? `${name} ${op}` : `${name} ${op} ${when.value}`;
     }
     case "event":
-      return when.event === "message" || !when.name ? labels.events[when.event] : `${labels.events[when.event]} «${when.name}»`;
+      if (when.event === "message" || !when.name) return labels.events[when.event];
+      return `${labels.events[when.event]} «${(when.event !== "tool" && catalogEventLabel(catalog, when.name)) || when.name}»`;
     case "timer":
       if (when.from === "time_of_day") return `${labels.timerSpans.time_of_day} ${when.at}`;
       if (when.from === "state_days") return `${labels.statePanel.duration} ${labels.days(when.days)}`;
+      if (when.from === "program_day") return labels.programDay(when.day);
       return `${labels.timerSpans[when.from]} ${when.amount} ${labels.units[when.unit]}`;
   }
 }

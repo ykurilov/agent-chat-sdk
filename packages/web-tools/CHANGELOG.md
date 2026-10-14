@@ -1,5 +1,20 @@
 # @ykurilov/agent-chat-web-tools
 
+## 0.55.0
+
+### Patch Changes
+
+- Updated dependencies [51f7b38]
+- Updated dependencies [cdc7dd7]
+  - @ykurilov/agent-chat-core@0.55.0
+
+## 0.54.0
+
+### Patch Changes
+
+- Updated dependencies [fa90219]
+  - @ykurilov/agent-chat-core@0.54.0
+
 ## 0.53.0
 
 ### Patch Changes

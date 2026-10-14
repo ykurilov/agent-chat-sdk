@@ -26,8 +26,8 @@ export function withCorrectionsJoined(history: readonly AgentChatMessage[]): Age
   return joined;
 }
 
-/** Текст и файлы поправки; первый текст — через пустую строку. Служебные части остаются у первой поправки. */
-function joinedParts(parts: AgentChatMessage["parts"]): AgentChatMessage["parts"] {
+/** Текст и файлы поправки (или сообщения пачки); первый текст — через пустую строку. Служебные части остаются у первого сообщения. */
+export function joinedParts(parts: AgentChatMessage["parts"]): AgentChatMessage["parts"] {
   let separated = false;
   return parts.flatMap((part): AgentChatMessage["parts"] => {
     if (part.type === "file") return [part];

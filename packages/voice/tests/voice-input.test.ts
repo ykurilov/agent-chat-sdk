@@ -314,7 +314,21 @@ describe("диктовка: ошибки", () => {
     expect(harness.stream.released).toBe(true);
   });
 
-  it.each([401, 403, 502, 503, 500])("сервер приложения ответил %s: service_unavailable, микрофон освобождён", async (status) => {
+  it.each([
+    [401, "forbidden"],
+    [403, "forbidden"],
+    [402, "limit"],
+  ])("сервер приложения ответил %s: %s, микрофон освобождён", async (status, kind) => {
+    const harness = createHarness({ fetch: async () => fakeResponse({ error: { kind: "refused" } }, status) });
+
+    createVoiceInput(harness.options).start(harness.listener);
+    await settle();
+
+    expect(harness.events).toEqual([`error:${kind}`, "end"]);
+    expect(harness.stream.released).toBe(true);
+  });
+
+  it.each([502, 503, 500])("сервер приложения ответил %s: service_unavailable, микрофон освобождён", async (status) => {
     const harness = createHarness({ fetch: async () => fakeResponse({ error: { kind: "service_unavailable" } }, status) });
 
     createVoiceInput(harness.options).start(harness.listener);

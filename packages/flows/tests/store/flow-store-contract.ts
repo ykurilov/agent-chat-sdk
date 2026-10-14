@@ -170,6 +170,32 @@ export function describeFlowStoreContract(open: () => Promise<SharedFlowStores>)
           expect(pending[0]).toEqual(judged("judge:x1:m1"));
         }));
 
+      it("тот же ключ с `appliedAt` дописывает его к ожидающему: порядок и остальное — как были", () =>
+        withStores(async ({ first, second }) => {
+          const input = chatInput();
+          await first.pinChat(input);
+          await first.addPending(input.chatId, judged("timer:x1:e1"));
+          await first.addPending(input.chatId, judged("timer:x2:e1"));
+          await second.addPending(input.chatId, { ...judged("timer:x1:e1", "другая"), appliedAt: at(5) });
+          // Уже применённый не перезаписывается ни новым `appliedAt`, ни ожидающим без него.
+          await first.addPending(input.chatId, { ...judged("timer:x1:e1"), appliedAt: at(9) });
+          await first.addPending(input.chatId, judged("timer:x1:e1"));
+          expect((await second.getChat(input.chatId))?.pending).toEqual([{ ...judged("timer:x1:e1"), appliedAt: at(5) }, judged("timer:x2:e1")]);
+        }));
+
+      it("переход, применённый в срок (`appliedAt`), остаётся после «забрать»: «Переделать» на той же ветке применит его снова", () =>
+        withStores(async ({ first, second }) => {
+          const input = chatInput();
+          await first.pinChat(input);
+          const applied = { ...judged("timer:x1:e1"), appliedAt: at(5) };
+          await first.addPending(input.chatId, judged("judge:x2:m1"));
+          await first.addPending(input.chatId, applied);
+          await first.addPending(input.chatId, { kind: "event", key: "event:paid:1", name: "paid", at: at(6) });
+          expect((await second.takePending(input.chatId)).map((change) => change.key)).toEqual(["judge:x2:m1", "timer:x1:e1", "event:paid:1"]);
+          expect((await first.getChat(input.chatId))?.pending).toEqual([applied]);
+          expect(await first.takePending(input.chatId)).toEqual([applied]);
+        }));
+
       it("забрать ожидающее может только одна копия", () =>
         withStores(async ({ first, second }) => {
           const input = chatInput();

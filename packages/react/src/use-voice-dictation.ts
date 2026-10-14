@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createDictationField } from "./dictation-field";
 import type { DictationField } from "./dictation-field";
-import { useChatLabels } from "./labels";
+import { useChatLabels, voiceErrorText } from "./labels";
 import type { VoiceInputView } from "./skin-contract";
-import type { VoiceErrorKind, VoiceInput, VoiceSession } from "./voice-input";
+import type { VoiceErrorDetails, VoiceErrorKind, VoiceInput, VoiceSession } from "./voice-input";
 
 export interface UseVoiceDictationOptions {
   /** Нет голоса — нет и кнопки. */
@@ -26,7 +26,7 @@ export interface VoiceDictation {
 export function useVoiceDictation({ voice, value, setValue, chatId }: UseVoiceDictationOptions): VoiceDictation {
   const labels = useChatLabels();
   const [state, setState] = useState<DictationState>("idle");
-  const [errorKind, setErrorKind] = useState<VoiceErrorKind>();
+  const [error, setError] = useState<{ kind: VoiceErrorKind; details?: VoiceErrorDetails }>();
   const [polishing, setPolishing] = useState(false);
   const session = useRef<VoiceSession | null>(null);
   const field = useRef<DictationField | null>(null);
@@ -58,7 +58,7 @@ export function useVoiceDictation({ voice, value, setValue, chatId }: UseVoiceDi
     if (value === knownValue.current) return;
     knownValue.current = value;
     field.current?.observe(value);
-    setErrorKind(undefined);
+    setError(undefined);
   }, [value]);
 
   // Уход с экрана и смена чата обрывают диктовку.
@@ -71,10 +71,11 @@ export function useVoiceDictation({ voice, value, setValue, chatId }: UseVoiceDi
     field.current = dictation;
     knownValue.current = latestValue.current;
     pendingWrites.current = [];
-    setErrorKind(undefined);
+    setError(undefined);
     setState("connecting");
     const alive = () => run.current === mine;
-    session.current = voice.start({
+    session.current = voice.start(
+      {
       onConnected: () => alive() && setState((current) => (current === "connecting" ? "listening" : current)),
       onText: (text) => {
         if (!alive()) return;
@@ -84,7 +85,7 @@ export function useVoiceDictation({ voice, value, setValue, chatId }: UseVoiceDi
         pendingWrites.current.push(written);
         setValue(written);
       },
-      onError: (kind) => alive() && setErrorKind(kind),
+      onError: (kind, details) => alive() && setError({ kind, ...(details && { details }) }),
       onPolishing: () => {
         if (!alive()) return;
         dictation.freeze();
@@ -106,8 +107,10 @@ export function useVoiceDictation({ voice, value, setValue, chatId }: UseVoiceDi
         setState("idle");
         setPolishing(false);
       },
-    });
-  }, [voice, setValue]);
+      },
+      { chatId, ...(labels.locale && { language: labels.locale }) },
+    );
+  }, [voice, setValue, chatId, labels.locale]);
 
   const onToggle = useCallback(() => {
     if (state === "idle") start();
@@ -123,7 +126,7 @@ export function useVoiceDictation({ voice, value, setValue, chatId }: UseVoiceDi
   }, [drop]);
 
   const view = voice
-    ? { state, onToggle, ...(polishing && { polishing }), ...(errorKind && { error: labels.voiceErrors[errorKind] }) }
+    ? { state, onToggle, ...(polishing && { polishing }), ...(error && { error: voiceErrorText(labels.voiceErrors, error.kind, error.details) }) }
     : undefined;
   return { view, cancel };
 }
