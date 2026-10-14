@@ -25,6 +25,7 @@
 | `@ykurilov/agent-chat-limits` | сервер | по желанию: лимиты — бюджет в долларах или число сообщений на человека, чат или весь сервис |
 | `@ykurilov/agent-chat-background` | сервер | по желанию: фоновые задачи — долгая работа идёт в фоне, итог приходит в чат; [подключение](background.md) |
 | `@ykurilov/agent-chat-messengers` | сервер; подпуть `/react` — браузер | по желанию: чат приложения в Telegram, VK и MAX; [подключение](messengers.md) |
+| `@ykurilov/agent-chat-flows` | сервер; подпути `/sqlite`, `/postgres` — хранилище; `/format`, `/react` — браузер | по желанию: сценарии поведения агента — разговор по шагам с условиями выхода, судья, таймеры «написать первым», карточка клиента, редактор сценария; [подключение](flows.md) |
 | `@ykurilov/agent-chat-memory` | сервер (подпуть `/labels` — браузер) | по желанию: долгая память — агент запоминает важное о человеке между чатами, экран памяти показывает и правит записи |
 | `@ykurilov/agent-chat-diagrams` | браузер | по желанию: схемы — блок ` ```mermaid ` в ответе агента рисуется на экране; [подключение](diagrams.md) |
 | `@ykurilov/agent-chat-images` | сервер; подпуть `/react` — браузер | по желанию: картинки от агента — инструмент `generate_images` через Runware, файлы в хранилище вложений; [подключение](images.md) |
@@ -677,7 +678,7 @@ const skin = { ...tandemSkin, ToolCallRow: MyToolCallRow };
 То же у `Reasoning` (рассуждения агента).
 
 Какие данные получает каждый компонент — в типе `ChatSkin` (`packages/react/src/skin-contract.ts`) и в описаниях
-последних версий договора ([версия 23](./skin-v23.md), [22](./skin-v22.md), [21](./skin-v21.md), [20](./skin-v20.md), [19](./skin-v19.md), [18](./skin-v18.md)); `Composer.voice` появился в версии 5 ([contracts/voice.md](contracts/voice-input/voice.md)); `BranchSwitcher`, `MessageEditor` и свойства сообщений для веток — в версии 6 ([contracts/branches-and-edit.md](contracts/branches-and-edit/branches-and-edit.md)); `ChatWorkspace` и `ChatList` — в версии 7 (раздел «Список чатов»); `CompactionDivider` появился в версии 4 —
+последних версий договора ([версия 24](./skin-v24.md), [23](./skin-v23.md), [22](./skin-v22.md), [21](./skin-v21.md), [20](./skin-v20.md), [19](./skin-v19.md), [18](./skin-v18.md)); `Composer.voice` появился в версии 5 ([contracts/voice.md](contracts/voice-input/voice.md)); `BranchSwitcher`, `MessageEditor` и свойства сообщений для веток — в версии 6 ([contracts/branches-and-edit.md](contracts/branches-and-edit/branches-and-edit.md)); `ChatWorkspace` и `ChatList` — в версии 7 (раздел «Список чатов»); `CompactionDivider` появился в версии 4 —
 [contracts/compaction-and-search.md](contracts/compaction-and-search/compaction-and-search.md). Свой `Composer` получает `modelChoice`
 (меню моделей и уровни рассуждений); если он его не рисует, выбора модели в чате нет.
 Живой пример — `apps/demo/src/custom-tool-call-row.tsx` и переключатель «Свой ToolCallRow» в демо.

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Собирает пакет, из папки которого запущен: `pnpm build` в packages/core и так далее.
 // Точки входа берутся из `exports` пакета: у каждой есть условие с исходником (`@ykurilov/agent-chat-source`)
-// и адрес собранного файла (`import`). На выходе в `dist`:
+// и адрес собранного файла (`import`). Входы-строки (готовый файл, например JSON Schema) не собираются. На выходе в `dist`:
 //   1. JS (esbuild через tsup); зависимости пакета остаются внешними;
 //   2. типы `.d.ts` в `dist/types` (tsc), с расширениями `.js` в относительных импортах:
 //      без них типы не находятся у приложений с настройкой `moduleResolution: node16`.
@@ -15,10 +15,12 @@ const manifest = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf
 const dist = join(packageRoot, "dist");
 
 const entry = Object.fromEntries(
-  Object.values(manifest.exports).map((condition) => [
-    condition.import.replace(/^\.\/dist\//, "").replace(/\.js$/, ""),
-    condition["@ykurilov/agent-chat-source"],
-  ]),
+  Object.values(manifest.exports)
+    .filter((condition) => typeof condition === "object" && condition.import)
+    .map((condition) => [
+      condition.import.replace(/^\.\/dist\//, "").replace(/\.js$/, ""),
+      condition["@ykurilov/agent-chat-source"],
+    ]),
 );
 
 rmSync(dist, { recursive: true, force: true });

@@ -15,6 +15,9 @@ describe("T041: служебное сообщение для модели", () =
     expect(
       noticeText({ kind: "task_awaiting_approval", taskId: "t", title: "Отчёт", approval: { approvalId: "a", toolName: "send_mail", input: {} } }),
     ).toContain("send_mail");
+    expect(noticeText({ kind: "app", name: "flow_timer", title: "Сработало: тишина 3 ч → Напоминание", data: { exitId: "x1" } })).toBe(
+      "Сработало: тишина 3 ч → Напоминание",
+    );
   });
 
   it("часть с несколькими сообщениями — один текст; чужие части — не текст", () => {

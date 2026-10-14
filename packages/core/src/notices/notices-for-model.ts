@@ -20,6 +20,8 @@ export function noticeText(notice: AgentNotice): string {
       return `${task} ждёт, когда пользователь разрешит действие «${notice.approval?.toolName ?? ""}»`;
     case "conversation_started":
       return `Начни разговор: ${notice.title}`;
+    case "app":
+      return notice.title;
   }
 }
 

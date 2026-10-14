@@ -1,4 +1,4 @@
-import { createInMemoryChatStorage } from "@ykurilov/agent-chat-core";
+import { createChatService, createInMemoryChatStorage, createRunningAnswerRegistry, type ReplyChecksSetting } from "@ykurilov/agent-chat-core";
 import type { ChatHandlerOptions } from "@ykurilov/agent-chat-server";
 import { createChatServer } from "@ykurilov/agent-chat-server";
 import { type BackgroundTasksOptions, createBackgroundTasks, memoryTaskStore } from "@ykurilov/agent-chat-background";
@@ -50,6 +50,11 @@ export interface RealChatOptions {
   messengers?: Partial<MessengersOptions>;
   /** Фоновые задачи (хранилище в памяти); нет — без фона. */
   background?: Omit<BackgroundTasksOptions, "store">;
+  /**
+   * Проверки ответа (061): мессенджеры получают свою службу ядра с `replyChecks` на том же хранилище (сервер чата их
+   * пока не передаёт). Служба помечена `checksReplies`.
+   */
+  replyChecks?: ReplyChecksSetting;
 }
 
 /**
@@ -83,7 +88,22 @@ export async function startRealChat(options: RealChatOptions) {
     ...(background && { background }),
     ...options.server,
   });
-  const service = server.service;
+  const service = options.replyChecks ? checkedService(options.replyChecks) : server.service;
+  /** Служба ядра с проверками ответа на тех же хранилище и модели; вкладки — у сервера. */
+  function checkedService(replyChecks: ReplyChecksSetting) {
+    const core = createChatService({
+      storage,
+      catalog: model.catalog,
+      registry: createRunningAnswerRegistry(),
+      defaultChoice: { modelId: "mock-model", providerId: "mock" },
+      agent: { instructions: "Ты помощник." },
+      compaction: false,
+      env: { MOCK_API_KEY: "не-настоящий-ключ" },
+      replyChecks,
+      logError: (message) => serverErrors.push(message),
+    });
+    return { ...core, hasWatchers: server.service.hasWatchers, checksReplies: true as const };
+  }
   const store = createMemoryMessengerStore();
   const errors: unknown[] = [];
   const messengers = createMessengers({
@@ -151,7 +171,7 @@ export async function startRealChat(options: RealChatOptions) {
     await options.channel.close();
   }
 
-  return { channel: options.channel, model, storage, server, service: server.service, store, messengers, limits, background, errors, serverErrors, limitErrors, settle, until, human, link, web, textsIn, close };
+  return { channel: options.channel, model, storage, server, service: server.service, messengerService: service, store, messengers, limits, background, errors, serverErrors, limitErrors, settle, until, human, link, web, textsIn, close };
 }
 
 export type RealChat = Awaited<ReturnType<typeof startRealChat>>;

@@ -2,12 +2,12 @@ import { randomInt } from "node:crypto";
 import { type ButtonActions, type Card, type CardButton, approvalCard, joinLines, suggestionRows, widgetCard } from "./button-actions";
 import type { AnswerChunk } from "./chat-port";
 import { htmlToPlainText, toMessengerChunks } from "./markdown-to-messenger";
-import { buttonsRejected, MessengerBlockedError, MessengerMarkupError } from "./messenger-api";
+import { buttonsRejected, MessengerBlockedError, MessengerMarkupError, MessengerWindowClosedError } from "./messenger-api";
 import type { ExternalChat, MessengerAdapter, OutboundMessage, SentMessage } from "./messenger-adapter";
 import { type MessengerTexts, messengerTexts, statusLineFor } from "./messenger-texts";
-import type { OutboundQueue } from "./outbound-queue";
+import { isTemporary, type OutboundQueue } from "./outbound-queue";
 import { durableDelivery } from "./pending-deliveries";
-import type { ConversationKey, PendingDelivery } from "./types";
+import type { AnswerDeliveryOutcome, AnswerRef, ConversationKey, PendingDelivery } from "./types";
 
 /** В режиме правок первое сообщение появляется, когда набралось столько знаков: иначе человек видит «П», «Пр», «При»… */
 export const FIRST_MESSAGE_CHARS = 40;
@@ -35,17 +35,45 @@ export interface DeliverAnswerInput {
   texts?: MessengerTexts;
   /** У агента включены живые демонстрации: блок ```html-demo → `texts.liveDemoOnSite`. Нет — блок кодом, как любой. */
   liveDemos?: boolean;
+  /**
+   * Печатать по ходу нельзя: ответ проверяется и может быть переписан целиком. Только «печатает…» и итог — без
+   * черновика и правок, человек не увидит текста до проверки.
+   */
+  holdText?: boolean;
+  /** Чей ответ: итоги, отложенные до повтора, запоминают его, чтобы исход повтора тоже ушёл наружу. */
+  report?: Pick<AnswerRef, "ownerId" | "trigger">;
   logError?(error: unknown): void;
 }
 
+/**
+ * Исход доставки для приложения. `retry` — часть итога ждёт повтора в хранилище, исход повтора придёт отдельно;
+ * `failed` — ход сорвался, мессенджер отказал насовсем или до человека не дошло ничего.
+ */
+export function answerDeliveryOutcome(outcome: DeliveryOutcome): AnswerDeliveryOutcome {
+  if (outcome.status === "blocked") return { status: "blocked" };
+  if (outcome.status === "window_closed") return { status: "window_closed" };
+  if (outcome.status === "failed") return { status: "failed" };
+  if (outcome.unsent === "later") return { status: "retry" };
+  if (outcome.unsent === "never" || !outcome.reached) return { status: "failed" };
+  return { status: "delivered" };
+}
+
 export interface DeliveryOutcome {
-  status: "finished" | "stopped" | "failed" | "blocked";
+  /** `window_closed` — мессенджер не пускает писать первым, пока человек не напишет сам (ВК 950). */
+  status: "finished" | "stopped" | "failed" | "blocked" | "window_closed";
   /** Номер ответа агента в чате. */
   messageId?: string;
   /** Весь текст ответа, Markdown. */
   text: string;
   /** Сообщения с текстом ответа. */
   sent: SentMessage[];
+  /** Хоть одно сообщение ответа дошло до человека. */
+  reached: boolean;
+  /**
+   * Часть итога не ушла. `later` — мессенджер временно недоступен, итог лежит в хранилище и уйдёт при повторе;
+   * `never` — мессенджер отказал насовсем.
+   */
+  unsent?: "later" | "never";
 }
 
 interface ToolCall {
@@ -72,15 +100,15 @@ export async function deliverAnswer(input: DeliverAnswerInput): Promise<Delivery
   const { abilities } = adapter;
   const texts = input.texts ?? messengerTexts;
   const logError = (error: unknown) => input.logError?.(error);
-  const mode: "draft" | "edit" | "none" = abilities.liveText === "draft" && (chat.type !== "private" || !adapter.draft) ? "edit" : abilities.liveText;
+  const mode: "draft" | "edit" | "none" = input.holdText ? "none" : abilities.liveText === "draft" && (chat.type !== "private" || !adapter.draft) ? "edit" : abilities.liveText;
   const target = { messenger: adapter.messenger, textLimit: abilities.textLimit, ...(input.liveDemos && { liveDemoNote: texts.liveDemoOnSite }) };
   const draftBase = randomInt(1, 2 ** 31 - 1_000_000);
   /** Метка правок этого ответа в очереди: в конце они снимаются, итог не ждёт их паузы. */
   const slotPrefix = `answer-${draftBase}:`;
 
   let text = "";
-  /** Длина текста на начале текущего шага: шаг, начатый заново у другого провайдера, стирается до неё. */
-  let stepTextStart = 0;
+  /** Длина текста на начале каждого шага: каждый `data-step-reset` стирает последний шаг до его начала. */
+  const stepTextStarts: number[] = [];
   /**
    * Ход помечен `data-steps-may-reset`: идущий шаг может стереться. Тогда постоянными сообщениями уходят только части,
    * готовые до начала шага (`committable`), остальное — живым сообщением до конца шага.
@@ -100,8 +128,12 @@ export async function deliverAnswer(input: DeliverAnswerInput): Promise<Delivery
   let markupFailed = false;
   let streamEnded = false;
   let blocked = false;
+  let windowClosed = false;
   let stopped = false;
   let failed = false;
+  let reached = false;
+  let unsentLater = false;
+  let unsentNever = false;
   const finals: Promise<unknown>[] = [];
   const sentTexts: SentMessage[] = [];
 
@@ -130,14 +162,34 @@ export async function deliverAnswer(input: DeliverAnswerInput): Promise<Delivery
   /** Итог; `durable` — его запись, чтобы он пережил перезапуск сервера. */
   function final<T>(op: () => Promise<T>, durable?: () => PendingDelivery): Promise<T | undefined> {
     const result = queue.run(chatKey, op, durable ? { durable } : {});
-    result.catch((error: unknown) => {
-      if (error instanceof MessengerBlockedError) {
-        blocked = true;
-        stopReading();
-      } else logError(error);
-    });
+    result.then(
+      (value) => {
+        if (value) reached = true;
+      },
+      (error: unknown) => {
+        if (error instanceof MessengerBlockedError) {
+          blocked = true;
+          stopReading();
+        } else if (error instanceof MessengerWindowClosedError) {
+          windowClosed = true;
+          stopReading();
+        } else if (durable && isTemporary(error)) unsentLater = true;
+        else {
+          if (durable) unsentNever = true;
+          logError(error);
+        }
+      },
+    );
     finals.push(result);
     return result;
+  }
+
+  /** Запись итога этого ответа: с номером ответа — чтобы исход повтора ушёл наружу. */
+  function durableOf(read: () => Omit<PendingDelivery, keyof ConversationKey | "id" | "createdAt" | "answer">) {
+    return durableDelivery(key, () => ({
+      ...read(),
+      ...(input.report && messageId !== undefined && { answer: { ...input.report, chatId: input.chatId, messageId } }),
+    }));
   }
 
   /** Отправить или закрепить правкой часть ответа; `rows` — подсказки под ней. */
@@ -168,7 +220,7 @@ export async function deliverAnswer(input: DeliverAnswerInput): Promise<Delivery
       sentTexts.push(sent);
       if (withButtons && prepared) await prepared.save(sent, render(chunk));
       return sent;
-    }, durableDelivery(key, () => ({
+    }, durableOf(() => ({
       chat,
       message: { ...render(chunk), ...(prepared && { buttons: prepared.buttons }) },
       ...(reuse?.sent && { edit: reuse.sent }),
@@ -197,7 +249,7 @@ export async function deliverAnswer(input: DeliverAnswerInput): Promise<Delivery
         fallback.onFallback?.();
         return deliver({ text: fallback.text, markup: "plain" });
       }
-    }, durableDelivery(key, () => ({
+    }, durableOf(() => ({
       chat,
       message: { text: card.text, markup: "plain", ...(prepared && { buttons: prepared.buttons }) },
       ...(reuse?.sent && { edit: reuse.sent }),
@@ -300,7 +352,7 @@ export async function deliverAnswer(input: DeliverAnswerInput): Promise<Delivery
         stepsMayReset = true;
         return false;
       case "start-step":
-        stepTextStart = text.length;
+        stepTextStarts.push(text.length);
         if (stepsMayReset) committable = Math.max(chunksOf(text).length - 1, 0);
         return false;
       case "finish-step":
@@ -309,7 +361,7 @@ export async function deliverAnswer(input: DeliverAnswerInput): Promise<Delivery
         if (stepsMayReset) update();
         return false;
       case "data-step-reset": {
-        text = text.slice(0, stepTextStart).replace(/\n\n$/, "");
+        text = text.slice(0, stepTextStarts.pop() ?? 0).replace(/\n\n$/, "");
         textPartId = undefined;
         // Живое сообщение или черновик показывали стёртое, а показать на его месте нечего — фраза, что ответ пишется заново.
         const shownErased = mode === "draft" ? draftShown !== "" : Boolean(live.sent || live.creating);
@@ -378,10 +430,10 @@ export async function deliverAnswer(input: DeliverAnswerInput): Promise<Delivery
   try {
     for (;;) {
       const { done, value } = await reader.read();
-      if (done || blocked || handle(value)) break;
+      if (done || blocked || windowClosed || handle(value)) break;
     }
   } catch (error) {
-    if (!stopped && !blocked) {
+    if (!stopped && !blocked && !windowClosed) {
       failed = true;
       logError(error);
     }
@@ -392,12 +444,13 @@ export async function deliverAnswer(input: DeliverAnswerInput): Promise<Delivery
     clearInterval(typingTimer);
     clearInterval(draftTimer);
     input.signal?.removeEventListener("abort", onAbort);
-    if (stopped || blocked) stopReading();
+    if (stopped || blocked || windowClosed) stopReading();
   }
 
   status = null;
-  const outcomeStatus = (): DeliveryOutcome["status"] => (blocked ? "blocked" : stopped ? "stopped" : failed ? "failed" : "finished");
-  if (!blocked) {
+  const outcomeStatus = (): DeliveryOutcome["status"] =>
+    blocked ? "blocked" : windowClosed ? "window_closed" : stopped ? "stopped" : failed ? "failed" : "finished";
+  if (!blocked && !windowClosed) {
     const chunks = chunksOf(text);
     const finished = outcomeStatus() === "finished";
     const cards: Array<{ card: Card; fallback: { text: string; onFallback?(): void } }> = [];
@@ -441,5 +494,7 @@ export async function deliverAnswer(input: DeliverAnswerInput): Promise<Delivery
     else if (statusMessage) removeStatus(statusMessage);
   }
   await Promise.allSettled(finals);
-  return { status: outcomeStatus(), ...(messageId !== undefined && { messageId }), text, sent: sentTexts };
+  const outcome = outcomeStatus();
+  const unsent = outcome === "blocked" || outcome === "window_closed" ? undefined : unsentLater ? "later" : unsentNever ? "never" : undefined;
+  return { status: outcome, ...(messageId !== undefined && { messageId }), text, sent: sentTexts, reached, ...(unsent && { unsent }) };
 }

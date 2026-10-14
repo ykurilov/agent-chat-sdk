@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { MessengerApiError, MessengerBlockedError, MessengerRateLimitError } from "../../src/messenger-api";
+import { MessengerApiError, MessengerBlockedError, MessengerRateLimitError, MessengerWindowClosedError } from "../../src/messenger-api";
 import { vkBot } from "../../src/vk/index";
 import { createVkAdapter } from "../../src/vk/vk-adapter";
 import { createVkClient } from "../../src/vk/vk-client";
@@ -262,6 +262,14 @@ describe("VK: особенности", () => {
       }
     });
 
+    it("950 — окно ответа закрыто (писать первым нельзя): MessengerWindowClosedError, не блокировка (061)", async () => {
+      fake.failNext("messages.send", { code: 950, message: "Can't send message, reply timed out" });
+      const error = await rig.adapter.send(privateChat(), { text: "x", markup: "plain" }).catch((reason: unknown) => reason);
+      expect(error).toBeInstanceOf(MessengerWindowClosedError);
+      expect(error).not.toBeInstanceOf(MessengerBlockedError);
+      expect((error as Error).message).toContain("950");
+    });
+
     it("прочая ошибка API — MessengerApiError с кодом в тексте", async () => {
       fake.failNext("messages.send", { code: 914, message: "Message is too long" });
       const error = await rig.adapter.send(privateChat(), { text: "x", markup: "plain" }).catch((reason: unknown) => reason);
@@ -385,6 +393,12 @@ describe("VK: особенности", () => {
       rig.rejectNextVoice();
       await rig.adapter.sendVoice(privateChat(), { audio: oggOpusBytes(2000), durationMs: 2000 });
       expect(callsOf("docs.getMessagesUploadServer").map((call) => call.params.type)).toEqual(["audio_message", "doc"]);
+    });
+
+    it("закрытое окно на голосовом не прячется за запасным путём (061)", async () => {
+      fake.failNext("messages.send", { code: 950, message: "Can't send message, reply timed out" });
+      await expect(rig.adapter.sendVoice(privateChat(), { audio: oggOpusBytes(1000), durationMs: 1000 })).rejects.toBeInstanceOf(MessengerWindowClosedError);
+      expect(callsOf("docs.getMessagesUploadServer")).toHaveLength(1);
     });
 
     it("запрет писать на голосовом не прячется за запасным путём", async () => {

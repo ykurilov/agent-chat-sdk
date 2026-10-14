@@ -21,6 +21,7 @@
     "@ykurilov/agent-chat-background": "workspace:*",
     "@ykurilov/agent-chat-core": "workspace:*",
     "@ykurilov/agent-chat-diagrams": "workspace:*",
+    "@ykurilov/agent-chat-flows": "workspace:*",
     "@ykurilov/agent-chat-history-search": "workspace:*",
     "@ykurilov/agent-chat-images": "workspace:*",
     "@ykurilov/agent-chat-limits": "workspace:*",

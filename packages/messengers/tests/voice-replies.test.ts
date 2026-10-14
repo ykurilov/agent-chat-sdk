@@ -6,7 +6,7 @@ import type { VoiceReplies } from "../src/types";
 import { createVoiceAnswers } from "../src/voice-replies";
 import { createFakeAdapter, privateChat } from "./support/fake-adapter";
 
-const finished: DeliveryOutcome = { status: "finished", messageId: "msg-1", text: "Купил **хлеб**.", sent: [] };
+const finished: DeliveryOutcome = { status: "finished", messageId: "msg-1", text: "Купил **хлеб**.", sent: [], reached: true };
 const audio = new Uint8Array([1, 2, 3]);
 
 type SpeakInput = Parameters<VoiceReplies["speak"]>[0];

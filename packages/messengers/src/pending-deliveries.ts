@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type { ButtonActions, CardButton } from "./button-actions";
 import { htmlToPlainText } from "./markdown-to-messenger";
-import { buttonsRejected, MessengerBlockedError, MessengerMarkupError } from "./messenger-api";
+import { buttonsRejected, MessengerBlockedError, MessengerMarkupError, MessengerWindowClosedError } from "./messenger-api";
 import type { MessengerAdapter, OutboundMessage, SentMessage } from "./messenger-adapter";
-import { chatKeyOf, type DeliveryOutbox, type OutboundQueue } from "./outbound-queue";
-import type { ConversationKey, MessengerBot, MessengerStore, PendingDelivery } from "./types";
+import { chatKeyOf, type DeliveryOutbox, isTemporary, type OutboundQueue } from "./outbound-queue";
+import type { AnswerDeliveryOutcome, AnswerDeliveryReport, ConversationKey, MessengerBot, MessengerStore, PendingDelivery } from "./types";
 
 /** Сколько итогов брать из хранилища за раз. */
 const RECOVER_BATCH = 50;
@@ -29,13 +29,15 @@ export function durableDelivery(key: ConversationKey, read: () => Omit<PendingDe
  * Итоги, пережившие перезапуск: очередь записывает итог в хранилище за этой копией сервера (аренда), копия продлевает
  * аренду, пока жива. Упала — после срока аренды итог забирает и отправляет другая копия или эта же после перезапуска.
  * Мессенджер недоступен дольше повторов очереди — итог отпускается и повторяется позже, пока ждёт не дольше суток.
- * Доставка «хотя бы раз»: падение между отправкой и удалением записи даст повтор.
+ * Доставка «хотя бы раз»: падение между отправкой и удалением записи даст повтор. Итог ответа агента (`answer`)
+ * после повтора сообщает исход в `onAnswerDelivery`; брошенный через сутки — исход `failed`.
  */
 export function createPendingDeliveries(options: {
   store: MessengerStore;
   buttons: Pick<ButtonActions, "prepare">;
   holder?: string;
   leaseMs?: number;
+  onAnswerDelivery?(report: AnswerDeliveryReport): Promise<void> | void;
   logError?(error: unknown): void;
 }) {
   const { store, buttons } = options;
@@ -43,6 +45,14 @@ export function createPendingDeliveries(options: {
   const leaseMs = options.leaseMs ?? DELIVERY_LEASE_MS;
   const logError = (error: unknown) => options.logError?.(error);
   const leaseUntil = () => new Date(Date.now() + leaseMs).toISOString();
+
+  /** Исход повтора итога ответа — приложению; сбой колбэка — в журнал. */
+  function reportAnswer(delivery: PendingDelivery, outcome: AnswerDeliveryOutcome) {
+    const onAnswerDelivery = options.onAnswerDelivery;
+    if (!delivery.answer || !onAnswerDelivery) return;
+    const report = { ...delivery.answer, outcome };
+    void (async () => onAnswerDelivery(report))().catch(logError);
+  }
   /**
    * Записи, которые не удалось удалить или отпустить: иначе продление держало бы их за этой копией вечно.
    * `null` — удалить, итог — отпустить.
@@ -67,7 +77,10 @@ export function createPendingDeliveries(options: {
         delivery.id,
         () => {
           const waited = Date.now() - Date.parse(delivery.createdAt);
-          if (!(waited <= DELIVERY_GIVE_UP_MS)) return store.deletePendingDelivery(delivery.id);
+          if (!(waited <= DELIVERY_GIVE_UP_MS)) {
+            reportAnswer(delivery, { status: "failed" });
+            return store.deletePendingDelivery(delivery.id);
+          }
           const pause = Math.min(Math.max(waited, RETRY_MIN_MS), RETRY_MAX_MS);
           return store.savePendingDelivery(delivery, RELEASED, new Date(Date.now() + pause).toISOString());
         },
@@ -87,9 +100,16 @@ export function createPendingDeliveries(options: {
     for (;;) {
       const taken = await store.takeAbandonedDeliveries(bot, holder, new Date().toISOString(), leaseUntil(), RECOVER_BATCH);
       for (const delivery of taken) {
-        queue.run(chatKeyOf(delivery), () => replay(bot.adapter, delivery), { durable: () => delivery }).catch((error: unknown) => {
-          if (!(error instanceof MessengerBlockedError)) logError(error);
-        });
+        queue.run(chatKeyOf(delivery), () => replay(bot.adapter, delivery), { durable: () => delivery }).then(
+          () => reportAnswer(delivery, { status: "delivered" }),
+          (error: unknown) => {
+            if (error instanceof MessengerBlockedError) return reportAnswer(delivery, { status: "blocked" });
+            if (error instanceof MessengerWindowClosedError) return reportAnswer(delivery, { status: "window_closed" });
+            logError(error);
+            // Временный сбой: итог снова отпущен и повторится; исход придёт после.
+            if (!isTemporary(error)) reportAnswer(delivery, { status: "failed" });
+          },
+        );
       }
       total += taken.length;
       if (taken.length < RECOVER_BATCH) return total;

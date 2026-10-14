@@ -1,0 +1,165 @@
+[
+ {
+  "model": "anthropic/claude-haiku-5.5",
+  "max_tokens": 128000,
+  "messages": [
+   {
+    "role": "system",
+    "content": [
+     {
+      "type": "text",
+      "text": "Ты помощник.",
+      "cache_control": {
+       "type": "ephemeral",
+       "ttl": "1h"
+      }
+     }
+    ]
+   },
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "text",
+      "text": "привет"
+     },
+     {
+      "type": "text",
+      "text": "Сегодня: среда, 14 октября 2026 г.",
+      "cache_control": {
+       "type": "ephemeral",
+       "ttl": "1h"
+      }
+     }
+    ]
+   }
+  ],
+  "reasoning": {
+   "effort": "medium"
+  },
+  "provider": {
+   "sort": "throughput"
+  },
+  "stream": true
+ },
+ {
+  "model": "anthropic/claude-haiku-5.5",
+  "max_tokens": 128000,
+  "messages": [
+   {
+    "role": "system",
+    "content": [
+     {
+      "type": "text",
+      "text": "Ты помощник.",
+      "cache_control": {
+       "type": "ephemeral",
+       "ttl": "1h"
+      }
+     }
+    ]
+   },
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "text",
+      "text": "привет"
+     },
+     {
+      "type": "text",
+      "text": "Сегодня: среда, 14 октября 2026 г."
+     }
+    ]
+   },
+   {
+    "role": "assistant",
+    "content": "ответ 1"
+   },
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "text",
+      "text": "Фоновая задача \"Отчёт\" закончилась: готово",
+      "cache_control": {
+       "type": "ephemeral",
+       "ttl": "1h"
+      }
+     }
+    ]
+   }
+  ],
+  "reasoning": {
+   "effort": "medium"
+  },
+  "provider": {
+   "sort": "throughput"
+  },
+  "stream": true
+ },
+ {
+  "model": "anthropic/claude-haiku-5.5",
+  "max_tokens": 128000,
+  "messages": [
+   {
+    "role": "system",
+    "content": [
+     {
+      "type": "text",
+      "text": "Ты помощник.",
+      "cache_control": {
+       "type": "ephemeral",
+       "ttl": "1h"
+      }
+     }
+    ]
+   },
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "text",
+      "text": "привет"
+     },
+     {
+      "type": "text",
+      "text": "Сегодня: среда, 14 октября 2026 г."
+     }
+    ]
+   },
+   {
+    "role": "assistant",
+    "content": "ответ 1"
+   },
+   {
+    "role": "user",
+    "content": "Фоновая задача \"Отчёт\" закончилась: готово"
+   },
+   {
+    "role": "assistant",
+    "content": "ответ 2"
+   },
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "text",
+      "text": "ещё",
+      "cache_control": {
+       "type": "ephemeral",
+       "ttl": "1h"
+      }
+     }
+    ]
+   }
+  ],
+  "reasoning": {
+   "effort": "medium"
+  },
+  "provider": {
+   "sort": "throughput"
+  },
+  "stream": true
+ }
+]

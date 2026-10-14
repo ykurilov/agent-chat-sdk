@@ -259,7 +259,7 @@ export function createOutboundQueue(options: OutboundQueueOptions = {}) {
 export type OutboundQueue = ReturnType<typeof createOutboundQueue>;
 
 /** Сбой, который пройдёт сам: сеть, сервер мессенджера, «слишком часто». */
-function isTemporary(error: unknown): boolean {
+export function isTemporary(error: unknown): boolean {
   return error instanceof MessengerRateLimitError || isTransient(error);
 }
 

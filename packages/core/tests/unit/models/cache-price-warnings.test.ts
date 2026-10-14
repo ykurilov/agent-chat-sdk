@@ -42,7 +42,7 @@ describe("предупреждения о цене записи в кэш", () =
   });
 
   it("час для всех моделей OpenRouter: часовая цена есть у всех, кроме Gemini (у OpenRouter её нет)", () => {
-    // Конструктор приложений на 0.46.0: предупреждали DeepSeek, GPT и Haiku. У Haiku стандартного каталога часовая цена есть с 0.43.
+    // Конструктор приложений 0.46.0: предупреждали DeepSeek, GPT и Haiku. У Haiku стандартного каталога часовая цена есть с 0.43.
     const catalog = extendCatalog(standardCatalog, { addProviders: [createOpenRouterProvider({ cacheTtl: "1h" })] });
     expect(cachePriceWarnings(catalog)).toEqual([expect.stringMatching(/«gemini-3\.8-flash»/)]);
   });

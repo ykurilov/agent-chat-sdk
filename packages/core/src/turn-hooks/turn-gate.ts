@@ -5,7 +5,9 @@ import { TooManyTurnsError } from "../running-answers/turn-slots";
 import { SpendingLimitReachedError } from "../spending/spending-limits";
 import { DuplicateMessageError } from "../storage/chat-storage";
 import { TurnRefusedError } from "./turn-hooks";
-import type { AbandonedAnswers, BeforeTurnHandler, TurnAction, TurnNotStartedHandler, TurnNotStartedReason } from "./turn-hooks";
+import type { AbandonedAnswers, BeforeTurnHandler, TurnAction, TurnNotStartedHandler, TurnNotStartedReason, TurnRefusal } from "./turn-hooks";
+
+const TURN: TurnPass = { kind: "turn" };
 
 export interface TurnGateInput extends AbandonedAnswers {
   userId: string;
@@ -17,23 +19,44 @@ export interface TurnGateInput extends AbandonedAnswers {
 }
 
 /**
+ * С чем пропущен ход: обычный ход модели, «записать и промолчать» (`hold`) или готовый текст без модели (`reply`).
+ * `hold` и `reply` — решения приложения, а не пропуск: `turnNotStarted` на `hold` не зовётся.
+ */
+export type TurnPass = { kind: "turn" } | { kind: "hold" } | { kind: "reply"; text: string };
+
+/** Готовый текст пропуска: только у `reply`. */
+export const replyOf = (pass: TurnPass): string | undefined => (pass.kind === "reply" ? pass.text : undefined);
+
+/** Временный кусок потока: сообщение записано, агент ответит позже (`{ hold: true }`). В истории его нет. */
+export const TURN_HELD_PART_TYPE = "data-turn-held";
+
+/** `hold` для действий, где записывать нечего, и `reply` там, где ответу некуда встать, — отказ с этим кодом. */
+export const TURN_HELD_CODE = "turn_held";
+const TURN_HELD_MESSAGE = "Агент ответит позже.";
+
+/** Где `beforeTurn` может сказать «записать и промолчать»: есть новое сообщение. */
+const HOLD_ACTIONS: ReadonlySet<TurnAction> = new Set(["send", "edit", "notice"]);
+/** Где возможен готовый текст: ход начинает новый ответ. */
+const REPLY_ACTIONS: ReadonlySet<TurnAction> = new Set(["send", "edit", "regenerate", "retry", "notice"]);
+
+/**
  * Проверка приложения перед ходом: пускает или отказывает до любой записи. Каждый пропуск закрывается ровно одним:
  * начатым ходом или `turnNotStarted`.
  */
 export interface TurnGate {
   /**
    * Отказ приложения — `TurnRefusedError`, исключение приложения идёт наружу как есть: `work` не зовётся. Пропуск —
-   * `work`, который начинает ход. Бросил — `turnNotStarted` с причиной по ошибке, ошибка наружу прежняя. Вернул без
+   * `work(pass)`, который начинает ход (или пишет сообщение без хода при `hold`). Бросил — `turnNotStarted` с причиной по ошибке, ошибка наружу прежняя. Вернул без
    * хода (`notStartedBecause(result)` дал причину) — `turnNotStarted` с ней. Нет хука — только `work`.
    */
-  admit<T>(input: TurnGateInput, work: () => Promise<T>, notStartedBecause?: (result: T) => TurnNotStartedReason | undefined): Promise<T>;
+  admit<T>(input: TurnGateInput, work: (pass: TurnPass) => Promise<T>, notStartedBecause?: (result: T) => TurnNotStartedReason | undefined): Promise<T>;
   /**
    * Для служебных ходов без человека: как `admit`, но отказ — `skip()` (сообщение пишется без хода) вместо
-   * `TurnRefusedError`. `beforeTurn` зовётся один раз.
+   * `TurnRefusedError`, `hold` — тоже `skip()`. `beforeTurn` зовётся один раз.
    */
   admitOrSkip<T>(
     input: TurnGateInput,
-    work: () => Promise<T>,
+    work: (pass: TurnPass) => Promise<T>,
     skip: () => Promise<T>,
     notStartedBecause?: (result: T) => TurnNotStartedReason | undefined,
   ): Promise<T>;
@@ -56,9 +79,9 @@ export function createTurnGate(hooks: {
 }): TurnGate {
   const { beforeTurn, turnNotStarted, isInvalidRequest, isStartedTurn, logError } = hooks;
 
-  async function refusalOf(input: TurnGateInput): Promise<TurnRefusedError | undefined> {
-    if (!beforeTurn) return undefined;
-    const refusal = await beforeTurn({
+  async function decisionOf(input: TurnGateInput): Promise<TurnRefusedError | TurnPass> {
+    if (!beforeTurn) return TURN;
+    const decision = await beforeTurn({
       userId: input.userId,
       chat: input.chat,
       action: input.action,
@@ -66,9 +89,21 @@ export function createTurnGate(hooks: {
       ...(input.messageId !== undefined && { messageId: input.messageId }),
       ...abandonedOf(input),
     });
-    if (!refusal) return undefined;
+    if (!decision) return TURN;
+    if ("hold" in decision && decision.hold === true) {
+      return HOLD_ACTIONS.has(input.action) ? { kind: "hold" } : new TurnRefusedError({ code: TURN_HELD_CODE, message: TURN_HELD_MESSAGE });
+    }
+    if ("reply" in decision) {
+      const text = decision.reply?.text;
+      if (typeof text !== "string" || text.trim().length === 0) {
+        const error = new TypeError("Готовый текст beforeTurn — непустая строка: { reply: { text } }");
+        logError(`beforeTurn вернул неверный готовый текст (чат ${input.chat.id}, действие ${input.action}): ${error.message}`);
+        throw error;
+      }
+      return REPLY_ACTIONS.has(input.action) ? { kind: "reply", text } : new TurnRefusedError({ code: TURN_HELD_CODE, message: TURN_HELD_MESSAGE });
+    }
     try {
-      return new TurnRefusedError(refusal);
+      return new TurnRefusedError(decision as TurnRefusal);
     } catch (error) {
       logError(`beforeTurn вернул неверный отказ (чат ${input.chat.id}, действие ${input.action}): ${error instanceof Error ? error.message : String(error)}`);
       throw error;
@@ -103,12 +138,17 @@ export function createTurnGate(hooks: {
   }
 
   /** Пропущенная работа: не начала ход — `turnNotStarted`. */
-  async function passed<T>(input: TurnGateInput, work: () => Promise<T>, notStartedBecause?: (result: T) => TurnNotStartedReason | undefined): Promise<T> {
-    // Без хука закрывать нечего: работа идёт как раньше.
-    if (!turnNotStarted) return work();
+  async function passed<T>(
+    input: TurnGateInput,
+    pass: TurnPass,
+    work: (pass: TurnPass) => Promise<T>,
+    notStartedBecause?: (result: T) => TurnNotStartedReason | undefined,
+  ): Promise<T> {
+    // Без хука закрывать нечего: работа идёт как раньше. «Записать и промолчать» — не пропуск хода.
+    if (!turnNotStarted || pass.kind === "hold") return work(pass);
     let result: T;
     try {
-      result = await work();
+      result = await work(pass);
     } catch (error) {
       if (!isStartedTurn(error)) await notStarted(input, reasonOf(error));
       throw error;
@@ -120,12 +160,13 @@ export function createTurnGate(hooks: {
 
   return {
     async admit(input, work, notStartedBecause) {
-      const refused = await refusalOf(input);
-      if (refused) throw refused;
-      return passed(input, work, notStartedBecause);
+      const decision = await decisionOf(input);
+      if (decision instanceof TurnRefusedError) throw decision;
+      return passed(input, decision, work, notStartedBecause);
     },
     async admitOrSkip(input, work, skip, notStartedBecause) {
-      return (await refusalOf(input)) ? skip() : passed(input, work, notStartedBecause);
+      const decision = await decisionOf(input);
+      return decision instanceof TurnRefusedError || decision.kind === "hold" ? skip() : passed(input, decision, work, notStartedBecause);
     },
     notStarted,
   };

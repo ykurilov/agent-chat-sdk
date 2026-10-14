@@ -1,0 +1,131 @@
+[
+ {
+  "toolChoice": {
+   "type": "auto"
+  },
+  "prompt": [
+   {
+    "role": "system",
+    "content": "Ты помощник."
+   },
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "text",
+      "text": "привет"
+     },
+     {
+      "type": "text",
+      "text": "Сегодня: среда, 14 октября 2026 г."
+     }
+    ]
+   }
+  ],
+  "includeRawChunks": false
+ },
+ {
+  "toolChoice": {
+   "type": "auto"
+  },
+  "prompt": [
+   {
+    "role": "system",
+    "content": "Ты помощник."
+   },
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "text",
+      "text": "привет"
+     },
+     {
+      "type": "text",
+      "text": "Сегодня: среда, 14 октября 2026 г."
+     }
+    ]
+   },
+   {
+    "role": "assistant",
+    "content": [
+     {
+      "type": "text",
+      "text": "ответ 1"
+     }
+    ]
+   },
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "text",
+      "text": "Фоновая задача \"Отчёт\" закончилась: готово"
+     }
+    ]
+   }
+  ],
+  "includeRawChunks": false
+ },
+ {
+  "toolChoice": {
+   "type": "auto"
+  },
+  "prompt": [
+   {
+    "role": "system",
+    "content": "Ты помощник."
+   },
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "text",
+      "text": "привет"
+     },
+     {
+      "type": "text",
+      "text": "Сегодня: среда, 14 октября 2026 г."
+     }
+    ]
+   },
+   {
+    "role": "assistant",
+    "content": [
+     {
+      "type": "text",
+      "text": "ответ 1"
+     }
+    ]
+   },
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "text",
+      "text": "Фоновая задача \"Отчёт\" закончилась: готово"
+     }
+    ]
+   },
+   {
+    "role": "assistant",
+    "content": [
+     {
+      "type": "text",
+      "text": "ответ 2"
+     }
+    ]
+   },
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "text",
+      "text": "ещё"
+     }
+    ]
+   }
+  ],
+  "includeRawChunks": false
+ }
+]

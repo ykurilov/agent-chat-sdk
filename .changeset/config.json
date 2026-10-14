@@ -22,7 +22,9 @@
       "@ykurilov/agent-chat-videos",
       "@ykurilov/agent-chat-sandbox",
       "@ykurilov/agent-chat-background",
-      "@ykurilov/agent-chat-messengers"
+      "@ykurilov/agent-chat-messengers",
+      "@ykurilov/agent-chat-flows",
+      "@ykurilov/agent-chat-reply-check"
     ]
   ],
   "linked": [],

@@ -153,3 +153,24 @@ describe("T077 «Задача готова» на настоящем серве�
     await watch.body?.cancel();
   });
 });
+
+describe("готовый ответ на служебное сообщение (deliverNotices с reply)", () => {
+  it("ответ без модели приходит в чат мессенджера", async () => {
+    chat = await backgroundChat({});
+    chat.model.script({ text: "Привет!" });
+    await say(chat, "Привет");
+    const [current] = await chat.service.listChats("anna");
+    const calls = chat.model.calls.length;
+    await chat.service.deliverNotices({
+      ownerId: "anna",
+      chatId: current!.id,
+      notices: [{ kind: "app", name: "flow_timer", title: "Прошло два дня" }],
+      wakeAgent: true,
+      deliveryKey: "timer-1",
+      reply: { text: "Как успехи с привычкой?" },
+    });
+    await chat.until(() => annaTexts(chat as RealChat).at(-1) === "Как успехи с привычкой?", "готовый ответ");
+    expect(chat.model.calls.length).toBe(calls);
+    expect(chat.errors).toEqual([]);
+  });
+});

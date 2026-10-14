@@ -71,4 +71,24 @@ describe("createChatServer: обработчик и служба вместе", 
     expect(model.doStreamCalls[0]!.prompt[0]).toEqual({ role: "system", content: "Песочная инструкция." });
     expect(events).toEqual([expect.objectContaining({ chatId: chat.id, purpose: "answer", status: "complete" })]);
   });
+
+  it("replyChecks и now доходят до службы (061 этап 7)", async () => {
+    const seenNow: Date[] = [];
+    const fixed = new Date("2026-03-02T06:00:00.000Z");
+    const { service, send } = server({
+      agent: { instructions: "Ты помощник.", prepareTurn: (context) => void seenNow.push(context.now) },
+      replyChecks: [async ({ text }) => ({ text: text.replace("ответ", "исправлено") })],
+      now: () => fixed,
+    });
+    expect(service.checksReplies).toBe(true);
+    const chat = await service.createChat("anna");
+    await send(chat.id);
+    expect(seenNow).toEqual([fixed]);
+    const answer = (await service.getHistory("anna", chat.id)).messages.at(-1)!;
+    expect(answer.parts.filter((part) => part.type === "text").map((part) => (part as { text: string }).text)).toEqual(["исправлено"]);
+  });
+
+  it("без replyChecks служба не проверяет ответы", () => {
+    expect(server().service.checksReplies).toBe(false);
+  });
 });

@@ -1,17 +1,19 @@
 #!/usr/bin/env node
 // Проверки правил репозитория, пять разделов:
-// 1. Слой поведения и скин: в `skins/tandem/src` и
-//    `packages/react/src` (кроме словаря `labels.tsx`) нет кириллицы в коде — ни в строках, ни в
+// 1. Слой поведения и скин: в `skins/tandem/src`,
+//    `packages/react/src` (кроме словаря `labels.tsx`) и экранах пакетов нет кириллицы в коде — ни в строках, ни в
 //    тексте JSX; все надписи берутся из словаря. Комментарии на русском разрешены.
-// 2. `packages/react/src` не импортирует дизайн-систему `@tandem/ui` и файлы стилей.
+// 2. `packages/react/src` и экран сценариев (`packages/flows/src/react`) не импортируют дизайн-систему `@tandem/ui` и файлы стилей.
 // 3. Цвета: в скине и демо нет `var(--background)` (в Тандеме фон — `--canvas`).
 // 4. Встраивание: у каждого пакета `exports` без масок; демо-стенд и скин импортируют пакеты
 //    модуля только по адресам из их `exports` и не лезут относительными путями в чужие папки.
 // 5. Необязательные пакеты: ядро, сервер и слой поведения не знают пакетов памяти,
-//    фоновых задач и мессенджеров. Пакет памяти зависит только от ядра (`@ykurilov/agent-chat-core`),
+//    фоновых задач, мессенджеров и сценариев. Пакет памяти зависит только от ядра (`@ykurilov/agent-chat-core`),
 //    но не от сервера и не от экрана.
 // 6. Журнал пакета (`CHANGELOG.md`) уходит в npm-архив без папки `docs/`: относительных ссылок
 //    на них в журнале быть не должно, только полные (на GitHub).
+// 7. Вход `./format` пакета сценариев (формат, движок, проверка) идёт и в браузер: из чужого он берёт только `zod`,
+//    без базы, сервера, ядра и `node:`.
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,13 +23,14 @@ const sourceExtensions = /\.(ts|tsx|js|jsx|mjs)$/;
 const cyrillic = /[А-Яа-яЁё]/;
 const importSpecifier = /(?:from\s+|import\s*\(\s*|import\s+)["']([^"']+)["']/g;
 
-const labelFolders = ["skins/tandem/src", "packages/react/src", "packages/sandbox/src/react", "packages/messengers/src/react"];
+const labelFolders = ["skins/tandem/src", "packages/react/src", "packages/sandbox/src/react", "packages/messengers/src/react", "packages/flows/src/react"];
 const labelsDictionaries = [
   "packages/react/src/labels.tsx",
   "packages/sandbox/src/react/sandbox-labels.ts",
   "packages/messengers/src/react/messengers-labels.ts",
 ];
 const behaviourFolder = "packages/react/src";
+const behaviourFolders = [behaviourFolder, "packages/flows/src/react"];
 const consumers = [
   { folder: "apps/demo", sources: ["src", "server", "e2e", "vite.config.ts", "playwright.config.ts"] },
   { folder: "apps/next-example", sources: ["app", "lib", "scripts", "next.config.ts"] },
@@ -144,7 +147,7 @@ for (const file of [...sourceFiles("skins/tandem/src"), ...sourceFiles("apps/dem
   });
 }
 
-for (const file of sourceFiles(behaviourFolder)) {
+for (const file of behaviourFolders.flatMap(sourceFiles)) {
   const code = codeOf(file);
   for (const match of code.matchAll(importSpecifier)) {
     const specifier = match[1];
@@ -195,8 +198,14 @@ const optionalPackages = [
   { name: "@ykurilov/agent-chat-memory", title: "пакет памяти" },
   { name: "@ykurilov/agent-chat-background", title: "пакет фоновых задач" },
   { name: "@ykurilov/agent-chat-messengers", title: "пакет мессенджеров" },
+  { name: "@ykurilov/agent-chat-flows", title: "пакет сценариев" },
+  { name: "@ykurilov/agent-chat-reply-check", title: "пакет проверок ответа" },
 ];
-const ownFolder = "packages/memory/src";
+// Пакеты, которые зависят только от ядра.
+const coreOnlyPackages = [
+  { folder: "packages/memory/src", title: "пакет памяти" },
+  { folder: "packages/reply-check/src", title: "пакет проверок ответа" },
+];
 for (const file of ["packages/core/src", "packages/server/src", "packages/react/src"].flatMap(sourceFiles)) {
   const code = codeOf(file);
   for (const match of code.matchAll(importSpecifier)) {
@@ -207,12 +216,31 @@ for (const file of ["packages/core/src", "packages/server/src", "packages/react/
     }
   }
 }
-for (const file of sourceFiles(ownFolder)) {
+for (const own of coreOnlyPackages) {
+  for (const file of sourceFiles(own.folder)) {
+    const code = codeOf(file);
+    for (const match of code.matchAll(importSpecifier)) {
+      const specifier = match[1];
+      if (specifier.startsWith("@ykurilov/agent-chat") && specifier !== "@ykurilov/agent-chat-core" && !specifier.startsWith("@ykurilov/agent-chat-core/")) {
+        problems.push(`${file}:${lineOf(code, match.index)}: «${specifier}» — ${own.title} зависит только от ядра`);
+      }
+    }
+  }
+}
+
+const browserFlowParts = ["format", "engine", "check", "not-yet"].map((part) => `packages/flows/src/${part}`);
+const isBrowserFlowPart = (path) => browserFlowParts.some((part) => path === part || path === `${part}.ts` || path.startsWith(`${part}/`));
+const browserFlowFiles = ["format", "engine", "check", "format.ts", "not-yet.ts"].map((part) => `packages/flows/src/${part}`);
+for (const file of browserFlowFiles.flatMap(sourceFiles)) {
   const code = codeOf(file);
   for (const match of code.matchAll(importSpecifier)) {
     const specifier = match[1];
-    if (specifier.startsWith("@ykurilov/agent-chat") && specifier !== "@ykurilov/agent-chat-core" && !specifier.startsWith("@ykurilov/agent-chat-core/")) {
-      problems.push(`${file}:${lineOf(code, match.index)}: «${specifier}» — пакет памяти зависит только от ядра`);
+    const where = `${file}:${lineOf(code, match.index)}`;
+    if (specifier.startsWith(".")) {
+      const target = relative(root, resolve(dirname(join(root, file)), specifier));
+      if (!isBrowserFlowPart(target)) problems.push(`${where}: «${specifier}» — вход ./format сценариев не тянет серверные части пакета`);
+    } else if (specifier !== "zod" && !specifier.startsWith("zod/")) {
+      problems.push(`${where}: «${specifier}» — вход ./format сценариев идёт в браузер и берёт из чужого только zod`);
     }
   }
 }

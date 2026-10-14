@@ -1,4 +1,4 @@
-// Обезличенные вызовы DeepSeek 4.1 Flash из прогона приложения с лид-магнитами 2026-10-11.
+// Обезличенные вызовы DeepSeek 4.1 Flash из прогона приложения-генератора 2026-10-11.
 
 /** `remember`: лишняя `}` после конца JSON («Unexpected non-whitespace character after JSON»). */
 export const extraCloserAtEnd =

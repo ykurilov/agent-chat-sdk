@@ -56,7 +56,7 @@ export async function recordSpentTokens(input: SpentTokens): Promise<string | nu
 }
 
 /** Цена по шагам (час пик — по времени шага, без него — по началу хода) или всего расхода как одного запроса. */
-function costOfSpent({ catalog, modelId, providerId, spent, steps, startedAt }: SpentTokens): number {
+export function costOfSpent({ catalog, modelId, providerId, spent, steps, startedAt }: Pick<SpentTokens, "catalog" | "modelId" | "providerId" | "spent" | "steps" | "startedAt">): number {
   const price = catalog.models.find((model) => model.id === modelId)?.pricing?.[providerId];
   if (!price) return 0;
   const tokens = <T extends TokenUsage>(usage: T) => ({ ...usage, cacheWriteTokens: usage.cacheWriteTokens ?? 0 });

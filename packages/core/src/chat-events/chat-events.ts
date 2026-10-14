@@ -9,7 +9,19 @@ export type ChatTurnTrigger = "human" | "notice";
 
 /** События чата вне потока ответа: по ним открытая вкладка и пакеты расширений узнают о ходах и задачах. */
 export type ChatEvent =
-  | { type: "turn-started"; ownerId: string; chatId: string; messageId: string; trigger: ChatTurnTrigger; channel: AgentChannel }
+  | {
+      type: "turn-started";
+      ownerId: string;
+      chatId: string;
+      messageId: string;
+      trigger: ChatTurnTrigger;
+      channel: AgentChannel;
+      /**
+       * Ответ доставит приложение само (`deliverNotices` с `awaitAnswer`): каналы SDK такой ход не провожают и в
+       * мессенджер его не шлют. Нет — доставляют каналы, как прежде.
+       */
+      deliveredByApp?: true;
+    }
   | {
       type: "turn-finished";
       ownerId: string;
@@ -20,6 +32,11 @@ export type ChatEvent =
       channel: AgentChannel;
     }
   | { type: "tasks-changed"; ownerId: string; chatId: string }
+  /**
+   * Сообщение человека записано без хода: `beforeTurn` сказал «записать и промолчать» (`{ hold: true }`). Агент ответит
+   * позже — когда приложение разбудит его (`deliverNotices`).
+   */
+  | { type: "turn-held"; ownerId: string; chatId: string; messageId: string; trigger: ChatTurnTrigger }
   /** Служебное сообщение записано без хода (например, «задача отменена»): вкладке пора перечитать историю. */
   | { type: "notice-added"; ownerId: string; chatId: string; messageId: string }
   /**

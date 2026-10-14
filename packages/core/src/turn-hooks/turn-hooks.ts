@@ -25,7 +25,23 @@ export interface AppEvent {
   data?: unknown;
 }
 
-/** Проверка приложения перед ходом: вернуть отказ — ход не начнётся и ничего не запишется. */
+/** Записать сообщение человека без хода: агент промолчит (рамки дня, пауза сценария). */
+export interface TurnHold {
+  hold: true;
+}
+
+/** Ход с готовым текстом, без модели: путь `reply` из `deliverNotices`. */
+export interface TurnReply {
+  reply: { text: string };
+}
+
+/** Что `beforeTurn` может решить, кроме «пускать»: отказ, «записать без хода» или «ответить готовым текстом». */
+export type BeforeTurnDecision = TurnRefusal | TurnHold | TurnReply;
+
+/**
+ * Проверка приложения перед ходом: вернуть отказ — ход не начнётся и ничего не запишется. `{ hold: true }` и
+ * `{ reply }` — с 0.49 (сценарии): сообщение записывается, хода модели нет.
+ */
 export type BeforeTurnHandler = (input: {
   userId: string;
   chat: Chat;
@@ -34,7 +50,7 @@ export type BeforeTurnHandler = (input: {
   text?: string;
   /** Id сообщения человека (`send`, `edit`): по нему приложение свяжет свой резерв с ходом. */
   messageId?: string;
-} & AbandonedAnswers) => Promise<TurnRefusal | void> | TurnRefusal | void;
+} & AbandonedAnswers) => Promise<BeforeTurnDecision | void> | BeforeTurnDecision | void;
 
 /**
  * Ответы агента, которые уйдут с текущей ветки, если ход начнётся (`regenerate`, `edit`, `retry`): по ним приложение откатывает

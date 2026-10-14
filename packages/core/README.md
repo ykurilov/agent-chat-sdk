@@ -92,6 +92,24 @@ import type { ChatStorage } from "@ykurilov/agent-chat-core";
 - `staffOfChat` и `model.staff` — для песочницы: при `model.staff` инструменты не пишут в данные `ownerId`.
 - Своё хранилище: `findChatBySubject`, `importChat`, `setAfterTurnState`, `listPendingAfterTurn` — только для включённых возможностей; общие тесты с флагами `subjectChats`, `importChat`, `afterTurnState`.
 
+## Проверка ответа, часы, «не доставлено»
+
+С 0.49. Всё по желанию; без этих настроек ход побайтно прежний.
+
+- `replyChecks` у `createChatService` — проверки готового ответа перед записью: список или `{ checks, web }`. Готовые —
+  пакет `@ykurilov/agent-chat-reply-check` (чужие слова, выдуманные ссылки); своя — `ReplyCheck`: `({ text, seenTexts,
+  rewrite, … }) => { text, note? } | void`. Веб: `web: "replace"` (по умолчанию) — печатать и заменить исправленным,
+  `"hold"` — не печатать до проверки. Мессенджеры получают только проверенный текст. Переписка — расход
+  `answer_correction`. Подробно — [docs/reply-check.md](https://github.com/ykurilov/agent-chat-sdk/blob/main/docs/reply-check.md).
+- `now` — часы службы: дата в запросе к модели, `prepareTurn.now`, время сценариев. Тесты подменяют время целиком.
+- `beforeTurn` кроме отказа может вернуть `{ hold: true }` — записать сообщение и промолчать (`steer` отвечает статусом
+  `held`), или `{ reply: { text } }` — ответить готовым текстом без модели. «Записать и промолчать» лимит не тратит.
+- `markUndelivered({ ownerId, chatId, messageId })` — ответ не дошёл наружу: он остаётся в истории с пометкой
+  `metadata.undelivered`, модель его больше не видит, экран показывает «Не доставлено».
+- `deliverNotices` получил `timeZone` (пояс человека для даты в инструкции), `awaitAnswer` (дождаться хода и вернуть
+  готовый проверенный текст в `answer`) и `usageSource`. Ход, где агент пишет первым, пишется в расход как
+  `first_message`.
+
 ## Надёжность хода
 
 Всё это работает само; настройки — в `agent` у `createChatService` (`createChatHandler`). Полное описание — в

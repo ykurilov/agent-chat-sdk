@@ -28,6 +28,7 @@ import type { BackgroundPort, BackgroundTasks } from "./background/background-ta
 import { helperToolsModel, runHelper } from "./helpers/run-helper";
 import type { DeliverNoticesInput, DeliverNoticesResult } from "./notices/agent-notice";
 import { deliveryKeyOf, MAX_SERVER_TURNS_IN_ROW, noticeMessageParts, serverTurnsInRow } from "./notices/deliver-notices";
+import { noticesOfPart } from "./notices/notices-for-model";
 import type { TurnObserver } from "./agent-run/turn-observer";
 import { checkProviderFallback } from "./agent-run/next-attempt";
 import type { ProviderFallbackSetting } from "./agent-run/next-attempt";
@@ -69,9 +70,25 @@ import type { BranchFork } from "./conversation/branches";
 import { toAgentChatMessage } from "./conversation/to-agent-chat-message";
 import { newStoredMessage, subjectOfChat } from "./conversation/types";
 import type { AnswerEdit } from "./conversation/answer-edit";
-import { AnswerEditError, editAnswerParts } from "./conversation/edit-answer-parts";
+import { AnswerEditError, answerText, editAnswerParts } from "./conversation/edit-answer-parts";
 import { sumOfSteps } from "./agent-run/turn-usage";
-import type { AgentChannel, AgentChatMessage, AnswerStatus, Chat, ExternalChannel, GroupTurn, PendingStepUsage, StoredMessage, TokenUsage, UsageSum } from "./conversation/types";
+import { resolveReplyChecks } from "./agent-run/reply-check-types";
+import type { ReplyChecksSetting } from "./agent-run/reply-check-types";
+import type {
+  AgentAudience,
+  AgentChannel,
+  AgentChatMessage,
+  AnswerStatus,
+  Chat,
+  ExternalChannel,
+  FinalAnswerStatus,
+  GroupTurn,
+  PendingStepUsage,
+  StoredMessage,
+  TokenUsage,
+  UsageSource,
+  UsageSum,
+} from "./conversation/types";
 import { cachePriceWarnings, findModel, modelAcceptsImages } from "./models/model-catalog";
 import type { ModelCatalog } from "./models/model-catalog";
 import {
@@ -91,8 +108,9 @@ import type { SteeringTurn } from "./steering/turn-steering";
 import type { RunningAnswerRegistry } from "./running-answers/running-answer-registry";
 import { createLiveTurns, STOPPED_TURNS_WAIT_MS, turnStopReasonOf } from "./running-answers/live-turns";
 import { SpendingLimitReachedError } from "./spending/spending-limits";
-import { createTurnGate } from "./turn-hooks/turn-gate";
-import type { TurnGateInput } from "./turn-hooks/turn-gate";
+import { createTurnGate, replyOf, TURN_HELD_PART_TYPE } from "./turn-hooks/turn-gate";
+import { undeliveredIdsOf, undeliveredRecord } from "./agent-run/undelivered";
+import type { TurnGateInput, TurnPass } from "./turn-hooks/turn-gate";
 import type { SpendingLimits, SpendingStatus } from "./spending/spending-limits";
 import { CHAT_DATA_MAX_BYTES, assertChatData, assertChatDataFilter, assertChatDataPatch, chatDataOfInput } from "./storage/chat-data";
 import type { ChatDataFilter } from "./storage/chat-data";
@@ -110,6 +128,9 @@ import type { ChatClosure } from "./access/chat-closure";
 import { ChatCreationRefusedError } from "./access/chat-creation";
 import type { BeforeCreateChatHandler } from "./access/chat-creation";
 import { abandonedAnswersOf, abandonedOnRetry, isRetryableAnswer } from "./conversation/abandoned-answers";
+import type { AskModel, PrepareTurn, RecordUsage } from "./turn-hooks/prepare-turn";
+import { createAskModel, createRecordUsage } from "./usage/ask-model";
+import { prepareTurnSafely } from "./turn-hooks/turn-preparation";
 import type { AbandonedAnswers, AfterTurnHandler, AppEvent, BeforeTurnHandler, StaffActor, TurnAction, TurnNotStartedHandler, TurnNotStartedReason } from "./turn-hooks/turn-hooks";
 import { ANSWER_STALE_AFTER_MS, STALE_ANSWERS_SWEEP_EVERY_MS } from "./agent-run/answer-liveness";
 import {
@@ -318,6 +339,11 @@ export interface AgentSettings {
    * сразу. По умолчанию 5000; 0 или `Infinity` — без срока; иначе от 1000 до 2³¹−1.
    */
   contextBlocksTimeoutMs?: number;
+  /**
+   * Записи состояния в начале хода, до блоков контекста: так расширение применяет то, что случилось вне хода
+   * (сработал таймер, пришёл сигнал приложения). Не задано — ход как прежде.
+   */
+  prepareTurn?: PrepareTurn;
 }
 
 /** Как отправлено сообщение. */
@@ -417,15 +443,27 @@ export interface ChatServiceOptions {
   /** Журнал сервера. По умолчанию `console.error`. */
   logError?: (message: string) => void;
   /**
+   * Часы службы: дата в запросе к модели, `prepareTurn.now`, время сценариев. Один источник на службу — тесты и
+   * песочница подменяют время целиком. По умолчанию — сейчас.
+   */
+  now?: () => Date;
+  /**
+   * Проверки готового ответа перед записью (пакет `@ykurilov/agent-chat-reply-check` или свои): по очереди над последней
+   * текстовой частью законченного ответа, для любого хода и канала. Сбой проверки или пустой текст — текст до неё и
+   * строка в `logError`. Веб-чат: `web: "replace"` (по умолчанию) — печатать как обычно и заменить исправленным,
+   * `"hold"` — не печатать до проверки; мессенджеры получают только проверенный текст. Нет — ход побайтно прежний.
+   */
+  replyChecks?: ReplyChecksSetting;
+  /**
    * Наблюдатель хода (песочница): каждое обращение к модели (ответ, сжатие, память, повторы) и каждый вызов серверного
    * инструмента — событием. Вызывается синхронно и не ждётся; бросок уходит в `logError`. Нет — запрос побайтно прежний.
    */
   turnObserver?: TurnObserver;
   /**
    * Своя инструкция чата (песочница): берётся перед каждым ходом и сжатием, служебные блоки ядра дописываются к ней.
-   * `null` — инструкция приложения. Нет — инструкция собирается один раз, запрос побайтно прежний.
+   * Ходу приходит второй аргумент — кто слушает (`audience`); сжатию — нет. `null` — инструкция приложения. Нет — инструкция собирается один раз, запрос побайтно прежний.
    */
-  chatInstructions?: (chat: Chat) => Promise<string | null>;
+  chatInstructions?: ChatInstructions;
   /**
    * Сотрудник хода по чату (песочница: копия чата человека у админа). Берётся перед каждым ходом; есть — инструменты
    * получают `model.staff`, хук итога — `staff` и `actorId` сотрудника. `null` или нет — ход делает сам владелец,
@@ -496,6 +534,15 @@ export interface ChatServiceOptions {
   privateStateKeys?: readonly string[];
 }
 
+/** Ход, для которого берётся инструкция чата; у сжатия его нет. */
+export interface ChatInstructionsTurn {
+  /** `group` — групповой чат мессенджера, `private` — разговор с владельцем. */
+  audience: AgentAudience;
+}
+
+/** `chatInstructions`: своя инструкция чата; `null` — инструкция приложения. */
+export type ChatInstructions = (chat: Chat, turn?: ChatInstructionsTurn) => Promise<string | null>;
+
 /** Хук `onModelChosen`: чей и какой выбор сохранён. */
 export type ModelChosenHandler = (input: { userId: string; chatId: string; choice: ModelChoice }) => void | Promise<void>;
 
@@ -564,7 +611,8 @@ export interface ChatHistory {
 
 /** Итог поправки: `queued` — ждёт границы шага идущего хода; `started` — хода не было, начат обычный ход. */
 export interface SteerResult {
-  status: "queued" | "started";
+  /** `held` — `beforeTurn` сказал «записать и промолчать»: сообщение записано, хода нет. */
+  status: "queued" | "started" | "held";
   messageId: string;
 }
 
@@ -717,6 +765,24 @@ export interface ChatService {
    * `wakeAgent`, после 5 ходов сервера подряд без человека или при исчерпанном лимите — сообщение без хода.
    */
   deliverNotices(input: DeliverNoticesInput): Promise<DeliverNoticesResult>;
+  /**
+   * Ответ не доставлен наружу (канал закрыт, человек заблокировал): ответ и его служебное сообщение остаются в истории с
+   * пометкой, модель их больше не видит, экран показывает подпись «не доставлено».
+   */
+  markUndelivered(input: { ownerId: string; chatId: string; messageId: string }): Promise<void>;
+  /**
+   * Один вызов модели каталога без инструментов и истории (судья, разбор ответа). Лимит проверяется до вызова
+   * (`SpendingLimitReachedError` — модель не вызывается), расход идёт в журнал с `source` и в лимиты.
+   */
+  askModel: AskModel;
+  /** Расход вызова мимо провайдеров ядра (свой сервис): в журнал по цене сервиса и в лимиты. Нулевой не пишется. */
+  recordUsage: RecordUsage;
+  /**
+   * Проверка лимита расходов перед своим вызовом мимо ядра (судья у своего сервиса): исчерпан — исключение, вызывать
+   * нельзя. Лимитов нет — ничего не делает.
+   * @throws SpendingLimitReachedError лимит исчерпан.
+   */
+  assertWithinLimit(ownerId: string, chatId: string): Promise<void>;
   /**
    * Слияние верхних ключей в данные чата: ключ патча заменяет старый целиком, ключ со значением `undefined` удаляется.
    * Возвращает данные после записи (не осталось ключей — `{}`). Новое значение видят инструменты, хуки и инструкция чата
@@ -944,6 +1010,8 @@ export interface ChatService {
   flush(options?: FlushOptions): Promise<void>;
   /** Включены ли живые демонстрации (`agent.liveDemos`): мессенджеры вместо блока ```html-demo пишут «доступна на сайте». */
   readonly liveDemos?: boolean;
+  /** Есть ли проверки ответа (`replyChecks`): мессенджеры не шлют ответ по словам, а ждут проверенный текст. */
+  readonly checksReplies?: boolean;
 }
 
 /** Как останавливать службу. */
@@ -1068,15 +1136,15 @@ function withWidgets(agent: AgentSettings, widgets: AgentWidgets, logError: (mes
  * (собранная строка запоминается по тексту), `null` — собранная инструкция приложения.
  */
 function chatInstructionsSource(
-  chatInstructions: ((chat: Chat) => Promise<string | null>) | undefined,
+  chatInstructions: ChatInstructions | undefined,
   appInstructions: string,
   blocks: InstructionBlocks,
   backgroundInstructions: string | undefined,
-): ((chat: Chat) => Promise<string>) | undefined {
+): ((chat: Chat, turn?: ChatInstructionsTurn) => Promise<string>) | undefined {
   if (!chatInstructions) return undefined;
   const assembler = createInstructionsAssembler(blocks);
-  return async (chat) => {
-    const base = await chatInstructions(chat);
+  return async (chat, turn) => {
+    const base = await (turn ? chatInstructions(chat, turn) : chatInstructions(chat));
     if (base === null) return appInstructions;
     const assembled = assembler.forBase(base);
     return backgroundInstructions === undefined ? assembled : `${assembled}\n\n${backgroundInstructions}`;
@@ -1102,6 +1170,8 @@ function withBrowserDescriptions(tools: AgentToolsSource | undefined, descriptio
 
 export function createChatService(input: ChatServiceOptions): ChatService {
   const logError = input.logError ?? ((message: string) => console.error(message));
+  const now = input.now ?? (() => new Date());
+  const replyChecks = checkedReplyChecks(input.replyChecks);
   const widgets = createAgentWidgets(input.agent.widgets);
   checkWidgetNamesFree(widgets, input.memory, input.background);
   const browserToolDescriptions = checkedBrowserTools(input.agent, input.memory, widgets);
@@ -1176,6 +1246,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     maxOutputTokens,
     stepContextTimeoutMs: stepContextTimeoutSetting,
     contextBlocksTimeoutMs: contextBlocksTimeoutSetting,
+    prepareTurn,
     ...agentSettings
   } = options.agent;
   const stepContextTimeoutMs = resolveTimeoutMs(stepContextTimeoutSetting, DEFAULT_STEP_CONTEXT_TIMEOUT_MS, "agent.stepContextTimeoutMs");
@@ -1245,6 +1316,9 @@ export function createChatService(input: ChatServiceOptions): ChatService {
   const pendingClosures = new Map<string, ChatClosure | null>();
   /** Чаты, где сейчас пишется ждущее закрытие. */
   const writingClosures = new Set<string>();
+  /** Пометки «не доставлено», пришедшие, пока чат занят: ложатся записью в конец ветки после хода. */
+  const pendingUndelivered = new Map<string, Set<string>>();
+  const writingUndelivered = new Set<string>();
   /** Работа после хода (состояние, закрытие): остановка службы её ждёт. */
   const afterTurnWork = new Set<Promise<void>>();
   const flushers = new Set<() => Promise<void>>();
@@ -1356,20 +1430,45 @@ export function createChatService(input: ChatServiceOptions): ChatService {
    */
   async function startingTurn<T>(
     input: TurnGateInput,
-    start: () => Promise<T>,
+    start: (pass: TurnPass) => Promise<T>,
     notStartedBecause?: (result: T) => TurnNotStartedReason | undefined,
   ): Promise<T> {
-    return admitting(input.chat.id, () => turnGate.admit(input, () => checkedStart(input, start), notStartedBecause));
+    return admitting(input.chat.id, () => turnGate.admit(input, (pass) => checkedStart(input, start, pass), notStartedBecause));
   }
 
-  /** Лимит расходов, затем `start` под замком чата: чат закрыт или занят — отказ до записи. */
-  async function checkedStart<T>(input: TurnGateInput, start: () => Promise<T>): Promise<T> {
+  /**
+   * Лимит расходов, затем `start` под замком чата: чат закрыт или занят — отказ до записи. «Записать и промолчать»
+   * денег не стоит: лимит не спрашивается.
+   */
+  async function checkedStart<T>(input: TurnGateInput, start: (pass: TurnPass) => Promise<T>, pass: TurnPass = { kind: "turn" }): Promise<T> {
     const chatId = input.chat.id;
-    await assertWithinSpendingLimit(input.userId, chatId);
+    if (pass.kind !== "hold") await assertWithinSpendingLimit(input.userId, chatId);
     return whileStarting(chatId, async () => {
       if (OPEN_CHAT_ACTIONS.has(input.action)) await assertStillOpen(chatId);
       else await carryLegacyClosure(chatId);
-      return start();
+      return start(pass);
+    });
+  }
+
+  /** Готовый ответ хода для `deliverNotices({ awaitAnswer })`: текст, как в итоге хода (`TurnResult.text`), и статус. */
+  async function finalAnswerOf(answerId: string): Promise<NonNullable<DeliverNoticesResult["answer"]>> {
+    const answer = await storage.getMessage(answerId);
+    const text = answerText(answer?.parts ?? []);
+    const status = answer?.status && answer.status !== "streaming" ? (answer.status as FinalAnswerStatus) : "interrupted";
+    return { messageId: answerId, text, status };
+  }
+
+  /**
+   * Сообщение человека записано без хода (`beforeTurn` → `{ hold: true }`): событие `turn-held`, а клиенту — поток из
+   * одного временного куска «ответ позже».
+   */
+  function heldTurn(ownerId: string, chatId: string, messageId: string): ReadableStream<UIMessageChunk> {
+    chatEvents.emit({ type: "turn-held", ownerId, chatId, messageId, trigger: "human" });
+    return new ReadableStream<UIMessageChunk>({
+      start(controller) {
+        controller.enqueue({ type: TURN_HELD_PART_TYPE, data: { messageId }, transient: true } as UIMessageChunk);
+        controller.close();
+      },
     });
   }
 
@@ -1398,6 +1497,19 @@ export function createChatService(input: ChatServiceOptions): ChatService {
   async function assertWithinSpendingLimit(userId: string, chatId: string): Promise<void> {
     await options.limits?.assertWithinLimit({ userId, chatId });
   }
+
+  /** Расход уже в журнале: лимиты сверяют пороги. Не ждётся; сбой — строка в журнал. */
+  function afterSpending(userId: string, chatId: string): void {
+    if (!options.limits?.afterSpending) return;
+    const report = (failure: unknown) => logError(`Лимиты после расхода (чат ${chatId}): ${failure instanceof Error ? failure.message : String(failure)}`);
+    try {
+      options.limits.afterSpending({ userId, chatId }).catch(report);
+    } catch (failure) {
+      report(failure);
+    }
+  }
+
+  const oneOffCalls = { storage, catalog: options.catalog, env, logError, assertWithinLimit: assertWithinSpendingLimit, afterSpending };
 
   /**
    * Сообщение человека (отправка, правка) берёт место в окнах сообщений до записи — после проверки хода, денег и занятости
@@ -1613,6 +1725,40 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     void running.finally(() => afterTurnWork.delete(running));
   }
 
+  /** Чат свободен — ждущие закрытие и пометки «не доставлено» ложатся записями в конец ветки. */
+  function writePendingRecords(chatId: string): void {
+    writePendingClosure(chatId);
+    writePendingUndelivered(chatId);
+  }
+
+  function writePendingUndelivered(chatId: string): void {
+    if (!pendingUndelivered.has(chatId) || writingUndelivered.has(chatId) || starting.has(chatId) || registry.isRunning(chatId)) return;
+    writingUndelivered.add(chatId);
+    afterTurnTask(async () => {
+      try {
+        await writeUndelivered(chatId);
+      } catch (failure) {
+        logError(`Пометка «не доставлено» в чате ${chatId} не записалась после хода: ${failure instanceof Error ? failure.message : String(failure)}`);
+      } finally {
+        writingUndelivered.delete(chatId);
+      }
+    });
+  }
+
+  /** Ждущие пометки чата — одной записью в конец ветки; уже помеченные пропускаются. */
+  async function writeUndelivered(chatId: string): Promise<void> {
+    await holdingChat(chatId, async () => {
+      const ids = pendingUndelivered.get(chatId);
+      pendingUndelivered.delete(chatId);
+      if (!ids || !(await storage.getChat(chatId))) return;
+      const marked = undeliveredIdsOf(await currentBranch(chatId));
+      const fresh = [...ids].filter((id) => !marked.has(id));
+      if (fresh.length === 0) return;
+      const state = await readBranchState(storage, chatId);
+      await storage.insertMessage(stateMessage({ chatId, parentId: state.atMessageId, record: undeliveredRecord(...fresh) }));
+    });
+  }
+
   /** Чат свободен — ждущее закрытие ложится записью в конец ветки. */
   function writePendingClosure(chatId: string): void {
     if (!pendingClosures.has(chatId) || writingClosures.has(chatId) || starting.has(chatId) || registry.isRunning(chatId)) return;
@@ -1703,6 +1849,10 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     const capabilities = await capabilitiesOf(userId, withClosure(stored, closed), scope);
     // Мысли, служебные инструменты и модель — по правам зрителя (`reasoning`, `toolDetails`, `modelDetails`); хранилище их держит.
     const visibility = clientVisibilityOf(capabilities, isScreenTool);
+    // Недоставленные ответы — с пометкой: экран подпишет «не доставлено».
+    const undelivered = undeliveredIdsOf(branch);
+    const markedUndelivered = (message: AgentChatMessage): AgentChatMessage =>
+      undelivered.has(message.id) ? { ...message, metadata: { ...message.metadata, undelivered: true } } : message;
     const visible = (list: AgentChatMessage[]) => (visibility.showsEverything ? list : list.map((message) => visibility.visibleMessage(message)));
     const shownChat = withEffectiveChoice(withClosure(chat, closed));
     const acceptsImages = acceptsImagesOf(shownChat);
@@ -1713,7 +1863,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
         publicMessages(
           shown
             .filter((message) => message.id !== runningAnswerId || resumeBases.get(chatId)?.id === runningAnswerId)
-            .map((message) => (message.id === runningAnswerId ? resumeBases.get(chatId)! : toAgentChatMessage(message))),
+            .map((message) => (message.id === runningAnswerId ? resumeBases.get(chatId)! : markedUndelivered(toAgentChatMessage(message)))),
           hiddenStateKey,
         ),
       ),
@@ -1794,8 +1944,8 @@ export function createChatService(input: ChatServiceOptions): ChatService {
       startingSlots.get(chatId)?.release();
       startingSlots.delete(chatId);
       forgetStopIfIdle(chatId);
-      // Закрытие, пришедшее пока чат был занят, но ход так и не начался.
-      writePendingClosure(chatId);
+      // Закрытие и пометки, пришедшие пока чат был занят, но ход так и не начался.
+      writePendingRecords(chatId);
     }
   }
 
@@ -1912,8 +2062,16 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     page: TurnRequestContext | undefined,
     createdAt?: string,
     stateBefore?: AppStateValues,
+    reply?: string,
   ): Promise<ReadableStream<UIMessageChunk>> {
-    const stream = await launchTurn(userId, chatId, branch, { parentId: branch.at(-1)!.id, createdAt, page, action, ...(stateBefore && { stateBefore }) });
+    const stream = await launchTurn(userId, chatId, branch, {
+      parentId: branch.at(-1)!.id,
+      createdAt,
+      page,
+      action,
+      ...(stateBefore && { stateBefore }),
+      ...(reply !== undefined && { reply }),
+    });
     if (!stream) throw new TurnEndedBeforeSubscribeError(chatId);
     return stream;
   }
@@ -1988,6 +2146,16 @@ export function createChatService(input: ChatServiceOptions): ChatService {
       stateBefore?: AppStateValues;
       /** Части продолжения, что клиент получит сразу после `start` (см. `resume.announced` хода). */
       announced?: StoredMessage["parts"];
+      /** Готовый ответ без модели (`deliverNotices` с `reply`). */
+      reply?: string;
+      /** Пояс хода от приложения (`deliverNotices`), главнее пояса страницы; неверный — как не задан. */
+      timeZone?: string;
+      /** Метка расхода хода (`deliverNotices`). Нет — `answer`. */
+      usageSource?: UsageSource;
+      /** Ответ доставит приложение (`deliverNotices` с `awaitAnswer`): в `turn-started` — `deliveredByApp`. */
+      deliveredByApp?: boolean;
+      /** Ход начат: id ответа и его конец (после записи итога и `afterTurn`). */
+      onStarted?: (turn: { answerId: string; finished: Promise<void> }) => void;
     },
   ): Promise<ReadableStream<UIMessageChunk> | null> {
     const chat = await ownChat(userId, chatId);
@@ -1997,7 +2165,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     const trigger: ChatTurnTrigger = launch.action === "notice" ? "notice" : "human";
     let finalStatus: AnswerStatus = "interrupted";
     // Инструкция чата — до запуска: не удалось взять — ход не начинается, как при сбое чтения чата.
-    const instructions = instructionsOfChat && (await instructionsOfChat(chat));
+    const instructions = instructionsOfChat && (await instructionsOfChat(chat, { audience: group ? "group" : "private" }));
     const staff = options.staffOfChat?.(chat) ?? undefined;
     // Потолки хода — тоже до запуска: не удалось взять — ход не начинается, как при сбое проверки лимита.
     const turnRules = await options.limits?.turnRules?.({ userId: chat.ownerId, chatId });
@@ -2013,7 +2181,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     // Данные чата — тоже инструментам и итогу хода; модели не уходят.
     const chatData = chatDataOfInput(chat);
     // Дата в запросе — по поясу человека; не пришёл или не настоящий — `agent.timeZone`, без него — пояс сервера.
-    const timeZone = resolveTimeZone(launch.page?.timeZone) ?? fallbackTimeZone;
+    const timeZone = resolveTimeZone(launch.timeZone) ?? resolveTimeZone(launch.page?.timeZone) ?? fallbackTimeZone;
     const resumeMessage = launch.resume && toAgentChatMessage(launch.resume);
     if (resumeMessage && !launch.replay) resumeBases.set(chatId, resumeMessage);
     const toolQueue = chatToolQueues.get(chatId) ?? createToolQueue();
@@ -2029,6 +2197,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
         const abortSignal = AbortSignal.any([stopSignal, liveTurn.signal]);
         return runAgentTurn({
           storage,
+          now,
           liveDemos: input.agent.liveDemos === true,
           hiddenStateKey,
           catalog: options.catalog,
@@ -2061,6 +2230,32 @@ export function createChatService(input: ChatServiceOptions): ChatService {
           ...(chatData && { chatData }),
           // Состояние — по ветке хранилища, а не по сжатой истории; продолжаемый ответ уже последний в ветке.
           appState: foldAppState(branch),
+          ...(prepareTurn && {
+            prepareTurn: ({ state, abortSignal: signal }: { state: AppStateValues; abortSignal: AbortSignal }) =>
+              prepareTurnSafely({
+                prepareTurn,
+                context: {
+                  ownerId: chat.ownerId,
+                  chatId,
+                  messageId: answerId,
+                  chat: structuredClone(chat),
+                  action: launch.action,
+                  resumed: launch.resume !== undefined,
+                  audience: group ? "group" : "private",
+                  ...(staff && { staff: structuredClone(staff) }),
+                  // Ход по служебному сообщению — с ним; у остальных ходов пусто.
+                  notices: launch.action === "notice" ? structuredClone((branch.at(-1)?.parts ?? []).flatMap(noticesOfPart)) : [],
+                  timeZone: timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+                  now: now(),
+                },
+                state,
+                abortSignal: signal,
+                logError,
+              }),
+          }),
+          ...(launch.reply !== undefined && { reply: launch.reply }),
+          ...(launch.usageSource && { usageSource: launch.usageSource }),
+          ...(replyChecks.checks.length > 0 && { replyChecks }),
           ...(channel !== "web" && { channel }),
           ...(group && { group }),
           ...(timeZone && { timeZone }),
@@ -2120,14 +2315,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
               notifyTurnFinished(options.onTurnFinished, turn, logError);
             }
             // Расход хода уже в журнале: лимиты сверяют пороги. Ход их не ждёт.
-            if (options.limits?.afterSpending) {
-              const report = (failure: unknown) => logError(`Лимиты после расхода (чат ${chatId}): ${failure instanceof Error ? failure.message : String(failure)}`);
-              try {
-                options.limits.afterSpending({ userId: chat.ownerId, chatId }).catch(report);
-              } catch (failure) {
-                report(failure);
-              }
-            }
+            afterSpending(chat.ownerId, chatId);
             if (status !== "complete") return;
             // Память — к ответившему провайдеру: основной, с которого ушли на запасной, скорее всего ещё лежит.
             // В группе памяти владельца нет: разговор группы в неё не идёт.
@@ -2158,7 +2346,8 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     steeringTurn = steering.begin(chatId, answerId);
     if (stopsWhileStarting.delete(chatId)) registry.abort(chatId);
     const turnEvent = { ownerId: chat.ownerId, chatId, messageId: answerId, trigger, channel };
-    chatEvents.emit({ type: "turn-started", ...turnEvent });
+    chatEvents.emit({ type: "turn-started", ...turnEvent, ...(launch.deliveredByApp && { deliveredByApp: true as const }) });
+    launch.onStarted?.({ answerId, finished });
     // Ход пошёл: его место освобождается, когда ход закончится, а не когда закончится запуск.
     liveAnswerIds.add(answerId);
     const slot = startingSlots.get(chatId);
@@ -2174,7 +2363,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
       slot?.release();
       chatEvents.emit({ type: "turn-finished", ...turnEvent, status: finalStatus });
       afterTurnTask(() => branchChanged(chat.ownerId, chatId, STATE_CHANGE_REASON[launch.action] ?? "turn", stateBefore));
-      writePendingClosure(chatId);
+      writePendingRecords(chatId);
     });
     return launch.detached ? null : registry.subscribe(chatId);
   }
@@ -2198,10 +2387,11 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     const input: TurnGateInput = { userId, chat, action: "send", text, messageId: message.id };
     const sendOptions: SendMessageOptions = { ...(steerOptions?.page && { page: steerOptions.page }) };
     return admitting(chatId, () =>
-      turnGate.admit(input, async (): Promise<SteerResult> => {
-        await assertWithinSpendingLimit(userId, chatId);
+      turnGate.admit(input, async (pass): Promise<SteerResult> => {
+        if (pass.kind !== "hold") await assertWithinSpendingLimit(userId, chatId);
         for (let attempt = 0; attempt < STEER_ATTEMPTS; attempt++) {
-          if (steering.isOpen(chatId)) {
+          // Решение приложения («промолчать», готовый текст) — не поправка к идущему ходу: ждёт его конца.
+          if (pass.kind === "turn" && steering.isOpen(chatId)) {
             const queued = await queueCorrection(userId, chatId, message, text, files, steerOptions?.page);
             if (queued) return { status: "queued", messageId: queued.id };
             continue;
@@ -2214,9 +2404,9 @@ export function createChatService(input: ChatServiceOptions): ChatService {
           }
           await assertNoAnswerElsewhere(chatId);
           // Хода нет: поправка — обычное сообщение и новый ход; поток не нужен, вкладка подключится сама.
-          const stream = await checkedStart(input, () => sendingTurn(userId, chatId, message, text, files, sendOptions));
+          const stream = await checkedStart(input, () => sendingTurn(userId, chatId, message, text, files, sendOptions, pass), pass);
           void stream.cancel().catch(() => {});
-          return { status: "started", messageId: message.id };
+          return { status: pass.kind === "hold" ? "held" : "started", messageId: message.id };
         }
         throw new ChatBusyError(chatId);
       }),
@@ -2231,16 +2421,21 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     text: string,
     files: IncomingFilePart[],
     sendOptions: SendMessageOptions | undefined,
+    pass: TurnPass = { kind: "turn" },
   ): Promise<ReadableStream<UIMessageChunk>> {
-    takeTurnSlot(userId, chatId);
+    if (pass.kind !== "hold") takeTurnSlot(userId, chatId);
     const branch = await currentBranch(chatId);
+    const answer = (fullBranch: StoredMessage[]) =>
+      pass.kind === "hold"
+        ? heldTurn(userId, chatId, message.id)
+        : startAnswer("send", userId, chatId, fullBranch, sendOptions?.page, undefined, undefined, replyOf(pass));
     // Повтор того же сообщения: в прошлый раз оно сохранилось, а приём оборвался до ответа (сбой базы при закрытии
     // запроса подтверждения). Приём доводится до конца с сохранённым сообщением, второй копии нет.
     const repeated = branch.at(-1);
     if (repeated?.id === message.id && repeated.role === "user") {
       const before = branch.slice(0, -1);
       await closeUnansweredHumanInput(before);
-      return startAnswer("send", userId, chatId, [...before, repeated], sendOptions?.page);
+      return answer([...before, repeated]);
     }
     const question = await writingCountedMessage(userId, chatId, async () => {
       // Файлы принимаются, когда чат и место уже за ходом: при отказе по месту или занятости они не остаются ничьими.
@@ -2267,7 +2462,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     const chat = await storage.getChat(chatId);
     const title = chat && chat.title === undefined ? deriveChatTitle(text) : null;
     if (title) await storage.renameChat(chatId, title);
-    return startAnswer("send", userId, chatId, [...branch, question], sendOptions?.page);
+    return answer([...branch, question]);
   }
 
   /**
@@ -2391,6 +2586,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
 
   const service: ChatService = {
     liveDemos: input.agent.liveDemos === true,
+    checksReplies: replyChecks.checks.length > 0,
     async createChat(userId, createOptions) {
       if (createOptions?.data !== undefined) {
         assertChatData(createOptions.data);
@@ -2414,6 +2610,24 @@ export function createChatService(input: ChatServiceOptions): ChatService {
 
     importChat: subjectChats.importChat,
 
+    askModel: createAskModel(oneOffCalls),
+    recordUsage: createRecordUsage(oneOffCalls),
+
+    assertWithinLimit: (ownerId, chatId) => assertWithinSpendingLimit(ownerId, chatId),
+
+    async markUndelivered({ ownerId, chatId, messageId }) {
+      const chat = await storage.getChat(chatId);
+      if (!chat || chat.ownerId !== ownerId || deleting.has(chatId)) throw new ChatNotFoundError(chatId);
+      const answer = await storage.getMessage(messageId);
+      if (answer?.chatId !== chatId || answer.role !== "assistant") throw new InvalidMessageError("Пометить «не доставлено» можно только ответ агента этого чата");
+      const ids = pendingUndelivered.get(chatId) ?? new Set<string>();
+      ids.add(messageId);
+      pendingUndelivered.set(chatId, ids);
+      // Чат занят ходом: пометка ляжет после него (ждать хода здесь нельзя — пометку могут поставить из его же хука).
+      if (closing || starting.has(chatId) || registry.isRunning(chatId)) return;
+      await writeUndelivered(chatId);
+    },
+
     async deliverNotices(request) {
       const { ownerId, chatId } = request;
       const gone: DeliverNoticesResult = { status: "chat_gone", turnStarted: false };
@@ -2422,8 +2636,11 @@ export function createChatService(input: ChatServiceOptions): ChatService {
       if (!chat || chat.ownerId !== ownerId || deleting.has(chatId)) return gone;
       // Занятый чат или остановка службы: ничего не пишем, фон повторит доставку по `turn-finished` или после запуска.
       if (closing || starting.has(chatId) || registry.isRunning(chatId)) return busy;
+      // Ход, который ждёт `awaitAnswer`: его конец ждётся уже вне замка чата.
+      let launched: { answerId: string; finished: Promise<void> } | undefined;
+      let result: DeliverNoticesResult;
       try {
-        return await holdingChat(chatId, async () => {
+        result = await holdingChat(chatId, async () => {
           let { messages, branch } = await loadTree(chatId);
           // Ход на другой копии сервера (ответ идёт и подаёт знак жизни) — чат тоже занят: фон повторит доставку по
           // таймеру. Ответ, брошенный упавшей копией дольше порога, прерывается сразу, как в `getHistory`.
@@ -2437,7 +2654,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
           const unanswered = earlier && request.wakeAgent && branch.at(-1)?.id === earlier.id ? earlier : undefined;
           if (earlier && !unanswered) return { status: "delivered" as const, messageId: earlier.id, turnStarted: false };
           if (unanswered) branch = branch.slice(0, -1);
-          const writeNotice = async (wake: boolean): Promise<DeliverNoticesResult> => {
+          const writeNotice = async (wake: boolean, reply = request.reply?.text): Promise<DeliverNoticesResult> => {
             // Место хода — до записи: нет места — `busy`, ничего не записано.
             if (wake) takeTurnSlot(ownerId, chatId);
             const notice =
@@ -2457,7 +2674,15 @@ export function createChatService(input: ChatServiceOptions): ChatService {
               if (!unanswered) chatEvents.emit({ type: "notice-added", ownerId, chatId, messageId: notice.id });
               return { status: "delivered" as const, messageId: notice.id, turnStarted: false };
             }
-            await launchTurn(ownerId, chatId, [...branch, notice], { parentId: notice.id, action: "notice", detached: true });
+            await launchTurn(ownerId, chatId, [...branch, notice], {
+              parentId: notice.id,
+              action: "notice",
+              detached: true,
+              ...(reply !== undefined && { reply }),
+              ...(request.timeZone !== undefined && { timeZone: request.timeZone }),
+              ...(request.usageSource && { usageSource: request.usageSource }),
+              ...(request.awaitAnswer && { deliveredByApp: true, onStarted: (turn: { answerId: string; finished: Promise<void> }) => void (launched = turn) }),
+            });
             return { status: "delivered" as const, messageId: notice.id, turnStarted: true };
           };
           const gateInput: TurnGateInput = { userId: ownerId, chat, action: "notice" };
@@ -2473,10 +2698,10 @@ export function createChatService(input: ChatServiceOptions): ChatService {
           let skipped: TurnNotStartedReason | undefined;
           return turnGate.admitOrSkip(
             gateInput,
-            async () => {
+            async (pass) => {
               if (await closedNow()) skipped = "chat_closed";
               else if (!(await withinSpendingLimit(ownerId, chatId))) skipped = "spending_limit";
-              return writeNotice(skipped === undefined);
+              return writeNotice(skipped === undefined, replyOf(pass) ?? request.reply?.text);
             },
             () => writeNotice(false),
             () => skipped,
@@ -2487,6 +2712,9 @@ export function createChatService(input: ChatServiceOptions): ChatService {
         if (error instanceof ChatNotFoundError) return gone;
         throw error;
       }
+      if (!launched) return result;
+      await launched.finished.catch(() => {});
+      return { ...result, answer: await finalAnswerOf(launched.answerId) };
     },
 
     subscribeEvents(listener) {
@@ -2650,7 +2878,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
       const scope: RequestScope = {};
       await assertChatRules(userId, chat, { capabilities: messageCapabilities(files, sendOptions?.voiceMode), open: true }, scope);
       return viewerStream(userId, chat, scope, () =>
-        startingTurn({ userId, chat, action: "send", text, messageId: message.id }, () => sendingTurn(userId, chatId, message, text, files, sendOptions)),
+        startingTurn({ userId, chat, action: "send", text, messageId: message.id }, (pass) => sendingTurn(userId, chatId, message, text, files, sendOptions, pass)),
       );
     },
 
@@ -2672,7 +2900,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
       const scope: RequestScope = {};
       await assertChatRules(userId, chat, { capabilities: ["regenerate"] }, scope);
       const abandoned = await abandonedForHooks(chatId, (branch) => abandonedAnswersOf(branch, "regenerate", messageId));
-      return viewerStream(userId, chat, scope, () => startingTurn({ userId, chat, action: "regenerate", ...abandoned }, async () => {
+      return viewerStream(userId, chat, scope, () => startingTurn({ userId, chat, action: "regenerate", ...abandoned }, async (pass) => {
         takeTurnSlot(userId, chatId);
         const { messages, selections, branch } = await loadTree(chatId);
         const index = branch.findIndex((message) => message.id === messageId);
@@ -2683,7 +2911,16 @@ export function createChatService(input: ChatServiceOptions): ChatService {
         if (!branch.slice(0, index).some(isHumanMessage)) {
           throw new InvalidMessageError("Переделать можно только ответ на сообщение человека: у приветствия его нет");
         }
-        return startAnswer("regenerate", userId, chatId, branch.slice(0, index), page, nextSiblingTime(messages, selections, answer.parentId), foldAppState(branch));
+        return startAnswer(
+          "regenerate",
+          userId,
+          chatId,
+          branch.slice(0, index),
+          page,
+          nextSiblingTime(messages, selections, answer.parentId),
+          foldAppState(branch),
+          replyOf(pass),
+        );
       }));
     },
 
@@ -2693,8 +2930,8 @@ export function createChatService(input: ChatServiceOptions): ChatService {
       const scope: RequestScope = {};
       await assertChatRules(userId, chat, { capabilities: ["edit", ...messageCapabilities(files, editOptions?.voiceMode)] }, scope);
       const abandoned = await abandonedForHooks(chatId, (branch) => abandonedAnswersOf(branch, "edit", editedMessageId));
-      return viewerStream(userId, chat, scope, () => startingTurn({ userId, chat, action: "edit", text, messageId: message.id, ...abandoned }, async () => {
-        takeTurnSlot(userId, chatId);
+      return viewerStream(userId, chat, scope, () => startingTurn({ userId, chat, action: "edit", text, messageId: message.id, ...abandoned }, async (pass) => {
+        if (pass.kind !== "hold") takeTurnSlot(userId, chatId);
         const { branch, index, edited, question } = await writingCountedMessage(userId, chatId, async () => {
           // Файлы правленого сообщения приходят вместе с текстом и проходят ту же проверку, что и при отправке.
           const fileParts = await acceptFiles(userId, chatId, files);
@@ -2730,7 +2967,17 @@ export function createChatService(input: ChatServiceOptions): ChatService {
         // Правка — тоже сообщение вместо ответа: ждущий ответ ветки закрывается, как при отправке (FR-006).
         await closeUnansweredHumanInput(branch);
         if (editOptions?.voiceMode === true && branch.slice(0, index).every(isStateMessage)) await refreshDerivedTitle(chatId, edited, text);
-        return startAnswer("edit", userId, chatId, [...branch.slice(0, index), question], editOptions?.page, notBefore(question.createdAt), foldAppState(branch));
+        if (pass.kind === "hold") return heldTurn(userId, chatId, question.id);
+        return startAnswer(
+          "edit",
+          userId,
+          chatId,
+          [...branch.slice(0, index), question],
+          editOptions?.page,
+          notBefore(question.createdAt),
+          foldAppState(branch),
+          replyOf(pass),
+        );
       }));
     },
 
@@ -2780,7 +3027,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
       const scope: RequestScope = {};
       await assertChatRules(userId, chat, { capabilities: ["retry"], open: true }, scope);
       const abandoned = await abandonedForHooks(chatId, abandonedOnRetry);
-      return viewerStream(userId, chat, scope, () => startingTurn({ userId, chat, action: "retry", ...abandoned }, async () => {
+      return viewerStream(userId, chat, scope, () => startingTurn({ userId, chat, action: "retry", ...abandoned }, async (pass) => {
         takeTurnSlot(userId, chatId);
         const tree = await loadTree(chatId);
         const { messages, selections } = tree;
@@ -2793,19 +3040,19 @@ export function createChatService(input: ChatServiceOptions): ChatService {
           // Вопрос без ответа: запрос подтверждения перед ним мог остаться незакрытым, если приём вопроса оборвался.
           const before = branch.slice(0, -1);
           await closeUnansweredHumanInput(before);
-          return startAnswer("retry", userId, chatId, [...before, ...tree.branch.slice(end - 1)], page);
+          return startAnswer("retry", userId, chatId, [...before, ...tree.branch.slice(end - 1)], page, undefined, undefined, replyOf(pass));
         }
         if (!last || !isRetryableAnswer(last) || branch.at(-2)?.role !== "user") {
           throw new NothingToRetryError(chatId);
         }
         const stateBefore = foldAppState(tree.branch);
         // Оборванный ход с выполненными вызовами продолжается с них: инструменты не вызываются второй раз.
-        if (last.status !== "complete") {
+        if (last.status !== "complete" && pass.kind === "turn") {
           const continued = await continueAnswer(userId, chatId, { messages, selections, branch }, page, stateBefore);
           if (continued) return continued;
         }
         // Новый ответ — сосед прежнего и становится текущим, что бы человек ни выбирал до этого.
-        return startAnswer("retry", userId, chatId, branch.slice(0, -1), page, nextSiblingTime(messages, selections, last.parentId), stateBefore);
+        return startAnswer("retry", userId, chatId, branch.slice(0, -1), page, nextSiblingTime(messages, selections, last.parentId), stateBefore, replyOf(pass));
       }));
     },
 
@@ -3301,3 +3548,13 @@ function plainTextOf(message: StoredMessage): string {
 
 /** Приём поправок хода закрылся, пока поправка ждала очереди. */
 class SteeringClosed extends Error {}
+
+/** `replyChecks` к одному виду; не функция в списке или неизвестный режим веб-чата — `TypeError` при создании службы. */
+function checkedReplyChecks(setting: ReplyChecksSetting | undefined): ReturnType<typeof resolveReplyChecks> {
+  const resolved = resolveReplyChecks(setting);
+  if (!Array.isArray(resolved.checks) || resolved.checks.some((check) => typeof check !== "function")) {
+    throw new TypeError("replyChecks: нужен список функций проверки ответа");
+  }
+  if (resolved.web !== "replace" && resolved.web !== "hold") throw new TypeError(`replyChecks.web: "replace" или "hold", а не ${JSON.stringify(resolved.web)}`);
+  return resolved;
+}

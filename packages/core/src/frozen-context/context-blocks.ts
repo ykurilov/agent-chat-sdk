@@ -1,5 +1,6 @@
 import type { AgentAudience, AgentChannel, ChatSubject } from "../conversation/types";
 import type { AppStateValues } from "../app-state/app-state";
+import type { AgentNotice } from "../notices/agent-notice";
 import type { StaffActor } from "../turn-hooks/turn-hooks";
 
 /** Тип служебной части ответа с застывшими блоками хода. Клиенту не уходит, модели — только текстом блоков. */
@@ -79,6 +80,8 @@ export interface FrozenContextData {
    * Нет поля — память не читалась (групповой ход, сбой, ответ старой версии).
    */
   memoryFrom?: string;
+  /** Служебные сообщения хода от `prepareTurn`: модель видит их текстом после блоков. В разницу блоков не входят. */
+  notices?: AgentNotice[];
 }
 
 /** Ключи ядра: памяти, даты и места. Блоки приложения их занять не могут. */

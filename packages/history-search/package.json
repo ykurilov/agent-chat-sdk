@@ -1,6 +1,6 @@
 {
   "name": "@ykurilov/agent-chat-history-search",
-  "version": "0.47.0",
+  "version": "0.50.0",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,

@@ -34,3 +34,11 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+## Сторонние библиотеки в зависимостях
+
+Код этих библиотек не перенесён в SDK: пакеты ставятся из npm вместе со своей лицензией.
+
+| Библиотека | Лицензия | Где нужна |
+|---|---|---|
+| `@xyflow/react` (https://github.com/xyflow/xyflow) | MIT, Copyright (c) 2019-2025 webkid GmbH | доска редактора сценария, вход `@ykurilov/agent-chat-flows/react` |

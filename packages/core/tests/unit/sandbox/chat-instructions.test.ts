@@ -63,7 +63,7 @@ describe("chatInstructions: инструкция на чат (T012)", () => {
     const chat = await service.createChat("anna");
     await ask(service, chat.id, "u1");
     expect(systemOf(model.doStreamCalls[0]!)).toEqual({ role: "system", content: `Песочная инструкция для anna.${blocks}` });
-    expect(chatInstructions).toHaveBeenCalledWith(expect.objectContaining({ id: chat.id, ownerId: "anna" }));
+    expect(chatInstructions).toHaveBeenCalledWith(expect.objectContaining({ id: chat.id, ownerId: "anna" }), { audience: "private" });
   });
 
   it("null — инструкция приложения, та же, что без chatInstructions", async () => {

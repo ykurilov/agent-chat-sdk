@@ -44,7 +44,7 @@ export function createMessengers(options: MessengersOptions) {
   const textsOf = createTextsLookup(bots, options.texts, chatEnabled ? undefined : defaultMessengerTextsWithoutChat);
 
   const buttons = createButtonActions({ store, service, textsOf, logError });
-  const deliveries = createPendingDeliveries({ store, buttons, logError });
+  const deliveries = createPendingDeliveries({ store, buttons, logError, ...(options.onAnswerDelivery !== undefined && { onAnswerDelivery: options.onAnswerDelivery }) });
   const queues = new Map<MessengerBot, OutboundQueue>();
   const queueFor = (bot: MessengerBot) => {
     let queue = queues.get(bot);
@@ -99,6 +99,7 @@ export function createMessengers(options: MessengersOptions) {
     textsOf,
     logError,
     ...(options.webChatUrl !== undefined && { webChatUrl: options.webChatUrl }),
+    ...(options.onAnswerDelivery !== undefined && { onAnswerDelivery: options.onAnswerDelivery }),
   });
   const taskReadyPing = createTaskReadyPing({
     store,

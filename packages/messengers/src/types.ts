@@ -141,6 +141,37 @@ export interface MessengersChatOptions {
   voiceReplies?: VoiceReplies;
   /** `true`: «Задача готова» в мессенджер, когда вкладка закрыта. */
   taskReadyPing?: boolean;
+  /**
+   * Исход доставки каждого ответа агента в мессенджер — и на сообщение человека, и написанного первым (ход `notice`).
+   * Сценарию — одной строкой: `onAnswerDelivery: (report) => flow.reportDelivery(report)`. Ошибка уходит в `logError` и
+   * доставку не ломает. Один ответ может дать несколько исходов: `retry`, потом итог повтора; разбирать по `messageId`,
+   * последний главнее.
+   */
+  onAnswerDelivery?(report: AnswerDeliveryReport): Promise<void> | void;
+}
+
+/**
+ * Исход доставки ответа агента в мессенджер.
+ * - `delivered` — дошёл (или человек сам остановил его на середине `/stop`).
+ * - `blocked` — человек заблокировал бота; разговор помечен заблокированным.
+ * - `window_closed` — мессенджер не пускает писать первым (ВК 950), пока человек не напишет сам.
+ * - `retry` — мессенджер временно недоступен: итог лежит в хранилище и уйдёт сам; итог повтора придёт отдельным исходом.
+ * - `failed` — не дошёл и не дойдёт: ход сорвался, ответ пустой или мессенджер отказал насовсем.
+ */
+export type AnswerDeliveryOutcome = { status: "delivered" } | { status: "blocked" } | { status: "window_closed" } | { status: "retry" } | { status: "failed" };
+
+/** Чей ответ и как начат ход: `human` — ответ на сообщение человека, `notice` — агент пишет первым. */
+export interface AnswerRef {
+  ownerId: string;
+  chatId: string;
+  /** Номер ответа агента в чате. */
+  messageId: string;
+  trigger: "human" | "notice";
+}
+
+/** `onAnswerDelivery`: ответ и исход его доставки. */
+export interface AnswerDeliveryReport extends AnswerRef {
+  outcome: AnswerDeliveryOutcome;
 }
 
 /**
@@ -219,6 +250,8 @@ export interface PendingDelivery extends ConversationKey {
   edit?: SentMessage;
   /** Кнопки с номерами и действиями: после отправки действия сохраняются, как при обычной отправке. */
   rows?: Array<Array<{ id: string; text: string; action: ButtonAction }>>;
+  /** Итог ответа агента: после повтора его исход уходит в `onAnswerDelivery`. */
+  answer?: AnswerRef;
   createdAt: string;
 }
 

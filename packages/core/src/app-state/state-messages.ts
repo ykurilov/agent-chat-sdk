@@ -6,6 +6,8 @@ import { APP_STATE_PART_TYPE, appStatePart, isReservedAppStateKey } from "./app-
 import type { AppStateRecord, AppStateValues } from "./app-state";
 import { FROZEN_CONTEXT_PART_TYPE } from "../frozen-context/context-blocks";
 import { END_TURN_PART_TYPE } from "../agent-run/end-turn";
+import { AGENT_NOTICE_PART_TYPE } from "../notices/agent-notice";
+import { noticesOfPart } from "../notices/notices-for-model";
 
 /** Служебный ключ закрытия чата: `{ code, message }` на ветке — чат закрыт. */
 export const CLOSED_STATE_KEY = "$closed";
@@ -86,8 +88,8 @@ export function publicAppStateParts<P extends { type: string }>(parts: readonly 
 }
 
 /**
- * Сообщения для браузера: части без служебных ключей, без застывших блоков контекста и отметки `endTurn` (они только
- * для модели);
+ * Сообщения для браузера: части без служебных ключей, без застывших блоков контекста, отметки `endTurn` и служебных
+ * сообщений вида `app` (они только для модели);
  * сообщение человека, у которого не осталось частей, не уходит. Служебное сообщение состояния (`isStateMessage`) перед
  * обычным не показывается: его открытые записи едут в начале этого сообщения, и экран сворачивает то же состояние.
  */
@@ -98,8 +100,8 @@ export function publicMessages<M extends { role: string; parts: ReadonlyArray<{ 
   const shown: M[] = [];
   let waiting: M[] = [];
   for (const message of messages) {
-    const hasService = message.parts.some((part) => part.type === APP_STATE_PART_TYPE || isModelOnlyPart(part));
-    const parts = hasService ? publicAppStateParts(message.parts.filter((part) => !isModelOnlyPart(part)), hidden) : [...message.parts];
+    const hasService = message.parts.some((part) => part.type === APP_STATE_PART_TYPE || isModelOnlyPart(part) || hasAppNotice(part));
+    const parts = hasService ? publicAppStateParts(message.parts.filter((part) => !isModelOnlyPart(part)).flatMap(withoutAppNotices), hidden) : [...message.parts];
     if (message.role === "user" && parts.length === 0) continue;
     const visible = hasService ? { ...message, parts } : message;
     if (isStateMessage(message)) {
@@ -119,6 +121,15 @@ export function publicStateChunk(chunk: UIMessageChunk, hidden: HiddenStateKey =
   if (chunk.type !== APP_STATE_PART_TYPE) return chunk;
   const data = publicRecord((chunk as { data?: unknown }).data, hidden);
   return data === undefined ? undefined : ({ ...chunk, data } as UIMessageChunk);
+}
+
+const hasAppNotice = (part: { type: string }): boolean => noticesOfPart(part).some((notice) => notice.kind === "app");
+
+/** Часть служебных сообщений без вида `app`: их видит только модель. Ничего не осталось — части нет. */
+function withoutAppNotices<P extends { type: string }>(part: P): P[] {
+  if (part.type !== AGENT_NOTICE_PART_TYPE || !hasAppNotice(part)) return [part];
+  const notices = noticesOfPart(part).filter((notice) => notice.kind !== "app");
+  return notices.length === 0 ? [] : [{ ...part, data: { ...(part as { data?: object }).data, notices } }];
 }
 
 /** Части только для модели: застывшие блоки контекста и отметка конца хода инструментом без слов. */

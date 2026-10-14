@@ -1,6 +1,7 @@
 import { hasAnswerContent } from "../agent-run/auto-continue";
 import { GREETING_LEAD } from "../agent-run/greeting-lead";
 import type { AgentChatMessage } from "../conversation/types";
+import { noticeText } from "../notices/notices-for-model";
 import { FROZEN_CONTEXT_PART_TYPE, frozenContextOf, isMemoryKey, latestFrozenContextOf, noLongerValid, notShownForSpace } from "./context-blocks";
 import type { FrozenContextData } from "./context-blocks";
 
@@ -103,8 +104,12 @@ export function holdNoteAfterApprovals(messages: AgentChatMessage[]): { messages
 
 const awaitsApprovedRun = (part: AgentChatMessage["parts"][number]): boolean => (part as { state?: string }).state === "approval-responded";
 
-/** Тексты блоков, которые ушли модели с этим ответом. База не видна — весь набор. */
+/** Тексты блоков, которые ушли модели с этим ответом, и служебные сообщения хода. База не видна — весь набор. */
 function blockTexts(data: FrozenContextData, base: FrozenContextData | undefined, group: boolean): string[] {
+  return [...changedBlockTexts(data, base, group), ...(data.notices ?? []).map(noticeText)];
+}
+
+function changedBlockTexts(data: FrozenContextData, base: FrozenContextData | undefined, group: boolean): string[] {
   const shown = (block: { private?: boolean }) => !(group && block.private);
   if (data.sent === "all" || !base) return data.blocks.filter(shown).map((block) => block.text);
   const now = new Map(data.blocks.map((block) => [block.key, block]));

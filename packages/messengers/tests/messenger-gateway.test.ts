@@ -370,6 +370,24 @@ describe("шлюз мессенджеров", () => {
     expect(fake.texts()).toHaveLength(2);
   });
 
+  it("ход сервера кончился раньше подписки (готовый ответ без модели) — ответ берётся из истории", async () => {
+    const { chats, link, post, settle, fake, messengers } = setup({ taskReadyPing: false });
+    await link();
+    await post([update({ text: "Привет" })]);
+    await settle();
+    await messengers.start();
+    chats.service.continuation = null;
+    chats.addAnswer("chat-1", "Как успехи с привычкой?");
+    const answerId = chats.historyOf("chat-1").at(-1)!.id!;
+    chats.emit({ type: "turn-started", ownerId: "anna", chatId: "chat-1", messageId: answerId, trigger: "notice", channel: "web" });
+    await settle();
+    expect(fake.texts().at(-1)).toBe("Как успехи с привычкой?");
+    // Ответа с таким номером нет — тишина.
+    chats.emit({ type: "turn-started", ownerId: "anna", chatId: "chat-1", messageId: "нет-такого", trigger: "notice", channel: "web" });
+    await settle();
+    expect(fake.texts()).toHaveLength(2);
+  });
+
   it("голосовое на входе и голосовые ответы включены — после текста приходит голосовое", async () => {
     const { chats, link, post, settle, fake } = setup({
       transcribe: async () => ({ text: "Позвони маме" }),

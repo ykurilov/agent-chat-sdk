@@ -14,6 +14,9 @@ export type {
 } from "./messenger-adapter";
 export type {
   AbandonedUpdate,
+  AnswerDeliveryOutcome,
+  AnswerDeliveryReport,
+  AnswerRef,
   AttachmentIngest,
   AudioTranscriber,
   ButtonAction,
@@ -41,6 +44,6 @@ export { defaultMessengerTexts, defaultMessengerTextsWithoutChat } from "./messe
 export type { MessengerTexts } from "./messenger-texts";
 export type { AnswerChunk, MessengerChatService, MessengerUserMessage } from "./chat-port";
 export { createMemoryMessengerStore } from "./store/memory-store";
-export { MessengerApiError, MessengerBlockedError, MessengerMarkupError, MessengerRateLimitError, createMessengerApi } from "./messenger-api";
+export { MessengerApiError, MessengerBlockedError, MessengerMarkupError, MessengerRateLimitError, MessengerWindowClosedError, createMessengerApi } from "./messenger-api";
 export type { MessengerApi, MessengerApiSettings } from "./messenger-api";
 export { chunkLimitFor, htmlToPlainText, markdownToMessenger, toMessengerChunks } from "./markdown-to-messenger";

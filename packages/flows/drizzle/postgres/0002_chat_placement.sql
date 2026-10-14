@@ -1,0 +1,1 @@
+ALTER TABLE "agent_chat"."flow_chats" ADD COLUMN "placement" jsonb;

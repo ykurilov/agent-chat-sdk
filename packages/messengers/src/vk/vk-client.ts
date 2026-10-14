@@ -1,10 +1,12 @@
-import { createMessengerApi, type MessengerApi, type MessengerApiSettings, MessengerBlockedError, MessengerRateLimitError } from "../messenger-api";
+import { createMessengerApi, type MessengerApi, type MessengerApiSettings, MessengerBlockedError, MessengerRateLimitError, MessengerWindowClosedError } from "../messenger-api";
 import { downloadedFile, type UploadFile, uploadForm } from "../messenger-files";
 
 /** Версия API VK, под которую написан адаптер. */
 export const VK_API_VERSION = "5.199";
 
 const BLOCKED_CODES = new Set([901, 902, 993]);
+/** 950 — окно ответа закрыто: сообществу писать первым нельзя, пока человек не напишет сам. */
+const WINDOW_CLOSED_CODE = 950;
 /** 6 — больше трёх запросов в секунду; 9 — одинаковые запросы слишком часто. */
 const RATE_LIMIT_PAUSE_MS: Record<number, number> = { 6: 1000, 9: 5000 };
 
@@ -24,6 +26,7 @@ export function createVkClient(input: { token: string; api?: MessengerApiSetting
     const pause = RATE_LIMIT_PAUSE_MS[code];
     if (pause !== undefined) return new MessengerRateLimitError(error.message, pause);
     if (BLOCKED_CODES.has(code)) return new MessengerBlockedError(error.message);
+    if (code === WINDOW_CLOSED_CODE) return new MessengerWindowClosedError(error.message);
     return error;
   }
 

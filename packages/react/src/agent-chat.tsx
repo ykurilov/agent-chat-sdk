@@ -1093,6 +1093,7 @@ const AgentAnswer = memo(function AgentAnswer({
         {...(onRegenerate && { onRegenerate })}
         {...(onEdit && { onEdit })}
         {...(answerEdited(editMark) && { edited: true })}
+        {...(message.metadata?.undelivered && { undelivered: true })}
         {...(message.metadata?.voiceCut && { voiceInterrupted: { spokenTail: message.metadata.voiceCut.spokenTail } })}
         {...(message.parts.some((part) => part.type === "data-length-cut") && { cutByLength: true })}
         {...(actionViews && { actions: actionViews })}

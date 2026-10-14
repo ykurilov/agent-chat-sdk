@@ -1,7 +1,7 @@
 import { randomInt, timingSafeEqual } from "node:crypto";
 import { readJsonBody } from "../bounded-body";
 import type { Button, ExternalChat, InboundFile, InboundUpdate, MessengerAdapter, OutboundMessage, SentMessage } from "../messenger-adapter";
-import { MessengerApiError, MessengerBlockedError, MessengerRateLimitError } from "../messenger-api";
+import { MessengerApiError, MessengerBlockedError, MessengerRateLimitError, MessengerWindowClosedError } from "../messenger-api";
 import type { VkClient } from "./vk-client";
 import { mediaTypeOfExtension } from "../messenger-files";
 import { toInboundUpdates, type VkBotIdentity, type VkEvent } from "./vk-inbound";
@@ -203,8 +203,8 @@ export function createVkAdapter(input: { client: VkClient; groupId: number; grou
       try {
         return await post(chat, { text: "", attachment: await uploadDocument(chat, "audio_message", voice.audio) });
       } catch (error) {
-        // Голосовые не принимаются: тот же звук уходит файлом. Блокировку и «слишком часто» решает очередь.
-        if (error instanceof MessengerBlockedError || error instanceof MessengerRateLimitError || !(error instanceof MessengerApiError)) throw error;
+        // Голосовые не принимаются: тот же звук уходит файлом. Блокировку, закрытое окно и «слишком часто» решает очередь.
+        if (error instanceof MessengerBlockedError || error instanceof MessengerWindowClosedError || error instanceof MessengerRateLimitError || !(error instanceof MessengerApiError)) throw error;
         return post(chat, { text: "", attachment: await uploadDocument(chat, "doc", voice.audio) });
       }
     },

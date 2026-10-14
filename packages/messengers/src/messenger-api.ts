@@ -47,6 +47,17 @@ export class MessengerBlockedError extends MessengerApiError {
   }
 }
 
+/**
+ * Мессенджер не пускает писать первым (ВК 950: окно ответа закрыто): человек не заблокировал бота, но писать можно
+ * только после его сообщения. Повтор до этого не поможет.
+ */
+export class MessengerWindowClosedError extends MessengerApiError {
+  constructor(message: string) {
+    super(message, 403);
+    this.name = "MessengerWindowClosedError";
+  }
+}
+
 /** Мессенджер не разобрал разметку: тот же текст уйдёт простым. */
 export class MessengerMarkupError extends MessengerApiError {
   constructor(message: string) {
@@ -92,6 +103,7 @@ export function buttonsRejected(error: unknown): boolean {
   return (
     error instanceof MessengerApiError &&
     !(error instanceof MessengerBlockedError) &&
+    !(error instanceof MessengerWindowClosedError) &&
     !(error instanceof MessengerRateLimitError) &&
     !(error instanceof MessengerMarkupError) &&
     error.status >= 400 &&

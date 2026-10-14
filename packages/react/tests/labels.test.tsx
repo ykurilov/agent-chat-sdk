@@ -169,6 +169,7 @@ describe("словарь надписей", () => {
       externalImageLink: "картинка",
       answerCutByLength: "Ответ оборван по длине",
       answerEdited: "Изменено человеком",
+      answerUndelivered: "Не доставлено",
       toolOutputEdited: "Результат изменён",
       editAnswer: "Изменить ответ",
       steeringPending: "Агент учтёт на следующем шаге",

@@ -15,7 +15,11 @@
   модель прямо в поле ввода.
 - По желанию: поиск в интернете, голосовой ввод и голосовой разговор, вложения, список чатов, долгая память, лимиты
   расходов, картинки и схемы в ответах, фоновые задачи, чат в Telegram, VK и MAX.
+- Сценарии: разговор идёт по карте шагов (знакомство → разбор → напоминание), а не по одной длинной инструкции.
+- Проверка ответа перед отправкой: ловит чужие слова на другом языке и выдуманные ссылки.
 - Внешний вид отделён от поведения. Готовый вид — скин «Тандем», любой компонент можно заменить своим.
+
+Версия 0.50.0.
 
 ## Установка
 
@@ -167,10 +171,37 @@ pnpm vite                  # страница: откройте http://localhost
 - Возможности по желанию: [виджеты](docs/widgets.md), [картинки](docs/images.md), [схемы](docs/diagrams.md),
   [видео](docs/videos.md), [живые демонстрации](docs/live-demos.md), [помощники](docs/helpers.md),
   [фоновые задачи](docs/background.md), [мессенджеры](docs/messengers.md), [песочница](docs/sandbox.md),
-  [агент внутри продукта](docs/in-product-agent.md).
+  [агент внутри продукта](docs/in-product-agent.md), [сценарии](docs/flows.md),
+  [проверка ответа](docs/reply-check.md), [простой вид работы агента](docs/work-view.md).
 - Каждый пакет описан в своём README: папки [packages](packages) и [skins/tandem](skins/tandem).
 - Точные описания HTTP-адресов, скина и словаря надписей — [docs/contracts](docs/contracts).
 - Что менялось от версии к версии — [CHANGES.md](CHANGES.md).
+
+## Пакеты
+
+| Пакет | Что делает |
+|---|---|
+| [`@ykurilov/agent-chat-attachments`](packages/attachments) | вложения: файлы и картинки |
+| [`@ykurilov/agent-chat-background`](packages/background) | фоновые задачи и помощники |
+| [`@ykurilov/agent-chat-core`](packages/core) | ядро: модели, провайдеры, цикл агента, хранилище-договор |
+| [`@ykurilov/agent-chat-diagrams`](packages/diagrams) | схемы в ответах |
+| [`@ykurilov/agent-chat-flows`](packages/flows) | сценарии: разговор по карте шагов, дням и касаниям |
+| [`@ykurilov/agent-chat-history-search`](packages/history-search) | поиск по истории чатов |
+| [`@ykurilov/agent-chat-images`](packages/images) | картинки от агента |
+| [`@ykurilov/agent-chat-limits`](packages/limits) | лимиты расходов |
+| [`@ykurilov/agent-chat-memory`](packages/memory) | долгая память о человеке |
+| [`@ykurilov/agent-chat-messengers`](packages/messengers) | чат в Telegram, VK и MAX |
+| [`@ykurilov/agent-chat-react`](packages/react) | экран чата на React и договор скина |
+| [`@ykurilov/agent-chat-reply-check`](packages/reply-check) | проверка ответа перед отправкой: чужие слова и выдуманные ссылки |
+| [`@ykurilov/agent-chat-sandbox`](packages/sandbox) | песочница для кода агента |
+| [`@ykurilov/agent-chat-server`](packages/server) | сервер чата для Hono и Next.js |
+| [`@ykurilov/agent-chat-storage-postgres`](packages/storage-postgres) | хранилище переписки в PostgreSQL |
+| [`@ykurilov/agent-chat-storage-sqlite`](packages/storage-sqlite) | хранилище переписки в SQLite |
+| [`@ykurilov/agent-chat-videos`](packages/videos) | видео в ответах |
+| [`@ykurilov/agent-chat-voice`](packages/voice) | голосовой ввод (диктовка) |
+| [`@ykurilov/agent-chat-voice-dialog`](packages/voice-dialog) | голосовой разговор с агентом |
+| [`@ykurilov/agent-chat-web-tools`](packages/web-tools) | поиск и чтение сайтов для агента |
+| [`@ykurilov/agent-chat-skin-tandem`](skins/tandem) | готовый вид «Тандем» |
 
 ## Демо из этого репозитория
 

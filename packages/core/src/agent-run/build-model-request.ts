@@ -30,6 +30,7 @@ import { withUnansweredMarked } from "./unanswered-messages";
 import { withCorrectionsJoined } from "../steering/turn-steering";
 import { holdNoteAfterApprovals, withFrozenContext } from "../frozen-context/frozen-context-messages";
 import type { FrozenContextData } from "../frozen-context/context-blocks";
+import { withoutUndelivered } from "./undelivered";
 
 export interface ModelRequest {
   model: LanguageModel;
@@ -190,11 +191,12 @@ export async function buildModelRequest(input: {
  * отказывает до запроса), непарные половинки эмодзи вырезаны, ответы из одних рассуждений пропущены (FR-055: «Стоп»
  * на рассуждении — строгий провайдер не примет ответ без текста; вопросы вокруг него разделяет `withUnansweredMarked`),
  * служебные сообщения состояния (закрытие и открытие чата из кода) пропущены: запрос тот же, что без них, кэш цел.
+ * Недоставленные ответы (`markUndelivered`) пропущены вместе со служебным сообщением, на которое они отвечали.
  * Делается при каждой сборке одинаково; нечего
  * менять — те же сообщения. Хранилище не меняется: человек свой остановленный ответ видит.
  */
 function sendableHistory(history: readonly AgentChatMessage[]): readonly AgentChatMessage[] {
-  return history.filter((message) => (message.role !== "assistant" || hasAnswerContent(message.parts)) && !isStateMessage(message)).map(withAssistantFilesAsText).map((message) => {
+  return withoutUndelivered(history).filter((message) => (message.role !== "assistant" || hasAnswerContent(message.parts)) && !isStateMessage(message)).map(withAssistantFilesAsText).map((message) => {
     const closed = message.role === "assistant" ? closeHangingToolCalls(message.parts) : message.parts;
     const parts = withoutLoneSurrogatesInParts(closed);
     return parts === message.parts ? message : { ...message, parts };

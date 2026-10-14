@@ -9,6 +9,7 @@ import type { ContextBlockEntry, FrozenContextData } from "./context-blocks";
 import { freezeContext } from "./freeze-context";
 import type { FrozenContextSources } from "./freeze-context";
 import { frozenContextBase } from "./frozen-context-messages";
+import { withoutUndelivered } from "../agent-run/undelivered";
 
 /**
  * Застывшие блоки ответа: уже есть в ответе (продолжение, копия «Повторить») — они, источники не спрашиваются; иначе
@@ -20,7 +21,7 @@ export async function frozenContextForTurn(
 ): Promise<{ data: FrozenContextData; fresh: boolean }> {
   const existing = turn.answer && frozenContextOf(turn.answer.parts);
   if (existing) return { data: existing, fresh: false };
-  return { data: await freezeTurnContext(input, turn, frozenContextBase(turn.history), screenPlaceBlock(input.place)), fresh: true };
+  return { data: await freezeTurnContext(input, turn, frozenContextBase(withoutUndelivered(turn.history)), screenPlaceBlock(input.place)), fresh: true };
 }
 
 /**

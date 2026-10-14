@@ -38,6 +38,16 @@ export type {
 export { runHelper } from "./helpers/run-helper";
 export { AGENT_NOTICE_PART_TYPE } from "./notices/agent-notice";
 export type { AgentNotice, AgentNoticeKind, DeliverNotices, DeliverNoticesInput, DeliverNoticesResult } from "./notices/agent-notice";
+export type {
+  AskModel,
+  AskModelInput,
+  AskModelResult,
+  PrepareTurn,
+  PrepareTurnContext,
+  PrepareTurnResult,
+  RecordExternalUsageInput,
+  RecordUsage,
+} from "./turn-hooks/prepare-turn";
 export { createChatEvents } from "./chat-events/chat-events";
 export type { ChatEvent, ChatEvents, ChatTurnTrigger } from "./chat-events/chat-events";
 export { noticePartForModel, noticeText } from "./notices/notices-for-model";
@@ -157,15 +167,20 @@ export type {
   AbandonedAnswers,
   AfterTurnHandler,
   AppEvent,
+  BeforeTurnDecision,
   BeforeTurnHandler,
   StaffActor,
   TurnAction,
   TurnNotStartedHandler,
   TurnNotStartedReason,
+  TurnHold,
   TurnRefusal,
+  TurnReply,
   TurnResult,
   TurnStopReason,
 } from "./turn-hooks/turn-hooks";
+export { DEFAULT_REPLY_CHECKS_WEB, resolveReplyChecks } from "./agent-run/reply-check-types";
+export type { ReplyCheck, ReplyCheckInput, ReplyCheckResult, ReplyChecksSetting, ReplyChecksWebMode } from "./agent-run/reply-check-types";
 export { accessRefusedResponse, allowedUser } from "./access/resolved-user";
 export type { AccessRefusal, ResolvedUser } from "./access/resolved-user";
 export { ActionForbiddenError, CHAT_CAPABILITIES, resolveChatCapabilities } from "./access/chat-capabilities";
@@ -207,6 +222,8 @@ export type {
   ChatHistory,
   ChatListItem,
   ChatService,
+  ChatInstructions,
+  ChatInstructionsTurn,
   ChatState,
   CompactionMarker,
   CompactionOutcome,

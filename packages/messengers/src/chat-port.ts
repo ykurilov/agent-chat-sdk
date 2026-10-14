@@ -50,6 +50,11 @@ export interface MessengerTaskView {
 export interface MessengerChatService {
   /** У агента включены живые демонстрации: вместо блока ```html-demo — фраза `liveDemoOnSite`. Нет — блок кодом. */
   readonly liveDemos?: boolean;
+  /**
+   * Служба проверяет ответы перед показом (`replyChecks`): ход, который видит веб, в мессенджер не печатается по ходу —
+   * только «печатает…» и проверенный итог. Ход человека из мессенджера ядро придерживает само.
+   */
+  readonly checksReplies?: boolean;
   /** Новый чат человека. Приложение может не дать его завести (`beforeCreateChat`): `ChatCreationRefusedError`, человеку — её текст. */
   createChat(userId: string, options: { origin: MessengerName }): Promise<{ id: string }>;
   /** Чаты человека; закрытый помечен в `/chats`. */

@@ -1,0 +1,127 @@
+{
+  "format": "agent-flow",
+  "version": 1,
+  "id": "shop-support",
+  "name": "Поддержка: заказы и возвраты",
+  "start": "hello",
+  "common": "Ты — помощник интернет-магазина. Вежливо и по делу.\nДоставка 2–5 дней, бесплатно от 3000 ₽. Вернуть товар можно в течение 14 дней.",
+  "pace": { "sideQuestionEveryMessages": 8 },
+  "clientCard": [
+    { "id": "name", "name": "Имя", "about": "Как обращаться к покупателю. Обычно видно из подписи или почты; прямо — только если не ясно." },
+    { "id": "city", "name": "Город", "about": "Город доставки. Уместно, когда речь о доставке или сроках.", "refreshAfterMonths": 12 },
+    {
+      "id": "contact_pref",
+      "name": "Как удобнее связаться",
+      "type": "choice",
+      "options": ["здесь в чате", "телефон", "почта"],
+      "about": "Уместно перед передачей оператору."
+    }
+  ],
+  "chatNotes": [
+    { "id": "order_no", "name": "Номер заказа", "about": "Номер заказа из письма или личного кабинета." },
+    { "id": "topic", "name": "Тип вопроса", "type": "choice", "options": ["заказ", "возврат", "другое"] },
+    { "id": "status", "name": "Статус заказа", "about": "Ставит инструмент «Найти заказ»." },
+    { "id": "rating", "name": "Оценка", "type": "number", "about": "Оценка помощи от 1 до 5." }
+  ],
+  "tools": ["find_order", "start_refund", "search_knowledge", "call_operator"],
+  "anyState": {
+    "except": ["rate"],
+    "exits": [
+      { "id": "any_angry", "when": { "type": "judge", "text": "Просит живого человека или злится" }, "to": "operator" },
+      { "id": "any_silence", "when": { "type": "timer", "from": "silence", "amount": 30, "unit": "min" }, "to": "done" }
+    ]
+  },
+  "states": [
+    {
+      "id": "hello",
+      "title": "Приветствие",
+      "instructions": "Понять, с чем пришёл человек.\nУзнай, в чём вопрос: заказ, возврат или другое.",
+      "firstMessage": "Здравствуйте! Я помощник магазина. Чем могу помочь?",
+      "learn": ["topic"],
+      "exits": [
+        { "id": "hello_order", "when": { "type": "data", "field": "topic", "op": "eq", "value": "заказ" }, "to": "order" },
+        { "id": "hello_refund", "when": { "type": "data", "field": "topic", "op": "eq", "value": "возврат" }, "to": "refund" },
+        { "id": "hello_other", "when": { "type": "judge", "text": "Вопрос не про заказы и возвраты" }, "to": "faq" }
+      ]
+    },
+    {
+      "id": "order",
+      "title": "Где мой заказ",
+      "instructions": "Узнать номер заказа и найти его.\nКогда номер есть — найди заказ инструментом.",
+      "learn": ["order_no"],
+      "tools": ["find_order"],
+      "exits": [
+        { "id": "order_found", "when": { "type": "event", "event": "tool", "name": "find_order" }, "to": "status" },
+        { "id": "order_lost", "when": { "type": "judge", "text": "Не может найти номер заказа" }, "to": "operator" }
+      ]
+    },
+    {
+      "id": "status",
+      "title": "Ответ о статусе",
+      "instructions": "Объяснить статус и сроки простыми словами.",
+      "exits": [
+        { "id": "status_happy", "when": { "type": "judge", "text": "Получил ответ и доволен" }, "to": "rate" },
+        { "id": "status_unhappy", "when": { "type": "judge", "text": "Недоволен сроками или заказом" }, "to": "operator" }
+      ]
+    },
+    {
+      "id": "refund",
+      "title": "Оформление возврата",
+      "instructions": "Помочь оформить возврат.\nОбъясни условия возврата. Покажи кнопку «Оформить возврат», когда номер заказа известен.",
+      "learn": ["order_no"],
+      "noSideQuestions": true,
+      "tools": ["start_refund"],
+      "exits": [
+        { "id": "refund_done", "when": { "type": "event", "event": "button", "name": "start_refund" }, "to": "rate" },
+        { "id": "refund_changed_mind", "when": { "type": "judge", "text": "Передумал возвращать" }, "to": "rate" }
+      ]
+    },
+    {
+      "id": "faq",
+      "title": "Ответ из базы знаний",
+      "instructions": "Найти ответ в базе знаний.",
+      "tools": ["search_knowledge"],
+      "exits": [
+        { "id": "faq_helped", "when": { "type": "judge", "text": "Ответ помог" }, "to": "rate" },
+        { "id": "faq_missing", "when": { "type": "judge", "text": "В базе знаний ответа нет" }, "to": "operator" }
+      ]
+    },
+    {
+      "id": "rate",
+      "title": "Оценка ответа",
+      "instructions": "Попросить оценить помощь.",
+      "firstMessage": "Оцените, пожалуйста, помощь от 1 до 5.",
+      "learn": ["rating"],
+      "noSideQuestions": true,
+      "exits": [
+        { "id": "rate_given", "when": { "type": "data", "field": "rating" }, "to": "done" },
+        { "id": "rate_silence", "when": { "type": "timer", "from": "silence", "amount": 1, "unit": "h" }, "to": "done" }
+      ]
+    },
+    {
+      "id": "done",
+      "title": "Обращение закрыто",
+      "firstMessage": "Спасибо! Если что-то ещё — пишите.",
+      "tags": ["успех"]
+    },
+    {
+      "id": "operator",
+      "title": "Передать оператору",
+      "instructions": "Передать чат живому оператору.",
+      "firstMessage": "Передаю ваш вопрос оператору — он ответит здесь же.",
+      "tools": ["call_operator"],
+      "tags": ["человек"]
+    }
+  ],
+  "layout": {
+    "hello": { "x": 0, "y": 160 },
+    "order": { "x": 380, "y": -40 },
+    "status": { "x": 760, "y": -60 },
+    "refund": { "x": 380, "y": 300 },
+    "faq": { "x": 380, "y": 590 },
+    "rate": { "x": 1140, "y": 260 },
+    "done": { "x": 1520, "y": 300 },
+    "operator": { "x": 1140, "y": 600 },
+    "@any": { "x": 0, "y": 520 }
+  }
+}

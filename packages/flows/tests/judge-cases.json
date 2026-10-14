@@ -1,0 +1,345 @@
+{
+  "description": "Набор для SC-004: 20 случаев судьи (10 «выполнено», 10 «нет») по трём примерам прототипа. Условие берётся из сценария по flow/state/exitId.",
+  "cases": [
+    {
+      "id": "sales-intro-met",
+      "flow": "sales-review",
+      "state": "intro",
+      "exitId": "intro_clear",
+      "expected": true,
+      "messages": [
+        {
+          "role": "agent",
+          "text": "Расскажите, о чём ваш курс и как идут продажи?"
+        },
+        {
+          "role": "human",
+          "text": "Курс по акварели для новичков. Продаю примерно 5 штук в месяц, в основном через инстаграм."
+        }
+      ]
+    },
+    {
+      "id": "sales-intro-not",
+      "flow": "sales-review",
+      "state": "intro",
+      "exitId": "intro_clear",
+      "expected": false,
+      "messages": [
+        {
+          "role": "agent",
+          "text": "Расскажите, о чём ваш курс и как идут продажи?"
+        },
+        {
+          "role": "human",
+          "text": "Подождите, а вы кто вообще и зачем вам это?"
+        }
+      ]
+    },
+    {
+      "id": "sales-block-not-ready-met",
+      "flow": "sales-review",
+      "state": "block",
+      "exitId": "block_not_ready",
+      "expected": true,
+      "messages": [
+        {
+          "role": "agent",
+          "text": "Как думаете, в чём главный затык?"
+        },
+        {
+          "role": "human",
+          "text": "Знаете, пока не готов об этом говорить. Давайте потом."
+        }
+      ]
+    },
+    {
+      "id": "sales-block-found-met",
+      "flow": "sales-review",
+      "state": "block",
+      "exitId": "block_found",
+      "expected": true,
+      "messages": [
+        {
+          "role": "agent",
+          "text": "Похоже, затык в том, что люди не доходят до оплаты. Так?"
+        },
+        {
+          "role": "human",
+          "text": "Да, точно, именно здесь всё и ломается."
+        }
+      ]
+    },
+    {
+      "id": "sales-block-found-not",
+      "flow": "sales-review",
+      "state": "block",
+      "exitId": "block_found",
+      "expected": false,
+      "messages": [
+        {
+          "role": "agent",
+          "text": "Похоже, затык в том, что люди не доходят до оплаты. Так?"
+        },
+        {
+          "role": "human",
+          "text": "Нет, вряд ли. Не уверен, надо подумать."
+        }
+      ]
+    },
+    {
+      "id": "sales-offer-doubts-met",
+      "flow": "sales-review",
+      "state": "offer",
+      "exitId": "offer_doubts",
+      "expected": true,
+      "messages": [
+        {
+          "role": "agent",
+          "text": "Хотите бесплатный разбор? Вот ссылка на запись."
+        },
+        {
+          "role": "human",
+          "text": "Не знаю... времени мало, да и вдруг не поможет."
+        }
+      ]
+    },
+    {
+      "id": "sales-offer-refused-not",
+      "flow": "sales-review",
+      "state": "offer",
+      "exitId": "offer_refused",
+      "expected": false,
+      "messages": [
+        {
+          "role": "agent",
+          "text": "Хотите бесплатный разбор? Вот ссылка на запись."
+        },
+        {
+          "role": "human",
+          "text": "Да, давайте, сейчас запишусь."
+        }
+      ]
+    },
+    {
+      "id": "sales-doubts-refused-not",
+      "flow": "sales-review",
+      "state": "doubts",
+      "exitId": "doubts_refused",
+      "expected": false,
+      "messages": [
+        {
+          "role": "agent",
+          "text": "Понимаю, время — важный вопрос. Разбор занимает 30 минут."
+        },
+        {
+          "role": "human",
+          "text": "Хм, ну ладно, это звучит нормально. Подумаю."
+        }
+      ]
+    },
+    {
+      "id": "shop-hello-other-met",
+      "flow": "shop-support",
+      "state": "hello",
+      "exitId": "hello_other",
+      "expected": true,
+      "messages": [
+        {
+          "role": "agent",
+          "text": "Здравствуйте! С чем пришли?"
+        },
+        {
+          "role": "human",
+          "text": "Подскажите, как у вас работает программа лояльности?"
+        }
+      ]
+    },
+    {
+      "id": "shop-hello-other-not",
+      "flow": "shop-support",
+      "state": "hello",
+      "exitId": "hello_other",
+      "expected": false,
+      "messages": [
+        {
+          "role": "agent",
+          "text": "Здравствуйте! С чем пришли?"
+        },
+        {
+          "role": "human",
+          "text": "Хочу узнать, где мой заказ, он должен был прийти вчера."
+        }
+      ]
+    },
+    {
+      "id": "shop-order-lost-met",
+      "flow": "shop-support",
+      "state": "order",
+      "exitId": "order_lost",
+      "expected": true,
+      "messages": [
+        {
+          "role": "agent",
+          "text": "Назовите номер заказа, пожалуйста."
+        },
+        {
+          "role": "human",
+          "text": "Не могу его найти, письмо с номером не пришло."
+        }
+      ]
+    },
+    {
+      "id": "shop-order-lost-not",
+      "flow": "shop-support",
+      "state": "order",
+      "exitId": "order_lost",
+      "expected": false,
+      "messages": [
+        {
+          "role": "agent",
+          "text": "Назовите номер заказа, пожалуйста."
+        },
+        {
+          "role": "human",
+          "text": "Номер 48213."
+        }
+      ]
+    },
+    {
+      "id": "shop-status-happy-not",
+      "flow": "shop-support",
+      "state": "status",
+      "exitId": "status_happy",
+      "expected": false,
+      "messages": [
+        {
+          "role": "agent",
+          "text": "Заказ у курьера, привезут до пятницы."
+        },
+        {
+          "role": "human",
+          "text": "До пятницы?! Это безобразие, я ждал два дня назад."
+        }
+      ]
+    },
+    {
+      "id": "shop-status-unhappy-met",
+      "flow": "shop-support",
+      "state": "status",
+      "exitId": "status_unhappy",
+      "expected": true,
+      "messages": [
+        {
+          "role": "agent",
+          "text": "Заказ у курьера, привезут до пятницы."
+        },
+        {
+          "role": "human",
+          "text": "Это слишком долго, я недоволен, хочу к оператору."
+        }
+      ]
+    },
+    {
+      "id": "shop-faq-helped-not",
+      "flow": "shop-support",
+      "state": "faq",
+      "exitId": "faq_helped",
+      "expected": false,
+      "messages": [
+        {
+          "role": "agent",
+          "text": "Вот статья про сроки доставки."
+        },
+        {
+          "role": "human",
+          "text": "Это не отвечает на мой вопрос."
+        }
+      ]
+    },
+    {
+      "id": "shop-faq-missing-met",
+      "flow": "shop-support",
+      "state": "faq",
+      "exitId": "faq_missing",
+      "expected": true,
+      "messages": [
+        {
+          "role": "agent",
+          "text": "Поискал в базе знаний: про ваш случай там ничего нет, ни статьи, ни ответа."
+        },
+        {
+          "role": "human",
+          "text": "Понятно, значит, не нашлось."
+        }
+      ]
+    },
+    {
+      "id": "sheets-explain-met",
+      "flow": "sheets-lesson",
+      "state": "explain",
+      "exitId": "explain_got_it",
+      "expected": true,
+      "messages": [
+        {
+          "role": "agent",
+          "text": "СУММ складывает все числа в диапазоне. Понятно?"
+        },
+        {
+          "role": "human",
+          "text": "Да, понял: выделяю диапазон, и она складывает всё подряд."
+        }
+      ]
+    },
+    {
+      "id": "sheets-explain-not",
+      "flow": "sheets-lesson",
+      "state": "explain",
+      "exitId": "explain_got_it",
+      "expected": false,
+      "messages": [
+        {
+          "role": "agent",
+          "text": "СУММ складывает все числа в диапазоне. Понятно?"
+        },
+        {
+          "role": "human",
+          "text": "Не понимаю, чем она отличается от обычного плюса."
+        }
+      ]
+    },
+    {
+      "id": "sheets-review-done-met",
+      "flow": "sheets-lesson",
+      "state": "review",
+      "exitId": "review_done",
+      "expected": true,
+      "messages": [
+        {
+          "role": "agent",
+          "text": "Вы забыли закрыть скобку: =СУММ(A1:A5. Исправьте."
+        },
+        {
+          "role": "human",
+          "text": "Исправил, теперь считает. Ошибка была в скобке."
+        }
+      ]
+    },
+    {
+      "id": "sheets-hint-given-not",
+      "flow": "sheets-lesson",
+      "state": "hint",
+      "exitId": "hint_given",
+      "expected": false,
+      "messages": [
+        {
+          "role": "agent",
+          "text": "Ну как, получилось?"
+        },
+        {
+          "role": "human",
+          "text": "Нет, ничего не получилось, дайте подсказку."
+        }
+      ]
+    }
+  ]
+}

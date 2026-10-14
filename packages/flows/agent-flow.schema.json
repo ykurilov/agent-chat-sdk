@@ -1,0 +1,973 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "format": {
+      "type": "string",
+      "const": "agent-flow"
+    },
+    "version": {
+      "type": "number",
+      "const": 2
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "name": {
+      "type": "string"
+    },
+    "start": {
+      "default": null,
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "common": {
+      "default": "",
+      "type": "string"
+    },
+    "pace": {
+      "default": {
+        "sideQuestionEveryMessages": 5
+      },
+      "type": "object",
+      "properties": {
+        "sideQuestionEveryMessages": {
+          "default": 5,
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "additionalProperties": false
+    },
+    "clientCard": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string"
+          },
+          "about": {
+            "default": "",
+            "type": "string"
+          },
+          "type": {
+            "default": "text",
+            "type": "string",
+            "enum": [
+              "text",
+              "number",
+              "choice",
+              "boolean"
+            ]
+          },
+          "options": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "refreshAfterMonths": {
+            "default": null,
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "chatNotes": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string"
+          },
+          "about": {
+            "default": "",
+            "type": "string"
+          },
+          "type": {
+            "default": "text",
+            "type": "string",
+            "enum": [
+              "text",
+              "number",
+              "choice",
+              "boolean"
+            ]
+          },
+          "options": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "tools": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "anyState": {
+      "default": {
+        "except": [],
+        "exits": []
+      },
+      "type": "object",
+      "properties": {
+        "except": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "exits": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "when": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "const": "judge"
+                      },
+                      "text": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "text"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "const": "data"
+                      },
+                      "field": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "op": {
+                        "default": "filled",
+                        "type": "string",
+                        "enum": [
+                          "filled",
+                          "eq",
+                          "ne",
+                          "gt",
+                          "lt",
+                          "contains"
+                        ]
+                      },
+                      "value": {
+                        "type": [
+                          "string",
+                          "number",
+                          "boolean"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "field"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "const": "event"
+                      },
+                      "event": {
+                        "type": "string",
+                        "enum": [
+                          "message",
+                          "button",
+                          "tool",
+                          "app"
+                        ]
+                      },
+                      "name": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "event"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "const": "timer"
+                          },
+                          "from": {
+                            "type": "string",
+                            "enum": [
+                              "in_state",
+                              "silence",
+                              "since_start"
+                            ]
+                          },
+                          "amount": {
+                            "type": "number",
+                            "exclusiveMinimum": 0
+                          },
+                          "unit": {
+                            "type": "string",
+                            "enum": [
+                              "min",
+                              "h",
+                              "d"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "from",
+                          "amount",
+                          "unit"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "const": "timer"
+                          },
+                          "from": {
+                            "type": "string",
+                            "const": "time_of_day"
+                          },
+                          "at": {
+                            "type": "string",
+                            "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "from",
+                          "at"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "const": "timer"
+                          },
+                          "from": {
+                            "type": "string",
+                            "const": "state_days"
+                          },
+                          "days": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "from",
+                          "days"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
+                ]
+              },
+              "to": {
+                "default": null,
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "when"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "states": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "default": "state",
+            "type": "string",
+            "const": "state"
+          },
+          "title": {
+            "default": "",
+            "type": "string"
+          },
+          "instructions": {
+            "default": "",
+            "type": "string"
+          },
+          "firstMessage": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "learn": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "noSideQuestions": {
+            "default": false,
+            "type": "boolean"
+          },
+          "tools": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tags": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "exits": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "when": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "const": "judge"
+                        },
+                        "text": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "text"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "const": "data"
+                        },
+                        "field": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "op": {
+                          "default": "filled",
+                          "type": "string",
+                          "enum": [
+                            "filled",
+                            "eq",
+                            "ne",
+                            "gt",
+                            "lt",
+                            "contains"
+                          ]
+                        },
+                        "value": {
+                          "type": [
+                            "string",
+                            "number",
+                            "boolean"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "field"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "const": "event"
+                        },
+                        "event": {
+                          "type": "string",
+                          "enum": [
+                            "message",
+                            "button",
+                            "tool",
+                            "app"
+                          ]
+                        },
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "event"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "const": "timer"
+                            },
+                            "from": {
+                              "type": "string",
+                              "enum": [
+                                "in_state",
+                                "silence",
+                                "since_start"
+                              ]
+                            },
+                            "amount": {
+                              "type": "number",
+                              "exclusiveMinimum": 0
+                            },
+                            "unit": {
+                              "type": "string",
+                              "enum": [
+                                "min",
+                                "h",
+                                "d"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "from",
+                            "amount",
+                            "unit"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "const": "timer"
+                            },
+                            "from": {
+                              "type": "string",
+                              "const": "time_of_day"
+                            },
+                            "at": {
+                              "type": "string",
+                              "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "from",
+                            "at"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "const": "timer"
+                            },
+                            "from": {
+                              "type": "string",
+                              "const": "state_days"
+                            },
+                            "days": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "from",
+                            "days"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "to": {
+                  "default": null,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "when"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "nudges": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "afterSilence": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "amount": {
+                          "type": "number",
+                          "exclusiveMinimum": 0
+                        },
+                        "unit": {
+                          "type": "string",
+                          "enum": [
+                            "min",
+                            "h",
+                            "d"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "amount",
+                        "unit"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "dailyAt": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+                    }
+                  },
+                  "giveUpAfter": {
+                    "type": "object",
+                    "properties": {
+                      "amount": {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      "unit": {
+                        "type": "string",
+                        "enum": [
+                          "min",
+                          "h",
+                          "d"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "amount",
+                      "unit"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "afterSilence"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "string",
+                "const": "off"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "layout": {
+      "default": {},
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "x": {
+            "type": "number"
+          },
+          "y": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "x",
+          "y"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "schedule": {
+      "type": "object",
+      "properties": {
+        "dayStart": {
+          "type": "string",
+          "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+        },
+        "nightFrom": {
+          "type": "string",
+          "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+        },
+        "lateStartHours": {
+          "default": 3,
+          "type": "number",
+          "minimum": 0,
+          "maximum": 24
+        },
+        "lengthDays": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60
+        },
+        "deadlineState": {
+          "type": "string"
+        },
+        "farewellOnDeadline": {
+          "default": false,
+          "type": "boolean"
+        },
+        "farewellText": {
+          "type": "string"
+        },
+        "firstMessages": {
+          "type": "object",
+          "properties": {
+            "maxPerDay": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "morning": {
+              "type": "boolean"
+            },
+            "skipMorningIfHumanWithinMin": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "additionalProperties": false
+        },
+        "nudges": {
+          "type": "object",
+          "properties": {
+            "afterSilence": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "amount": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "unit": {
+                    "type": "string",
+                    "enum": [
+                      "min",
+                      "h",
+                      "d"
+                    ]
+                  }
+                },
+                "required": [
+                  "amount",
+                  "unit"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "dailyAt": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+              }
+            },
+            "giveUpAfter": {
+              "type": "object",
+              "properties": {
+                "amount": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "unit": {
+                  "type": "string",
+                  "enum": [
+                    "min",
+                    "h",
+                    "d"
+                  ]
+                }
+              },
+              "required": [
+                "amount",
+                "unit"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "afterSilence"
+          ],
+          "additionalProperties": false
+        },
+        "dayFrame": {
+          "type": "object",
+          "properties": {
+            "softFrom": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "hardAt": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "hardText": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "dayStart"
+      ],
+      "additionalProperties": false
+    },
+    "nudges": {
+      "type": "object",
+      "properties": {
+        "afterSilence": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "amount": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "unit": {
+                "type": "string",
+                "enum": [
+                  "min",
+                  "h",
+                  "d"
+                ]
+              }
+            },
+            "required": [
+              "amount",
+              "unit"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "dailyAt": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+          }
+        },
+        "giveUpAfter": {
+          "type": "object",
+          "properties": {
+            "amount": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "unit": {
+              "type": "string",
+              "enum": [
+                "min",
+                "h",
+                "d"
+              ]
+            }
+          },
+          "required": [
+            "amount",
+            "unit"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "afterSilence"
+      ],
+      "additionalProperties": false
+    },
+    "sideTasks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "text": {
+            "type": "string"
+          },
+          "when": {
+            "type": "string"
+          },
+          "field": {
+            "type": "string"
+          },
+          "maxAttempts": {
+            "default": 2,
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "perConversation": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "text"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "afterEnd": {
+      "type": "string",
+      "enum": [
+        "reply",
+        "silent"
+      ]
+    }
+  },
+  "required": [
+    "format",
+    "version",
+    "id",
+    "name",
+    "states"
+  ],
+  "additionalProperties": false,
+  "$id": "https://github.com/ykurilov/agent-chat-sdk/packages/flows/agent-flow.schema.json",
+  "title": "Сценарий поведения агента (agent-flow)"
+}

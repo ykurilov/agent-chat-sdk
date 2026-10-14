@@ -42,7 +42,7 @@ const skin: ChatSkin = {
 const composer = () => screen.getByLabelText("поле").closest("form")!;
 
 /**
- * Как кнопка «Вернуть эту версию» в приложении-конструкторе: снимок ответа приложение узнаёт по `onTurnFinished`, и под этим ответом
+ * Как кнопка «Вернуть эту версию» у конструктора приложений: снимок ответа приложение узнаёт по `onTurnFinished`, и под этим ответом
  * появляется кнопка (новый массив действий — новая карта снимков).
  */
 function renderWithSnapshots(server: ReturnType<typeof fakeChatServer>) {

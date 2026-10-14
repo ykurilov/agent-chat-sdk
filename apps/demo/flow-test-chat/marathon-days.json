@@ -1,0 +1,45 @@
+{
+  "format": "agent-flow",
+  "version": 2,
+  "id": "marathon-days",
+  "name": "Марафон: три дня с таблицами",
+  "start": "day1",
+  "common": "Ты — помощник марафона по таблицам. По одному вопросу, коротко, на «вы».",
+  "clientCard": [
+    { "id": "name", "name": "Имя", "about": "Как обращаться к человеку." },
+    { "id": "paid", "name": "Оплатил", "type": "boolean", "about": "Оплачен ли полный курс." }
+  ],
+  "chatNotes": [],
+  "tools": [],
+  "schedule": {
+    "dayStart": "09:00",
+    "lateStartHours": 0,
+    "lengthDays": 3,
+    "farewellOnDeadline": true,
+    "farewellText": "Марафон закончился. Спасибо, что были с нами!",
+    "nudges": { "afterSilence": [{ "amount": 1, "unit": "h" }, { "amount": 4, "unit": "h" }] }
+  },
+  "sideTasks": [{ "id": "task_1", "text": "Узнать, как зовут", "field": "name", "maxAttempts": 2, "perConversation": false }],
+  "anyState": { "except": [], "exits": [] },
+  "states": [
+    {
+      "id": "day1",
+      "title": "День 1: знакомство",
+      "instructions": "Познакомиться и показать первое упражнение.",
+      "firstMessage": "Здравствуйте! Это первый день марафона. Как у вас с таблицами?",
+      "exits": [
+        { "id": "day1_paid", "when": { "type": "data", "field": "paid", "op": "eq", "value": true }, "to": "done" },
+        { "id": "day1_next", "when": { "type": "timer", "from": "state_days", "days": 1 }, "to": "day2" }
+      ]
+    },
+    {
+      "id": "day2",
+      "title": "День 2: практика",
+      "instructions": "Разобрать домашнее задание.",
+      "firstMessage": "Доброе утро! Начинаем второй день марафона.",
+      "nudges": { "afterSilence": [{ "amount": 30, "unit": "min" }], "dailyAt": ["12:00"] },
+      "exits": [{ "id": "day2_next", "when": { "type": "timer", "from": "state_days", "days": 2 }, "to": "done" }]
+    },
+    { "id": "done", "title": "Итог", "instructions": "Подвести итог и попрощаться.", "nudges": "off", "exits": [] }
+  ]
+}

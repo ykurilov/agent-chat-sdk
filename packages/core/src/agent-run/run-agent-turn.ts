@@ -5,7 +5,7 @@ import { closeHangingToolCalls } from "../conversation/hanging-tool-calls";
 import { answerStepsFrame, splitAnswerSteps } from "../compaction/answer-steps";
 import { emptyTokenUsage } from "../conversation/token-usage";
 import { newStoredMessage } from "../conversation/types";
-import type { AgentAudience, AgentChannel, ChatSubject, GroupTurn } from "../conversation/types";
+import type { AgentAudience, AgentChannel, ChatSubject, GroupTurn, UsageSource } from "../conversation/types";
 import type {
   AgentChatMessage,
   ChatErrorKind,
@@ -60,6 +60,8 @@ import type { ModeNotes } from "./mode-notes";
 import { createReasoningTimer } from "./reasoning-timer";
 import { decideNextAttempt, fallbackProviders, nextSilenceProvider, resolveSilenceSwitch } from "./next-attempt";
 import { chunksForParts } from "./parts-to-chunks";
+import { checkedReplyText, createHeldReplyText, createReplyRewrite, createSeenTexts, createShownSteps, lastTextIndex, replacementChunks, withTextAt } from "./reply-checks";
+import type { SeenTexts, TurnReplyChecks } from "./reply-checks";
 import { erasableStepStart, STEP_RESET_PART_TYPE, STEPS_MAY_RESET_PART_TYPE } from "./step-reset";
 import type { NextAttempt, ProviderFallbackSetting } from "./next-attempt";
 import { createRepairToolCall, describeToolInputRepair } from "./repair-tool-call";
@@ -81,6 +83,7 @@ import { runTurnAttempt } from "./turn-attempt";
 import type { TurnAttempt } from "./turn-attempt";
 import type { AppEvent, StaffActor } from "../turn-hooks/turn-hooks";
 import { APP_EVENT_PART_TYPE, createAppEventEmitter } from "../turn-hooks/app-events";
+import type { PreparedTurn } from "../turn-hooks/turn-preparation";
 import type { AppEventEmitter } from "../turn-hooks/app-events";
 import { CHAT_CLOSED_PART_TYPE } from "../access/chat-closure";
 import { chatHasExternalContent, createExternalContentWatch, externalContentChunk } from "../external-content/external-content";
@@ -91,7 +94,7 @@ import { APP_STATE_PART_TYPE, createAppStateWriter, foldAppState, publicAppState
 import type { AppStateRecord } from "../app-state/app-state";
 import { CLOSED_STATE_KEY, publicStateChunk } from "../app-state/state-messages";
 import type { HiddenStateKey } from "../app-state/state-messages";
-import { FROZEN_CONTEXT_PART_TYPE } from "../frozen-context/context-blocks";
+import { FROZEN_CONTEXT_PART_TYPE, latestFrozenContextOf } from "../frozen-context/context-blocks";
 import type { ContextBlocksSource, FrozenContextData } from "../frozen-context/context-blocks";
 import { frozenContextForTurn, resumeNoteForTurn } from "../frozen-context/turn-context";
 import { createEndTurnRequests, END_TURN_PART_TYPE, endTurnModel } from "./end-turn";
@@ -225,6 +228,21 @@ export interface AgentTurnInput {
    * хранилища: основа `AgentToolsModel.state`. Нет — свёртка `history` (сжатая история может потерять записи).
    */
   appState?: AppStateValues;
+  /**
+   * Подготовка хода (`agent.prepareTurn`): зовётся до застывших блоков с состоянием ветки. Её записи — основа состояния
+   * хода и частями в начале ответа, служебные сообщения — модели вместе с блоками. Нет или `undefined` — ход как раньше.
+   */
+  prepareTurn?: (turn: { state: AppStateValues; abortSignal: AbortSignal }) => Promise<PreparedTurn | undefined>;
+  /** Готовый ответ без модели (`deliverNotices` с `reply`): текстом одного шага, модель не зовётся. */
+  reply?: string;
+  /** Метка расхода хода в журнале. Нет — `answer`; агент пишет первым — `first_message` (`deliverNotices`). */
+  usageSource?: UsageSource;
+  /**
+   * Проверки законченного ответа перед записью (`createChatService({ replyChecks })`): правят последнюю текстовую часть.
+   * Готовый ответ (`reply`) не проверяется. Веб-чат печатает как обычно и заменяет шаг исправленным (`replace`) или
+   * придерживает текст до проверки (`hold`); мессенджеры придерживают всегда. Нет — ход и поток прежние.
+   */
+  replyChecks?: TurnReplyChecks;
   /**
    * Снимок перед каждым шагом модели: сообщением человека в самый конец запроса шага, в историю не пишется. Всё до него
    * от шага к шагу не меняется (кэш модели). Нет — запрос побайтно прежний.
@@ -403,9 +421,18 @@ interface TurnSteps {
 async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChunk) => void): Promise<void> {
   // Чужой текст (вызов с пометкой `externalContent`, итог помощника с ней) — клиенту сразу, раньше следующего текста.
   const externalContent = createExternalContentWatch();
-  const emitToClient = (chunk: UIMessageChunk): void => {
+  const emitShown = (chunk: UIMessageChunk): void => {
+    shownSteps?.observe(chunk);
     emitRaw(chunk);
     if (turnInput.liveDemos && externalContent.observe(chunk)) emitRaw(externalContentChunk());
+  };
+  // Проверка ответа: что агент видел за ход и придержка текста до проверки (`hold`, мессенджеры).
+  const replyChecks = turnInput.reply === undefined ? turnInput.replyChecks : undefined;
+  const seenTexts = replyChecks && createSeenTexts();
+  const heldText = replyChecks && (replyChecks.web === "hold" || (turnInput.channel ?? "web") !== "web") ? createHeldReplyText() : undefined;
+  const shownSteps = replyChecks && createShownSteps();
+  const emitToClient = (chunk: UIMessageChunk): void => {
+    for (const passed of heldText ? heldText.pass(chunk) : [chunk]) emitShown(passed);
   };
   // Ответ прервала другая копия сервера (сочла его брошенным): ход останавливается сам, как по «Стопу» (FR-060).
   const takeover = new AbortController();
@@ -522,7 +549,11 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
     try {
       const { history: historySource } = input;
       const fullHistory = typeof historySource === "function" ? await historySource() : historySource;
-      const stateBase = input.appState ?? foldAppState(fullHistory);
+      const branchState = input.appState ?? foldAppState(fullHistory);
+      // Подготовка приложением — до блоков: её записи видят блоки контекста и инструменты этого хода.
+      const prepared = input.prepareTurn && (await input.prepareTurn({ state: branchState, abortSignal: input.abortSignal }));
+      const turnNotices = prepared && prepared.notices.length > 0 ? prepared.notices : undefined;
+      const stateBase = prepared?.state ?? branchState;
       const writeState = (record: AppStateRecord) => emit({ type: APP_STATE_PART_TYPE, data: record });
       appState = createAppStateWriter({ base: stateBase, write: writeState, logError, chatId: input.chatId });
       reservedState = createAppStateWriter({ base: stateBase, write: writeState, logError, chatId: input.chatId, reserved: true });
@@ -534,16 +565,23 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
         original: resume?.message,
       });
       // Блоки контекста — один раз на ответ: дальше все запросы хода берут их из части ответа, байты те же.
-      const frozen = await frozenContextForTurn(input, {
+      const frozenOfTurn = await frozenContextForTurn(input, {
         history: answer.request().history,
         answer: resume?.message ?? fullHistory.find((message) => message.id === messageId),
         state: publicAppState(appState.values()),
       });
+      // Служебные сообщения подготовки — в части блоков: модель видит их в вопросе этого хода, дальше — те же байты.
+      const frozen = turnNotices && frozenOfTurn.fresh ? { ...frozenOfTurn, data: { ...frozenOfTurn.data, notices: turnNotices } } : frozenOfTurn;
       // Человек ответил на паузе (виджет, подтверждение): новое в блоках — заметкой сразу за его ответом, частью ответа.
-      const resumeNote =
+      let resumeNote =
         resume && !resume.replay && !frozen.fresh
           ? await resumeNoteForTurn(input, { history: answer.request().history, answer: resume.message, state: publicAppState(appState.values()) })
           : undefined;
+      // Продолжение с сообщениями подготовки: они — заметкой продолжения, даже если блоки не менялись.
+      if (resume && turnNotices && !frozen.fresh) {
+        const seen = latestFrozenContextOf(resume.message.parts);
+        if (seen) resumeNote = { ...(resumeNote ?? { blocks: seen.blocks, sent: { changed: [], removed: [] }, base: messageId }), notices: turnNotices };
+      }
       const fallbackProviderIds = fallbackProviders({
         catalog: input.catalog,
         modelId,
@@ -568,6 +606,8 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
       // Часть с блоками — только в сохранение: клиенту она не нужна, а в попытке считалась бы началом ответа. Отдельной
       // записи не ждёт: часть первая, и любая запись ответа со словами её уже несёт.
       if (frozen.fresh) saver.observe({ type: FROZEN_CONTEXT_PART_TYPE, data: frozen.data });
+      // Записи подготовки — сразу за блоками, до слов: в ответе и у клиента.
+      for (const record of prepared?.records ?? []) writeState(record);
       if (resumeNote) {
         saver.observe({ type: FROZEN_CONTEXT_PART_TYPE, data: resumeNote });
         answer.update(await saver.snapshot(), { modelId, providerId: answeredProviderId });
@@ -583,6 +623,11 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
           answer.update(parts, { modelId, providerId: answeredProviderId });
           mainLoopWaits = input.abortSignal.aborted || pendingHumanInput(parts, input.waitingWidgets).length > 0;
         }
+      }
+      // Готовый ответ: один шаг с текстом, модель не зовётся.
+      if (input.reply !== undefined && !mainLoopWaits && !input.abortSignal.aborted) {
+        emitReply(input.reply, emit);
+        mainLoopWaits = true;
       }
       let fallbackUsed = false;
       let historyCompacted = false;
@@ -651,6 +696,7 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
               lastFinishReason = finishReason;
             },
             callSaved: saver.whenCallSaved,
+            ...(seenTexts && { seenTexts }),
           });
         } catch (error) {
           // Сбой до запроса к модели (нет ключа, конфликт имён инструментов): переходить некуда.
@@ -873,7 +919,7 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
     const closing = !failed && pendingHumanInput(savedParts, input.waitingWidgets).length > 0 && (closure !== undefined || (await chatClosedNow()));
     // Остановка, сбой и закрытие чата не дожидаются ответа человека: незакрытые запросы становятся отказами, а вызовы
     // без результата — ошибками с постоянным текстом, чтобы вызов не остался без результата.
-    const parts = failed || closing
+    let parts = failed || closing
       ? closeHangingToolCalls(denyPendingApprovals(savedParts, INTERRUPTED_REASON, RESULT_UNKNOWN_REASON), { notStarted: toolQueue.notStarted })
       : savedParts;
     const status: FinalAnswerStatus = input.abortSignal.aborted
@@ -886,6 +932,31 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
     // Инструмент кончил ход с готовым текстом, а ход кончился раньше (в том же шаге ждёт подтверждения другой вызов,
     // «Стоп», сбой): текст человеку не ушёл. Ход после ответа человека новый — просьба туда не переходит.
     if (endTurns.hasText()) logError(`[endTurn] чат=${input.chatId} готовый текст не показан: ход кончился со статусом ${status}`);
+    // Законченный ответ — через проверки до записи: исправленный текст пишется, уходит в итог хода и на экран.
+    const textIndex = lastTextIndex(parts);
+    if (replyChecks && status === "complete" && textIndex !== -1 && !takeover.signal.aborted) {
+      const original = (parts[textIndex] as { text: string }).text;
+      const text = await checkedReplyText({
+        checks: replyChecks.checks,
+        text: original,
+        ownerId: input.ownerId ?? "",
+        chatId: input.chatId,
+        messageId,
+        seenTexts: seenTexts?.list() ?? [],
+        rewrite: createReplyRewrite({ ...input, providerId: answeredProviderId, messageId, logError }),
+        logError,
+      });
+      if (text !== original) {
+        const corrected = withTextAt(parts, textIndex, text);
+        if (heldText?.holdsText()) for (const chunk of heldText.release(text)) emitShown(chunk);
+        else {
+          const resets = shownSteps?.resetsToLastText();
+          for (const chunk of (resets && replacementChunks(corrected, textIndex, resets, answeredProviderId)) || []) emitToClient(chunk);
+        }
+        parts = corrected;
+      }
+    }
+    for (const chunk of heldText?.release() ?? []) emitShown(chunk);
     // Расход хода: все попытки, вместе с оценкой шага, оборванного «Стопом» или сбоем.
     turnUsage.closeAttempt();
     // В сообщении расход копится по паузам и продолжениям, а в журнал расходов идёт только этот ход: до паузы он уже записан.
@@ -932,7 +1003,7 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
           ownerId: input.ownerId,
           chatId: input.chatId,
           messageId,
-          source: "answer",
+          source: input.usageSource ?? "answer",
           modelId,
           providerId: group.providerId,
           spent: sumOfSteps(group.steps) ?? emptyTokenUsage(),
@@ -1021,7 +1092,7 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
             ownerId: input.ownerId,
             chatId: input.chatId,
             messageId,
-            source: "answer",
+            source: input.usageSource ?? "answer",
             modelId,
             providerId: answeredProviderId,
             spent: unjournaled,
@@ -1090,6 +1161,8 @@ async function runAnswerAttempt(
     onStep: (finishReason: string) => void;
     /** Ждёт, пока начатый вызов инструмента попадёт в хранилище. */
     callSaved: (toolCallId: string) => Promise<void>;
+    /** Есть — ход с проверками ответа: сюда идёт всё, что модель видит в запросах. */
+    seenTexts?: SeenTexts;
   },
 ): Promise<TurnAttempt> {
   const { found, answer, originalMessage } = attempt;
@@ -1181,6 +1254,8 @@ async function openAttempt(
     onStep: (finishReason: string) => void;
     /** Ждёт, пока начатый вызов инструмента попадёт в хранилище. */
     callSaved: (toolCallId: string) => Promise<void>;
+    /** Есть — ход с проверками ответа: сюда идёт всё, что модель видит в запросах. */
+    seenTexts?: SeenTexts;
   },
   attemptSignal: AbortSignal,
 ) {
@@ -1240,6 +1315,8 @@ async function openAttempt(
     toolTimeout: _toolTimeout,
     sequentialTools: _sequentialTools,
     now: _now,
+    usageSource: _usageSource,
+    replyChecks: _replyChecks,
     waitingWidgets: _waitingWidgets,
     newAttemptAllowed: _newAttemptAllowed,
     correctionsWaiting,
@@ -1268,6 +1345,7 @@ async function openAttempt(
     },
   });
   attempt.turnUsage.beginAttempt(request, providerId);
+  attempt.seenTexts?.instructions(request.instructions);
   const cacheWatch = cacheMissWatch?.forRequest({
     chatId: input.chatId,
     modelId: found.profile.id,
@@ -1358,6 +1436,7 @@ async function openAttempt(
       // Концовка шага не сохраняется: снимок, пометка попытки (только на шаге 0), пометка «подведи итог».
       const notes = [...(stepNumber === 0 ? (attempt.tailMessages ?? []) : []), ...(settings?.messages.slice(messages.length) ?? [])];
       stepTailTokens = (snapshot?.tokens ?? 0) + estimateMessagesTokens(notes);
+      attempt.seenTexts?.messages(settings?.messages ?? messages);
       return settings ?? (messages === stepMessages ? undefined : { messages });
     },
     // Временные сбои повторяет обёртка модели из `buildModelRequest`, там же сроки молчания модели.
@@ -1820,4 +1899,14 @@ function addUsage(previous: TokenUsage | null, next: TokenUsage): TokenUsage {
     }),
     ...((previous.estimated || next.estimated) && { estimated: true }),
   };
+}
+
+/** Готовый ответ куском шага: те же куски, что у текста модели. */
+function emitReply(text: string, emit: (chunk: UIMessageChunk) => void): void {
+  const id = "reply";
+  emit({ type: "start-step" });
+  emit({ type: "text-start", id });
+  emit({ type: "text-delta", id, delta: text });
+  emit({ type: "text-end", id });
+  emit({ type: "finish-step" });
 }

@@ -21,8 +21,8 @@ const published = ["packages", "skins"].flatMap((group) =>
 );
 
 describe("публикуемые пакеты", () => {
-  it("найдены все девятнадцать пакетов", () => {
-    expect(published).toHaveLength(19);
+  it("найдены все двадцать один пакет", () => {
+    expect(published).toHaveLength(21);
   });
 
   it.each(published.map((manifest) => [manifest.name, manifest] as const))("%s требует Node 22 и новее: встроенный WebSocket есть только там", (_name, manifest) => {
@@ -30,7 +30,7 @@ describe("публикуемые пакеты", () => {
   });
 });
 
-describe.each([["packages/attachments"], ["packages/images"], ["packages/videos"], ["packages/sandbox"], ["packages/messengers"]])("пакет с входом для экрана: %s", (folder) => {
+describe.each([["packages/attachments"], ["packages/images"], ["packages/videos"], ["packages/sandbox"], ["packages/messengers"], ["packages/flows"]])("пакет с входом для экрана: %s", (folder) => {
   const manifest = readManifest(folder);
 
   it("React и экран чата — необязательные: серверу без экрана они не нужны", () => {

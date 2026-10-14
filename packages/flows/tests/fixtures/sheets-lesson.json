@@ -1,0 +1,82 @@
+{
+  "format": "agent-flow",
+  "version": 1,
+  "id": "sheets-lesson",
+  "name": "Урок: формулы в таблицах",
+  "start": "explain",
+  "common": "Ты — терпеливый наставник по таблицам. Объясняй на бытовых примерах.\nПросят пример — покажи его инструментом «Показать пример» и продолжи с того же места.",
+  "pace": { "sideQuestionEveryMessages": 6 },
+  "clientCard": [
+    { "id": "name", "name": "Имя", "about": "Как обращаться к ученику. Спросить в начале урока." },
+    {
+      "id": "level",
+      "name": "Уровень",
+      "type": "choice",
+      "options": ["новичок", "уверенный", "продвинутый"],
+      "about": "Насколько ученик знаком с таблицами. Часто видно по ответам.",
+      "refreshAfterMonths": 3
+    },
+    {
+      "id": "goal",
+      "name": "Цель обучения",
+      "about": "Зачем ученику таблицы: работа, учёт денег, учёба. Уместно после первого задания или на вопрос «зачем это»."
+    }
+  ],
+  "chatNotes": [
+    { "id": "answer", "name": "Ответ ученика" },
+    { "id": "correct", "name": "Верно", "type": "choice", "options": ["да", "нет"], "about": "Ставит инструмент «Проверить ответ»." },
+    { "id": "tries", "name": "Попыток", "type": "number" }
+  ],
+  "tools": ["check_answer", "show_example"],
+  "states": [
+    {
+      "id": "explain",
+      "title": "Объяснение",
+      "instructions": "Объяснить, как работает СУММ.\nНа бытовом примере: покупки за неделю.",
+      "tools": ["show_example"],
+      "exits": [{ "id": "explain_got_it", "when": { "type": "judge", "text": "Ученик говорит, что понял" }, "to": "task" }]
+    },
+    {
+      "id": "task",
+      "title": "Задание",
+      "instructions": "Дать задачу и проверить ответ.",
+      "learn": ["answer"],
+      "noSideQuestions": true,
+      "tools": ["check_answer"],
+      "exits": [
+        { "id": "task_right", "when": { "type": "data", "field": "correct", "op": "eq", "value": "да" }, "to": "done" },
+        { "id": "task_many_tries", "when": { "type": "data", "field": "tries", "op": "gt", "value": 2 }, "to": "review" },
+        { "id": "task_wrong", "when": { "type": "data", "field": "correct", "op": "eq", "value": "нет" }, "to": "hint" },
+        { "id": "task_slow", "when": { "type": "timer", "from": "in_state", "amount": 10, "unit": "min" }, "to": "hint" }
+      ]
+    },
+    {
+      "id": "hint",
+      "title": "Подсказка",
+      "instructions": "Подсказать, не выдавая ответ.",
+      "noSideQuestions": true,
+      "exits": [{ "id": "hint_given", "when": { "type": "judge", "text": "Ученик получил подсказку" }, "to": "task" }]
+    },
+    {
+      "id": "review",
+      "title": "Разбор ошибки",
+      "instructions": "Разобрать ошибку по шагам.",
+      "exits": [{ "id": "review_done", "when": { "type": "judge", "text": "Ошибка разобрана" }, "to": "task" }]
+    },
+    {
+      "id": "done",
+      "title": "Итог урока",
+      "firstMessage": "Отлично! Вы освоили СУММ. Следующий урок — СРЗНАЧ.",
+      "tags": ["успех"]
+    },
+    { "id": "orphan", "title": "Домашнее задание", "instructions": "Дать задание на завтра." }
+  ],
+  "layout": {
+    "explain": { "x": 0, "y": 120 },
+    "task": { "x": 380, "y": 160 },
+    "hint": { "x": 780, "y": 300 },
+    "review": { "x": 780, "y": 520 },
+    "done": { "x": 780, "y": 60 },
+    "orphan": { "x": 1160, "y": 60 }
+  }
+}

@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { ChatEvent } from "@ykurilov/agent-chat-core";
 import type { AccountLinking } from "./account-linking";
-import { deliverAnswer } from "./answer-delivery";
+import { answerDeliveryOutcome, deliverAnswer } from "./answer-delivery";
 import { commandOf } from "./bot-commands";
 import type { ButtonActions, CardButton, PressOutcome } from "./button-actions";
 import type { AnswerChunk, MessengerChatService, MessengerUserMessage } from "./chat-port";
@@ -12,7 +12,7 @@ import type { ExternalChat, InboundUpdate } from "./messenger-adapter";
 import { defaultTextsOf, type MessengerTexts, type MessengerTextsOf } from "./messenger-texts";
 import { chatKeyOf, type OutboundQueue } from "./outbound-queue";
 import { DELIVERY_GIVE_UP_MS, DELIVERY_LEASE_MS, durableDelivery } from "./pending-deliveries";
-import type { ConversationKey, MessengerBot, MessengerStore } from "./types";
+import type { AnswerDeliveryReport, AnswerRef, ConversationKey, MessengerBot, MessengerStore } from "./types";
 import type { VoiceAnswers } from "./voice-replies";
 
 /** Сколько раз пробовать сообщение, если чат занят чужим ходом. */
@@ -111,6 +111,8 @@ export function createMessengerGateway(deps: {
   textsOf?: MessengerTextsOf;
   /** Кто держит обновления в работе; по умолчанию случайный id копии сервера. */
   holder?: string;
+  /** Исход доставки каждого ответа агента (`MessengersOptions.onAnswerDelivery`). */
+  onAnswerDelivery?(report: AnswerDeliveryReport): Promise<void> | void;
   logError?(error: unknown): void;
 }) {
   const { store, service, policy, groups, buttons } = deps;
@@ -135,6 +137,13 @@ export function createMessengerGateway(deps: {
   function track(work: Promise<void>) {
     pending.add(work);
     void work.finally(() => pending.delete(work));
+  }
+
+  /** Исход ответа — приложению; его сбой — в журнал, доставку он не ломает. */
+  function reportAnswer(report: AnswerDeliveryReport) {
+    const onAnswerDelivery = deps.onAnswerDelivery;
+    if (!onAnswerDelivery) return;
+    track((async () => onAnswerDelivery(report))().catch(logError));
   }
 
   /**
@@ -337,7 +346,7 @@ export function createMessengerGateway(deps: {
   async function afterPress(bot: MessengerBot, update: InboundUpdate, ctx: ConversationContext, outcome: PressOutcome & { reply?: string }, inbound: Inbound) {
     if (outcome.reply) await reply(bot, ctx.key, update.chat, outcome.reply);
     if (outcome.selectChat) await reply(bot, ctx.key, update.chat, await policy.selectChat(ctx, outcome.selectChat));
-    if (outcome.resume) await follow(bot, ctx.key, update.chat, ctx.userId, outcome.resume.chatId, outcome.resume.stream);
+    if (outcome.resume) await follow(bot, ctx.key, update.chat, ctx.userId, outcome.resume.chatId, { trigger: "human" }, outcome.resume.stream);
     if (outcome.userText !== undefined) {
       const group = update.chat.type === "group" ? { allowedTools: [], author: authorNameOf(update.account) } : undefined;
       await talk({ bot, update: { ...update, kind: "text", text: outcome.userText }, inbound, key: ctx.key, ctx, ...(group && { group }) });
@@ -357,7 +366,7 @@ export function createMessengerGateway(deps: {
       throw error;
     }
     // Правило приложения велело агенту писать первым: сначала его ход, потом сообщение человека.
-    if (opened.agentStarted) await follow(bot, key, update.chat, ctx.userId, opened.chatId);
+    if (opened.agentStarted) await follow(bot, key, update.chat, ctx.userId, opened.chatId, { trigger: "notice", holdText: service.checksReplies === true });
 
     // Отказ приложения и права — до разбора вложений (распознавание голоса стоит денег). Полная проверка остаётся в `sendMessage`.
     try {
@@ -409,7 +418,7 @@ export function createMessengerGateway(deps: {
       }
     }
     const authorId = turn.group ? update.account.externalUserId : undefined;
-    await printTurn({ bot, key, chat: update.chat, userId: ctx.userId, chatId: opened.chatId, stream, inputWasVoice: prepared.voice, ...(authorId && { authorId }) });
+    await printTurn({ bot, key, chat: update.chat, userId: ctx.userId, chatId: opened.chatId, stream, inputWasVoice: prepared.voice, trigger: "human", ...(authorId && { authorId }) });
   }
 
   /**
@@ -445,8 +454,19 @@ export function createMessengerGateway(deps: {
     }
   }
 
-  /** Подключиться к ходу, который начал не человек (продолжение после кнопки, результат фона, агент пишет первым). */
-  async function follow(bot: MessengerBot, key: ConversationKey, chat: ExternalChat, userId: string, chatId: string, taken?: ReadableStream<AnswerChunk> | null): Promise<void> {
+  /**
+   * Подключиться к ходу, который начал не человек (продолжение после кнопки, результат фона, агент пишет первым).
+   * `holdText` — ход проверяется и может быть переписан: без печати по ходу.
+   */
+  async function follow(
+    bot: MessengerBot,
+    key: ConversationKey,
+    chat: ExternalChat,
+    userId: string,
+    chatId: string,
+    turn: { trigger: AnswerRef["trigger"]; holdText?: boolean },
+    taken?: ReadableStream<AnswerChunk> | null,
+  ): Promise<void> {
     const current = running.get(idOf(key));
     if (current?.chatId === chatId) {
       await taken?.cancel();
@@ -454,7 +474,39 @@ export function createMessengerGateway(deps: {
     }
     const stream = taken === undefined ? await service.subscribe(userId, chatId) : taken;
     if (!stream) return;
-    await printTurn({ bot, key, chat, userId, chatId, stream, inputWasVoice: false });
+    await printTurn({ bot, key, chat, userId, chatId, stream, inputWasVoice: false, ...turn });
+  }
+
+  /**
+   * Ход сервера: поток идущего хода. Ход кончился раньше подписки (готовый ответ без модели) — текст ответа из истории,
+   * иначе ответ не дошёл бы до мессенджера.
+   */
+  async function followServerTurn(bot: MessengerBot, key: ConversationKey, chat: ExternalChat, userId: string, chatId: string, answerId: string, holdText: boolean): Promise<void> {
+    const stream = await service.subscribe(userId, chatId);
+    await follow(bot, key, chat, userId, chatId, { trigger: "notice", holdText }, stream ?? (await finishedAnswerStream(userId, chatId, answerId)));
+  }
+
+  /** Записанный ответ кусками потока: только его текст. Нет ответа или текста — `null`. */
+  async function finishedAnswerStream(userId: string, chatId: string, answerId: string): Promise<ReadableStream<AnswerChunk> | null> {
+    const { messages } = await service.getHistory(userId, chatId);
+    const answer = messages.find((message) => message.id === answerId && message.role === "assistant");
+    const texts = (answer?.parts ?? []).flatMap((part) => (part.type === "text" && typeof part.text === "string" && part.text.length > 0 ? [part.text] : []));
+    if (texts.length === 0) return null;
+    const chunks: AnswerChunk[] = [
+      { type: "start", messageId: answerId },
+      ...texts.flatMap((delta, index): AnswerChunk[] => [
+        { type: "text-start", id: `text-${index}` },
+        { type: "text-delta", id: `text-${index}`, delta },
+        { type: "text-end", id: `text-${index}` },
+      ]),
+      { type: "finish" },
+    ];
+    return new ReadableStream({
+      start(controller) {
+        for (const chunk of chunks) controller.enqueue(chunk);
+        controller.close();
+      },
+    });
   }
 
   function printTurn(input: {
@@ -465,9 +517,11 @@ export function createMessengerGateway(deps: {
     chatId: string;
     stream: ReadableStream<AnswerChunk>;
     inputWasVoice: boolean;
+    trigger: AnswerRef["trigger"];
+    holdText?: boolean;
     authorId?: string;
   }) {
-    const { bot, key, chat, userId, chatId } = input;
+    const { bot, key, chat, userId, chatId, trigger } = input;
     const id = idOf(key);
     const queue = deps.queueFor(bot);
     const controller = new AbortController();
@@ -485,9 +539,12 @@ export function createMessengerGateway(deps: {
         ...(deps.webChatUrl && { webChatUrl: deps.webChatUrl }),
         texts: textsOf(key),
         ...(service.liveDemos && { liveDemos: true }),
+        ...(input.holdText && { holdText: true }),
+        ...(deps.onAnswerDelivery && { report: { ownerId: userId, trigger } }),
         logError,
       });
       if (outcome.status === "blocked") await markBlocked(key, true);
+      if (outcome.messageId !== undefined) reportAnswer({ ownerId: userId, chatId, messageId: outcome.messageId, trigger, outcome: answerDeliveryOutcome(outcome) });
       await deps.voice.afterText({ adapter: bot.adapter, chat, chatKey: chatKeyOf(key), queue, ownerId: userId, chatId, answer: outcome, inputWasVoice: input.inputWasVoice, signal: controller.signal });
     })().finally(() => {
       if (running.get(id)?.controller === controller) running.delete(id);
@@ -527,17 +584,26 @@ export function createMessengerGateway(deps: {
     await reply(bot, key, update.chat, stopped || current ? texts.stopped : texts.nothingToStop);
   }
 
-  /** Ход, начатый сервером (результат фона), в чате, который сейчас текущий у разговора мессенджера. */
+  /**
+   * Ход, начатый сервером (результат фона, агент пишет первым), в чате, который сейчас текущий у разговора мессенджера.
+   * Ответ доставит само приложение (`deliveredByApp`) — не провожаем. Разговор заблокирован — сразу исход `blocked`.
+   * Служба проверяет ответы, а ход пишется для веба — ядро его не придерживает, печать по ходу выключаем сами.
+   */
   async function onChatEvent(event: ChatEvent): Promise<void> {
-    if (event.type !== "turn-started" || event.trigger !== "notice") return;
+    if (event.type !== "turn-started" || event.trigger !== "notice" || event.deliveredByApp) return;
     const conversations = await store.listConversationsOfChat(event.chatId);
+    const holdText = service.checksReplies === true && event.channel === "web";
     for (const conversation of conversations) {
-      if (!conversation.active || conversation.blocked || conversation.userId !== event.ownerId) continue;
+      if (!conversation.active || conversation.userId !== event.ownerId) continue;
+      if (conversation.blocked) {
+        reportAnswer({ ownerId: event.ownerId, chatId: event.chatId, messageId: event.messageId, trigger: "notice", outcome: { status: "blocked" } });
+        continue;
+      }
       const bot = botOf(conversation);
       if (!bot) continue;
       const key: ConversationKey = { messenger: conversation.messenger, botId: conversation.botId, externalChatId: conversation.externalChatId };
       const chat: ExternalChat = { id: conversation.externalChatId, type: conversation.type };
-      track(follow(bot, key, chat, event.ownerId, event.chatId).catch(logError));
+      track(followServerTurn(bot, key, chat, event.ownerId, event.chatId, event.messageId, holdText).catch(logError));
     }
   }
 

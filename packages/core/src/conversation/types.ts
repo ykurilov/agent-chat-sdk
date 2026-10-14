@@ -118,6 +118,8 @@ export interface ChatMessageMetadata {
   error?: { kind: ChatErrorKind };
   /** Есть, если озвучку ответа оборвало перебивание. */
   voiceCut?: VoiceCut;
+  /** Ответ не дошёл до человека (`markUndelivered`): модель его не видит, экран подписывает «не доставлено». */
+  undelivered?: true;
 }
 
 export type AgentChatMessage = UIMessage<ChatMessageMetadata>;
@@ -220,9 +222,23 @@ export interface StoredBranchSelection {
  * распознавание звуков человека (смех, вздох), вызов веб-службы (поиск, чтение страницы) или создание картинок (`images`). У озвучки `inputTokens` —
  * число знаков, отправленных на озвучку, у звуков — число секунд звука, отправленных на распознавание; остальные счётчики 0.
  * У веб-службы все счётчики 0, а вместо модели — имя инструмента; у картинок все счётчики 0, а `modelId` — модель картинок. `answer_correction` — поправка оценки ответа до настоящего
- * расхода, который провайдер сообщил позже (FR-058): разница, числа и деньги могут быть меньше нуля.
+ * расхода, который провайдер сообщил позже (FR-058): разница, числа и деньги могут быть меньше нуля. `judge` — судья
+ * переходов сценария агента (`@ykurilov/agent-chat-flows`).
  */
-export type UsageSource = "answer" | "answer_correction" | "compaction" | "memory" | "speech" | "sounds" | "web_tools" | "images" | "helper" | "background";
+/** `first_message` — ход, в котором агент пишет первым (касание, утро сценария): `deliverNotices({ usageSource })`. */
+export type UsageSource =
+  | "answer"
+  | "answer_correction"
+  | "compaction"
+  | "memory"
+  | "speech"
+  | "sounds"
+  | "web_tools"
+  | "images"
+  | "helper"
+  | "background"
+  | "judge"
+  | "first_message";
 
 /**
  * Один расход токенов одной моделью у одного провайдера. Записи только добавляются и переживают удаление чата:

@@ -38,6 +38,7 @@ import type {
   AfterTurnHandler,
   ModelChosenHandler,
   RecoverInterruptedAnswersOptions,
+  ReplyChecksSetting,
   StateChangedHandler,
   AgentSettings,
   BackgroundTasks,
@@ -58,6 +59,7 @@ import type {
   ResolvedUser,
   SpendingLimits,
   StaffActor,
+  ChatInstructions,
   TurnFinishedHandler,
   TurnNotStartedHandler,
   TurnObserver,
@@ -221,7 +223,7 @@ export interface ChatHandlerOptions {
   /** Наблюдатель хода (песочница): см. `ChatServiceOptions.turnObserver`. Нет — запрос к модели побайтно прежний. */
   turnObserver?: TurnObserver;
   /** Своя инструкция чата (песочница): см. `ChatServiceOptions.chatInstructions`. `null` — инструкция приложения. */
-  chatInstructions?: (chat: Chat) => Promise<string | null>;
+  chatInstructions?: ChatInstructions;
   /** Сотрудник хода по чату (песочница: копия чата человека): см. `ChatServiceOptions.staffOfChat`. */
   staffOfChat?: (chat: Chat) => StaffActor | null | undefined;
   /** Инструменты, чей результат правка ответа не меняет (файлы): см. `ChatServiceOptions.lockedToolOutputs`. */
@@ -272,6 +274,10 @@ export interface ChatHandlerOptions {
    * адреса `watch`. Сервер видит их как обычно. Как у `ChatServiceOptions.privateStateKeys`.
    */
   privateStateKeys?: readonly string[];
+  /** Проверки готового ответа перед записью. Как у `ChatServiceOptions.replyChecks`. */
+  replyChecks?: ReplyChecksSetting;
+  /** Часы службы: тесты и песочница подменяют время целиком. Как у `ChatServiceOptions.now`. */
+  now?: () => Date;
 }
 
 export interface ChatHandler {
@@ -369,6 +375,8 @@ export function createChatServer(options: ChatHandlerOptions): { handler: ChatHa
     ...(options.onModelChosen && { onModelChosen: options.onModelChosen }),
     ...(options.modelMenu && { modelMenu: options.modelMenu }),
     ...(options.privateStateKeys && { privateStateKeys: options.privateStateKeys }),
+    ...(options.replyChecks && { replyChecks: options.replyChecks }),
+    ...(options.now && { now: options.now }),
   });
   /** Ключи состояния, которые не уходят вкладке (служба уже проверила имена). */
   const hiddenStateKey = hiddenStateKeyOf(options.privateStateKeys);

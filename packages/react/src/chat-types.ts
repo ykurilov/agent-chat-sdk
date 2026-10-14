@@ -74,6 +74,8 @@ export interface ChatMessageMetadata {
   error?: { kind: ChatErrorKind };
   /** Есть, если озвучку ответа оборвало перебивание. */
   voiceCut?: VoiceCut;
+  /** Ответ не дошёл до человека (сервер пометил «не доставлено»): модель его не видит. */
+  undelivered?: true;
 }
 
 export type AgentChatMessage = UIMessage<ChatMessageMetadata>;

@@ -1,5 +1,25 @@
 # @ykurilov/agent-chat-voice
 
+## 0.50.0
+
+### Patch Changes
+
+- @ykurilov/agent-chat-core@0.50.0
+
+## 0.49.0
+
+### Patch Changes
+
+- Updated dependencies [084cef7]
+  - @ykurilov/agent-chat-core@0.49.0
+
+## 0.48.0
+
+### Patch Changes
+
+- Updated dependencies [fa10d5a]
+  - @ykurilov/agent-chat-core@0.48.0
+
 ## 0.47.0
 
 ### Patch Changes

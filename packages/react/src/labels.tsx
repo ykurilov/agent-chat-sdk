@@ -249,6 +249,8 @@ export interface ChatLabels {
   answerCutByLength?: string;
   /** Отметка у ответа агента, который исправил человек (версия 15). Нет — русская по умолчанию. */
   answerEdited?: string;
+  /** Серая отметка у ответа, который не дошёл до человека (версия 24). Нет — русская по умолчанию. */
+  answerUndelivered?: string;
   /** Отметка у вызова инструмента, чей результат исправил человек (версия 15). Нет — русская по умолчанию. */
   toolOutputEdited?: string;
   /** Кнопка «изменить» у ответа агента (версия 15). Нет — русская по умолчанию. */
@@ -458,7 +460,7 @@ export type ResolvedChatLabels = Omit<ChatLabels, "widgets" | "diagram" | "demo"
   Required<
     Pick<
       ChatLabels,
-      "externalImageLink" | "answerCutByLength" | "answerEdited" | "toolOutputEdited" | "editAnswer" | "steeringPending" | "thinkingPhrases" | "thinkingElapsed" | "spendingMessagesLeft" | "spendingMessagesExhausted" | "editMessageLimit"
+      "externalImageLink" | "answerCutByLength" | "answerEdited" | "answerUndelivered" | "toolOutputEdited" | "editAnswer" | "steeringPending" | "thinkingPhrases" | "thinkingElapsed" | "spendingMessagesLeft" | "spendingMessagesExhausted" | "editMessageLimit"
     >
   > & {
     widgets: WidgetLabels;
@@ -656,6 +658,7 @@ export const russianLabels: ResolvedChatLabels = {
   externalImageLink: "картинка",
   answerCutByLength: "Ответ оборван по длине",
   answerEdited: "Изменено человеком",
+  answerUndelivered: "Не доставлено",
   toolOutputEdited: "Результат изменён",
   steeringPending: "Агент учтёт на следующем шаге",
   editAnswer: "Изменить ответ",
@@ -973,6 +976,7 @@ export const englishLabels: ResolvedChatLabels = {
   externalImageLink: "image",
   answerCutByLength: "The reply was cut off for length",
   answerEdited: "Edited by a person",
+  answerUndelivered: "Not delivered",
   toolOutputEdited: "Result edited",
   editAnswer: "Edit reply",
   retry: "Retry",
@@ -1224,6 +1228,7 @@ export function ChatLabelsProvider({ labels, children }: { labels: ChatLabels; c
       externalImageLink: labels.externalImageLink ?? russianLabels.externalImageLink,
       answerCutByLength: labels.answerCutByLength ?? russianLabels.answerCutByLength,
       answerEdited: labels.answerEdited ?? russianLabels.answerEdited,
+      answerUndelivered: labels.answerUndelivered ?? russianLabels.answerUndelivered,
       toolOutputEdited: labels.toolOutputEdited ?? russianLabels.toolOutputEdited,
       editAnswer: labels.editAnswer ?? russianLabels.editAnswer,
       steeringPending: labels.steeringPending ?? russianLabels.steeringPending,

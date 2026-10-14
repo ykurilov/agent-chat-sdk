@@ -30,6 +30,8 @@ await chat.flush({ waitForAnswersMs: 20_000 }); // при штатной ост�
   получают 403, а журнал пишет «Origin не совпал с Host».
 - `maxConcurrentTurnsPerUser` (по умолчанию 3, `Infinity` — без предела) — сколько ответов одного человека идут одновременно во всех
   его чатах. Лишний ход — `429 { error: { kind: "too_many_turns", limit } }` до любых записей.
+- `replyChecks` и `now` передаются службе чата как есть: проверки готового ответа перед записью и часы службы
+  (README ядра, [docs/reply-check.md](https://github.com/ykurilov/agent-chat-sdk/blob/main/docs/reply-check.md)).
 - Тело запроса больше 1 МиБ — `413 { error: { kind: "too_large" } }`, оно не дочитывается.
 - Ход не висит вечно и переживает сбои сам: настройки `agent.toolTimeoutMs`, `agent.modelSilenceTimeout`, `agent.toolResultMaxLength`,
   `agent.providerFallback`, `agent.sequentialTools`, `agent.timeZone` — описание в README ядра и в разделе «Надёжность хода» getting-started.

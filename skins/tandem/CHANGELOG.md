@@ -1,5 +1,59 @@
 # @ykurilov/agent-chat-skin-tandem
 
+## 0.50.0
+
+### Patch Changes
+
+- Updated dependencies [68b0629]
+- Updated dependencies [25aaf22]
+  - @ykurilov/agent-chat-flows@0.50.0
+  - @ykurilov/agent-chat-messengers@0.50.0
+  - @ykurilov/agent-chat-react@0.50.0
+  - @ykurilov/agent-chat-sandbox@0.50.0
+
+## 0.49.0
+
+### Patch Changes
+
+- Updated dependencies [084cef7]
+  - @ykurilov/agent-chat-flows@0.49.0
+  - @ykurilov/agent-chat-messengers@0.49.0
+  - @ykurilov/agent-chat-react@0.49.0
+  - @ykurilov/agent-chat-sandbox@0.49.0
+
+## 0.48.0
+
+### Minor Changes
+
+- fa10d5a: Сценарии поведения агента: разговор идёт по шагам с условиями выхода, судьёй, таймерами «написать первым» и карточкой
+  клиента, плюс редактор сценария с тестовым чатом. Подробно — `docs/flows.md`.
+  
+  - **flows** (новый пакет): `createAgentFlow`, формат и проверка сценария, судья decision-1 с запасной моделью, таймеры,
+    карточка клиента, перевод чатов на новую версию, хранилища SQLite и PostgreSQL, `FlowEditor`, `FlowTestChat`, `ClientCardPanel`.
+  - **core**: новые точки для расширений — `agent.prepareTurn` (контекст хода с `resumed`, `audience`, `staff?`),
+    служебное сообщение `app`, готовый ответ `deliverNotices({ reply })`, `askModel` и `recordUsage`, источник расхода
+    `judge`, `ChatService.assertWithinLimit(ownerId, chatId)`; `chatInstructions(chat, turn?)` — второй аргумент с
+    `audience` (при сжатии истории его нет).
+  - **server**: `chatInstructions` в настройках принимает тот же второй аргумент `turn`.
+  - **messengers**: ответ сервера без модели (точный текст по таймеру сценария) теперь доходит до мессенджера.
+  - **skin-tandem**: новые входы `/flows` (`tandemFlowEditorSkin`) и `/client-card` (`tandemClientCardSkin`).
+  
+  ### Как обновить приложение
+  
+  Сценарии не нужны — обновление ничего не требует. Нужны — шаги в разделе «Как обновить приложение» в `CHANGES.md`:
+  `pnpm add @ykurilov/agent-chat-flows`, `createAgentFlow` + `flow.withChat(…)`, `flow.attach(service)`, `flow.start()`,
+  `OPENROUTER_API_KEY` на сервере. Тестовому чату нужен `readRun(chatId)` в `FlowTestChatConnection`; его адреса
+  закройте правами редактора. `firstMessages: false` теперь значит «без тихих часов и потолка», запрет —
+  `canWriteNow: () => false`. Проверка: `pnpm typecheck`, новый чат отвечает по первому состоянию сценария.
+
+### Patch Changes
+
+- Updated dependencies [fa10d5a]
+  - @ykurilov/agent-chat-flows@0.48.0
+  - @ykurilov/agent-chat-messengers@0.48.0
+  - @ykurilov/agent-chat-sandbox@0.48.0
+  - @ykurilov/agent-chat-react@0.48.0
+
 ## 0.47.0
 
 ### Patch Changes

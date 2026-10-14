@@ -1,3 +1,5 @@
+import type { FinalAnswerStatus, UsageSource } from "../conversation/types";
+
 /** Что случилось с задачей или разговором. */
 export type AgentNoticeKind =
   | "task_done"
@@ -7,7 +9,9 @@ export type AgentNoticeKind =
   | "task_timed_out"
   | "task_awaiting_approval"
   /** Правило приложения попросило агента написать первым. */
-  | "conversation_started";
+  | "conversation_started"
+  /** Событие приложения или расширения (сработал таймер, сигнал). Модель видит `title`, человек плашку не видит. */
+  | "app";
 
 /**
  * Служебное сообщение: часть сообщения человека `{ type: "data-agent-notice", data: { notices: AgentNotice[] } }`.
@@ -17,8 +21,12 @@ export interface AgentNotice {
   kind: AgentNoticeKind;
   /** Есть у `task_*`. */
   taskId?: string;
-  /** Название задачи («Отчёт по сделкам»); у `conversation_started` — указание агенту от приложения. */
+  /** Название задачи («Отчёт по сделкам»); у `conversation_started` — указание агенту от приложения; у `app` — текст для модели. */
   title: string;
+  /** Есть у `app`: имя события (`flow_event`, `flow_timer`). */
+  name?: string;
+  /** Есть у `app`: данные события, JSON. */
+  data?: unknown;
   /** Уже обрезан пределом результата инструмента. */
   result?: string;
   error?: string;
@@ -39,12 +47,29 @@ export interface DeliverNoticesInput {
   wakeAgent: boolean;
   /** Повтор с тем же ключом ничего не добавляет. */
   deliveryKey: string;
+  /**
+   * Готовый ответ агента без вызова модели; доставляется, как ответ на служебное сообщение. Пишется, только если ход
+   * начался (`turnStarted`): при `wakeAgent: false`, исчерпанном лимите, закрытом чате и после 5 ходов сервера подряд
+   * его нет.
+   */
+  reply?: { text: string };
+  /** Пояс человека (IANA): дата и время в инструкции хода — по нему. Нет — пояс службы (`agent.timeZone`). */
+  timeZone?: string;
+  /**
+   * Дождаться конца хода и отдать готовый проверенный ответ в `answer`. Каналы SDK его не доставляют: доставит
+   * приложение (сценарий с `deliver`).
+   */
+  awaitAnswer?: boolean;
+  /** Источник расхода хода. По умолчанию `answer`; агент пишет первым — `first_message`. */
+  usageSource?: UsageSource;
 }
 
 export interface DeliverNoticesResult {
   status: "delivered" | "busy" | "chat_gone";
   messageId?: string;
   turnStarted: boolean;
+  /** Ответ хода — только при `awaitAnswer` и начатом ходе. */
+  answer?: { messageId: string; text: string; status: FinalAnswerStatus };
 }
 
 /** `ChatService.deliverNotices` (этап 4). */
