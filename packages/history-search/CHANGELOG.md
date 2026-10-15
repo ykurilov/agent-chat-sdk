@@ -1,5 +1,12 @@
 # @ykurilov/agent-chat-history-search
 
+## 0.59.0
+
+### Patch Changes
+
+- Updated dependencies [fc1f387]
+  - @ykurilov/agent-chat-core@0.59.0
+
 ## 0.58.0
 
 ### Patch Changes

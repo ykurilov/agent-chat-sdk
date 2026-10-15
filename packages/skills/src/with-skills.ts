@@ -18,6 +18,7 @@ export function withSkills(agent: AgentSettings, skills: Skills): AgentSettings 
   const appBlocks = agent.contextBlocks;
   return {
     ...agent,
+    serviceBlocks: [...(agent.serviceBlocks ?? []), ...skills.serviceBlocks],
     tools: (model) => {
       const own = typeof appTools === "function" ? appTools(model) : (appTools ?? {});
       const name = clash(own);

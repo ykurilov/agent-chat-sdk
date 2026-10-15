@@ -1,3 +1,4 @@
+import type { ServiceBlockFormat } from "../agent-run/forged-blocks";
 import type { LanguageModel, ToolSet } from "ai";
 import type { AgentToolsModel } from "../agent-run/run-agent-turn";
 import type { TokenUsage } from "../conversation/types";
@@ -56,6 +57,8 @@ export interface LongTermMemory {
    * ядро откажет при создании службы. Если инструменты заданы функцией, повтор ловится при сборке набора хода.
    */
   toolNames: readonly string[];
+  /** Служебные форматы памяти (`<agent_memory>`): поддельный блок в ответе модели вырезается (`ServiceBlockFormat`). */
+  serviceBlocks?: readonly ServiceBlockFormat[];
   /**
    * Блок памяти для вопроса хода или `null`, если записей нет. Зовётся один раз на чат: в первом ходе и после сжатия
    * истории; в идущем чате блок берётся из прошлого ответа.

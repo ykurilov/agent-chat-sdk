@@ -282,6 +282,8 @@ export type { MaxOutputTokensSetting, TurnTimeoutSetting } from "./agent-run/tur
 export type { SequentialToolsSetting } from "./agent-run/sequential-tools";
 export type { ModelCallEvent, ModelCallPurpose, ToolCallEvent, TurnObserver } from "./agent-run/turn-observer";
 export type { TurnFinished, TurnFinishedHandler } from "./agent-run/turn-finished";
+export { CORE_SERVICE_BLOCKS, checkServiceBlockFormats, cutForgedBlocks, serviceBlockName } from "./agent-run/forged-blocks";
+export type { ServiceBlockFormat } from "./agent-run/forged-blocks";
 export { DEFAULT_MODEL_SILENCE } from "./provider-errors/model-silence";
 export type { ModelSilenceLimits, ModelSilenceSetting } from "./provider-errors/model-silence";
 export { APP_CHANGE_PART_TYPE, BROWSER_CALL_PART_TYPE } from "./page-context/page-context";

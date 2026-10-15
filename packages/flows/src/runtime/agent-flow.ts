@@ -1,3 +1,4 @@
+import { FLOW_SERVICE_BLOCKS } from "./flow-service-blocks";
 import { createHash, randomUUID } from "node:crypto";
 import {
   ChatNotFoundError,
@@ -752,6 +753,7 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
             knownFlow: (chatId) => known.get(chatId),
           }),
           stepContext: withStepTail(agent.stepContext, runtime),
+          serviceBlocks: [...(agent.serviceBlocks ?? []), ...FLOW_SERVICE_BLOCKS],
           ...(agent.widgets && { widgets: withButtons(agent.widgets) }),
           prepareTurn: async (context) => {
             const own = await agent.prepareTurn?.(context);

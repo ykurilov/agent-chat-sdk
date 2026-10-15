@@ -1,3 +1,4 @@
+import type { ServiceBlockFormat } from "../agent-run/forged-blocks";
 import type { AgentChatMessage } from "../conversation/types";
 import type { ModelProfile } from "../models/model-catalog";
 
@@ -22,6 +23,8 @@ export interface MessageAttachments {
    * агента само (если приложение не добавило её раньше), чтобы вложения не приходилось подключать в двух местах.
    */
   instructions?: string;
+  /** Служебные форматы вложений (`<attachment>`): поддельный блок в ответе модели вырезается (`ServiceBlockFormat`). */
+  serviceBlocks?: readonly ServiceBlockFormat[];
   /**
    * Проверяет вложения нового сообщения (они принадлежат этому чату и этому человеку, лимиты соблюдены, срок
    * не вышел) и возвращает части для сохранения. Файлы ещё не прикреплены: сообщение может не записаться.

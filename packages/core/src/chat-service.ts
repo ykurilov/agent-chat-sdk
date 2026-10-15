@@ -165,6 +165,8 @@ import { notifyTurnFinished } from "./agent-run/turn-finished";
 import { resolveViewerOutsideTurn } from "./agent-run/agent-viewer";
 import type { AgentViewerSource } from "./agent-run/agent-viewer";
 import type { TurnFinishedHandler } from "./agent-run/turn-finished";
+import { CORE_SERVICE_BLOCKS, checkServiceBlockFormats } from "./agent-run/forged-blocks";
+import type { ServiceBlockFormat } from "./agent-run/forged-blocks";
 
 export { DEFAULT_TEXT_MODE_NOTE, DEFAULT_VOICE_MODE_HINT };
 
@@ -217,6 +219,12 @@ export interface AgentSettings {
    */
   helpers?: Record<string, AgentHelper>;
   maxSteps?: number;
+  /**
+   * Служебные форматы приложения и пакетов (`withSkills`, `flow.withChat`): тег `{ tag }` или строка `{ name, line }`.
+   * Модель, подделавшая такой блок в ответе, его не покажет: блок вырезается в потоке до экрана и записи, в прошлых
+   * ответах — только в запросе. Форматы ядра (`CORE_SERVICE_BLOCKS`), памяти и вложений добавляются сами.
+   */
+  serviceBlocks?: readonly ServiceBlockFormat[];
   /**
    * Пометка модели при входе в голосовой режим: добавляется один раз, отдельной текстовой частью в конец первого
    * голосового сообщения подряд. В историю чата не пишется: выводится из отметок сообщений, начало запроса от хода
@@ -1296,6 +1304,14 @@ export function createChatService(input: ChatServiceOptions): ChatService {
   const logError = input.logError ?? ((message: string) => console.error(message));
   const now = input.now ?? (() => new Date());
   const replyChecks = checkedReplyChecks(input.replyChecks);
+  // Служебные форматы: ядро, пакеты и приложение — один список; ошибка в формате — `TypeError` при создании службы.
+  const serviceBlocks: readonly ServiceBlockFormat[] = [
+    ...CORE_SERVICE_BLOCKS,
+    ...(input.memory?.serviceBlocks ?? []),
+    ...(input.attachments?.serviceBlocks ?? []),
+    ...(input.agent.serviceBlocks ?? []),
+  ];
+  checkServiceBlockFormats(serviceBlocks);
   const widgets = createAgentWidgets(input.agent.widgets);
   checkWidgetNamesFree(widgets, input.memory, input.background);
   const browserToolDescriptions = checkedBrowserTools(input.agent, input.memory, widgets);
@@ -1481,6 +1497,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     // Сжатие берёт кэш хода: у него те же инструменты, что у модели агента, — с браузерными и помощниками.
     agent: { ...options.agent, tools: withBrowserDescriptions(options.agent.tools, describedOnlyTools(browserToolDescriptions, options.agent.helpers, toolResultLimit)) },
     ...(options.attachments && { attachments: options.attachments }),
+    serviceBlocks,
     settings: resolveCompactionSettings(options.compaction),
     logError,
     ...(options.turnObserver && { turnObserver: options.turnObserver }),
@@ -2428,6 +2445,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
             browserTools: { descriptions: browserToolDescriptions, pending: pendingBrowserCalls, timeoutMs: browserToolTimeoutMs, tabId: launch.page?.tabId },
           }),
           ...(options.attachments && { attachments: options.attachments }),
+          serviceBlocks,
           ...(options.memory && { memory: options.memory }),
           ...(widgets.waiting.size > 0 && { waitingWidgets: widgets.waiting }),
           ...(widgets.switchable.size > 0 && { switchableTools: widgets.switchable }),

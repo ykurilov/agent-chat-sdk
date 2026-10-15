@@ -1,5 +1,11 @@
 # @ykurilov/agent-chat-videos
 
+## 0.59.0
+
+### Patch Changes
+
+- @ykurilov/agent-chat-react@0.59.0
+
 ## 0.58.0
 
 ### Patch Changes

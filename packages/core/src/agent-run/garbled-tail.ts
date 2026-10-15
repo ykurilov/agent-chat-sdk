@@ -2,6 +2,7 @@ import type { LanguageModelV4StreamPart } from "@ai-sdk/provider";
 import { wrapLanguageModel } from "ai";
 import type { LanguageModel } from "ai";
 import type { AgentChatMessage } from "../conversation/types";
+import { closesCodeFence, codeFenceOf, isIndentedCodeOrQuote } from "../text/markdown-code";
 import { LENGTH_CUT_PART_TYPE } from "./length-cut";
 
 type MessagePart = AgentChatMessage["parts"][number];
@@ -414,16 +415,16 @@ function withoutCodeAndQuotes(text: string): string {
   return text
     .split("\n")
     .map((line) => {
-      const opener = /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1];
       if (fence !== null) {
-        if (opener && opener[0] === fence[0] && opener.length >= fence.length && line.trim() === opener) fence = null;
+        if (closesCodeFence(line, fence)) fence = null;
         return " ".repeat(line.length);
       }
+      const opener = codeFenceOf(line);
       if (opener) {
         fence = opener;
         return " ".repeat(line.length);
       }
-      if (/^(?: {4}|\t)/.test(line) || /^\s*>/.test(line)) return " ".repeat(line.length);
+      if (isIndentedCodeOrQuote(line)) return " ".repeat(line.length);
       return line.replace(/(`+)[^`\n]*?\1/g, (code) => " ".repeat(code.length));
     })
     .join("\n");

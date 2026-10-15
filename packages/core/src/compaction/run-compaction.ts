@@ -4,6 +4,7 @@ import { buildModelRequest } from "../agent-run/build-model-request";
 import type { ModelCallObservation } from "../agent-run/observe-model-calls";
 import { cutToolResult } from "../agent-run/tool-result-limit";
 import type { MessageAttachments } from "../attachments/message-attachments";
+import type { ServiceBlockFormat } from "../agent-run/forged-blocks";
 import { addTokenUsage, emptyTokenUsage, isEmptyTokenUsage } from "../conversation/token-usage";
 import type { AgentChatMessage, TokenUsage } from "../conversation/types";
 import { findModel } from "../models/model-catalog";
@@ -51,6 +52,8 @@ export interface CompactionRunInput {
   history: readonly AgentChatMessage[];
   /** Вложения проходят тот же путь, что в обычном ходе: сводка видит текст файлов. */
   attachments?: MessageAttachments;
+  /** Служебные форматы хода: поддельные блоки в прошлых ответах вырезаются так же, как в ходе (кэш хода). */
+  serviceBlocks?: readonly ServiceBlockFormat[];
   settings: ResolvedCompactionSettings;
   /** Задание последним сообщением; по умолчанию — сводка всей переписки (`compactionTask`). */
   task?: string;

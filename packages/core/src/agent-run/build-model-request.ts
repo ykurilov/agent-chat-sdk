@@ -34,6 +34,8 @@ import { holdNoteAfterApprovals, withFrozenContext } from "../frozen-context/fro
 import type { FrozenContextData } from "../frozen-context/context-blocks";
 import { withoutUndelivered } from "./undelivered";
 import { withoutGarbledTails } from "./garbled-tail";
+import { withoutForgedBlocks } from "./forged-blocks";
+import type { ServiceBlockFormat } from "./forged-blocks";
 
 export interface ModelRequest {
   model: LanguageModel;
@@ -80,6 +82,11 @@ export async function buildModelRequest(input: {
    */
   switchableTools?: ReadonlySet<string>;
   history: readonly AgentChatMessage[];
+  /**
+   * Служебные форматы (`CORE_SERVICE_BLOCKS` и форматы пакетов и приложения): поддельные блоки в прошлых ответах агента
+   * вырезаются только в запросе, хранилище не меняется; из той же истории — тот же запрос (кэш). Нет — ответы как есть.
+   */
+  serviceBlocks?: readonly ServiceBlockFormat[];
   /** Вложения: части `file` истории заменяются тем, что увидит выбранная модель. Нет расширения — части убираются. */
   attachments?: MessageAttachments;
   /**
@@ -143,7 +150,8 @@ export async function buildModelRequest(input: {
     ...(input.repeatSilence && { repeatSilence: input.repeatSilence }),
   });
   const tools = input.tools ? sortToolsByName(input.tools) : undefined;
-  const sendable = input.switchableTools ? withSwitchedOffCallsAsText(sendableHistory(input.history), input.switchableTools, tools) : sendableHistory(input.history);
+  const cleaned = sendableHistory(input.serviceBlocks ? withoutForgedBlocks(input.history, input.serviceBlocks) : input.history);
+  const sendable = input.switchableTools ? withSwitchedOffCallsAsText(cleaned, input.switchableTools, tools) : cleaned;
   const noted = withStaffRepliesJoined(withChannelNotes(withModeNotes(withBurstsJoined(withCorrectionsJoined(sendable)), input.modeNotes)));
   const held: { messages: readonly AgentChatMessage[]; note?: AgentChatMessage } = input.frozenContext
     ? holdNoteAfterApprovals(withFrozenContext(noted, input.frozenContext))

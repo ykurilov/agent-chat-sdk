@@ -63,6 +63,8 @@ export function createLongTermMemory(options: LongTermMemoryOptions): Configured
   return {
     instructions: memoryInstructions,
     toolNames: ["manage_memory"],
+    // Блок памяти из вопроса хода, подделанный в ответе, ядро вырезает.
+    serviceBlocks: [{ tag: "agent_memory" }],
     toolTitles: memoryToolTitles,
     tools: ({ ownerId }) => createManageMemoryTool(operations, ownerId),
     snapshot: ({ userId }) => operations.snapshot(userId),

@@ -99,6 +99,7 @@ import { attachmentsClient } from "@ykurilov/agent-chat-attachments/react";
 - **Импорт старой переписки**: `attachments.importFile({ ownerId, chatId, bytes, mediaType, filename? })` сохраняет картинку из
   старой системы; его зовёт `service.importChat` ядра сам, если вложения подключены к чату.
 - **Инструкция агенту** про вложения (`attachmentsInstructions`) ядро добавляет само, вручную дописывать не нужно (дубль не появится).
+- **Служебный формат** `<attachment …>` (`attachments.serviceBlocks`): если модель повторит текст файла этим блоком в ответе, ядро его вырежет до экрана и записи.
 
 ## Адреса
 

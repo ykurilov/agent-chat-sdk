@@ -63,6 +63,8 @@ import { createReasoningTimer } from "./reasoning-timer";
 import { decideNextAttempt, errorKindForPerson, fallbackProviders, nextSilenceProvider, resolveSilenceSwitch } from "./next-attempt";
 import { chunksForParts } from "./parts-to-chunks";
 import { cutGarbledTail, createGarbledTailGuard, findGarbledTail } from "./garbled-tail";
+import { CORE_SERVICE_BLOCKS, createForgedBlockGuard, lastQuestionOf } from "./forged-blocks";
+import type { ServiceBlockFormat } from "./forged-blocks";
 import { checkedReplyText, createHeldReplyText, createReplyRewrite, createSeenTexts, createShownSteps, knownTextsOf, lastTextIndex, noticeGroupsOf, replacementChunks, withTextAt } from "./reply-checks";
 import type { SeenTexts, TurnReplyChecks } from "./reply-checks";
 import { erasableStepStart, STEP_RESET_PART_TYPE, STEPS_MAY_RESET_PART_TYPE } from "./step-reset";
@@ -216,6 +218,11 @@ export interface AgentTurnInput {
   history: readonly AgentChatMessage[] | (() => Promise<readonly AgentChatMessage[]>);
   /** Вложения: что модель увидит вместо частей `file` истории. */
   attachments?: MessageAttachments;
+  /**
+   * Служебные форматы, уже проверенные: поддельный блок в ответе модели вырезается в потоке (экран, запись и следующий шаг
+   * его не видят), в прошлых ответах — только в запросе. Нет — форматы ядра (`CORE_SERVICE_BLOCKS`).
+   */
+  serviceBlocks?: readonly ServiceBlockFormat[];
   /** Пометки смены режима для модели; в историю не пишутся (см. `buildModelRequest`). */
   modeNotes?: ModeNotes;
   /**
@@ -493,6 +500,8 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
   const turnUsage = createTurnUsage();
   // Срыв в кашу в потоке: хвост дальше не идёт, вызовы после срыва не запускаются.
   const garbledTail = createGarbledTailGuard();
+  // Поддельные служебные блоки в потоке: вырезаются до экрана, записи и проверки на кашу.
+  const forgedBlocks = createForgedBlockGuard(turnInput.serviceBlocks ?? CORE_SERVICE_BLOCKS);
   const turnBudget = createTurnBudget(input.turnRules, { catalog: input.catalog, modelId: input.modelId, turnUsage });
   // Расход сообщения: накопленный по паузам и продолжениям (`resume.usage`) и расход этого хода.
   const messageUsage = (): TokenUsage | null => {
@@ -723,6 +732,7 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
             turnUsage,
             turnBudget,
             garbledTail,
+            forgedBlocks,
             // Есть куда перейти при молчании — у того же провайдера оно не повторяется.
             repeatSilence: () => silenceTarget() === undefined,
             ...(silenceSwitch.scope === "step" &&
@@ -986,6 +996,9 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
     const garbled = cutGarbledTail(garbledTail.forCut(parts));
     const droppedCalls = garbledTail.droppedCalls();
     const garbleLog = `чат=${input.chatId} ответ=${messageId} модель=${modelId} провайдер=${answeredProviderId}`;
+    // Поддельные служебные блоки уже вырезаны в потоке — здесь только журнал, по строке на формат.
+    for (const name of new Set(forgedBlocks.cutBlocks())) logError(`[служебный блок вырезан] тег=${name} ${garbleLog}`);
+    for (const name of new Set(forgedBlocks.keptBlocks())) logError(`[служебный блок не вырезан: ответ остался бы пустым] тег=${name} ${garbleLog}`);
     if (garbled) {
       logError(`[хвост обрезан] ${garbleLog} признаки=${garbled.signs.join(",")} знаков=${garbled.removedChars} вызовов_не_запущено=${droppedCalls}`);
       const cut = garbled.parts.filter((part) => !garbledTail.isDroppedCall(part));
@@ -1006,7 +1019,7 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
     const textIndex = lastTextIndex(parts);
     if (replyChecks && status === "complete" && textIndex !== -1 && !takeover.signal.aborted) {
       const original = (parts[textIndex] as { text: string }).text;
-      const text = await checkedReplyText({
+      const checked = await checkedReplyText({
         checks: replyChecks.checks,
         text: original,
         ownerId: input.ownerId ?? "",
@@ -1016,6 +1029,8 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
         rewrite: createReplyRewrite({ ...input, providerId: answeredProviderId, messageId, logError }),
         logError,
       });
+      // Переписанный текст идёт мимо потока хода: служебные блоки в нём вырезаются здесь.
+      const text = checked === original ? checked : withoutForgedBlocksInRewrite(forgedBlocks.cutText(checked), checked, (name) => logError(`[служебный блок вырезан] тег=${name} ${garbleLog}`));
       if (text !== original) {
         const corrected = withTextAt(parts, textIndex, text);
         if (heldText?.holdsText()) for (const chunk of heldText.release(text)) emitShown(chunk);
@@ -1226,6 +1241,7 @@ async function runAnswerAttempt(
     turnUsage: TurnUsage;
     turnBudget: TurnBudget;
     garbledTail: ReturnType<typeof createGarbledTailGuard>;
+    forgedBlocks: ReturnType<typeof createForgedBlockGuard>;
     /** Повторять ли молчание до первого куска у того же провайдера. */
     repeatSilence: () => boolean;
     /** Есть — попытка у запасного: после шага, за которым ход пошёл бы дальше, она кончается и зовёт это. */
@@ -1324,6 +1340,7 @@ async function openAttempt(
     turnUsage: TurnUsage;
     turnBudget: TurnBudget;
     garbledTail: ReturnType<typeof createGarbledTailGuard>;
+    forgedBlocks: ReturnType<typeof createForgedBlockGuard>;
     repeatSilence: () => boolean;
     backToPrimary?: () => void;
     /** Каждый завершённый шаг попытки: причина конца. */
@@ -1406,6 +1423,7 @@ async function openAttempt(
   } = input;
   const request = await buildModelRequest({
     ...requestInput,
+    serviceBlocks: input.serviceBlocks ?? CORE_SERVICE_BLOCKS,
     providerId,
     history: attempt.history,
     frozenContext: { current: { answerId: input.messageId, data: attempt.frozenContext }, group: Boolean(input.group) },
@@ -1455,9 +1473,11 @@ async function openAttempt(
   const { noteAfterApprovals, ...modelRequest } = request;
   // Новая попытка — шаги прежней стёрты.
   attempt.garbledTail.reset();
+  attempt.forgedBlocks.reset(lastQuestionOf(attempt.history));
   const result = streamText({
     ...modelRequest,
-    model: attempt.garbledTail.wrap(modelRequest.model),
+    // Сначала вырезка блоков, потом проверка на кашу: каша судит уже чистый текст.
+    model: attempt.garbledTail.wrap(attempt.forgedBlocks.wrap(modelRequest.model)),
     ...(approval.toolApproval && { toolApproval: gateToolApproval(approval.toolApproval, () => toolsClosed) }),
     // Попытке — остаток шагов хода.
     // Помощник встал на подтверждении человека — ход ждёт, модель основного агента его незаконченным не видит.
@@ -2022,4 +2042,11 @@ function emitReply(text: string, emit: (chunk: UIMessageChunk) => void): void {
   emit({ type: "text-delta", id, delta: text });
   emit({ type: "text-end", id });
   emit({ type: "finish-step" });
+}
+
+/** Переписанный проверкой текст без поддельных служебных блоков; без слов после вырезки — как есть. */
+function withoutForgedBlocksInRewrite(cut: { text: string; blocks: string[] }, text: string, logCut: (name: string) => void): string {
+  if (cut.blocks.length === 0 || !/[\p{L}\p{N}]/u.test(cut.text)) return text;
+  for (const name of new Set(cut.blocks)) logCut(name);
+  return cut.text;
 }

@@ -36,6 +36,9 @@ mountChat(app, createSkillsHandler({ skills, resolveUser })); // адреса э
 приложения. Совпадение имени — ошибка при запуске. Next.js: `createNextRouteHandlers(skillsHandler)` в
 `app/api/skills/[[...path]]/route.ts`.
 
+Ещё `withSkills` добавляет к `agent.serviceBlocks` форматы навыков (`skills.serviceBlocks`): тело `<skill …>` и список
+навыков с заголовком `listHeading`. Если модель повторит их в ответе, ядро вырежет их до экрана и записи.
+
 Настройки `createSkills`: `maxBodyChars` (по умолчанию 50 000), `modelTexts` (`englishSkillsModelTexts` для
 англоязычного агента), `log` и `logError` (по умолчанию `console`).
 

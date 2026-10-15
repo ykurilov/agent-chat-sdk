@@ -1,4 +1,5 @@
 export { createAgentFlow } from "./agent-flow";
+export { FLOW_SERVICE_BLOCKS } from "./flow-service-blocks";
 export type * from "./flow-types";
 export { DEFAULT_JUDGE_MODEL, DEFAULT_JUDGE_THRESHOLD, DEFAULT_JUDGE_TIMEOUT_MS } from "./judge";
 export { DEFAULT_TIMER_LEASE_MS, DEFAULT_TIMER_TICK_MS } from "./flow-timers";

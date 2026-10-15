@@ -1,5 +1,6 @@
 import type { ToolSet } from "ai";
 import type { MessageAttachments } from "../attachments/message-attachments";
+import type { ServiceBlockFormat } from "../agent-run/forged-blocks";
 import type { AgentToolsSource } from "../agent-run/run-agent-turn";
 import { resolveViewerOutsideTurn } from "../agent-run/agent-viewer";
 import { turnChannelOf } from "../agent-run/channel-notes";
@@ -120,6 +121,8 @@ export interface CompactionServiceOptions {
   /** `viewer` — права человека: инструменты сжатия те же, что у хода (кэш). */
   agent: { instructions: string; tools?: AgentToolsSource; viewer?: AgentViewerSource };
   attachments?: MessageAttachments;
+  /** Служебные форматы хода: запрос сжатия чистит прошлые ответы так же, как ход (кэш хода). */
+  serviceBlocks?: readonly ServiceBlockFormat[];
   /** `null` — автосжатие выключено; записи, уже сделанные, всё равно применяются к истории. */
   settings: ResolvedCompactionSettings | null;
   logError: (message: string) => void;
@@ -218,6 +221,7 @@ export function createCompactionService(options: CompactionServiceOptions): Comp
         ...observation(ownerId, answerId),
         history,
         ...(options.attachments && { attachments: options.attachments }),
+        ...(options.serviceBlocks && { serviceBlocks: options.serviceBlocks }),
         settings,
         logError,
         abortSignal: signal,
@@ -392,6 +396,7 @@ export function createCompactionService(options: CompactionServiceOptions): Comp
           ...observation(ownerId, answerId),
           history: [...history, { id: `${chatId}-answer-steps`, role: "assistant", parts: steps }],
           ...(options.attachments && { attachments: options.attachments }),
+        ...(options.serviceBlocks && { serviceBlocks: options.serviceBlocks }),
           settings,
           task: answerStepsTask(settings.summaryCeilingTokens),
           logError,

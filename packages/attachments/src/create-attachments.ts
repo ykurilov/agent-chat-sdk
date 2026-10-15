@@ -122,6 +122,8 @@ export function createAttachments(options: CreateAttachmentsOptions): Attachment
   return {
     storage,
     instructions: blindImages ? `${attachmentsInstructions} ${blindImages.instructions}` : attachmentsInstructions,
+    // Текст файла блоком `<attachment …>`, подделанный в ответе, ядро вырезает.
+    serviceBlocks: [{ tag: "attachment" }],
     acceptUserParts,
     confirmUserParts,
     prepareHistory: (input) => prepareHistory({ storage, imagePlans, ...input, ...(blindImages && { imagesForBlindModels: blindImages }) }),

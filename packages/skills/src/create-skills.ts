@@ -1,7 +1,7 @@
 import { tool } from "ai";
 import type { ToolSet } from "ai";
 import { z } from "zod";
-import type { AgentToolsModel, ContextBlock, ContextBlocksInput } from "@ykurilov/agent-chat-core";
+import type { AgentToolsModel, ContextBlock, ContextBlocksInput, ServiceBlockFormat } from "@ykurilov/agent-chat-core";
 import { isSkillVisibleInHistory, skillHeader } from "./loaded-skills";
 import type { BranchStorage } from "./loaded-skills";
 import { createSkillsManager } from "./skills-manager";
@@ -42,6 +42,8 @@ export interface Skills {
   maxBodyChars: number;
   /** Действия админ-экрана: с проверкой полей, автором и временем. */
   manage: SkillsManager;
+  /** Для `agent.serviceBlocks` (`withSkills` добавляет сам): тело навыка `<skill …>` и список навыков. */
+  serviceBlocks: readonly ServiceBlockFormat[];
 }
 
 export function createSkills(options: CreateSkillsOptions): Skills {
@@ -116,5 +118,7 @@ export function createSkills(options: CreateSkillsOptions): Skills {
     isAdmin,
     maxBodyChars,
     manage: createSkillsManager({ store, maxBodyChars, now }),
+    // Тело навыка — тег `<skill …>`; список — заголовок `listHeading` и строки навыков до пустой строки.
+    serviceBlocks: [{ tag: "skill" }, { name: "skills_list", line: texts.listHeading, until: "paragraph" }],
   };
 }
