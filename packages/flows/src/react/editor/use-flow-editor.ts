@@ -10,6 +10,7 @@ import {
   addExit,
   addState as addStateTo,
   connectExit,
+  flowFingerprint,
   flowToJson,
   loadFlowJson,
   removeState as removeStateFrom,
@@ -61,6 +62,13 @@ export interface UseFlowEditorOptions {
    * JSON. Смотреть, проверять граф, прогонять и открывать JSON можно. Нужно, пока сценарий правит внешний агент.
    */
   readOnly?: boolean;
+  /**
+   * Сценарий, который сейчас сохранён у приложения (на сервере). Если задан, «Сохранено» и доступность кнопки сохранения
+   * считаются от него, а не от `value` при показе доски: вернулись на вкладку с несохранённой правкой — доска честно
+   * скажет «Не сохранено». После успешного `onSave` доска считает сохранённым отправленное, пока не придёт новый
+   * `savedValue`. Без него сохранённым считается `value` при показе доски.
+   */
+  savedValue?: AgentFlow;
   /** Что объявило приложение: инструменты, события и кнопки, виджеты. */
   catalog: FlowCatalog;
   migration?: FlowMigration;
@@ -126,7 +134,11 @@ export function useFlowEditor(options: UseFlowEditorOptions) {
   const [jsonErrors, setJsonErrors] = useState<string[]>([]);
   const [simulation, setSimulation] = useState<Simulation | null>(null);
   const [saving, setSaving] = useState(false);
-  const [savedJson, setSavedJson] = useState(() => flowToJson(flow));
+  const [mountedPrint] = useState(() => flowFingerprint(flow));
+  const savedPrint = useMemo(() => (options.savedValue ? flowFingerprint(options.savedValue) : undefined), [options.savedValue]);
+  // Отправленное через `onSave` считается сохранённым, пока приложение не прислало другой `savedValue`.
+  const [sent, setSent] = useState<{ print: string; base: string | undefined } | null>(null);
+  const savedJson = sent && sent.base === savedPrint ? sent.print : (savedPrint ?? mountedPrint);
   // Отказ в сохранении держится, пока сценарий тот же: любая правка снимает его.
   const [rejection, setRejection] = useState<{ flow: AgentFlow; issues: FlowIssue[] } | null>(null);
   const readOnly = options.readOnly === true;
@@ -140,7 +152,8 @@ export function useFlowEditor(options: UseFlowEditorOptions) {
   );
   const issueCount = useMemo(() => countIssues(issues), [issues]);
   const json = useMemo(() => flowToJson(flow), [flow]);
-  const dirty = json !== savedJson;
+  const print = useMemo(() => flowFingerprint(flow), [flow]);
+  const dirty = print !== savedJson;
 
   // Выбранное состояние удалили — панель возвращается к обзору.
   const visibleSelection: FlowSelection =
@@ -279,7 +292,7 @@ export function useFlowEditor(options: UseFlowEditorOptions) {
         return;
       }
       setRejection(null);
-      setSavedJson(flowToJson(value));
+      setSent({ print: flowFingerprint(value), base: latest.current.savedValue ? flowFingerprint(latest.current.savedValue) : undefined });
     } catch (error) {
       // Исключение из `onSave` — тот же отказ, только без списка: шапка говорит «Не сохранено», консоль не засоряем.
       console.warn("[flow] onSave failed", error);

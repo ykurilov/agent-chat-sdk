@@ -1,5 +1,20 @@
 # @ykurilov/agent-chat-flows
 
+## 0.63.0
+
+### Minor Changes
+
+- 8a9e399: Доска сценария больше не показывает «Сохранено» для несохранённых правок после возвращения на вкладку: новое необязательное `savedValue` у `FlowEditor` и функция `sameFlow` из `@ykurilov/agent-chat-flows/react`.
+  
+  ### Как обновить приложение
+  
+  Если `FlowEditor` стоит на отдельной вкладке и размонтируется при уходе, передайте `savedValue={сценарий, как он лежит на сервере}`. Без него поведение прежнее.
+
+### Patch Changes
+
+- @ykurilov/agent-chat-core@0.63.0
+  - @ykurilov/agent-chat-react@0.63.0
+
 ## 0.62.0
 
 ### Minor Changes

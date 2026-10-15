@@ -233,6 +233,31 @@ export function flowToJson(flow: AgentFlow): string {
   return `${JSON.stringify(keepJudgeText(compactFlow(flow)), null, 2)}\n`;
 }
 
+function sortKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortKeys);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+        .map(([key, inner]) => [key, sortKeys(inner)]),
+    );
+  }
+  return value;
+}
+
+/** Отпечаток сценария для сравнения: тот же `compactFlow`, что у JSON доски, но порядок ключей не важен. */
+export function flowFingerprint(flow: AgentFlow): string {
+  return JSON.stringify(sortKeys(keepJudgeText(compactFlow(flow))));
+}
+
+/**
+ * Один ли это сценарий: сравнение так же, как считает «Сохранено» доска (пустые поля не в счёт). Порядок ключей не важен:
+ * сценарий из jsonb приходит с другим порядком. Порядок состояний, условий и полей — важен.
+ */
+export function sameFlow(a: AgentFlow, b: AgentFlow): boolean {
+  return flowFingerprint(a) === flowFingerprint(b);
+}
+
 type JsonExit = { when?: { type?: string; text?: string } };
 type JsonState = { exits?: JsonExit[] };
 
