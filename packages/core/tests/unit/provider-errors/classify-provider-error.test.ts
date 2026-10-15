@@ -21,7 +21,7 @@ describe("classifyProviderError", () => {
     [503, "overloaded"],
     [529, "overloaded"],
     [401, "invalid_key"],
-    [403, "invalid_key"],
+    [403, "other"],
     [402, "insufficient_funds"],
     [400, "other"],
     [500, "overloaded"],
@@ -105,6 +105,34 @@ describe("classifyProviderError", () => {
 
   it("квота при 429 — insufficient_funds: «не повторять» проверяется первым", () => {
     expect(classifyProviderError(apiError(429, '{"error":{"code":"insufficient_quota"}}'))).toBe("insufficient_funds");
+  });
+
+  describe("403: ключ или деньги — только по явным признакам, иначе other (модерация, регион, доступ к модели)", () => {
+    it.each([
+      '{"error":{"message":"Invalid API key provided"}}',
+      '{"error":{"message":"API key not valid. Please pass a valid API key."}}',
+      '{"error":{"message":"Authentication failed"}}',
+      '{"error":{"message":"This key is disabled"}}',
+    ])("%s → invalid_key", (body) => {
+      expect(classifyProviderError(apiError(403, body))).toBe("invalid_key");
+    });
+
+    it("«Key limit exceeded» (OpenRouter: предел расходов ключа) → insufficient_funds", () => {
+      expect(classifyProviderError(apiError(403, '{"error":{"message":"Key limit exceeded (total limit)"}}'))).toBe("insufficient_funds");
+    });
+
+    it.each([
+      ['{"error":{"message":"Your chosen model requires moderation and your input was flagged for \"violence\""}}', "модерация OpenRouter"],
+      ['{"error":{"code":"unsupported_country_region_territory","message":"Country, region, or territory not supported"}}', "регион"],
+      ['{"error":{"message":"You do not have access to the model gpt-6"}}', "доступ к модели"],
+    ])("%s (%s) → other", (body) => {
+      expect(classifyProviderError(apiError(403, body))).toBe("other");
+    });
+  });
+
+  it("429 «Quota exceeded … per minute» (Gemini) — rate_limited: код 429 главнее общих слов о квоте", () => {
+    const body = '{"error":{"code":429,"message":"Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_requests, limit: 15 per minute. Please check your plan and billing details."}}';
+    expect(classifyProviderError(apiError(429, body))).toBe("rate_limited");
   });
 
   it("«overloaded» в тексте ответа 400 — other: текст смотрится только без кода или при коде ≥ 500", () => {

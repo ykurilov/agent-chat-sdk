@@ -16,6 +16,7 @@ import type { UpgradeWebSocket } from "hono/ws";
 import { createBackgroundTasks } from "@ykurilov/agent-chat-background";
 import { sqliteTaskStore } from "@ykurilov/agent-chat-background/sqlite";
 import { createMessengers } from "@ykurilov/agent-chat-messengers";
+import { createDemoMcp, createDemoMcpAdmin, createMockMcpService } from "./demo-mcp";
 import type { MessengerBot, MessengerChatService } from "@ykurilov/agent-chat-messengers";
 import { createSqliteMessengerStore } from "@ykurilov/agent-chat-messengers/sqlite";
 import { telegramBot } from "@ykurilov/agent-chat-messengers/telegram";
@@ -28,6 +29,8 @@ import { createLongTermMemory } from "@ykurilov/agent-chat-memory";
 import { createSandboxHandler } from "@ykurilov/agent-chat-sandbox";
 import { demoSandboxPeople } from "./demo-people";
 import { createSqliteSandboxJournal } from "@ykurilov/agent-chat-sandbox/sqlite";
+import { createSkills, createSkillsHandler, withSkills } from "@ykurilov/agent-chat-skills";
+import { sqliteSkillStore } from "@ykurilov/agent-chat-skills/sqlite";
 import { webToolsInstructions } from "@ykurilov/agent-chat-web-tools";
 import { demoBrowserTools } from "../shared/demo-browser-tools";
 import { pickSlot } from "../shared/demo-widgets";
@@ -40,6 +43,7 @@ import { createDemoWebTools } from "./demo-web-tools";
 import { connectionModes, createConnectionSimulation, parseConnectionMode } from "./connection-simulation";
 import { demoBeforeTurn, demoTurnRefusal, parseDemoFailure, withDemoFailure, withFailureSimulation } from "./failure-simulation";
 import { createDemoMockModel, firstTextAt } from "./mock-model";
+import { demoImageLibrary } from "./demo-image-library";
 import { demoVideoLibrary } from "./demo-videos";
 import { createDemoReports, researcherHelper } from "./demo-background";
 import { createMockTelegram, mockTelegramToken, mockTelegramUsername } from "./mock-telegram";
@@ -304,8 +308,17 @@ export async function createDemoApp(options: DemoAppOptions) {
   const catalog = withFailureSimulation(mock ? mockCatalog({ withoutImages: options.env.DEMO_MODELS_WITHOUT_IMAGES === "1" }) : standardCatalog);
   const spending = spendingLimits(options.env, storage, catalog);
   const images = demoImageGeneration(options, attachments, { storage, ...(spending && { limits: spending.limits }) });
+  const adminIds = demoAdminIds(options.env);
+  // Серверы MCP, которые подключает админ: их инструменты агент видит рядом со своими (экран `/mcp`).
+  const mcp = await createDemoMcp({ ...options, storage, isAdmin: (userId) => adminIds.has(userId) });
   // `DEMO_MEMORY=1` включает долгую память: инструмент и блок в запросах, адреса `/api/chat/memory` для экрана памяти.
   const memory = options.env.DEMO_MEMORY === "1" ? createLongTermMemory({ storage }) : undefined;
+  // Навыки: список включённых — блоком контекста, тело агент грузит инструментом `use_skill`; правит их админ на `/skills`.
+  const skills = createSkills({
+    store: sqliteSkillStore(options.databaseFile),
+    isAdmin: (user) => adminIds.has(user.id),
+    chatStorage: storage,
+  });
   const chatOptions: ChatHandlerOptions = {
     basePath: "/api/chat",
     storage,
@@ -322,10 +335,16 @@ export async function createDemoApp(options: DemoAppOptions) {
     allowedOrigins: demoAllowedOrigins(options.env),
     // Стенд браузерных тестов: тесты идут параллельно одним демо-пользователем, предел ходов проверяют модульные тесты.
     ...(mock && { maxConcurrentTurnsPerUser: Number.POSITIVE_INFINITY }),
-    agent: {
+    agent: withSkills({
       // Инструкции про веб-инструменты и поиск постоянны: есть они или нет, решает запуск сервера, а не ход.
       instructions: [agentInstructions, ...(webTools ? [webToolsInstructions] : []), historySearchInstructions].join("\n"),
-      tools: (model) => ({ ...demoTools, ...demoTaskTools(model), ...webTools?.(model), ...historySearch(model), ...images?.tools(model), ...demoVideoLibrary.tools(model) }),
+      // Права человека на ход: раз в начале хода. Серверы MCP «только админы» видны по `viewer.isAdmin`.
+      viewer: async ({ ownerId }) => ({ isAdmin: adminIds.has(ownerId) }),
+      // Инструменты MCP первыми: при одинаковом имени побеждает инструмент демо, в лог — предупреждение.
+      tools: (model) => {
+        const own = { ...demoTools, ...demoTaskTools(model), ...webTools?.(model), ...historySearch(model), ...images?.tools(model), ...demoVideoLibrary.tools(model), ...demoImageLibrary.tools(model) };
+        return { ...mcp.tools(model, own), ...own };
+      },
       ...(images && { toolTimeoutMs: { byTool: { generate_images: imageToolTimeoutMs } } }),
       // Функции браузерных инструментов — у страницы `/panel-app`; срок ответа короче только в e2e (`DEMO_BROWSER_TOOL_TIMEOUT_MS`).
       browserTools: demoBrowserTools,
@@ -341,7 +360,7 @@ export async function createDemoApp(options: DemoAppOptions) {
       providerFallback: {},
       // Помощник «исследователь»: поручение видно в ленте строкой с шагами (T085 этапа 10 фичи 027).
       helpers: { researcher: researcherHelper },
-    },
+    }, skills),
     compaction: compactionSettings(options.env),
     // Итог хода (фича 029, US2): законченный ответ со словом «зачёт» — событие «урок зачтён», страница рисует плашку.
     afterTurn: lessonPassedAfterTurn,
@@ -362,7 +381,6 @@ export async function createDemoApp(options: DemoAppOptions) {
   const { handler, service } = createChatServer({ ...chatOptions, background });
   const messengers = await createDemoMessengers(options, service, resolveUser);
   // Песочница админа: тот же агент, свои чаты и журнал обращений к модели (адрес по умолчанию `/api/sandbox`).
-  const adminIds = demoAdminIds(options.env);
   const sandbox = createSandboxHandler({
     chat: chatOptions,
     isAdmin: (user) => adminIds.has(user.id),
@@ -421,10 +439,14 @@ export async function createDemoApp(options: DemoAppOptions) {
       return c.json({ topic: body.topic });
     });
     app.route("/api/demo/telegram", createMockTelegram());
+    app.route("/api/demo/mcp", createMockMcpService());
   }
   if (messengers) app.all("/api/messengers/*", (c) => messengers.handler.fetch(c.req.raw));
   mountChat(app, handler);
   mountChat(app, sandbox);
+  // Экран навыков: не админу — 404 на любом адресе (адрес по умолчанию `/api/skills`).
+  mountChat(app, createSkillsHandler({ skills, resolveUser, allowedOrigins: demoAllowedOrigins(options.env) }));
+  mountChat(app, createDemoMcpAdmin(mcp, resolveUser, demoAllowedOrigins(options.env)));
   const injectWebSocket = mountDemoVoice(app, options, storage, resolveUser, spending?.limits, voices);
   return {
     app,
@@ -439,6 +461,7 @@ export async function createDemoApp(options: DemoAppOptions) {
       await background.flush();
       await handler.flush();
       await sandbox.flush();
+      await mcp.close();
     },
     close: () => storage.close(),
   };

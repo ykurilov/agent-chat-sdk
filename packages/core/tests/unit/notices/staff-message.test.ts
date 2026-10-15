@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ReplyCheck, ReplyCheckInput } from "../../../src/index";
+import { UNANSWERED_NOTE } from "../../../src/agent-run/unanswered-messages";
 import { controlledModel, readAll } from "../support/mock-model";
 import { askInNewChat, noticeService, saying, scriptedModel, userMessage, waitTurn } from "../support/notice-chat";
 
@@ -90,5 +91,16 @@ describe("068: appendStaffMessage — реплика сотрудника", () =
     await readAll(stream);
     expect((await service.getHistory("anna", chat.id))!.messages).toHaveLength(2);
     await expect(service.appendStaffMessage({ ownerId: "anna", chatId: chat.id, text: "  " })).rejects.toThrow(TypeError);
+  });
+});
+
+describe("068: реплика сотрудника не выглядит оборванным ходом", () => {
+  it("вопрос, реплика сотрудника без хода, новый вопрос — в запросе нет пометки «ход оборвался»", async () => {
+    const model = scriptedModel();
+    const { service } = noticeService(model);
+    const chat = await askInNewChat(service);
+    await service.appendStaffMessage({ ownerId: "anna", chatId: chat.id, text: STAFF_TEXT, staffName: "Ольга" });
+    await readAll(await service.sendMessage("anna", chat.id, userMessage("u2", "спасибо")));
+    expect(promptOf(model.doStreamCalls[1]!)).not.toContain(UNANSWERED_NOTE);
   });
 });

@@ -6,6 +6,7 @@ import type {
   MemoryOptimizationStatus,
   StoredMessage,
   TokenUsage,
+  TurnRequestContext,
   UsageSource,
   VoiceCut,
 } from "@ykurilov/agent-chat-core";
@@ -179,6 +180,20 @@ export const chatTurnLeases = sqliteTable("chat_turn_leases", {
   chatId: text("chat_id").primaryKey(),
   holder: text("holder").notNull(),
   until: integer("until").notNull(),
+});
+
+/**
+ * Ждущие пачки сообщений человека: одна запись на чат. Сроки — мс по часам службы; `page` — JSON страницы хода.
+ * Внешним ключом с чатом не связана: удаление чата снимает её само.
+ */
+export const pendingBursts = sqliteTable("pending_bursts", {
+  chatId: text("chat_id").primaryKey(),
+  ownerId: text("owner_id").notNull(),
+  messageId: text("message_id").notNull(),
+  dueAt: integer("due_at").notNull(),
+  holder: text("holder").notNull(),
+  heldUntil: integer("held_until").notNull(),
+  page: text("page", { mode: "json" }).$type<TurnRequestContext>(),
 });
 
 /**

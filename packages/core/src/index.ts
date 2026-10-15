@@ -127,6 +127,8 @@ export {
 } from "./storage/chat-storage";
 export { assertChatData, assertChatDataFilter, CHAT_DATA_MAX_BYTES, ChatDataTooLargeError, chatDataFields, chatDataMatches, chatDataOfInput, mergeChatData } from "./storage/chat-data";
 export type { ChatDataFilter, ChatDataFilterValue } from "./storage/chat-data";
+export { migratePostgresSchema } from "./storage/postgres-migrations";
+export type { PostgresMigrationConnection, PostgresMigrationOptions } from "./storage/postgres-migrations";
 export type {
   AwaitingMessagePatch,
   ChatListOptions,
@@ -138,6 +140,7 @@ export type {
   MessagePartsLink,
   NewChatInput,
   SpendingLimitStateRecord,
+  StoredPendingBurst,
   StreamingMessagePatch,
 } from "./storage/chat-storage";
 export { SpendingLimitReachedError } from "./spending/spending-limits";
@@ -221,6 +224,7 @@ export {
   NothingToRetryError,
 } from "./chat-service";
 export type {
+  AbandonedBurstsOptions,
   ActionOptions,
   AgentSettings,
   ChatBranchForks,
@@ -248,7 +252,7 @@ export type {
   SteerResult,
 } from "./chat-service";
 export { STEER_PART_TYPE, isCorrection } from "./steering/turn-steering";
-export { BURST_PART_TYPE, DEFAULT_BURST_QUIET_MS, isBurstMessage } from "./bursts/message-bursts";
+export { BURST_HOLD_MS, BURST_PART_TYPE, BURST_SWEEP_LIMIT, DEFAULT_BURST_QUIET_MS, isBurstMessage } from "./bursts/message-bursts";
 export { GREETING_LEAD } from "./agent-run/greeting-lead";
 export { GREETING_MAX_LENGTH, IMPORT_MAX_IMAGE_BYTES, IMPORT_MAX_IMAGES, IMPORT_MAX_MESSAGES, SUBJECT_DATA_MAX_BYTES, SUBJECT_KEY_MAX_LENGTH } from "./subject-chats/subject-chats";
 export type {
@@ -262,6 +266,8 @@ export type {
 export { AttachmentRejectedError, withoutFileParts } from "./attachments/message-attachments";
 export type { IncomingFilePart, MessageAttachments, StoredFilePart } from "./attachments/message-attachments";
 export type { AgentToolsModel, AgentToolsSource } from "./agent-run/run-agent-turn";
+export { AgentViewerError } from "./agent-run/agent-viewer";
+export type { AgentViewer, AgentViewerInput, AgentViewerSource } from "./agent-run/agent-viewer";
 export type { StepContext, StepContextInput } from "./agent-run/step-context";
 export type { ContextBlock, ContextBlockEntry, ContextBlocksInput, ContextBlocksSource, HiddenContextBlock } from "./frozen-context/context-blocks";
 export { FROZEN_CONTEXT_PART_TYPE } from "./frozen-context/context-blocks";

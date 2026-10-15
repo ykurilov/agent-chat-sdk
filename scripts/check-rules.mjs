@@ -23,14 +23,24 @@ const sourceExtensions = /\.(ts|tsx|js|jsx|mjs)$/;
 const cyrillic = /[А-Яа-яЁё]/;
 const importSpecifier = /(?:from\s+|import\s*\(\s*|import\s+)["']([^"']+)["']/g;
 
-const labelFolders = ["skins/tandem/src", "packages/react/src", "packages/sandbox/src/react", "packages/messengers/src/react", "packages/flows/src/react"];
+const labelFolders = [
+  "skins/tandem/src",
+  "packages/react/src",
+  "packages/sandbox/src/react",
+  "packages/messengers/src/react",
+  "packages/flows/src/react",
+  "packages/skills/src/react",
+  "packages/mcp/src/react",
+];
 const labelsDictionaries = [
   "packages/react/src/labels.tsx",
   "packages/sandbox/src/react/sandbox-labels.ts",
   "packages/messengers/src/react/messengers-labels.ts",
+  "packages/skills/src/react/skills-labels.ts",
+  "packages/mcp/src/react/mcp-labels.ts",
 ];
 const behaviourFolder = "packages/react/src";
-const behaviourFolders = [behaviourFolder, "packages/flows/src/react"];
+const behaviourFolders = [behaviourFolder, "packages/flows/src/react", "packages/skills/src/react"];
 const consumers = [
   { folder: "apps/demo", sources: ["src", "server", "e2e", "vite.config.ts", "playwright.config.ts"] },
   { folder: "apps/next-example", sources: ["app", "lib", "scripts", "next.config.ts"] },
@@ -200,11 +210,14 @@ const optionalPackages = [
   { name: "@ykurilov/agent-chat-messengers", title: "пакет мессенджеров" },
   { name: "@ykurilov/agent-chat-flows", title: "пакет сценариев" },
   { name: "@ykurilov/agent-chat-reply-check", title: "пакет проверок ответа" },
+  { name: "@ykurilov/agent-chat-skills", title: "пакет навыков" },
+  { name: "@ykurilov/agent-chat-mcp", title: "пакет серверов MCP" },
 ];
 // Пакеты, которые зависят только от ядра.
 const coreOnlyPackages = [
   { folder: "packages/memory/src", title: "пакет памяти" },
   { folder: "packages/reply-check/src", title: "пакет проверок ответа" },
+  { folder: "packages/skills/src", title: "пакет навыков" },
 ];
 for (const file of ["packages/core/src", "packages/server/src", "packages/react/src"].flatMap(sourceFiles)) {
   const code = codeOf(file);

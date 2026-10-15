@@ -227,6 +227,8 @@ export interface StoredBranchSelection {
  * `first_message` — ход, в котором агент пишет первым (касание, утро сценария): `deliverNotices({ usageSource })`.
  * `voice_input` — диктовка через сервер (`@ykurilov/agent-chat-voice`, режим `relay`): `inputTokens` — секунды звука,
  * `modelId` — модель распознавания. `voice_polish` — чистка надиктованного текста моделью.
+ * `mcp_tool` — вызов инструмента сервера MCP (`@ykurilov/agent-chat-mcp`), если сервер сообщил стоимость: `modelId` —
+ * имя инструмента `<префикс>__<имя>`, `providerId` — `mcp`, токенов нет.
  */
 export const BUILT_IN_USAGE_SOURCES = [
   "answer",
@@ -243,6 +245,7 @@ export const BUILT_IN_USAGE_SOURCES = [
   "first_message",
   "voice_input",
   "voice_polish",
+  "mcp_tool",
 ] as const;
 
 /** Штатные виды расхода SDK. */

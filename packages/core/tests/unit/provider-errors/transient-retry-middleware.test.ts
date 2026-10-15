@@ -429,6 +429,15 @@ describe("transientRetryMiddleware", () => {
     expect(calls).toHaveLength(1);
   });
 
+  it("429 «Quota exceeded … per minute» — повторяется: это лимит в минуту, не пустой счёт", async () => {
+    const error = { code: 429, message: "Quota exceeded for metric: generate_content_requests, limit: 15 per minute. Please check your plan and billing details." };
+    const { model, calls } = modelWith([errorChunk(error), answer]);
+    const settled = start(model);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(calls).toHaveLength(2);
+    expect((await settled).ok).toBe(true);
+  });
+
   it("разброс 0–25%: пауза растёт со случайностью, общий бюджет не больше 10 с", async () => {
     const { model, calls } = modelWith([fail(503)], { random: () => 0.8 });
     const result = start(model);

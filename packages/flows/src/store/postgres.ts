@@ -1,6 +1,7 @@
 import { and, eq, inArray, isNull, lt, lte, ne, or, sql, type SQL } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
+import { migratePostgresSchema } from "@ykurilov/agent-chat-core";
 import type { Pool } from "pg";
 import type { StateMap } from "../engine/migrate-run";
 import type { FlowChatRecord, FlowStore, PendingFlowChange, SideTaskRecord } from "./flow-store";
@@ -86,21 +87,15 @@ const dueAndFree = (now: Date) =>
 const inCodeOrder = (column: typeof flowChats.chatId) => sql`${column} collate "C"`;
 
 /**
- * Приводит таблицы сценариев к последней миграции. Идёт на одном соединении под блокировкой базы:
- * если несколько серверов стартуют сразу, второй ждёт первого и видит применённые миграции.
+ * Приводит таблицы сценариев к последней миграции. Схема `agent_chat` создаётся под общей блокировкой всех пакетов, миграции — под своей:
+ * копии пакета ждут друг друга, а разные пакеты стартуют разом на пустой базе без гонки за схему.
  */
 export async function migrateFlowsToLatest(pool: Pool, migrationsFolder: string): Promise<void> {
-  const client = await pool.connect();
-  try {
-    await client.query("select pg_advisory_lock($1)", [FLOWS_MIGRATION_LOCK_KEY]);
-    try {
-      await migrate(drizzle(client), { migrationsFolder, migrationsSchema: "agent_chat", migrationsTable: FLOWS_MIGRATIONS_TABLE });
-    } finally {
-      await client.query("select pg_advisory_unlock($1)", [FLOWS_MIGRATION_LOCK_KEY]);
-    }
-  } finally {
-    client.release();
-  }
+  await migratePostgresSchema({
+    connect: () => pool.connect(),
+    lockKey: FLOWS_MIGRATION_LOCK_KEY,
+    migrate: (client) => migrate(drizzle(client), { migrationsFolder, migrationsSchema: "agent_chat", migrationsTable: FLOWS_MIGRATIONS_TABLE }),
+  });
 }
 
 /**
@@ -265,11 +260,41 @@ export function createPostgresFlowStore(pool: Pool, migrationsFolder: string): P
         .groupBy(flowChats.versionId, flowChats.stateId);
       return rows.map((row) => ({ ...row, chats: Number(row.chats) })).sort(byVersionAndState);
     },
+    async listFlowChats(input) {
+      await ready;
+      const { flowId, exceptVersionId, chatIds } = withoutNul(input);
+      if (chatIds?.length === 0) return [];
+      const rows = await db
+        .select({
+          chatId: flowChats.chatId,
+          ownerId: flowChats.ownerId,
+          flowId: flowChats.flowId,
+          versionId: flowChats.versionId,
+          stateId: flowChats.stateId,
+          endedAt: flowChats.endedAt,
+          endReason: flowChats.endReason,
+        })
+        .from(flowChats)
+        .where(
+          and(
+            eq(flowChats.flowId, flowId),
+            exceptVersionId === undefined ? undefined : ne(flowChats.versionId, exceptVersionId),
+            chatIds === undefined ? undefined : inArray(flowChats.chatId, chatIds),
+          ),
+        )
+        .orderBy(inCodeOrder(flowChats.chatId));
+      return rows.map((row) => ({ ...row, endedAt: row.endedAt === null ? null : toIso(row.endedAt) }));
+    },
     async migrateBatch(input) {
       await ready;
       const clean = withoutNul(input);
       const change = migratePending(clean);
-      const notYetMoved = and(eq(flowChats.flowId, clean.flowId), ne(flowChats.versionId, clean.toVersionId));
+      if (clean.chatIds?.length === 0) return { moved: [] };
+      const notYetMoved = and(
+        eq(flowChats.flowId, clean.flowId),
+        ne(flowChats.versionId, clean.toVersionId),
+        clean.chatIds === undefined ? undefined : inArray(flowChats.chatId, clean.chatIds),
+      );
       const batch = db
         .select({ chatId: flowChats.chatId })
         .from(flowChats)

@@ -7,7 +7,7 @@ import {
   isSafeMethod,
   originRefusalHint,
 } from "@ykurilov/agent-chat-core";
-import type { AnswerEdit, AnswerEditErrorKind, ChatService, StoredMessage } from "@ykurilov/agent-chat-core";
+import type { AgentViewerInput, AgentViewerSource, AnswerEdit, AnswerEditErrorKind, ChatService, StoredMessage } from "@ykurilov/agent-chat-core";
 import { allowedUser, createChatServer } from "@ykurilov/agent-chat-server";
 import type { ChatHandler } from "@ykurilov/agent-chat-server";
 import { secretsFromEnv } from "./journal/hide-secrets";
@@ -75,7 +75,12 @@ export function createSandboxHandler(options: SandboxHandlerOptions): ChatHandle
       const owner = ownerOfRequest.get(request);
       return owner ? { id: owner } : null;
     },
-    agent: { ...chat.agent, ...(chat.agent.tools && { tools: sandboxTools(chat.agent.tools, options.chatOwnedTools, staffCopies.toolsModel) }) },
+    agent: {
+      ...chat.agent,
+      ...(chat.agent.tools && { tools: sandboxTools(chat.agent.tools, options.chatOwnedTools, staffCopies.toolsModel) }),
+      // Права — по тому же владельцу, что видят инструменты: настоящий админ или человек копии.
+      ...(chat.agent.viewer && { viewer: viewerOfSandbox(chat.agent.viewer, staffCopies.viewerInput) }),
+    },
     // Лимиты приложения в песочницу не переходят: только свои, по умолчанию без лимита.
     limits: options.limits,
     // Проверка приложения перед ходом тоже: она ждёт человека приложения, а в песочнице ходит `sandbox:<админ>`.
@@ -377,4 +382,9 @@ function errorToResponse(error: unknown, request: Request, logError: (message: s
 
 function describe(error: unknown): string {
   return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+}
+
+/** `agent.viewer` приложения в песочнице: вход с настоящим владельцем (см. `staffCopies.viewerInput`). */
+function viewerOfSandbox(viewer: AgentViewerSource, input: (input: AgentViewerInput) => AgentViewerInput): AgentViewerSource {
+  return (turn) => viewer(input(turn));
 }

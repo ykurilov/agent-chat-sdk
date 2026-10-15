@@ -61,7 +61,7 @@ function isTransient(error: unknown): boolean {
   if (verdict === "false") return false;
   const status = errorStatusCode(error);
   const text = errorText(error);
-  if (isNotRetryable(text) || isContextOverflow(text, status)) return false;
+  if (isNotRetryable(text, status) || isContextOverflow(text, status)) return false;
   if (status !== undefined) return RETRYABLE_STATUS_CODES.has(status) || status >= 500;
   if (APICallError.isInstance(error) && error.isRetryable) return true;
   return looksTransient(text);

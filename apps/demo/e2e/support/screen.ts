@@ -1,4 +1,6 @@
 import { mkdirSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { expect } from "@playwright/test";
 import type { Locator, Page } from "@playwright/test";
 
@@ -37,6 +39,9 @@ export async function settleAnimations(page: Page) {
 }
 
 /** Снимок экрана в папку для просмотра глазами, когда все переходы закончились. */
+/** Папка для снимков экрана: E2E_SCREENSHOT_DIR или общая временная папка системы. */
+export const screenshotFolder = (name: string) => process.env.E2E_SCREENSHOT_DIR ?? join(tmpdir(), name);
+
 export async function saveScreenshot(page: Page, folder: string, name: string) {
   await settleAnimations(page);
   mkdirSync(folder, { recursive: true });

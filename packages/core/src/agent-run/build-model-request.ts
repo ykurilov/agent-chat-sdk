@@ -27,11 +27,13 @@ import { noticePartForModel } from "../notices/notices-for-model";
 import type { ModeNotes } from "./mode-notes";
 import { withAssistantFilesAsText, withGreetingLead } from "./greeting-lead";
 import { withUnansweredMarked } from "./unanswered-messages";
+import { withStaffRepliesJoined } from "./staff-replies";
 import { withBurstsJoined } from "../bursts/message-bursts";
 import { withCorrectionsJoined } from "../steering/turn-steering";
 import { holdNoteAfterApprovals, withFrozenContext } from "../frozen-context/frozen-context-messages";
 import type { FrozenContextData } from "../frozen-context/context-blocks";
 import { withoutUndelivered } from "./undelivered";
+import { withoutGarbledTails } from "./garbled-tail";
 
 export interface ModelRequest {
   model: LanguageModel;
@@ -142,7 +144,7 @@ export async function buildModelRequest(input: {
   });
   const tools = input.tools ? sortToolsByName(input.tools) : undefined;
   const sendable = input.switchableTools ? withSwitchedOffCallsAsText(sendableHistory(input.history), input.switchableTools, tools) : sendableHistory(input.history);
-  const noted = withChannelNotes(withModeNotes(withBurstsJoined(withCorrectionsJoined(sendable)), input.modeNotes));
+  const noted = withStaffRepliesJoined(withChannelNotes(withModeNotes(withBurstsJoined(withCorrectionsJoined(sendable)), input.modeNotes)));
   const held: { messages: readonly AgentChatMessage[]; note?: AgentChatMessage } = input.frozenContext
     ? holdNoteAfterApprovals(withFrozenContext(noted, input.frozenContext))
     : { messages: noted };
@@ -198,7 +200,8 @@ export async function buildModelRequest(input: {
  * менять — те же сообщения. Хранилище не меняется: человек свой остановленный ответ видит.
  */
 function sendableHistory(history: readonly AgentChatMessage[]): readonly AgentChatMessage[] {
-  return withoutUndelivered(history).filter((message) => (message.role !== "assistant" || hasAnswerContent(message.parts)) && !isStateMessage(message)).map(withAssistantFilesAsText).map((message) => {
+  // Ответы, сорвавшиеся в кашу до обрезки при сохранении, — без хвоста (запись та же).
+  return withoutGarbledTails(withoutUndelivered(history)).filter((message) => (message.role !== "assistant" || hasAnswerContent(message.parts)) && !isStateMessage(message)).map(withAssistantFilesAsText).map((message) => {
     const closed = message.role === "assistant" ? closeHangingToolCalls(message.parts) : message.parts;
     const parts = withoutLoneSurrogatesInParts(closed);
     return parts === message.parts ? message : { ...message, parts };

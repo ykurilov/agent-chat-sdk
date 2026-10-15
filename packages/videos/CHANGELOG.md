@@ -1,5 +1,40 @@
 # @ykurilov/agent-chat-videos
 
+## 0.58.0
+
+### Patch Changes
+
+- @ykurilov/agent-chat-react@0.58.0
+
+## 0.57.0
+
+### Patch Changes
+
+- @ykurilov/agent-chat-react@0.57.0
+
+## 0.56.0
+
+### Minor Changes
+
+- 1eadba9: Библиотека готовых картинок: новый пакет `@ykurilov/agent-chat-image-library` с инструментами `find_images` и
+  `show_image` поверх каталога приложения. Картинка показывается по ширине ответа с подписью, по нажатию — окно просмотра.
+  
+  - `images` у `AgentChat`, `ChatWorkspace`, `AgentPanel` принимает и список клиентов: `images={[imagesClient, imageLibraryClient]}`.
+    Одиночный клиент работает как раньше.
+  - Договор скина версии 26: у `GeneratedImages` необязательные `wide` и `caption`. Тандем их рисует. Скин версии 25
+    работает без правок: картинка будет плиткой ближайшей обычной пропорции (1:1, 3:2, 2:3, 16:9, 9:16) без подписи.
+  
+  Подробно и как подключить — `docs/image-library.md`.
+  
+  Отказ `show_image`, `show_video` и недоступный каталог в `find_images`, `find_videos` теперь ошибка инструмента (`ImageLibraryError`, `VideoLibraryError` с полем `kind`).
+  В ленте строка «ошибка» вместо зелёной галочки, модель получает тот же текст. Код, который читал `{ отказ }` из
+  результата `show_video` или `find_videos`, должен смотреть на `state: "output-error"` у части сообщения.
+
+### Patch Changes
+
+- Updated dependencies [1eadba9]
+  - @ykurilov/agent-chat-react@0.56.0
+
 ## 0.55.0
 
 ### Patch Changes

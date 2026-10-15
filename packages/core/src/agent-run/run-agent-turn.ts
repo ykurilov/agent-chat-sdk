@@ -28,6 +28,8 @@ import type { ModelCatalog, ModelProfile, ProviderDescription, ResolvedModel } f
 import { classifyProviderError } from "../provider-errors/classify-provider-error";
 import { describeProviderFailure } from "../provider-errors/provider-failure-log";
 import { sleep } from "../provider-errors/transient-retry-middleware";
+import { createProviderOutages, isProviderOutage } from "../provider-errors/provider-outages";
+import type { ProviderOutageKind, ProviderOutages } from "../provider-errors/provider-outages";
 import type { LongTermMemory } from "../memory/long-term-memory";
 import type { ModelSilenceLimits } from "../provider-errors/model-silence";
 import { MessageAlreadyFinishedError } from "../storage/chat-storage";
@@ -58,8 +60,9 @@ import { LENGTH_CUT_PART_TYPE } from "./length-cut";
 import { createDataChangeNotifier } from "./data-changes";
 import type { ModeNotes } from "./mode-notes";
 import { createReasoningTimer } from "./reasoning-timer";
-import { decideNextAttempt, fallbackProviders, nextSilenceProvider, resolveSilenceSwitch } from "./next-attempt";
+import { decideNextAttempt, errorKindForPerson, fallbackProviders, nextSilenceProvider, resolveSilenceSwitch } from "./next-attempt";
 import { chunksForParts } from "./parts-to-chunks";
+import { cutGarbledTail, createGarbledTailGuard, findGarbledTail } from "./garbled-tail";
 import { checkedReplyText, createHeldReplyText, createReplyRewrite, createSeenTexts, createShownSteps, knownTextsOf, lastTextIndex, noticeGroupsOf, replacementChunks, withTextAt } from "./reply-checks";
 import type { SeenTexts, TurnReplyChecks } from "./reply-checks";
 import { erasableStepStart, STEP_RESET_PART_TYPE, STEPS_MAY_RESET_PART_TYPE } from "./step-reset";
@@ -97,6 +100,8 @@ import type { HiddenStateKey } from "../app-state/state-messages";
 import { FROZEN_CONTEXT_PART_TYPE, latestFrozenContextOf } from "../frozen-context/context-blocks";
 import type { ContextBlocksSource, FrozenContextData } from "../frozen-context/context-blocks";
 import { frozenContextForTurn, resumeNoteForTurn } from "../frozen-context/turn-context";
+import { AgentViewerError, resolveAgentViewer, viewerInput } from "./agent-viewer";
+import type { AgentViewer, AgentViewerSource } from "./agent-viewer";
 import { createEndTurnRequests, END_TURN_PART_TYPE, endTurnModel } from "./end-turn";
 import type { EndTurnRequests } from "./end-turn";
 import type { AppStateAccess, AppStateValues, AppStateWriter } from "../app-state/app-state";
@@ -167,6 +172,11 @@ export interface AgentToolsModel {
    * Нет — вызов вне хода (сжатие, фоновая задача): вне хода приложение пишет в данные чата.
    */
   state?: AppStateAccess;
+  /**
+   * Права человека на ход (`agent.viewer`): один объект на все попытки и шаги хода, тот же, что у `contextBlocks`.
+   * Нет `agent.viewer` (или модель собрана вне хода) — поля нет.
+   */
+  viewer?: AgentViewer;
 }
 
 /** Инструменты агента: один набор для всех моделей или набор, зависящий от выбранной модели. */
@@ -250,6 +260,8 @@ export interface AgentTurnInput {
   stepContext?: StepContext;
   /** Срок ответа `stepContext`, мс, уже проверенный; `Infinity` — без срока. Нет — 5 с. */
   stepContextTimeoutMs?: number;
+  /** Права человека: один вызов в начале хода, до блоков и инструментов (`agent.viewer`). */
+  viewer?: AgentViewerSource;
   /** Блоки приложения для вопроса хода: один опрос в начале хода, дальше застывают в ответе (`agent.contextBlocks`). */
   contextBlocks?: ContextBlocksSource;
   /** Срок ответа `contextBlocks`, мс, уже проверенный; `Infinity` — без срока. Нет — 5 с. */
@@ -336,6 +348,11 @@ export interface AgentTurnInput {
   toolResultLimit?: ResolvedToolResultLimit;
   /** Запасные провайдеры той же модели, уже проверенные. Нет — значение по умолчанию из `next-attempt`. */
   providerFallback?: ProviderFallbackSetting;
+  /**
+   * Память службы об отказах провайдеров по деньгам и ключу: основной на паузе — ход сразу у запасного. Нет — своя на
+   * ход: громкая строка в журнал есть, паузы между ходами нет.
+   */
+  providerOutages?: ProviderOutages;
   /** Сроки ответа серверных инструментов по имени, уже проверенные. Нет — 120 с всем. */
   toolTimeout?: ResolvedToolTimeout;
   /** Серверные инструменты, которые идут по одному (FR-049), уже проверенные. Нет — все вместе. */
@@ -423,6 +440,7 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
   const externalContent = createExternalContentWatch();
   const emitShown = (chunk: UIMessageChunk): void => {
     shownSteps?.observe(chunk);
+    screenSteps.observe(chunk);
     emitRaw(chunk);
     if (turnInput.liveDemos && externalContent.observe(chunk)) emitRaw(externalContentChunk());
   };
@@ -431,6 +449,8 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
   const seenTexts = replyChecks && createSeenTexts();
   const heldText = replyChecks && (replyChecks.web === "hold" || (turnInput.channel ?? "web") !== "web") ? createHeldReplyText() : undefined;
   const shownSteps = replyChecks && createShownSteps();
+  // Шаги на экране — для замены ответа, обрезанного по срыву в кашу.
+  const screenSteps = createShownSteps();
   const emitToClient = (chunk: UIMessageChunk): void => {
     for (const passed of heldText ? heldText.pass(chunk) : [chunk]) emitShown(passed);
   };
@@ -471,6 +491,8 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
   // Расход хода по шагам всех попыток (запасной, продолжение после сжатия — тоже в итог хода, FR-013); у шага без чисел
   // провайдера и у оборванного шага — оценка.
   const turnUsage = createTurnUsage();
+  // Срыв в кашу в потоке: хвост дальше не идёт, вызовы после срыва не запускаются.
+  const garbledTail = createGarbledTailGuard();
   const turnBudget = createTurnBudget(input.turnRules, { catalog: input.catalog, modelId: input.modelId, turnUsage });
   // Расход сообщения: накопленный по паузам и продолжениям (`resume.usage`) и расход этого хода.
   const messageUsage = (): TokenUsage | null => {
@@ -546,10 +568,13 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
     let errorKind: ChatErrorKind | undefined;
     let providerId = input.providerId;
     let answeredProviderId = input.providerId;
+    let viewer: AgentViewer | undefined;
     try {
       const { history: historySource } = input;
       const fullHistory = typeof historySource === "function" ? await historySource() : historySource;
       const branchState = input.appState ?? foldAppState(fullHistory);
+      // Права человека — один раз на ход, до подготовки, блоков и инструментов: попытки и запасной берут этот же объект.
+      viewer = input.viewer && (await resolveAgentViewer(input.viewer, viewerInput({ ...input, audience: input.group ? "group" : "private" })));
       // Подготовка приложением — до блоков: её записи видят блоки контекста и инструменты этого хода.
       const prepared = input.prepareTurn && (await input.prepareTurn({ state: branchState, abortSignal: input.abortSignal }));
       const turnNotices = prepared && prepared.notices.length > 0 ? prepared.notices : undefined;
@@ -569,26 +594,39 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
         history: answer.request().history,
         answer: resume?.message ?? fullHistory.find((message) => message.id === messageId),
         state: publicAppState(appState.values()),
+        ...(viewer && { viewer }),
       });
       // Служебные сообщения подготовки — в части блоков: модель видит их в вопросе этого хода, дальше — те же байты.
       const frozen = turnNotices && frozenOfTurn.fresh ? { ...frozenOfTurn, data: { ...frozenOfTurn.data, notices: turnNotices } } : frozenOfTurn;
       // Человек ответил на паузе (виджет, подтверждение): новое в блоках — заметкой сразу за его ответом, частью ответа.
       let resumeNote =
         resume && !resume.replay && !frozen.fresh
-          ? await resumeNoteForTurn(input, { history: answer.request().history, answer: resume.message, state: publicAppState(appState.values()) })
+          ? await resumeNoteForTurn(input, { history: answer.request().history, answer: resume.message, state: publicAppState(appState.values()), ...(viewer && { viewer }) })
           : undefined;
       // Продолжение с сообщениями подготовки: они — заметкой продолжения, даже если блоки не менялись.
       if (resume && turnNotices && !frozen.fresh) {
         const seen = latestFrozenContextOf(resume.message.parts);
         if (seen) resumeNote = { ...(resumeNote ?? { blocks: seen.blocks, sent: { changed: [], removed: [] }, base: messageId }), notices: turnNotices };
       }
-      const fallbackProviderIds = fallbackProviders({
+      const outages = input.providerOutages ?? createProviderOutages({ now: () => (input.now ?? (() => new Date()))().getTime(), logError });
+      // Запасные на паузе (кончились деньги, не принят ключ) пропускаются: ответить они всё равно не могут.
+      const allFallbackIds = fallbackProviders({
         catalog: input.catalog,
         modelId,
         chosenProviderId: input.providerId,
         env: input.env,
         ...(input.providerFallback !== undefined && { setting: input.providerFallback }),
       });
+      const fallbackProviderIds = allFallbackIds.filter((candidate) => outages.pausedKind(candidate) === undefined);
+      // Отказ основного по деньгам или ключу в этом ходе: человеку — эта причина, если и запасные не ответят.
+      let firstOutage: ProviderOutageKind | undefined;
+      // Основной на паузе или его пробует другой ход — этот ход сразу у запасного, в пустой счёт не стучит. Запасных
+      // нет — основной: другого пути нет.
+      const primaryPaused = outages.admit(input.providerId);
+      if (primaryPaused !== undefined && fallbackProviderIds[0] !== undefined) {
+        providerId = fallbackProviderIds[0];
+        logError(`[запасной провайдер] чат=${input.chatId} модель=${modelId} с=${input.providerId} на=${providerId} причина=${primaryPaused} основной на паузе`);
+      }
       // Ответ открывается сразу: пока идут тихие повторы и переход к запасному, человек видит обычное ожидание.
       // `start` попыток (они его придерживают) дальше не идёт.
       emit({ type: "start", messageId, messageMetadata: { modelId, providerId: input.providerId } });
@@ -618,7 +656,7 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
       if (resume && !resume.replay) {
         const continued = helpersToContinue(resume.message.parts);
         if (continued.length > 0) {
-          await continueHelpers(input, continued, { toolQueue, dataChanges, appEvents, chatClosure, appState, emit, logError });
+          await continueHelpers(input, continued, { ...(viewer && { viewer }), toolQueue, dataChanges, appEvents, chatClosure, appState, emit, logError });
           const parts = await saver.snapshot();
           answer.update(parts, { modelId, providerId: answeredProviderId });
           mainLoopWaits = input.abortSignal.aborted || pendingHumanInput(parts, input.waitingWidgets).length > 0;
@@ -672,6 +710,7 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
             steps: { done: stepsDone, max: maxSteps, beforeResume: stepsBeforeResume },
             historyRewritten,
             frozenContext: frozen.data,
+            ...(viewer && { viewer }),
             toolQueue,
             endTurns,
             browser,
@@ -683,6 +722,7 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
             emit,
             turnUsage,
             turnBudget,
+            garbledTail,
             // Есть куда перейти при молчании — у того же провайдера оно не повторяется.
             repeatSilence: () => silenceTarget() === undefined,
             ...(silenceSwitch.scope === "step" &&
@@ -702,13 +742,15 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
           // Сбой до запроса к модели (нет ключа, конфликт имён инструментов): переходить некуда.
           if (error instanceof MissingProviderKeyError) logError(error.message);
           if (!input.abortSignal.aborted) {
-            errorKind = classify(error);
+            // Запасной не собрался после отказа основного по деньгам или ключу — человеку причина у основного.
+            errorKind = errorKindForPerson(classify(error), firstOutage);
             errors = [{ type: "error", errorText: errorKind }];
           }
           break;
         }
         const { result } = attempt;
         historyRewritten = false;
+        if (result.outcome === "ok") outages.recovered(providerId);
         if (result.outcome !== "failed" || result.contentSeen) answeredProviderId = providerId;
         // Шаг запасного кончился, а ход идёт дальше: следующий шаг — у основного. Конец попытки клиенту не нужен.
         if (result.outcome === "ok" && backToPrimary) {
@@ -748,14 +790,30 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
         });
         // Шаги хода кончились — новой попытке делать нечего.
         let next: NextAttempt = stepsDone < maxSteps ? decideNextAttempt(result, nextState()) : { action: "fail" };
+        const outage = isProviderOutage(result.kind) ? result.kind : undefined;
+        if (outage) {
+          if (providerId === input.providerId) firstOutage ??= outage;
+          outages.report({
+            providerId,
+            kind: outage,
+            ...(next.action === "fallback"
+              ? { fallbackProviderId: next.providerId }
+              : { fallbacksPaused: allFallbackIds.some((candidate) => candidate !== providerId && outages.pausedKind(candidate) !== undefined) }),
+          });
+        }
         if (next.action === "fallback") {
           logError(`[запасной провайдер] чат=${input.chatId} модель=${modelId} с=${providerId} на=${next.providerId} причина=${result.kind} кэш потерян`);
-          fallbackUsed = true;
+          // Переход по деньгам или ключу не тратит единственный переход по перегрузке.
+          if (!outage) fallbackUsed = true;
           switchedBySilence = false;
           providerId = next.providerId;
+          // Отказ посреди ответа: недописанное закрывается, запасной продолжает тот же ответ, как при автопродолжении.
+          const closing = result.contentSeen ? [...openParts.closingChunks(), ...closingChunksForHangingCalls(parts)] : [];
+          for (const chunk of closing) emit(chunk);
           // Продолжение после подтверждения: одобренный инструмент уже выполнен до запроса к модели. Запасной получает
           // ответ с его результатом, иначе SDK выполнил бы инструмент второй раз.
-          answer.update(parts, { modelId, providerId: answeredProviderId });
+          if (closing.length > 0) answer.continueAfterBreak(parts, { modelId, providerId: answeredProviderId });
+          else answer.update(parts, { modelId, providerId: answeredProviderId });
           turnUsage.closeAttempt();
           // «Стоп» пришёл в момент перехода: запрос к запасному не строится, ход остановлен.
           if (input.abortSignal.aborted) break;
@@ -837,8 +895,8 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
           turnUsage.closeAttempt();
           continue;
         }
-        errorKind = result.kind;
-        errors = attempt.errors;
+        errorKind = errorKindForPerson(result.kind, firstOutage);
+        errors = errorKind === result.kind ? attempt.errors : [{ type: "error", errorText: errorKind }];
         terminal = attempt.terminal;
         logError(
           describeProviderFailure(result.error, { chatId: input.chatId, modelId, providerId, kind: result.kind, env: input.env, catalog: input.catalog }),
@@ -878,9 +936,10 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
         }
       }
     } catch (error) {
-      // История не прочиталась.
+      // История не прочиталась или `agent.viewer` не дала прав.
       if (!input.abortSignal.aborted) {
-        errorKind = classifyProviderError(error, undefined);
+        if (error instanceof AgentViewerError) logError(`[agent.viewer] чат=${input.chatId} ход не начат: ${error.message}`);
+        errorKind = error instanceof AgentViewerError ? "other" : classifyProviderError(error, undefined);
         errors = [{ type: "error", errorText: errorKind }];
       }
     }
@@ -922,6 +981,17 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
     let parts = failed || closing
       ? closeHangingToolCalls(denyPendingApprovals(savedParts, INTERRUPTED_REASON, RESULT_UNKNOWN_REASON), { notStarted: toolQueue.notStarted })
       : savedParts;
+    // Ответ сорвался в кашу: текст с места срыва отрезан, выполненные вызовы остаются, вызовы после срыва не запускались —
+    // ответ законченный, экран показывает то же, что запись. Без хвоста ответ остался бы пустым — не режется.
+    const garbled = cutGarbledTail(garbledTail.forCut(parts));
+    const droppedCalls = garbledTail.droppedCalls();
+    const garbleLog = `чат=${input.chatId} ответ=${messageId} модель=${modelId} провайдер=${answeredProviderId}`;
+    if (garbled) {
+      logError(`[хвост обрезан] ${garbleLog} признаки=${garbled.signs.join(",")} знаков=${garbled.removedChars} вызовов_не_запущено=${droppedCalls}`);
+      const cut = garbled.parts.filter((part) => !garbledTail.isDroppedCall(part));
+      if (!takeover.signal.aborted) showCutAnswer(parts, cut, garbled.textIndex, { heldText, screenSteps, providerId: answeredProviderId, emit: emitShown });
+      parts = cut;
+    } else if (findGarbledTail(garbledTail.forCut(parts))) logError(`[хвост не обрезан: ответ остался бы пустым] ${garbleLog}`);
     const status: FinalAnswerStatus = input.abortSignal.aborted
       ? "stopped"
       : errors.length > 0
@@ -1141,6 +1211,8 @@ async function runAnswerAttempt(
     historyRewritten: boolean;
     /** Застывшие блоки этого ответа. */
     frozenContext: FrozenContextData;
+    /** Права человека на ход (`agent.viewer`): посчитаны один раз до попыток. */
+    viewer?: AgentViewer;
     toolQueue: ToolQueue;
     endTurns: EndTurnRequests;
     browser: ReturnType<typeof createTurnBrowserTools> | undefined;
@@ -1153,6 +1225,7 @@ async function runAnswerAttempt(
     emit: (chunk: UIMessageChunk) => void;
     turnUsage: TurnUsage;
     turnBudget: TurnBudget;
+    garbledTail: ReturnType<typeof createGarbledTailGuard>;
     /** Повторять ли молчание до первого куска у того же провайдера. */
     repeatSilence: () => boolean;
     /** Есть — попытка у запасного: после шага, за которым ход пошёл бы дальше, она кончается и зовёт это. */
@@ -1239,6 +1312,8 @@ async function openAttempt(
     historyRewritten: boolean;
     /** Застывшие блоки этого ответа. */
     frozenContext: FrozenContextData;
+    /** Права человека на ход (`agent.viewer`): посчитаны один раз до попыток. */
+    viewer?: AgentViewer;
     toolQueue: ToolQueue;
     endTurns: EndTurnRequests;
     browser: ReturnType<typeof createTurnBrowserTools> | undefined;
@@ -1248,6 +1323,7 @@ async function openAttempt(
     appState: AppStateWriter;
     turnUsage: TurnUsage;
     turnBudget: TurnBudget;
+    garbledTail: ReturnType<typeof createGarbledTailGuard>;
     repeatSilence: () => boolean;
     backToPrimary?: () => void;
     /** Каждый завершённый шаг попытки: причина конца. */
@@ -1377,8 +1453,11 @@ async function openAttempt(
     return true;
   };
   const { noteAfterApprovals, ...modelRequest } = request;
+  // Новая попытка — шаги прежней стёрты.
+  attempt.garbledTail.reset();
   const result = streamText({
     ...modelRequest,
+    model: attempt.garbledTail.wrap(modelRequest.model),
     ...(approval.toolApproval && { toolApproval: gateToolApproval(approval.toolApproval, () => toolsClosed) }),
     // Попытке — остаток шагов хода.
     // Помощник встал на подтверждении человека — ход ждёт, модель основного агента его незаконченным не видит.
@@ -1386,6 +1465,8 @@ async function openAttempt(
     // Инструмент кончил ход: без текста — стоп сразу; с текстом — ещё шаг подставной модели, его держит только помощник
     // на подтверждении (ход ждёт человека). Потолок шагов и прочие стопы готовый текст не теряют.
     stopWhen: async (options) => {
+      // Ответ сорвался в кашу (реплика за человека и т. п.): новый шаг продолжил бы хвост.
+      if (attempt.garbledTail.garbled()) return true;
       if (attempt.endTurns.requested()) {
         if (attempt.endTurns.hasText()) return helperAwaitsApproval(options);
         attempt.endTurns.stopWithoutText();
@@ -1593,6 +1674,7 @@ async function continueHelpers(
     appEvents: AppEventEmitter;
     chatClosure: ChatClosureRequest;
     appState: AppStateWriter;
+    viewer?: AgentViewer;
     emit: (chunk: UIMessageChunk) => void;
     logError: (message: string) => void;
   },
@@ -1652,6 +1734,7 @@ function helperRunContext(input: AgentTurnInput, toolQueue: ToolQueue, logError:
     ...(input.toolTimeout && { toolTimeout: input.toolTimeout }),
     ...(input.sequentialTools && { sequentialTools: input.sequentialTools }),
     ...(input.providerFallback !== undefined && { providerFallback: input.providerFallback }),
+    ...(input.providerOutages && { providerOutages: input.providerOutages }),
     ...(input.modelSilence && { modelSilence: input.modelSilence }),
     ...(input.turnObserver && { turnObserver: input.turnObserver }),
     ...(input.assertWithinLimit && { assertWithinLimit: input.assertWithinLimit }),
@@ -1695,7 +1778,7 @@ function withBrowserTools(appTools: ToolSet | undefined, browserTools: ToolSet, 
 function turnToolsModel(
   input: AgentTurnInput,
   found: { profile: ModelProfile; provider: { id: string } },
-  turn: { dataChanges: ReturnType<typeof createDataChangeNotifier>; appEvents: AppEventEmitter; chatClosure: ChatClosureRequest; appState: AppStateAccess },
+  turn: { dataChanges: ReturnType<typeof createDataChangeNotifier>; appEvents: AppEventEmitter; chatClosure: ChatClosureRequest; appState: AppStateAccess; viewer?: AgentViewer },
 ): AgentToolsModel {
   return {
     profile: found.profile,
@@ -1712,6 +1795,7 @@ function turnToolsModel(
     ...(input.subject && { subject: input.subject }),
     chat: { ...(input.chatData && { data: input.chatData }) },
     ...(input.staff && { staff: input.staff }),
+    ...(turn.viewer && { viewer: turn.viewer }),
     ...(input.closeChat && { closeChat: turn.chatClosure.request }),
     // Инструменту — только чтение и запись: конец записи и служебные ключи — дело ядра.
     state: { get: turn.appState.get, set: turn.appState.set, unset: turn.appState.unset },
@@ -1833,6 +1917,34 @@ export const FINISH_RETRY_PAUSES_MS: readonly number[] = [1_000, 3_000];
  * потеряться — только ответ базы: тогда в базе лежит ровно наш итог, и это успех. Не вышло прочитать — проверка
  * повторяется по тем же паузам; все попытки оборвались — итог проверяется ещё раз в конце.
  */
+/**
+ * Экран после обрезки срыва: придержанный последний текст уходит уже обрезанным; показанное — заменяется шагами от
+ * шага текста `anchor` — последнего оставшегося до места срыва (как замена исправленного ответа).
+ */
+function showCutAnswer(
+  original: AgentChatMessage["parts"],
+  cut: AgentChatMessage["parts"],
+  anchor: number,
+  screen: {
+    heldText: ReturnType<typeof createHeldReplyText> | undefined;
+    screenSteps: ReturnType<typeof createShownSteps>;
+    providerId: string;
+    emit: (chunk: UIMessageChunk) => void;
+  },
+): void {
+  if (anchor === -1) return;
+  const textsAfter = original.slice(anchor + 1).filter((part) => part.type === "text").length;
+  if (screen.heldText?.holdsText()) {
+    if (textsAfter === 0 && lastTextIndex(cut) === anchor) {
+      for (const chunk of screen.heldText.release((cut[anchor] as { text: string }).text)) screen.emit(chunk);
+      return;
+    }
+    for (const chunk of screen.heldText.release()) screen.emit(chunk);
+  }
+  const resets = screen.screenSteps.resetsToText(textsAfter);
+  for (const chunk of (resets && replacementChunks(cut, anchor, resets, screen.providerId)) || []) screen.emit(chunk);
+}
+
 async function finishWithRetries(
   storage: ChatStorage,
   messageId: string,

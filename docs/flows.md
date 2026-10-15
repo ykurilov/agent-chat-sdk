@@ -681,7 +681,25 @@ await flow.migrateChats({ flowId: "sales-review", toVersionId: "4", map: { old_b
 - Путь, заметки и место в разговоре сохраняются. Ни один разговор не начинается заново.
 - Чат применяет перевод в начале своего следующего хода. Один промах кэша на чат — у новой версии другое «Общее».
 
+**Каких чатов перевод не касается.** По умолчанию закончившиеся разговоры (`flow.end`, итог, срок вышел) и тестовые
+чаты редактора (`FlowTestChat`, `flowTestChatData()`) не считаются и не переводятся. Вернуть их — `includeEnded: true`
+и `includeTestChats: true`. Свой отбор приложения — `chatIds` (только эти чаты) и `filter` (решение по каждому чату):
+
+```ts
+const selection = {
+  // chat: { chatId, ownerId, flowId, versionId, stateId, ended, endReason, test, data } — data это Chat.data
+  filter: (chat) => chat.data.leadMagnetCheck !== true,
+};
+await flow.chatsByState("sales-review", { exceptVersionId: "4", ...selection });
+await flow.migrateChats({ flowId: "sales-review", toVersionId: "4", map, flow: version4, ...selection });
+```
+
+Отбор в обоих вызовах работает одинаково: передайте один и тот же — и переведутся ровно те чаты, что посчитаны. Цель в
+`map` нужна только для удалённых состояний, где есть отобранные чаты. `filter` может быть асинхронным: зовётся по разу
+на чат, пачками по 100.
+
 В редакторе это кнопка «Перевести идущие чаты» (`migration` у `FlowEditor`: `chatsByState` и `migrate` через ваш API).
+Счётчик окна — это ответ `chatsByState`; после перевода окно перечитывает его и показывает, кто остался.
 
 ## Карточка клиента и заметки чата
 

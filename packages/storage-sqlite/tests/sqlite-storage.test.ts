@@ -32,7 +32,7 @@ afterEach(() => {
 });
 
 describe("SQLite", () => {
-  describeChatStorageContract(() => openTemporaryStorage(), { choiceMemory: "required", voiceDialog: "required", memory: "required", memoryOptimization: "required", spendingLimitState: "required", subjectChats: "required", chatData: "required", importChat: "required", afterTurnState: "required", chatClosure: "required", partsOfTypes: "required", usageByChat: "required", chatTurnLease: "required" });
+  describeChatStorageContract(() => openTemporaryStorage(), { choiceMemory: "required", voiceDialog: "required", memory: "required", memoryOptimization: "required", spendingLimitState: "required", subjectChats: "required", chatData: "required", importChat: "required", afterTurnState: "required", chatClosure: "required", partsOfTypes: "required", usageByChat: "required", chatTurnLease: "required", pendingBursts: "required" });
 
   const usageRecord = (id: string, estimated?: boolean) => ({
     id,

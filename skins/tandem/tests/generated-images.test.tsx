@@ -99,3 +99,47 @@ describe("картинки агента в Тандеме (T047)", () => {
     expect(grid(8)).toContain("sm:grid-cols-4");
   });
 });
+
+describe("картинка из библиотеки в Тандеме: по ширине ответа, своя пропорция, подпись (договор 26)", () => {
+  const libraryItem = (onOpen = vi.fn()) => ({
+    state: "ready" as const,
+    key: "call-1",
+    src: "/library/cell.png",
+    alt: "Схема клетки: ядро и мембрана",
+    caption: "Строение клетки",
+    width: 1200,
+    height: 800,
+    onOpen,
+  });
+
+  it("во всю ширину ответа, пропорция из размеров картинки, без обрезки", () => {
+    const { container } = render(<TandemGeneratedImages {...view([libraryItem()], { aspectRatio: "1200:800", wide: true })} />);
+    const tile = tiles(container)[0]!;
+    expect(tile.className).toContain("w-full");
+    expect(tile.className).not.toMatch(/aspect-square/);
+    expect(tile.style.aspectRatio).toBe("1200 / 800");
+    expect(container.querySelector("ul")!.className).not.toMatch(/max-w-md/);
+    expect(tile.querySelector("img")!.className).toContain("object-contain");
+  });
+
+  it("видимая подпись под картинкой; кнопка открывает окно просмотра", () => {
+    const onOpen = vi.fn();
+    render(<TandemGeneratedImages {...view([libraryItem(onOpen)], { wide: true })} />);
+    const figure = screen.getByRole("figure");
+    expect(figure.querySelector("figcaption")!.textContent).toBe("Строение клетки");
+    const button = screen.getByRole("button", { name: "Открыть картинку: Схема клетки: ядро и мембрана" });
+    fireEvent.click(button);
+    expect(onOpen).toHaveBeenCalledWith(button);
+  });
+
+  it("пустой вид (вызов идёт) — ничего не рисует, без надписи «создаётся»", () => {
+    const { container } = render(<TandemGeneratedImages {...view([], { ordered: 1, wide: true })} />);
+    expect(container.textContent).toBe("");
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("подпись есть и у сетки: элемент с caption подписан под плиткой", () => {
+    render(<TandemGeneratedImages {...view([{ ...ready(1), caption: "Маяк" }])} />);
+    expect(screen.getByText("Маяк").tagName).toBe("FIGCAPTION");
+  });
+});

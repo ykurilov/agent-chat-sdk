@@ -53,12 +53,18 @@ importers:
       '@ykurilov/agent-chat-history-search':
         specifier: workspace:*
         version: link:../../packages/history-search
+      '@ykurilov/agent-chat-image-library':
+        specifier: workspace:*
+        version: link:../../packages/image-library
       '@ykurilov/agent-chat-images':
         specifier: workspace:*
         version: link:../../packages/images
       '@ykurilov/agent-chat-limits':
         specifier: workspace:*
         version: link:../../packages/limits
+      '@ykurilov/agent-chat-mcp':
+        specifier: workspace:*
+        version: link:../../packages/mcp
       '@ykurilov/agent-chat-memory':
         specifier: workspace:*
         version: link:../../packages/memory
@@ -74,6 +80,9 @@ importers:
       '@ykurilov/agent-chat-server':
         specifier: workspace:*
         version: link:../../packages/server
+      '@ykurilov/agent-chat-skills':
+        specifier: workspace:*
+        version: link:../../packages/skills
       '@ykurilov/agent-chat-skin-tandem':
         specifier: workspace:*
         version: link:../../skins/tandem
@@ -350,6 +359,31 @@ importers:
         specifier: workspace:*
         version: link:../storage-sqlite
 
+  packages/image-library:
+    dependencies:
+      ai:
+        specifier: 7.0.122
+        version: 7.0.122(zod@4.6.5)
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.5
+    devDependencies:
+      '@testing-library/react':
+        specifier: ^16.3.3
+        version: 16.3.3(@testing-library/dom@10.4.2)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      '@types/react':
+        specifier: ^19.3.0
+        version: 19.3.0
+      '@ykurilov/agent-chat-react':
+        specifier: workspace:*
+        version: link:../react
+      jsdom:
+        specifier: ^30.1.1
+        version: 30.1.1
+      react:
+        specifier: ^19.3.0
+        version: 19.3.0
+
   packages/images:
     dependencies:
       '@ykurilov/agent-chat-attachments':
@@ -429,6 +463,67 @@ importers:
       ai:
         specifier: 7.0.122
         version: 7.0.122(zod@4.6.5)
+
+  packages/mcp:
+    dependencies:
+      '@ai-sdk/mcp':
+        specifier: 2.0.62
+        version: 2.0.62(zod@4.6.5)
+      '@ykurilov/agent-chat-core':
+        specifier: workspace:*
+        version: link:../core
+      '@ykurilov/agent-chat-web-tools':
+        specifier: workspace:*
+        version: link:../web-tools
+      ai:
+        specifier: 7.0.122
+        version: 7.0.122(zod@4.6.5)
+      drizzle-orm:
+        specifier: ^0.45.3
+        version: 0.45.3(@electric-sql/pglite@0.5.8)(@types/better-sqlite3@9.6.0)(@types/pg@8.23.1)(better-sqlite3@13.0.3)(pg@8.23.0)
+      undici:
+        specifier: ^7.30.0
+        version: 7.30.0
+    devDependencies:
+      '@ai-sdk/provider':
+        specifier: 4.0.19
+        version: 4.0.19
+      '@electric-sql/pglite':
+        specifier: 0.5.8
+        version: 0.5.8
+      '@testing-library/react':
+        specifier: ^16.3.3
+        version: 16.3.3(@testing-library/dom@10.4.2)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      '@types/better-sqlite3':
+        specifier: ^9.6.0
+        version: 9.6.0
+      '@types/pg':
+        specifier: ^8.23.1
+        version: 8.23.1
+      '@types/react':
+        specifier: ^19.3.0
+        version: 19.3.0
+      '@types/react-dom':
+        specifier: ^19.3.0
+        version: 19.3.0(@types/react@19.3.0)
+      better-sqlite3:
+        specifier: ^13.0.3
+        version: 13.0.3
+      drizzle-kit:
+        specifier: ^0.31.11
+        version: 0.31.11
+      jsdom:
+        specifier: ^30.1.1
+        version: 30.1.1
+      pg:
+        specifier: ^8.23.0
+        version: 8.23.0
+      react:
+        specifier: ^19.3.0
+        version: 19.3.0
+      react-dom:
+        specifier: ^19.3.0
+        version: 19.3.0(react@19.3.0)
 
   packages/memory:
     dependencies:
@@ -639,6 +734,52 @@ importers:
         specifier: ^4.13.10
         version: 4.13.10
 
+  packages/skills:
+    dependencies:
+      '@ykurilov/agent-chat-core':
+        specifier: workspace:*
+        version: link:../core
+      ai:
+        specifier: 7.0.122
+        version: 7.0.122(zod@4.6.5)
+      drizzle-orm:
+        specifier: ^0.45.3
+        version: 0.45.3(@electric-sql/pglite@0.5.8)(@types/better-sqlite3@9.6.0)(@types/pg@8.23.1)(better-sqlite3@13.0.3)(pg@8.23.0)
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.5
+    devDependencies:
+      '@electric-sql/pglite':
+        specifier: 0.5.8
+        version: 0.5.8
+      '@testing-library/react':
+        specifier: ^16.3.3
+        version: 16.3.3(@testing-library/dom@10.4.2)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      '@types/better-sqlite3':
+        specifier: ^9.6.0
+        version: 9.6.0
+      '@types/pg':
+        specifier: ^8.23.1
+        version: 8.23.1
+      '@types/react':
+        specifier: ^19.3.0
+        version: 19.3.0
+      better-sqlite3:
+        specifier: ^13.0.3
+        version: 13.0.3
+      drizzle-kit:
+        specifier: ^0.31.11
+        version: 0.31.11
+      jsdom:
+        specifier: ^30.1.1
+        version: 30.1.1
+      pg:
+        specifier: ^8.23.0
+        version: 8.23.0
+      react:
+        specifier: ^19.3.0
+        version: 19.3.0
+
   packages/storage-postgres:
     dependencies:
       '@ykurilov/agent-chat-core':
@@ -818,12 +959,18 @@ importers:
       '@ykurilov/agent-chat-flows':
         specifier: workspace:*
         version: link:../../packages/flows
+      '@ykurilov/agent-chat-mcp':
+        specifier: workspace:*
+        version: link:../../packages/mcp
       '@ykurilov/agent-chat-messengers':
         specifier: workspace:*
         version: link:../../packages/messengers
       '@ykurilov/agent-chat-sandbox':
         specifier: workspace:*
         version: link:../../packages/sandbox
+      '@ykurilov/agent-chat-skills':
+        specifier: workspace:*
+        version: link:../../packages/skills
       '@ykurilov/agent-chat-web-tools':
         specifier: workspace:*
         version: link:../../packages/web-tools
@@ -3027,7 +3174,7 @@ packages:
     resolution: {integrity: sha512-a//eDjez3WZF47aaPTfVUDD0OINOq+WVwBZCRTqG+m0a5euX8EwlJ4jMY1Wxz0Ocj4xOeekJ70V22Pq0ll8RJw==}
 
   '@ykurilov/tandem-ui@0.7.0':
-    resolution: {integrity: sha512-aMft4Mao6FFaUdvtey3bYT/bZGhxmlRJ0YQ9B70Zbw/HtFcmQC+bWalDC7HeL3dGli7ekbAjzkjh5Lp27KCWEg==, tarball: https://npm.pkg.github.com/download/@ykurilov/tandem-ui/0.7.0/1542779afdfde90d97e7a7529abc5190cf91f4de}
+    resolution: {integrity: sha512-lxNq9BIxvL64F4Oz5qmIlra9+zhcwpGYVQeG2nEZvnaY+NZvoJ1iCv9Pseh+angi4pTPYTI6i3mTEOXNYdeDtw==}
     peerDependencies:
       react: ^19.0.0
       react-dom: ^19.0.0

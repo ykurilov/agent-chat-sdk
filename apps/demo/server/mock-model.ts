@@ -45,7 +45,9 @@ import { demoPageUrl, demoSearchQuery } from "./demo-web-services";
  * Картинки (`generate_images`): «нарисуй картинку» — один заказ, «нарисуй три картинки» — три, одна из них отклоняется поддельным
  * Runware, «нарисуй восемь картинок» — восемь, ответ держится до «Стопа» (mock-runware.ts; «метка <слово>» в вопросе называет заказ для запроса `/pending/<слово>`); после результата — «Создано N из M».
  * Видео (`find_videos`, `show_video`): «покажи урок про <тема>» — поиск по теме и показ первого найденного, «… с примеров» — с начала
- * главы «Примеры», «покажи несуществующее видео» — показ id не из каталога (сервер отказывает).
+ * главы «Примеры», «покажи несуществующее видео» — показ id не из каталога (сервер отказывает ошибкой инструмента).
+ * Библиотека картинок (`find_images`, `show_image`): «покажи картинку про <тема>» — поиск по теме и показ первой найденной,
+ * «покажи несуществующую картинку» — показ id не из каталога (сервер отказывает ошибкой инструмента).
  * Помощники и фон (`agent.helpers`, пакет фона): «Поручи исследователю <тема>» — вызов `helper_researcher` с заданием «Изучи тему: <тема>»
  * (само задание помощник узнаёт по этому началу и своему `search_sources`: ищет, затем докладывает), затем ответ «Исследователь закончил…».
  * «Запусти отчёт <тема>» — вызов фонового `report`, затем «Запустил отчёт … он делается в фоне». Служебное сообщение «Фоновая задача "…" закончилась: …»
@@ -507,7 +509,7 @@ function videoStep(question: string, toolResults: number, toolsText: string, too
   if (!toolNames.has("show_video")) return null;
   const text = question.trim();
   const results = plainResults(toolsText);
-  const shown = () => answerStep("Смотрю, показалось ли.", /"отказ"/.test(results) ? "Такого видео в каталоге нет." : "Вот урок — нажмите, чтобы посмотреть.");
+  const shown = () => answerStep("Смотрю, показалось ли.", /нет в каталоге/.test(results) ? "Такого видео в каталоге нет." : "Вот урок — нажмите, чтобы посмотреть.");
   if (/^покажи несуществующее видео/i.test(text)) {
     return toolResults === 0 ? toolCallStep("Покажу видео по памяти.", "show_video", { id: "lost-video" }, widgetCallId()) : shown();
   }
@@ -519,6 +521,24 @@ function videoStep(question: string, toolResults: number, toolsText: string, too
   if (!id) return answerStep("Ничего не нашлось.", "Такого урока в каталоге нет.");
   const examples = / с примеров/i.test(text) ? /"название":"Примеры"[^}]*"секунда":(\d+)/.exec(results)?.[1] : undefined;
   return toolCallStep("Покажу урок.", "show_video", { id, ...(examples && { startSeconds: Number(examples) }) }, widgetCallId());
+}
+
+/** Сценарии библиотеки картинок: поиск по теме, затем показ первого найденного id. `null` — вопрос не про библиотеку. */
+function libraryImageStep(question: string, toolResults: number, toolsText: string, toolNames: ReadonlySet<string>): LanguageModelV4StreamPart[] | null {
+  if (!toolNames.has("show_image")) return null;
+  const text = question.trim();
+  const results = plainResults(toolsText);
+  const shown = () => answerStep("Смотрю, показалась ли.", /нет в каталоге/.test(results) ? "Такой картинки в каталоге нет." : "Вот картинка — нажмите, чтобы увеличить.");
+  if (/^покажи несуществующую картинку/i.test(text)) {
+    return toolResults === 0 ? toolCallStep("Покажу картинку по памяти.", "show_image", { id: "/library/secret.png" }, widgetCallId()) : shown();
+  }
+  const topic = /^покажи картинку про (.+?)[.!]?$/i.exec(text)?.[1];
+  if (!topic) return null;
+  if (toolResults === 0) return toolCallStep("Поищу картинку в библиотеке.", "find_images", { query: topic }, widgetCallId());
+  if (toolResults > 1) return shown();
+  const id = /"id":"([^"]+)"/.exec(results)?.[1];
+  if (!id) return answerStep("Ничего не нашлось.", "Такой картинки в библиотеке нет.");
+  return toolCallStep("Покажу картинку.", "show_image", { id }, widgetCallId());
 }
 
 /** Шаги хода по вопросу и числу уже полученных результатов инструментов. */
@@ -570,6 +590,8 @@ function nextStep(
   if (media) return media;
   const video = videoStep(question, toolResults, toolsText, toolNames);
   if (video) return video;
+  const libraryImage = libraryImageStep(question, toolResults, toolsText, toolNames);
+  if (libraryImage) return libraryImage;
   if (toolNames.has("manage_memory") && /запомни/i.test(question)) {
     const note = noteToRemember(question);
     if (toolResults === 0) {

@@ -1,6 +1,9 @@
 import type { ToolSet } from "ai";
 import type { MessageAttachments } from "../attachments/message-attachments";
 import type { AgentToolsSource } from "../agent-run/run-agent-turn";
+import { resolveViewerOutsideTurn } from "../agent-run/agent-viewer";
+import { turnChannelOf } from "../agent-run/channel-notes";
+import type { AgentViewerSource } from "../agent-run/agent-viewer";
 import type { TurnObserver } from "../agent-run/turn-observer";
 import { loadCurrentBranch } from "../conversation/load-current-branch";
 import { subjectOfChat } from "../conversation/types";
@@ -114,7 +117,8 @@ export interface CompactionServiceOptions {
   storage: ChatStorage;
   catalog: ModelCatalog;
   env: Record<string, string | undefined>;
-  agent: { instructions: string; tools?: AgentToolsSource };
+  /** `viewer` — права человека: инструменты сжатия те же, что у хода (кэш). */
+  agent: { instructions: string; tools?: AgentToolsSource; viewer?: AgentViewerSource };
   attachments?: MessageAttachments;
   /** `null` — автосжатие выключено; записи, уже сделанные, всё равно применяются к истории. */
   settings: ResolvedCompactionSettings | null;
@@ -209,7 +213,7 @@ export function createCompactionService(options: CompactionServiceOptions): Comp
         chatId,
         model,
         instructions: await instructionsOf(chat),
-        tools: resolveTools(model, chat, chatId, ownerId),
+        tools: await resolveTools(model, chat, chatId, ownerId, branch, signal),
           ...(options.switchableTools && { switchableTools: options.switchableTools }),
         ...observation(ownerId, answerId),
         history,
@@ -264,11 +268,24 @@ export function createCompactionService(options: CompactionServiceOptions): Comp
     return options.turnObserver ? { observe: { observer: options.turnObserver, ownerId, messageId: answerId ?? null } } : {};
   }
 
-  function resolveTools(model: { modelId: string; providerId: string }, chat: Chat | null, chatId: string, ownerId: string): ToolSet | undefined {
-    const { tools } = options.agent;
+  async function resolveTools(
+    model: { modelId: string; providerId: string },
+    chat: Chat | null,
+    chatId: string,
+    ownerId: string,
+    branch: readonly Pick<AgentChatMessage, "role" | "parts">[],
+    signal?: AbortSignal,
+  ): Promise<ToolSet | undefined> {
+    const { tools, viewer: viewerSource } = options.agent;
     if (typeof tools !== "function") return tools;
-    // Объект чата — как у хода: набор инструментов, зависящий от объекта, совпадает с набором ответа (кэш).
+    // Объект чата, канал и группа — как у хода: набор инструментов совпадает с набором ответа (кэш), в группе — без админских.
     const subject = chat ? subjectOfChat(chat) : undefined;
+    const chatData = chat ? chatDataOfInput(chat) : undefined;
+    const { channel, group } = turnChannelOf(branch);
+    const audience = group ? "group" : "private";
+    const viewer =
+      viewerSource &&
+      (await resolveViewerOutsideTurn(viewerSource, { chatId, ownerId, messageId: "", ...(chatData && { chatData }), ...(subject && { subject }), channel, audience }, signal));
     // Сжатие идёт вне хода человека: места на экране у него нет, а браузеру сообщать об изменениях некому.
     return tools({
       profile: findModel(catalog, model.modelId, model.providerId).profile,
@@ -276,10 +293,13 @@ export function createCompactionService(options: CompactionServiceOptions): Comp
       chatId,
       ownerId,
       place: null,
+      channel,
+      audience,
       notifyDataChanged: (change) =>
         logError(`Инструмент сообщил об изменении данных «${String(change?.tag)}» во время сжатия чата ${chatId}: сообщение не отправлено`),
       ...(subject && { subject }),
-      chat: { ...(chat && chatDataOfInput(chat) && { data: chatDataOfInput(chat)! }) },
+      chat: { ...(chatData && { data: chatData }) },
+      ...(viewer && { viewer }),
     });
   }
 
@@ -367,7 +387,7 @@ export function createCompactionService(options: CompactionServiceOptions): Comp
           chatId,
           model,
           instructions: await instructionsOf(chat),
-          tools: resolveTools(model, chat, chatId, ownerId),
+          tools: await resolveTools(model, chat, chatId, ownerId, history, abortSignal),
           ...(options.switchableTools && { switchableTools: options.switchableTools }),
           ...observation(ownerId, answerId),
           history: [...history, { id: `${chatId}-answer-steps`, role: "assistant", parts: steps }],

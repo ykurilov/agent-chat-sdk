@@ -1,7 +1,7 @@
 import { asSchema } from "ai";
 import type { ToolSet } from "ai";
 import { describe, expect, it, vi } from "vitest";
-import { createVideoLibrary } from "../src/index";
+import { VideoLibraryError, createVideoLibrary } from "../src/index";
 import type { VideoEntry, VideoSource } from "../src/index";
 
 const lesson: VideoEntry = {
@@ -24,6 +24,16 @@ const options = { toolCallId: "call-1", messages: [] };
 async function run(tools: ToolSet, name: string, input: unknown): Promise<any> {
   const execute = tools[name]!.execute!;
   return await execute(input as never, options as never);
+}
+
+/** Отказ инструмента — ошибка: лента показывает неудачу, модель получает тот же текст. */
+async function refusal(result: Promise<unknown>): Promise<VideoLibraryError> {
+  const error = await result.then(
+    () => undefined,
+    (thrown: unknown) => thrown,
+  );
+  expect(error).toBeInstanceOf(VideoLibraryError);
+  return error as VideoLibraryError;
 }
 
 async function modelSees(tools: ToolSet, name: string, output: unknown): Promise<unknown> {
@@ -89,14 +99,20 @@ describe("createVideoLibrary: инструменты find_videos и show_video (
     expect(await modelSees(tools, "show_video", plain)).toEqual({ type: "json", value: { показано: "Вебинар про автоматизацию" } });
   });
 
-  it("show_video: id не из каталога и начало за концом — отказ словами (FR-007, SC-005)", async () => {
+  it("show_video: id не из каталога и начало за концом — ошибка инструмента со словами (FR-007, SC-005)", async () => {
     const tools = createVideoLibrary({ videos: [lesson] }).tools(model);
-    const missing = await run(tools, "show_video", { id: "https://www.youtube.com/watch?v=IlU-zDU6aGo" });
-    expect(missing.отказ).toMatch(/нет в каталоге/);
-    expect(await modelSees(tools, "show_video", missing)).toEqual({ type: "json", value: { отказ: missing.отказ } });
+    const missing = await refusal(run(tools, "show_video", { id: "https://www.youtube.com/watch?v=IlU-zDU6aGo" }));
+    expect(missing.kind).toBe("not_in_catalog");
+    expect(missing.message).toMatch(/нет в каталоге/);
 
-    const late = await run(tools, "show_video", { id: "prompts", startSeconds: 1120 });
-    expect(late.отказ).toMatch(/18:40/);
+    const late = await refusal(run(tools, "show_video", { id: "prompts", startSeconds: 1120 }));
+    expect(late.kind).toBe("start_after_end");
+    expect(late.message).toMatch(/18:40/);
+  });
+
+  it("старый отказ из истории (до ошибок инструмента) модель по-прежнему видит отказом", async () => {
+    const tools = createVideoLibrary({ videos: [lesson] }).tools(model);
+    expect(await modelSees(tools, "show_video", { отказ: "нет" })).toEqual({ type: "json", value: { отказ: "нет" } });
   });
 
   it("описания и схемы инструментов одинаковы при любом каталоге (SC-003, FR-009)", () => {
@@ -121,7 +137,7 @@ describe("каталог функциями (FR-004, US3)", () => {
     expect(source.search).toHaveBeenCalledWith("промпты", { ownerId: "user-1", chatId: "chat-1" });
     expect((await run(tools, "show_video", { id: "prompts" })).видео.id).toBe("prompts");
     expect(source.get).toHaveBeenCalledWith("prompts", { ownerId: "user-1", chatId: "chat-1" });
-    expect((await run(tools, "show_video", { id: "secret" })).отказ).toMatch(/нет в каталоге/);
+    expect((await refusal(run(tools, "show_video", { id: "secret" }))).kind).toBe("not_in_catalog");
   });
 
   it("поиск отдаёт не больше восьми", async () => {
@@ -135,7 +151,7 @@ describe("каталог функциями (FR-004, US3)", () => {
     const logError = vi.fn();
     const tools = createVideoLibrary({ source: { search: () => [broken, webinar], get: () => broken }, logError }).tools(model);
     expect((await run(tools, "find_videos", { query: "x" })).найдено.map((video: { id: string }) => video.id)).toEqual(["webinar"]);
-    expect((await run(tools, "show_video", { id: "broken" })).отказ).toMatch(/нет в каталоге/);
+    expect((await refusal(run(tools, "show_video", { id: "broken" }))).kind).toBe("not_in_catalog");
     expect(logError).toHaveBeenCalledTimes(2);
     for (const [message] of logError.mock.calls) {
       expect(message).toContain("broken");
@@ -150,23 +166,24 @@ describe("каталог функциями (FR-004, US3)", () => {
     ["поиск вернул отклонённое обещание", { search: () => Promise.reject(new Error("db password=hunter2")), get: noVideo }],
     ["поиск вернул null", { search: () => null, get: noVideo }],
     ["поиск вернул не список", { search: () => ({ items: [lesson] }), get: noVideo }],
-  ])("%s — модели нейтральный отказ, причина в журнале", async (_name, source) => {
+  ])("%s — find_videos кончается ошибкой «недоступен», причина в журнале", async (_name, source) => {
     const logError = vi.fn();
     const tools = createVideoLibrary({ source: source as unknown as VideoSource, logError }).tools(model);
-    const result = await run(tools, "find_videos", { query: "промпты" });
-    expect(result).toEqual({ отказ: expect.stringMatching(/каталог видео сейчас недоступен/i) });
-    expect(JSON.stringify(result)).not.toContain("hunter2");
+    const error = await refusal(run(tools, "find_videos", { query: "промпты" }));
+    expect(error.kind).toBe("catalog_unavailable");
+    expect(error.message).toMatch(/каталог видео сейчас недоступен/i);
+    expect(error.message).not.toContain("hunter2");
     expect(logError).toHaveBeenCalledTimes(1);
   });
 
-  it("get бросил исключение — модели нейтральный отказ, не «нет в каталоге», причина в журнале", async () => {
+  it("get бросил исключение — нейтральная ошибка «недоступен», не «нет в каталоге», причина в журнале", async () => {
     const logError = vi.fn();
     const source = { search: () => [], get: () => Promise.reject(new Error("db password=hunter2")) };
     const tools = createVideoLibrary({ source, logError }).tools(model);
-    const result = await run(tools, "show_video", { id: "prompts" });
-    expect(result.отказ).toMatch(/каталог видео сейчас недоступен/i);
-    expect(JSON.stringify(result)).not.toContain("hunter2");
-    expect(await modelSees(tools, "show_video", result)).toEqual({ type: "json", value: { отказ: result.отказ } });
+    const error = await refusal(run(tools, "show_video", { id: "prompts" }));
+    expect(error.kind).toBe("catalog_unavailable");
+    expect(error.message).toMatch(/каталог видео сейчас недоступен/i);
+    expect(error.message).not.toContain("hunter2");
     expect(logError).toHaveBeenCalledTimes(1);
     expect(logError.mock.calls[0]![0]).toContain("hunter2");
   });
@@ -174,12 +191,12 @@ describe("каталог функциями (FR-004, US3)", () => {
   it("get вернул null — просто «нет в каталоге», без записи в журнал", async () => {
     const logError = vi.fn();
     const tools = createVideoLibrary({ source: { search: () => [], get: () => null as never }, logError }).tools(model);
-    expect((await run(tools, "show_video", { id: "prompts" })).отказ).toMatch(/нет в каталоге/);
+    expect((await refusal(run(tools, "show_video", { id: "prompts" }))).kind).toBe("not_in_catalog");
     expect(logError).not.toHaveBeenCalled();
   });
 
   it("get вернул запись с другим id — не показываем", async () => {
     const tools = createVideoLibrary({ source: { search: () => [], get: () => webinar } }).tools(model);
-    expect((await run(tools, "show_video", { id: "prompts" })).отказ).toMatch(/нет в каталоге/);
+    expect((await refusal(run(tools, "show_video", { id: "prompts" }))).kind).toBe("not_in_catalog");
   });
 });

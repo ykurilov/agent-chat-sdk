@@ -1,4 +1,4 @@
-import type { AgentToolsModel, Chat, TurnResult } from "@ykurilov/agent-chat-core";
+import type { AgentToolsModel, AgentViewerInput, Chat, TurnResult } from "@ykurilov/agent-chat-core";
 import { describe, expect, it } from "vitest";
 import { createStaffCopies, STAFF_COPIES_REMEMBERED, staffCopySubjectData } from "../../src/people/staff-copies";
 
@@ -34,6 +34,15 @@ describe("копии чатов людей: объект исходного ча
     expect(copies.toolsModel(model({ subject: copySubject }))).toMatchObject({ ownerId: "vera", staff: { id: "anna" }, subject: lesson });
     expect(copies.toolsModel(model({ subject: { key: "lesson:7" } }))).toMatchObject({ ownerId: "anna", subject: { key: "lesson:7" } });
     expect(copies.toolsModel(model({}))).not.toHaveProperty("staff");
+  });
+
+  it("права (`agent.viewer`) — по владельцу чата, как у инструментов: в копии человек, в песочном чате настоящий админ", () => {
+    const copies = createStaffCopies();
+    const input = (fields: Partial<AgentViewerInput>) =>
+      ({ userId: "sandbox:anna", chatId: "copy", ownerId: "sandbox:anna", messageId: "m1", chat: {}, channel: "web", audience: "private", abortSignal: new AbortController().signal, ...fields }) as AgentViewerInput;
+    expect(copies.viewerInput(input({ subject: copySubject, chat: { data: copySubject.data } }))).toMatchObject({ ownerId: "vera", userId: "anna", staff: { id: "anna" }, subject: lesson, chat: { data: lesson.data } });
+    expect(copies.viewerInput(input({}))).toMatchObject({ ownerId: "anna", userId: "anna" });
+    expect(copies.viewerInput(input({}))).not.toHaveProperty("staff");
   });
 
   it("итог, доделанный после перезапуска, в копии — исходный объект человека; в обычном песочном чате хук не зовётся", async () => {

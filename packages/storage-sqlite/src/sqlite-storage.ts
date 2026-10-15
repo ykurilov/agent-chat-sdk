@@ -18,10 +18,10 @@ import {
 } from "@ykurilov/agent-chat-core";
 import type { AnswerAliveMark, Chat, ChatDataFilter, ChatListOptions, ChatStorage, ChatSubjectFilter, MemoryMergeGroup, MemoryNote, MemoryNoteInput, MemoryOptimizationRun, MergedMemoryNote, StoredMessage } from "@ykurilov/agent-chat-core";
 import Database from "better-sqlite3";
-import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, ne, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { readMigrationFiles } from "drizzle-orm/migrator";
-import { branchSelections, chats, chatTurnLeases, compactions, memoryNotes, memoryOptimizationRuns, messages, spendingLimitStates, usageRecords, userModelChoices, voiceChoices } from "./schema";
+import { branchSelections, chats, chatTurnLeases, compactions, memoryNotes, memoryOptimizationRuns, messages, pendingBursts, spendingLimitStates, usageRecords, userModelChoices, voiceChoices } from "./schema";
 
 export interface SqliteChatStorage extends ChatStorage {
   /** Закрывает файл базы. */
@@ -333,6 +333,7 @@ export function createSqliteChatStorage(options: { filePath: string }): SqliteCh
         tx.delete(messages).where(eq(messages.chatId, chatId)).run();
         tx.delete(chats).where(eq(chats.id, chatId)).run();
         tx.delete(chatTurnLeases).where(eq(chatTurnLeases.chatId, chatId)).run();
+        tx.delete(pendingBursts).where(eq(pendingBursts.chatId, chatId)).run();
       }, { behavior: "immediate" });
     },
 
@@ -358,6 +359,56 @@ export function createSqliteChatStorage(options: { filePath: string }): SqliteCh
 
     async clearChatTurnLeases() {
       db.delete(chatTurnLeases).run();
+    },
+
+    async savePendingBurst(burst) {
+      const row = {
+        chatId: burst.chatId,
+        ownerId: burst.ownerId,
+        messageId: burst.messageId,
+        dueAt: Date.parse(burst.dueAt),
+        holder: burst.holder,
+        heldUntil: Date.parse(burst.heldUntil),
+        page: burst.page ?? null,
+      };
+      db.insert(pendingBursts).values(row).onConflictDoUpdate({ target: pendingBursts.chatId, set: row }).run();
+    },
+
+    async takeAbandonedBursts({ abandonedBefore, holder, heldUntil, limit, exceptHolder }) {
+      // Выбор и захват — одной записью: другая копия на той же базе ждёт замка и видит пачку уже взятой.
+      return db.transaction((tx) => {
+        const abandoned = tx
+          .select()
+          .from(pendingBursts)
+          .where(and(lte(pendingBursts.heldUntil, Date.parse(abandonedBefore)), exceptHolder === undefined ? undefined : ne(pendingBursts.holder, exceptHolder)))
+          .orderBy(asc(pendingBursts.dueAt))
+          .limit(limit)
+          .all();
+        const until = Date.parse(heldUntil);
+        for (const row of abandoned) tx.update(pendingBursts).set({ holder, heldUntil: until }).where(eq(pendingBursts.chatId, row.chatId)).run();
+        return abandoned.map((row) => ({
+          chatId: row.chatId,
+          ownerId: row.ownerId,
+          messageId: row.messageId,
+          dueAt: new Date(row.dueAt).toISOString(),
+          holder,
+          heldUntil,
+          ...(row.page && { page: row.page }),
+        }));
+      }, { behavior: "immediate" });
+    },
+
+    async renewPendingBurst({ chatId, messageId, holder, heldUntil }) {
+      const renewed = db
+        .update(pendingBursts)
+        .set({ heldUntil: Date.parse(heldUntil) })
+        .where(and(eq(pendingBursts.chatId, chatId), eq(pendingBursts.messageId, messageId), eq(pendingBursts.holder, holder)))
+        .run();
+      return renewed.changes > 0;
+    },
+
+    async removePendingBurst(chatId, messageId) {
+      db.delete(pendingBursts).where(and(eq(pendingBursts.chatId, chatId), eq(pendingBursts.messageId, messageId))).run();
     },
 
     async getMessage(messageId) {

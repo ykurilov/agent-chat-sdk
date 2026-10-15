@@ -20,11 +20,14 @@
       "@ykurilov/agent-chat-diagrams",
       "@ykurilov/agent-chat-images",
       "@ykurilov/agent-chat-videos",
+      "@ykurilov/agent-chat-image-library",
       "@ykurilov/agent-chat-sandbox",
       "@ykurilov/agent-chat-background",
       "@ykurilov/agent-chat-messengers",
       "@ykurilov/agent-chat-flows",
-      "@ykurilov/agent-chat-reply-check"
+      "@ykurilov/agent-chat-reply-check",
+      "@ykurilov/agent-chat-skills",
+      "@ykurilov/agent-chat-mcp"
     ]
   ],
   "linked": [],

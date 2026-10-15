@@ -21,6 +21,16 @@ export const MAX_BURST_QUIET_MS = 600_000;
 export const BURST_PENDING_GRACE_MS = 120_000;
 /** Чат занят другой копией сервера (её ход или аренда): через столько пачка пробует снова. */
 export const BURST_BUSY_RETRY_MS = 1000;
+/**
+ * Запись ждущей пачки в хранилище (`savePendingBurst`) удерживается копией, что ждёт окно, ещё столько после конца окна;
+ * пока копия ждёт или решает, она продлевает удержание каждые `BURST_HOLD_RENEW_MS`. Срок вышел — пачку считают
+ * брошенной (копия упала): её берёт обход другой копии или следующего запуска.
+ */
+export const BURST_HOLD_MS = 30_000;
+/** Как часто живая копия продлевает удержание своей ждущей пачки. */
+export const BURST_HOLD_RENEW_MS = 10_000;
+/** Сколько брошенных пачек одна копия решает одновременно: обход берёт их порциями, пока не кончатся. */
+export const BURST_SWEEP_LIMIT = 10;
 
 /** `at` — время записи сообщения, мс: по нему решается, одна ли пачка у соседей (`continuesBurst`). */
 export function burstPart(quietMs: number, at: number): AgentChatMessage["parts"][number] {
@@ -159,6 +169,8 @@ export interface BurstWaits {
   wait(chatId: string, ms: number, cancelled: () => Error): Promise<void>;
   /** Кончает ожидания чата сейчас: их пачки решают заново (например, после «Стоп»). */
   wake(chatId: string): void;
+  /** Кончает все ожидания сейчас: пачки решают заново по часам службы (`tickBursts`). */
+  wakeAll(): void;
   /** Ждёт ли в чате хоть одно окно или решение по пачке (`holding`). */
   has(chatId: string): boolean;
   /** Решение по пачке идёт: чат считается ждущим, пока `work` не кончится. */
@@ -201,6 +213,9 @@ export function createBurstWaits(): BurstWaits {
     },
     wake(chatId) {
       for (const entry of [...timers]) if (entry.chatId === chatId) entry.done();
+    },
+    wakeAll() {
+      for (const entry of [...timers]) entry.done();
     },
     has: (chatId) => waiting.has(chatId),
     async holding(chatId, work) {

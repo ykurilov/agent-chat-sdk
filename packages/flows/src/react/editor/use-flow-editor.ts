@@ -36,7 +36,7 @@ export type FlowDialog = "json" | "migrate" | null;
 /**
  * Перевод идущих чатов на текущую версию. Данные и действие даёт приложение — редактор не знает, где сервер:
  * `chatsByState` — чаты на прежних версиях (`flow.chatsByState`), `migrate` — перевод с картой удалённых состояний
- * (`flow.migrateChats`).
+ * (`flow.migrateChats`). Отбор чатов в обоих вызовах один и тот же: окно показывает ровно тех, кого переведёт.
  */
 export interface FlowMigration {
   chatsByState(): Promise<ChatsInState[]>;
@@ -371,7 +371,8 @@ function useMigrateController(flow: AgentFlow, migration: FlowMigration | undefi
     try {
       const result = await migration.migrate(map);
       setMoved(result.moved);
-      setChats([]);
+      // Счётчик — заново с сервера: чаты, которые перевод пропустил (их держала другая копия), остаются в окне.
+      setChats(await migration.chatsByState().catch(() => []));
     } catch {
       setFailed(true);
     } finally {

@@ -428,6 +428,45 @@ export function describeFlowStoreContract(open: () => Promise<SharedFlowStores>)
           expect(await first.getChat(input.chatId)).toMatchObject({ versionId: "v3", stateId: "intro" });
         }));
 
+      it("список чатов сценария: без чатов версии `exceptVersionId`, только названные `chatIds`, с концом разговора", () =>
+        withStores(async ({ first, second }) => {
+          const one = chatInput({ versionId: "v1", stateId: "soft" });
+          const two = chatInput({ versionId: "v1", stateId: "intro" });
+          const fresh = chatInput({ versionId: "v2", stateId: "intro" });
+          const other = chatInput({ flowId: "shop-support", versionId: "v1" });
+          for (const input of [one, two, fresh, other]) await first.pinChat(input);
+          await first.endChat(two.chatId, { reason: "final", at: at(5) });
+
+          const all = await second.listFlowChats({ flowId: "sales-review" });
+          expect(all.map((row) => row.chatId)).toEqual([one, two, fresh].map((chat) => chat.chatId).sort());
+          expect(all.find((row) => row.chatId === one.chatId)).toEqual({
+            chatId: one.chatId,
+            ownerId: "anna",
+            flowId: "sales-review",
+            versionId: "v1",
+            stateId: "soft",
+            endedAt: null,
+            endReason: null,
+          });
+          expect(all.find((row) => row.chatId === two.chatId)).toMatchObject({ endedAt: at(5), endReason: "final" });
+          expect((await second.listFlowChats({ flowId: "sales-review", exceptVersionId: "v2" })).map((row) => row.chatId)).toEqual([one.chatId, two.chatId].sort());
+          expect((await second.listFlowChats({ flowId: "sales-review", chatIds: [two.chatId, other.chatId, "нет"] })).map((row) => row.chatId)).toEqual([two.chatId]);
+          expect(await second.listFlowChats({ flowId: "sales-review", chatIds: [] })).toEqual([]);
+        }));
+
+      it("перевод только названных чатов (`chatIds`): остальные на месте", () =>
+        withStores(async ({ first, second }) => {
+          const chats = Array.from({ length: 4 }, () => chatInput({ versionId: "v1" }));
+          for (const input of chats) await first.pinChat(input);
+          const chosen = [chats[0]!.chatId, chats[2]!.chatId];
+          const batch = { flowId: "sales-review", toVersionId: "v2", map: {}, limit: 10, at: at(1) };
+          expect((await second.migrateBatch({ ...batch, chatIds: chosen })).moved.sort()).toEqual([...chosen].sort());
+          expect(await second.migrateBatch({ ...batch, chatIds: chosen })).toEqual({ moved: [] });
+          expect(await second.migrateBatch({ ...batch, chatIds: [] })).toEqual({ moved: [] });
+          expect((await first.getChat(chats[1]!.chatId))?.versionId).toBe("v1");
+          expect((await first.getChat(chats[3]!.chatId))?.versionId).toBe("v1");
+        }));
+
       it("две копии переводят одновременно: каждый чат переводится один раз", () =>
         withStores(async ({ first, second }) => {
           const chats = Array.from({ length: 9 }, () => chatInput({ versionId: "v1" }));

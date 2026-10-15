@@ -373,7 +373,44 @@ export interface FlowFinish {
 
 // ---------- Перевод чатов на новую версию ----------
 
-export interface MigrateChatsInput {
+/** Чат сценария, который отбор (`filter`) решает считать и переводить или нет. */
+export interface FlowChatCandidate {
+  chatId: string;
+  ownerId: string;
+  flowId: string;
+  /** Версия, на которой чат сейчас. */
+  versionId: string;
+  stateId: string;
+  /** Разговор закончился (`flow.end`, конец сценария, срок вышел). */
+  ended: boolean;
+  endReason: FlowEndReason | null;
+  /** Тестовый чат редактора (`FlowTestChat`, создан с `flowTestChatData()`). */
+  test: boolean;
+  /** Данные чата (`Chat.data`): пометки приложения. Чата уже нет в службе — пусто. */
+  data: Record<string, unknown>;
+}
+
+/**
+ * Какие чаты сценария считать и переводить. Одинаково в `chatsByState` и `migrateChats`: что посчитали, то и переведут.
+ * По умолчанию закончившиеся разговоры и тестовые чаты редактора не берутся.
+ */
+export interface FlowChatSelection {
+  /** Только эти чаты. */
+  chatIds?: string[];
+  /** Свой отбор приложения: `false` — чат не считать и не переводить. */
+  filter?: (chat: FlowChatCandidate) => boolean | Promise<boolean>;
+  /** Брать и закончившиеся разговоры. */
+  includeEnded?: boolean;
+  /** Брать и тестовые чаты редактора. */
+  includeTestChats?: boolean;
+}
+
+export interface ChatsByStateOptions extends FlowChatSelection {
+  /** Без чатов, которые уже на этой версии. */
+  exceptVersionId?: string;
+}
+
+export interface MigrateChatsInput extends FlowChatSelection {
   flowId: string;
   toVersionId: string;
   /** Куда перевести чаты из состояний, которых нет в новой версии: id старого → id нового. */
@@ -387,8 +424,8 @@ export interface MigrateChatsInput {
 
 export interface ChatMigrator {
   /** Сколько чатов в каких состояниях; `exceptVersionId` — без чатов, которые уже на этой версии. */
-  chatsByState(flowId: string, options?: { exceptVersionId?: string }): Promise<ChatsInState[]>;
-  /** Переводит пачками; чаты применят перевод в начале своего следующего хода. */
+  chatsByState(flowId: string, options?: ChatsByStateOptions): Promise<ChatsInState[]>;
+  /** Переводит пачками отобранные чаты; они применят перевод в начале своего следующего хода. */
   migrateChats(input: MigrateChatsInput): Promise<{ moved: number }>;
 }
 

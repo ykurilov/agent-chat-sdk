@@ -2,6 +2,7 @@ import { CURRENT_FORMAT_VERSION } from "../conversation/types";
 import type { ChatClosure } from "../access/chat-closure";
 import type { ModelChoice } from "../models/model-choice";
 import type { ChatDataFilter } from "./chat-data";
+import type { TurnRequestContext } from "../page-context/page-context";
 import type { MemoryError, MemoryNote, MemoryNoteInput, MemoryRevertGuard, MemoryWriteGuard } from "../memory/long-term-memory";
 import type { ExternalChannel } from "../conversation/types";
 import type {
@@ -230,6 +231,27 @@ export interface ChatStorage {
    * Необязательный: без него такие чаты свободны через срок аренды.
    */
   clearChatTurnLeases?(): Promise<void>;
+  /**
+   * Пачка сообщений человека ждёт хода (`sendBurstMessage`): запись на чат, новая заменяет прежнюю. Нужна, чтобы пачку,
+   * чьё окно тишины ждала упавшая или перезапущенная копия сервера, ответила другая копия или следующий запуск.
+   *
+   * Необязательный (вместе с `takeAbandonedBursts`, `renewPendingBurst` и `removePendingBurst`): без него окно тишины живёт только в памяти
+   * копии — после перезапуска пачка ответит, только когда приложение повторит вызов.
+   */
+  savePendingBurst?(burst: StoredPendingBurst): Promise<void>;
+  /**
+   * Брошенные пачки — `heldUntil` не позже `abandonedBefore` — атомарно переходят к `holder` до `heldUntil` и
+   * возвращаются, не больше `limit`, ранние `dueAt` первыми. Две копии разом одну пачку не получат. `exceptHolder` —
+   * записи этого держателя не берутся, каким бы ни был их срок.
+   */
+  takeAbandonedBursts?(take: { abandonedBefore: string; holder: string; heldUntil: string; limit: number; exceptHolder?: string }): Promise<StoredPendingBurst[]>;
+  /**
+   * Продлить удержание до `heldUntil`, если запись чата всё ещё о сообщении `messageId` и держит её `holder`. Продлено —
+   * `true`; запись другая, взята другой копией или снята — `false`, ничего не меняется.
+   */
+  renewPendingBurst?(renew: { chatId: string; messageId: string; holder: string; heldUntil: string }): Promise<boolean>;
+  /** Снять запись пачки чата, если она всё ещё о сообщении `messageId`; о другом сообщении или нет — тихо ничего. */
+  removePendingBurst?(chatId: string, messageId: string): Promise<void>;
   /** Новая запись сжатия. Записи только добавляются; сообщения не меняются. Повтор id — ошибка. */
   insertCompaction(record: StoredCompaction): Promise<void>;
   /** Записи сжатия чата в порядке добавления. */
@@ -445,4 +467,19 @@ export function assertKnownFormatVersion(message: Pick<StoredMessage, "id" | "fo
   if (message.formatVersion > CURRENT_FORMAT_VERSION) {
     throw new UnsupportedFormatVersionError(message.id, message.formatVersion);
   }
+}
+
+/** Пачка, ждущая хода (`ChatStorage.savePendingBurst`). Время — ISO 8601 по часам службы. */
+export interface StoredPendingBurst {
+  chatId: string;
+  ownerId: string;
+  /** Последнее сообщение пачки: на него ход. */
+  messageId: string;
+  /** Конец окна тишины: раньше ход не начинается. */
+  dueAt: string;
+  /** Копия сервера, которая ждёт окно, и до какого времени её ожидание считается живым. Прошло — пачка брошена. */
+  holder: string;
+  heldUntil: string;
+  /** Страница хода (`SendMessageOptions.page`): ход после перезапуска идёт с ней. */
+  page?: TurnRequestContext;
 }

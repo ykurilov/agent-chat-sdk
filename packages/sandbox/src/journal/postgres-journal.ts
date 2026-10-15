@@ -1,6 +1,7 @@
 import { and, asc, eq, inArray, lt, notExists, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
+import { migratePostgresSchema } from "@ykurilov/agent-chat-core";
 import type { Pool } from "pg";
 import type { BlobRow, JournalStore, ModelCallRow, ToolCallRow } from "./journal-store";
 import { sandboxAnswerEdits, sandboxBlobRefs, sandboxBlobs, sandboxModelCalls, sandboxSettings, sandboxToolCalls } from "./postgres-schema";
@@ -12,21 +13,15 @@ const MIGRATION_LOCK_KEY = 7_311_900_443;
 const MIGRATIONS_TABLE = "__sandbox_migrations";
 
 /**
- * Приводит таблицы журнала к последней миграции. Идёт на одном соединении под блокировкой базы:
- * если несколько серверов стартуют сразу, второй ждёт первого и видит применённые миграции.
+ * Приводит таблицы журнала к последней миграции. Схема `agent_chat` создаётся под общей блокировкой всех пакетов, миграции — под своей:
+ * копии пакета ждут друг друга, а разные пакеты стартуют разом на пустой базе без гонки за схему.
  */
 export async function migrateJournalToLatest(pool: Pool, migrationsFolder: string): Promise<void> {
-  const client = await pool.connect();
-  try {
-    await client.query("select pg_advisory_lock($1)", [MIGRATION_LOCK_KEY]);
-    try {
-      await migrate(drizzle(client), { migrationsFolder, migrationsSchema: "agent_chat", migrationsTable: MIGRATIONS_TABLE });
-    } finally {
-      await client.query("select pg_advisory_unlock($1)", [MIGRATION_LOCK_KEY]);
-    }
-  } finally {
-    client.release();
-  }
+  await migratePostgresSchema({
+    connect: () => pool.connect(),
+    lockKey: MIGRATION_LOCK_KEY,
+    migrate: (client) => migrate(drizzle(client), { migrationsFolder, migrationsSchema: "agent_chat", migrationsTable: MIGRATIONS_TABLE }),
+  });
 }
 
 /** Хранилище журнала в PostgreSQL (схема `agent_chat`). Закрытие закрывает и пул. */

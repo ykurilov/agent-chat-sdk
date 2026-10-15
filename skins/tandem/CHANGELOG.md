@@ -1,5 +1,76 @@
 # @ykurilov/agent-chat-skin-tandem
 
+## 0.58.0
+
+### Patch Changes
+
+- Updated dependencies [760962e]
+  - @ykurilov/agent-chat-sandbox@0.58.0
+  - @ykurilov/agent-chat-flows@0.58.0
+  - @ykurilov/agent-chat-mcp@0.58.0
+  - @ykurilov/agent-chat-messengers@0.58.0
+  - @ykurilov/agent-chat-skills@0.58.0
+  - @ykurilov/agent-chat-react@0.58.0
+
+## 0.57.0
+
+### Patch Changes
+
+- 34074f9: Шапка доски сценария на телефоне: лишние кнопки уходят в меню «⋯», Прогон, Проверить граф и сохранение остаются на виду.
+  Новая подпись `labels.header.more`.
+- Updated dependencies [34074f9]
+- Updated dependencies [7c82b87]
+  - @ykurilov/agent-chat-flows@0.57.0
+  - @ykurilov/agent-chat-mcp@0.57.0
+  - @ykurilov/agent-chat-messengers@0.57.0
+  - @ykurilov/agent-chat-sandbox@0.57.0
+  - @ykurilov/agent-chat-skills@0.57.0
+  - @ykurilov/agent-chat-react@0.57.0
+
+## 0.56.0
+
+### Minor Changes
+
+- 949d3b2: Навыки агента: новый пакет `@ykurilov/agent-chat-skills` (список включённых навыков в блоке контекста, загрузка указаний
+  инструментом `use_skill`, версии, учёт загрузок, API и экран для админа) и скин экрана `@ykurilov/agent-chat-skin-tandem/skills`.
+- 1eadba9: Библиотека готовых картинок: новый пакет `@ykurilov/agent-chat-image-library` с инструментами `find_images` и
+  `show_image` поверх каталога приложения. Картинка показывается по ширине ответа с подписью, по нажатию — окно просмотра.
+  
+  - `images` у `AgentChat`, `ChatWorkspace`, `AgentPanel` принимает и список клиентов: `images={[imagesClient, imageLibraryClient]}`.
+    Одиночный клиент работает как раньше.
+  - Договор скина версии 26: у `GeneratedImages` необязательные `wide` и `caption`. Тандем их рисует. Скин версии 25
+    работает без правок: картинка будет плиткой ближайшей обычной пропорции (1:1, 3:2, 2:3, 16:9, 9:16) без подписи.
+  
+  Подробно и как подключить — `docs/image-library.md`.
+  
+  Отказ `show_image`, `show_video` и недоступный каталог в `find_images`, `find_videos` теперь ошибка инструмента (`ImageLibraryError`, `VideoLibraryError` с полем `kind`).
+  В ленте строка «ошибка» вместо зелёной галочки, модель получает тот же текст. Код, который читал `{ отказ }` из
+  результата `show_video` или `find_videos`, должен смотреть на `state: "output-error"` у части сообщения.
+- 24c313e: Новый пакет `@ykurilov/agent-chat-mcp`: серверы MCP, которые подключает админ приложения.
+  
+  - `createMcpServers({ store, secretKey, isAdmin, proxy?, spending?, limits?, syncIntervalMs? })` → `mcp.tools(model, appTools?)`
+    для `agent.tools` (первым; при одинаковом имени побеждает инструмент приложения), `mcp.admin`, `mcp.reload()`, `mcp.sync()`, `mcp.close()`. «Только админы» — по `model.viewer.isAdmin`;
+    `isAdmin` (может быть асинхронной) — для экрана. Правка доходит до всех копий сервера по отметке версии в хранилище. Только удалённые серверы (Streamable HTTP, SSE). Инструменты — из
+    сохранённого снимка списка: запрос к модели стабилен, упавший сервер не ломает начало запроса. Соединение — на
+    проверенный адрес DNS; заголовки прокси — только на `proxy.origin`.
+  - `createMcpAdminHandler({ mcp, resolveUser, allowedOrigins })` — адреса `/api/mcp`, не админу 404.
+  - Хранилища: `createMemoryMcpStore`, `/sqlite` `createSqliteMcpStore`, `/postgres` `createPostgresMcpStore`; миграции сами.
+  - `/react`: `McpAdmin`, `useMcpAdmin`, договор скина `McpSkin` v1 (с формой правки `McpServerCardView.edit`), надписи ru/en. Скин Тандема: `./mcp` → `tandemMcpSkin`.
+  - Ядро: штатный вид расхода `mcp_tool`; `agent.viewer` — права человека раз в начале хода, полем `viewer` в
+    `contextBlocks` и `AgentToolsModel`. Песочница: права тестового чата — по владельцу чата. web-tools: наружу `dnsHostResolver`.
+
+### Patch Changes
+
+- Updated dependencies [949d3b2]
+- Updated dependencies [1eadba9]
+- Updated dependencies [24c313e]
+  - @ykurilov/agent-chat-skills@0.56.0
+  - @ykurilov/agent-chat-react@0.56.0
+  - @ykurilov/agent-chat-mcp@0.56.0
+  - @ykurilov/agent-chat-sandbox@0.56.0
+  - @ykurilov/agent-chat-flows@0.56.0
+  - @ykurilov/agent-chat-messengers@0.56.0
+
 ## 0.55.0
 
 ### Minor Changes

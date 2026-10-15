@@ -5,4 +5,6 @@ interface ImportMetaEnv {
   readonly VITE_DEMO_SANDBOX?: string;
   /** `0` — собрать демо без страницы мессенджеров (проверка, что их код не попадает в обычную сборку). */
   readonly VITE_DEMO_MESSENGERS?: string;
+  /** `0` — собрать демо без экрана навыков (проверка, что его код не попадает в обычную сборку). */
+  readonly VITE_DEMO_SKILLS?: string;
 }

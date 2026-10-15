@@ -136,11 +136,24 @@ export interface ChatsInState {
   chats: number;
 }
 
+/** Чат сценария для отбора при переводе на новую версию. */
+export type FlowChatSummary = Pick<FlowChatRecord, "chatId" | "ownerId" | "flowId" | "versionId" | "stateId" | "endedAt" | "endReason">;
+
+export interface ListFlowChatsInput {
+  flowId: string;
+  /** Без чатов, которые уже на этой версии. */
+  exceptVersionId?: string;
+  /** Только эти чаты. */
+  chatIds?: string[];
+}
+
 export interface MigrateBatchInput {
   flowId: string;
   toVersionId: string;
   /** Куда перевести чаты из удалённых состояний. */
   map: StateMap;
+  /** Только эти чаты; нет — любые чаты сценария не на `toVersionId`. */
+  chatIds?: string[];
   limit: number;
   at: string;
 }
@@ -217,6 +230,8 @@ export interface FlowStore {
   getVersion(flowId: string, versionId: string): Promise<SavedFlowVersion | null>;
 
   countChatsByState(input: { flowId: string }): Promise<ChatsInState[]>;
+  /** Чаты сценария по порядку id: для отбора перед подсчётом и переводом. */
+  listFlowChats(input: ListFlowChatsInput): Promise<FlowChatSummary[]>;
   /** Перевести до `limit` чатов на версию `toVersionId`: версия меняется сразу, перевод состояния — ожидающим `migrate`. */
   migrateBatch(input: MigrateBatchInput): Promise<{ moved: string[] }>;
 

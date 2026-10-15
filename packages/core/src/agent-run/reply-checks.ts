@@ -254,6 +254,10 @@ export function createShownSteps() {
   let steps = 0;
   // Номера шагов, где на экране начинался текст.
   let textSteps: number[] = [];
+  const resetsToText = (fromEnd: number): number | null => {
+    const step = textSteps.at(-1 - fromEnd);
+    return step === undefined || step === 0 ? null : steps - step + 1;
+  };
   return {
     observe(chunk: UIMessageChunk): void {
       if (chunk.type === "start-step") steps += 1;
@@ -264,10 +268,9 @@ export function createShownSteps() {
       }
     },
     /** Сколько шагов стереть с конца, чтобы убрать шаг последнего текста; `null` — текста на экране нет. */
-    resetsToLastText(): number | null {
-      const last = textSteps.at(-1);
-      return last === undefined || last === 0 ? null : steps - last + 1;
-    },
+    resetsToLastText: (): number | null => resetsToText(0),
+    /** То же для текста `fromEnd`-го с конца (0 — последний); `null` — такого текста на экране нет. */
+    resetsToText,
   };
 }
 

@@ -15,9 +15,10 @@ export interface TemporaryPostgres {
  * поэтому повторное открытие и запросы «сбоку» работают. Блокировки сеанса (`pg_advisory_lock`) при этом общие для
  * всех подключений и ничего не исключают: блокировку миграций проверяет только прогон на настоящем PostgreSQL.
  */
-export async function startTemporaryPostgres(): Promise<TemporaryPostgres> {
+/** `maxConnections` — сколько подключений сервер сокета держит разом (по умолчанию четыре). */
+export async function startTemporaryPostgres(options: { maxConnections?: number } = {}): Promise<TemporaryPostgres> {
   const database = await PGlite.create({ loadDataDir: await emptyDatabaseSnapshot() });
-  const server = new PGLiteSocketServer({ db: database, host: "127.0.0.1", port: 0, maxConnections: 4 });
+  const server = new PGLiteSocketServer({ db: database, host: "127.0.0.1", port: 0, maxConnections: options.maxConnections ?? 4 });
   await server.start();
   return {
     connectionString: `postgres://postgres@${server.getServerConn()}/postgres`,

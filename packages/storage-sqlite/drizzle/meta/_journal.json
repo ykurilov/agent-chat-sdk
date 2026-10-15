@@ -127,6 +127,13 @@
       "when": 1791967992215,
       "tag": "0017_chat_turn_leases",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1792017491455,
+      "tag": "0018_pending_bursts",
+      "breakpoints": true
     }
   ]
 }

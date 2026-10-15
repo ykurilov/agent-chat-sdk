@@ -216,9 +216,38 @@ export function createSqliteFlowStore(filePath: string, migrationsFolder: string
         .all();
       return rows.map((row) => ({ ...row, chats: Number(row.chats) })).sort(byVersionAndState);
     },
+    async listFlowChats({ flowId, exceptVersionId, chatIds }) {
+      if (chatIds?.length === 0) return [];
+      const rows = db
+        .select({
+          chatId: flowChats.chatId,
+          ownerId: flowChats.ownerId,
+          flowId: flowChats.flowId,
+          versionId: flowChats.versionId,
+          stateId: flowChats.stateId,
+          endedAt: flowChats.endedAt,
+          endReason: flowChats.endReason,
+        })
+        .from(flowChats)
+        .where(
+          and(
+            eq(flowChats.flowId, flowId),
+            exceptVersionId === undefined ? undefined : ne(flowChats.versionId, exceptVersionId),
+            chatIds === undefined ? undefined : inArray(flowChats.chatId, chatIds),
+          ),
+        )
+        .orderBy(asc(flowChats.chatId))
+        .all();
+      return rows.map((row) => ({ ...row, endedAt: row.endedAt === null ? null : toIso(row.endedAt) }));
+    },
     async migrateBatch(input) {
       const change = migratePending(input);
-      const notYetMoved = and(eq(flowChats.flowId, input.flowId), ne(flowChats.versionId, input.toVersionId));
+      if (input.chatIds?.length === 0) return { moved: [] };
+      const notYetMoved = and(
+        eq(flowChats.flowId, input.flowId),
+        ne(flowChats.versionId, input.toVersionId),
+        input.chatIds === undefined ? undefined : inArray(flowChats.chatId, input.chatIds),
+      );
       const batch = db.select({ chatId: flowChats.chatId }).from(flowChats).where(notYetMoved).orderBy(asc(flowChats.chatId)).limit(input.limit);
       const moved = db
         .update(flowChats)

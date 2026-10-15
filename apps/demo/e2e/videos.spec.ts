@@ -49,9 +49,10 @@ test("видео: карточка «с 3:20» без запросов к пло
   await expect.poll(() => page.evaluate(() => document.fullscreenElement?.hasAttribute("data-video-frame") ?? false)).toBe(true);
   await page.evaluate(() => document.exitFullscreen());
 
-  // id не из каталога: сервер отказывает, карточки нет.
+  // id не из каталога: сервер отказывает ошибкой инструмента, карточки нет.
   await send(page, "Покажи несуществующее видео");
   await expect(lastAnswer(page)).toContainText("Такого видео в каталоге нет.");
+  await expect(lastAnswer(page).getByRole("button", { name: "show_video: ошибка" })).toBeVisible();
   await expect(lastAnswer(page)).toHaveAttribute("data-status", "complete");
   await expect(page.locator("iframe")).toHaveCount(1);
   await expect(card(page)).toHaveCount(0);

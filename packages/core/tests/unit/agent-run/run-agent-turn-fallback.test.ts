@@ -155,15 +155,11 @@ describe("runAgentTurn: запасной провайдер той же моде
     expect(logged.some((line) => line.startsWith("[запасной провайдер]"))).toBe(false);
   });
 
-  it.each([
-    [402, "insufficient_funds"],
-    [401, "invalid_key"],
-    [400, "other"],
-  ] as const)("код %i (%s) — запасной не пробуется (FR-032)", async (status, kind) => {
+  it("код 400 (other) — запасной не пробуется (FR-032); 402 и 401 — в run-agent-turn-provider-outage", async () => {
     const backup = answering();
-    const { answer } = await turnWithBackup(failing(status), backup);
+    const { answer } = await turnWithBackup(failing(400), backup);
     expect(backup.doStreamCalls).toHaveLength(0);
-    expect(answer.error).toEqual({ kind });
+    expect(answer.error).toEqual({ kind: "other" });
   });
 
   it("запасные выключены (false) — ошибка, запасной не пробуется", async () => {

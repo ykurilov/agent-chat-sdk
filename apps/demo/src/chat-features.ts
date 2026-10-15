@@ -3,6 +3,8 @@ import type { MessageAction, StepPhrases } from "@ykurilov/agent-chat-react";
 import { Heart } from "lucide-react";
 import { createElement } from "react";
 import { backgroundStepPhrases } from "@ykurilov/agent-chat-background/labels";
+import { imageLibraryClient } from "@ykurilov/agent-chat-image-library/react";
+import { imagesClient } from "@ykurilov/agent-chat-images/react";
 import { historySearchStepPhrases, withHistorySearchTitles } from "@ykurilov/agent-chat-history-search/labels";
 import { memoryStepPhrases, withMemoryToolTitles } from "@ykurilov/agent-chat-memory/labels";
 import { webToolStepPhrases, withWebToolTitles } from "@ykurilov/agent-chat-web-tools/labels";
@@ -53,3 +55,6 @@ export const demoMessageActions: MessageAction[] = [
     },
   },
 ];
+
+/** Картинки агента в демо: созданные (`generate_images`) и готовые из библиотеки (`show_image`) — в одном чате и одной карусели. */
+export const demoImageClients = [imagesClient, imageLibraryClient] as const;

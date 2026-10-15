@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 import type { Locator, Page } from "@playwright/test";
+import { screenshotFolder } from "../e2e/support/screen";
 
 /*
  * Этап 5 плана 058: редактор сценария в скине Тандем — один сквозной сценарий (создать состояние → соединить на доске →
@@ -175,17 +176,63 @@ test.describe("телефон, полный экран", () => {
 
   test("редактор занимает окно, кнопки в экране", async ({ page }) => {
     await open(page, "dark", "shop-support");
-    await page.getByRole("button", { name: "На весь экран" }).tap();
+    await page.getByRole("button", { name: "Ещё действия" }).tap();
+    await page.getByRole("menuitem", { name: "На весь экран" }).tap();
     const region = page.getByRole("dialog", { name: "Редактор сценария на весь экран" });
     await expect(region).toBeVisible();
     const box = (await region.boundingBox())!;
     expect(box.width).toBe(390);
     expect(await noHorizontalScroll(page)).toBeLessThanOrEqual(0);
     await page.screenshot({ path: `${screenshotDir}/dark-phone-fullscreen.png` });
-    await page.getByRole("button", { name: "Выйти из полного экрана" }).tap();
+    await page.getByRole("button", { name: "Ещё действия" }).tap();
+    await page.getByRole("menuitem", { name: "Выйти из полного экрана" }).tap();
     await expect(region).toHaveCount(0);
   });
 });
+
+const headerShots = screenshotFolder("agent-chat-flow-header");
+mkdirSync(headerShots, { recursive: true });
+
+// Шапка на телефоне: важное на виду, остальное в меню «⋯», ничего не уезжает за правый край.
+for (const width of [390, 360]) {
+  for (const theme of ["light", "dark"] as const) {
+    for (const header of ["full", "compact"] as const) {
+      test.describe(`телефон ${width}, ${theme}, шапка ${header}`, () => {
+        test.use({ viewport: { width, height: 800 }, hasTouch: true, isMobile: true });
+
+        test("кнопки помещаются, лишние в меню «⋯»", async ({ page }) => {
+          await page.goto(`/flow-editor.html?theme=${theme}&flow=sales-review${header === "compact" ? "&header=compact" : ""}`);
+          await page.locator(".react-flow__node").first().waitFor();
+          expect(await noHorizontalScroll(page)).toBeLessThanOrEqual(0);
+          const edge = async (name: string | RegExp) => {
+            const box = (await page.getByRole("button", { name }).first().boundingBox())!;
+            return box.x + box.width;
+          };
+          expect(await edge("Сохранено")).toBeLessThanOrEqual(width);
+          await expect(page.getByRole("button", { name: /Прогон/ })).toBeVisible();
+          await expect(page.getByRole("button", { name: /Проверить граф/ })).toBeVisible();
+          // Скрытые кнопки не видны и не берут фокус, их место занимает меню.
+          await expect(page.getByRole("button", { name: "JSON", exact: true })).toHaveCount(0);
+          await expect(page.getByRole("button", { name: "Состояние", exact: true })).toHaveCount(0);
+          const more = page.getByRole("button", { name: "Ещё действия" });
+          await expect(more).toBeVisible();
+          expect(await edge("Ещё действия")).toBeLessThanOrEqual(width);
+
+          await more.tap();
+          const menu = page.getByRole("menu");
+          await expect(menu).toBeVisible();
+          const box = (await menu.boundingBox())!;
+          expect(box.x).toBeGreaterThanOrEqual(0);
+          expect(box.x + box.width).toBeLessThanOrEqual(width);
+          await page.screenshot({ path: `${headerShots}/flow-header-${width}-${theme}-${header}.png` });
+
+          await menu.getByRole("menuitem", { name: "JSON" }).tap();
+          await expect(page.getByRole("textbox", { name: "Граф в формате JSON" })).toBeVisible();
+        });
+      });
+    }
+  }
+}
 
 test.describe("телефон", () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });

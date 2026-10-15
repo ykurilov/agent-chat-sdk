@@ -1,5 +1,38 @@
 # @ykurilov/agent-chat-storage-sqlite
 
+## 0.58.0
+
+### Patch Changes
+
+- Updated dependencies [332d90e]
+- Updated dependencies [2ed600d]
+- Updated dependencies [760962e]
+  - @ykurilov/agent-chat-core@0.58.0
+
+## 0.57.0
+
+### Minor Changes
+
+- ade99cc: Окно тишины `sendBurstMessage` ждётся по часам службы (`now`): `service.tickBursts()` сверяет ждущие пачки с подменёнными
+  часами — в тестах без настоящих пауз. Новый флаг `answerAfterRestart`: ждущая пачка записана в хранилище (новые
+  необязательные методы `savePendingBurst`, `takeAbandonedBursts`, `renewPendingBurst`, `removePendingBurst`; таблица `pending_bursts`,
+  миграции SQLite 0018 и PostgreSQL 0017) и после перезапуска получает ответ без повтора вызова — событием `turn-started`
+  с `unattended: true`. Отвечает по-прежнему одна копия.
+
+### Patch Changes
+
+- Updated dependencies [ade99cc]
+- Updated dependencies [86afa20]
+- Updated dependencies [624c10c]
+  - @ykurilov/agent-chat-core@0.57.0
+
+## 0.56.0
+
+### Patch Changes
+
+- Updated dependencies [24c313e]
+  - @ykurilov/agent-chat-core@0.56.0
+
 ## 0.55.0
 
 ### Patch Changes

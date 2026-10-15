@@ -55,6 +55,11 @@ export type BeforeTurnHandler = (input: {
    * `text` — их тексты через пустую строку. Одно решение на всю пачку; счёт сообщений — по длине списка.
    */
   burstMessageIds?: string[];
+  /**
+   * Ход на пачку начал сам сервер после перезапуска или за упавшую копию (`answerAfterRestart`): вызова, который ждёт
+   * ответ или отказ, нет. Отказ дойдёт только до журнала — сообщить человеку может само приложение.
+   */
+  unattended?: true;
 } & AbandonedAnswers) => Promise<BeforeTurnDecision | void> | BeforeTurnDecision | void;
 
 /**
@@ -103,6 +108,8 @@ export type TurnNotStartedHandler = (input: {
   text?: string;
   /** Пачка сообщений, как в `beforeTurn`. */
   burstMessageIds?: string[];
+  /** Ход без вызова, как в `beforeTurn`: об отказе (например, `spending_limit`) человеку может сказать только приложение. */
+  unattended?: true;
   reason: TurnNotStartedReason;
 } & AbandonedAnswers) => Promise<void> | void;
 

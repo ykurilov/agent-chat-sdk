@@ -1,4 +1,5 @@
 import type { AgentTurnInput } from "../agent-run/run-agent-turn";
+import type { AgentViewer } from "../agent-run/agent-viewer";
 import type { AppStateValues } from "../app-state/app-state";
 import { screenPlaceBlock } from "../agent-run/screen-place";
 import { todayBlock } from "../agent-run/today";
@@ -17,7 +18,7 @@ import { withoutUndelivered } from "../agent-run/undelivered";
  */
 export async function frozenContextForTurn(
   input: AgentTurnInput,
-  turn: { history: readonly AgentChatMessage[]; answer?: AgentChatMessage; state: AppStateValues },
+  turn: { history: readonly AgentChatMessage[]; answer?: AgentChatMessage; state: AppStateValues; viewer?: AgentViewer },
 ): Promise<{ data: FrozenContextData; fresh: boolean }> {
   const existing = turn.answer && frozenContextOf(turn.answer.parts);
   if (existing) return { data: existing, fresh: false };
@@ -31,7 +32,7 @@ export async function frozenContextForTurn(
  */
 export async function resumeNoteForTurn(
   input: AgentTurnInput,
-  turn: { history: readonly AgentChatMessage[]; answer: AgentChatMessage; state: AppStateValues },
+  turn: { history: readonly AgentChatMessage[]; answer: AgentChatMessage; state: AppStateValues; viewer?: AgentViewer },
 ): Promise<FrozenContextData | undefined> {
   const seen = latestFrozenContextOf(turn.answer.parts);
   if (!seen) return undefined;
@@ -43,7 +44,7 @@ export async function resumeNoteForTurn(
 /** Блоки хода против базы: дата, место, память и блоки приложения на сейчас. */
 async function freezeTurnContext(
   input: AgentTurnInput,
-  turn: { history: readonly AgentChatMessage[]; state: AppStateValues },
+  turn: { history: readonly AgentChatMessage[]; state: AppStateValues; viewer?: AgentViewer },
   base: { id: string; data: FrozenContextData } | null,
   place: string | null,
 ): Promise<FrozenContextData> {
@@ -69,6 +70,7 @@ async function freezeTurnContext(
         channel: input.channel ?? "web",
         audience: input.group ? "group" : "private",
         ...(input.staff && { staff: structuredClone(input.staff) }),
+        ...(turn.viewer && { viewer: turn.viewer }),
         modelId: input.modelId,
         providerId: input.providerId,
       },

@@ -15,7 +15,7 @@ import {
   silenceBoundaryByLocalClock,
 } from "./chat-storage";
 import { assertChatDataFilter, chatDataFields, chatDataMatches, chatDataOfInput, mergeChatData } from "./chat-data";
-import type { ChatListOptions, ChatStorage, ChatSubjectFilter, SpendingLimitStateRecord } from "./chat-storage";
+import type { ChatListOptions, ChatStorage, ChatSubjectFilter, SpendingLimitStateRecord, StoredPendingBurst } from "./chat-storage";
 
 /** Хранилище в памяти процесса — для тестов. Копирует данные на входе и выходе, как база. */
 type StoredNote = MemoryNote & { mergedInto?: string };
@@ -45,6 +45,8 @@ export function createInMemoryChatStorage(): ChatStorage {
   const aliveAt = new Map<string, string>();
   /** Аренды хода по чатам: кто держит и до какого времени (мс по часам этой машины). */
   const turnLeases = new Map<string, { holder: string; until: number }>();
+  /** Ждущие пачки по чатам. */
+  const pendingBursts = new Map<string, StoredPendingBurst>();
   const compactions: StoredCompaction[] = [];
   const branchSelections: StoredBranchSelection[] = [];
   const usageRecords: UsageRecord[] = [];
@@ -270,6 +272,7 @@ export function createInMemoryChatStorage(): ChatStorage {
     async deleteChat(chatId) {
       if (!chats.delete(chatId)) return;
       turnLeases.delete(chatId);
+      pendingBursts.delete(chatId);
       for (const message of [...messages.values()]) {
         if (message.chatId !== chatId) continue;
         messages.delete(message.id);
@@ -378,6 +381,33 @@ export function createInMemoryChatStorage(): ChatStorage {
 
     async clearChatTurnLeases() {
       turnLeases.clear();
+    },
+
+    async savePendingBurst(burst) {
+      pendingBursts.set(burst.chatId, structuredClone(burst));
+    },
+
+    async takeAbandonedBursts({ abandonedBefore, holder, heldUntil, limit, exceptHolder }) {
+      const abandoned = [...pendingBursts.values()]
+        .filter((burst) => Date.parse(burst.heldUntil) <= Date.parse(abandonedBefore) && burst.holder !== exceptHolder)
+        .sort((first, second) => Date.parse(first.dueAt) - Date.parse(second.dueAt))
+        .slice(0, limit);
+      return abandoned.map((burst) => {
+        const taken = { ...burst, holder, heldUntil };
+        pendingBursts.set(burst.chatId, taken);
+        return structuredClone(taken);
+      });
+    },
+
+    async renewPendingBurst({ chatId, messageId, holder, heldUntil }) {
+      const burst = pendingBursts.get(chatId);
+      if (burst?.messageId !== messageId || burst.holder !== holder) return false;
+      pendingBursts.set(chatId, { ...burst, heldUntil });
+      return true;
+    },
+
+    async removePendingBurst(chatId, messageId) {
+      if (pendingBursts.get(chatId)?.messageId === messageId) pendingBursts.delete(chatId);
     },
 
     async insertCompaction(record) {

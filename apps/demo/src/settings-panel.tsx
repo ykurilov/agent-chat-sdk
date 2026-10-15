@@ -4,8 +4,11 @@ import { demoFailures, demoUsers } from "./demo-settings";
 import type { DemoFailureId, DemoTheme, DemoUserId } from "./demo-settings";
 
 interface SettingsPanelProps {
-  /** Что открыто: чат, экран памяти, страница мессенджеров (`/messengers`, без кнопки: шапка на телефоне узкая) или страница с панелью агента. */
-  view: "chat" | "memory" | "messengers" | "panel-app" | "sandbox" | "lesson";
+  /**
+   * Что открыто: чат, экран памяти, страница мессенджеров (`/messengers`), навыков (`/skills`) или серверов MCP (`/mcp`) —
+   * без кнопок: шапка на телефоне узкая, — или страница с панелью агента.
+   */
+  view: "chat" | "memory" | "messengers" | "skills" | "mcp" | "panel-app" | "sandbox" | "lesson";
   user: DemoUserId;
   onUserChange: (user: DemoUserId) => void;
   failure: DemoFailureId;

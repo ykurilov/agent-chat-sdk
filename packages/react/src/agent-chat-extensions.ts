@@ -10,8 +10,9 @@ export interface DiagramsClient {
 }
 
 /**
- * Картинки агента на экране (пакет `@ykurilov/agent-chat-images`, `imagesClient`): сообщает слою поведения имя инструмента
- * и превращает его вызов в вид для скина. Нет `describe`-результата — вызов остаётся обычной строкой инструмента.
+ * Картинки агента на экране (пакет `@ykurilov/agent-chat-images`, `imagesClient`; библиотека картинок
+ * `@ykurilov/agent-chat-image-library`, `imageLibraryClient`): сообщает слою поведения имя инструмента и превращает его
+ * вызов в вид для скина. Нет `describe`-результата — вызов остаётся обычной строкой инструмента.
  */
 export interface ImagesClient {
   /** Имя инструмента, чьи вызовы рисуются как картинки: `generate_images`. */
@@ -53,8 +54,11 @@ export interface AgentChatExtensions {
    * На сервере — `agent.liveDemos: true`.
    */
   liveDemos?: boolean;
-  /** Картинки агента: `imagesClient`. */
-  images?: ImagesClient;
+  /**
+   * Картинки агента: один клиент (`imagesClient`) или несколько списком (`[imagesClient, imageLibraryClient]`) — у каждого
+   * своё имя инструмента. Окно просмотра листает картинки всех клиентов по порядку ленты. Список держите постоянным.
+   */
+  images?: ImagesClient | readonly ImagesClient[];
   /** Видео агента: `videosClient`. */
   videos?: VideosClient;
   /** Вид событий приложения в ответе: тип события → компонент (`{ lesson_passed: LessonPassedBadge }`). */

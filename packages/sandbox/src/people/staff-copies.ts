@@ -1,4 +1,4 @@
-import type { AfterTurnHandler, AgentToolsModel, Chat, ChatSubject, StaffActor } from "@ykurilov/agent-chat-core";
+import type { AfterTurnHandler, AgentToolsModel, AgentViewerInput, Chat, ChatSubject, StaffActor } from "@ykurilov/agent-chat-core";
 import { isSandboxOwner, realOwnerOf } from "../sandbox-owner";
 
 const STAFF_COPY_PREFIX = "staff-copy:";
@@ -108,6 +108,17 @@ export function createStaffCopies() {
       const copy = copyOfSubject(model.ownerId, model.subject);
       if (!copy) return { ...model, ownerId: realOwnerOf(model.ownerId) };
       return withOriginalChat({ ...model, ownerId: copy.personId, staff: model.staff ?? { id: realOwnerOf(model.ownerId) } }, copy);
+    },
+
+    /**
+     * Вход `agent.viewer` приложения — как у инструментов: права по владельцу чата. В копии — человек, `userId` и
+     * `staff` — админ; в обычном песочном чате — настоящий id админа.
+     */
+    viewerInput(input: AgentViewerInput): AgentViewerInput {
+      const copy = copyOfSubject(input.ownerId, input.subject);
+      if (!copy) return { ...input, ownerId: realOwnerOf(input.ownerId), userId: realOwnerOf(input.userId) };
+      const staff = input.staff ?? { id: realOwnerOf(input.ownerId) };
+      return withOriginalChat({ ...input, ownerId: copy.personId, userId: staff.id, staff }, copy);
     },
 
     /**

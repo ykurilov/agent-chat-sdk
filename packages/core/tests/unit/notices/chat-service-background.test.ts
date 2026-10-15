@@ -2,6 +2,7 @@ import { tool } from "ai";
 import type { ToolSet } from "ai";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import type { AgentViewerInput } from "../../../src/agent-run/agent-viewer";
 import type { AgentToolsModel } from "../../../src/agent-run/run-agent-turn";
 import type { BackgroundPort, BackgroundTasks } from "../../../src/background/background-tasks";
 import { researchHelper } from "../support/helper-fixtures";
@@ -76,6 +77,18 @@ describe("T046: подключение фона", () => {
     expect("subject" in helperModel).toBe(false);
     await expect(given.assertWithinLimit("anna", chat.id)).resolves.toBeUndefined();
     expect(typeof given.runHelper).toBe("function");
+  });
+
+  it("модель фонового помощника в групповом чате: audience «group» и канал — у viewer и у инструментов", async () => {
+    const { background, port } = fakeBackground();
+    const viewer = vi.fn(async (_input: AgentViewerInput) => ({ isAdmin: true }));
+    const { service } = noticeService(scriptedModel(), { background, agent: { viewer, helpers: { research: researchHelper({ background: true }) } } });
+    const chat = await askInNewChat(service, "всем привет", { channel: "telegram", group: { allowedTools: [], author: "Борис" } });
+    viewer.mockClear();
+    const helperModel = await port.current!.helperModel("research", "anna", chat.id);
+    expect(helperModel).toMatchObject({ audience: "group", channel: "telegram", viewer: { isAdmin: true } });
+    expect(viewer).toHaveBeenCalledTimes(1);
+    expect(viewer.mock.calls[0]![0]).toMatchObject({ audience: "group", channel: "telegram" });
   });
 
   it("модель фонового помощника в чате объекта знает ключ и данные объекта", async () => {

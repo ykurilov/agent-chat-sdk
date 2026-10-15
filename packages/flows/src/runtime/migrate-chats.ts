@@ -1,8 +1,10 @@
 import type { AgentFlow } from "../format/flow-format";
 import { stateById } from "../engine/flow-graph";
 import type { StateMap } from "../engine/migrate-run";
-import type { FlowChatRecord, FlowStore, SaveFlowVersionResult } from "../store/flow-store";
-import type { ChatMigrator, LoadedFlow } from "./flow-types";
+import type { ChatsInState, FlowChatRecord, FlowChatSummary, FlowStore, SaveFlowVersionResult } from "../store/flow-store";
+import { byVersionAndState } from "../store/flow-store-shared";
+import type { ChatMigrator, FlowChatCandidate, FlowChatSelection, LoadedFlow } from "./flow-types";
+import { testChatOffset } from "./test-clock";
 
 /** Сколько чатов хранилище переводит за одно обращение. */
 const MIGRATE_BATCH = 100;
@@ -16,7 +18,11 @@ export interface ChatMigratorDeps {
   saveVersion(loaded: LoadedFlow, flow: AgentFlow): Promise<SaveFlowVersionResult>;
   /** Пересчитать таймер переведённого чата по новой версии. Запись чата к этому времени уже на новой версии. */
   rescheduleMigrated(input: { record: FlowChatRecord; flow: AgentFlow; map: StateMap }): Promise<void>;
+  /** Данные чата (`Chat.data`) для отбора; чата нет в службе — `{}`. */
+  chatData(chat: { ownerId: string; chatId: string }): Promise<Record<string, unknown>>;
 }
+
+const chunks = <T>(items: T[], size: number): T[][] => Array.from({ length: Math.ceil(items.length / size) }, (_, index) => items.slice(index * size, (index + 1) * size));
 
 /** Перевод чатов на новую версию пачками: версия меняется сразу, состояние — в начале следующего хода чата. */
 export function createChatMigrator(deps: ChatMigratorDeps): ChatMigrator {
@@ -42,13 +48,42 @@ export function createChatMigrator(deps: ChatMigratorDeps): ChatMigrator {
     return { flow: found.flow };
   }
 
+  /** Чаты сценария после отбора: закончившиеся и тестовые — только по просьбе, потом свой отбор приложения. */
+  async function selectedChats(flowId: string, exceptVersionId: string | undefined, selection: FlowChatSelection): Promise<FlowChatCandidate[]> {
+    const rows = await store.listFlowChats({ flowId, ...(exceptVersionId !== undefined && { exceptVersionId }), ...(selection.chatIds && { chatIds: selection.chatIds }) });
+    const needsData = selection.filter !== undefined || selection.includeTestChats !== true;
+    const candidate = async ({ endedAt, ...row }: FlowChatSummary): Promise<FlowChatCandidate | null> => {
+      const data = needsData ? await deps.chatData(row) : {};
+      const test = testChatOffset(data) !== null;
+      if (test && selection.includeTestChats !== true) return null;
+      const chat: FlowChatCandidate = { ...row, ended: endedAt !== null, test, data };
+      return !selection.filter || (await selection.filter(chat)) ? chat : null;
+    };
+    const selected: FlowChatCandidate[] = [];
+    for (const part of chunks(rows.filter((row) => row.endedAt === null || selection.includeEnded === true), MIGRATE_BATCH)) {
+      for (const chat of await Promise.all(part.map(candidate))) if (chat) selected.push(chat);
+    }
+    return selected;
+  }
+
+  function countByState(chats: FlowChatCandidate[]): ChatsInState[] {
+    const counts = new Map<string, ChatsInState>();
+    for (const chat of chats) {
+      const key = JSON.stringify([chat.versionId, chat.stateId]);
+      const entry = counts.get(key) ?? { versionId: chat.versionId, stateId: chat.stateId, chats: 0 };
+      entry.chats += 1;
+      counts.set(key, entry);
+    }
+    return [...counts.values()].sort(byVersionAndState);
+  }
+
   return {
-    async chatsByState(flowId, options) {
-      const rows = await store.countChatsByState({ flowId });
-      return options?.exceptVersionId === undefined ? rows : rows.filter((row) => row.versionId !== options.exceptVersionId);
+    async chatsByState(flowId, options = {}) {
+      return countByState(await selectedChats(flowId, options.exceptVersionId, options));
     },
 
-    async migrateChats({ flowId, toVersionId, map, flow: raw }) {
+    async migrateChats(input) {
+      const { flowId, toVersionId, map, flow: raw } = input;
       const { flow: next, save } = await newVersion(flowId, toVersionId, raw);
 
       // Перевод нужен только удалённым состояниям: у тех, что в новой версии есть, чат остаётся на месте.
@@ -56,8 +91,9 @@ export function createChatMigrator(deps: ChatMigratorDeps): ChatMigrator {
       for (const [from, to] of Object.entries(removedMap)) {
         if (!stateById(next, to)) throw new Error(`Куда перевести чаты из «${from}»: состояния «${to}» нет в версии ${toVersionId}.`);
       }
-      const counts = await store.countChatsByState({ flowId });
-      const lost = [...new Set(counts.filter((row) => row.versionId !== toVersionId && row.chats > 0 && !stateById(next, row.stateId) && removedMap[row.stateId] === undefined).map((row) => row.stateId))];
+      // Отбор — один раз, до перевода: переводятся ровно те чаты, что посчитал бы `chatsByState` с тем же отбором.
+      const chats = await selectedChats(flowId, toVersionId, input);
+      const lost = [...new Set(chats.filter((chat) => !stateById(next, chat.stateId) && removedMap[chat.stateId] === undefined).map((chat) => chat.stateId))];
       if (lost.length > 0) {
         throw new Error(`В версии ${toVersionId} нет состояний ${lost.map((id) => `«${id}»`).join(", ")}, а в них есть чаты: выберите, куда их перевести.`);
       }
@@ -65,9 +101,8 @@ export function createChatMigrator(deps: ChatMigratorDeps): ChatMigrator {
       await save?.();
       const at = deps.now().toISOString();
       let moved = 0;
-      for (;;) {
-        const batch = await store.migrateBatch({ flowId, toVersionId, map: removedMap, limit: MIGRATE_BATCH, at });
-        if (batch.moved.length === 0) break;
+      for (const part of chunks(chats.map((chat) => chat.chatId), MIGRATE_BATCH)) {
+        const batch = await store.migrateBatch({ flowId, toVersionId, map: removedMap, chatIds: part, limit: part.length, at });
         moved += batch.moved.length;
         for (const chatId of batch.moved) {
           const record = await store.getChat(chatId);

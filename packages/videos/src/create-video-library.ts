@@ -6,6 +6,7 @@ import { parseVideoUrl } from "./video-address";
 import type { VideoProvider } from "./video-address";
 import { MAX_FOUND, checkVideoCatalog, checkVideoEntry, searchVideos } from "./video-catalog";
 import type { VideoEntry } from "./video-catalog";
+import { VideoLibraryError } from "./video-library-error";
 
 /** Кто спрашивает: по нему функции приложения могут учитывать права человека. */
 export interface VideoContext {
@@ -35,7 +36,10 @@ export interface VideoLibrary {
   tools(model: VideoLibraryModel): ToolSet;
 }
 
-/** Результат `show_video`: хранится в сообщении и целиком нужен карточке — даже если видео потом убрали из каталога. */
+/**
+ * Результат `show_video`: хранится в сообщении и целиком нужен карточке — даже если видео потом убрали из каталога.
+ * Отказ — `VideoLibraryError`; `{ отказ }` бывает только в сообщениях, сохранённых до 0.56.
+ */
 export type ShownVideo =
   | {
       видео: { id: string; название: string; площадка: VideoProvider; код: string; длительность?: number; обложка?: string; начало?: number };
@@ -145,7 +149,7 @@ export function createVideoLibrary(options: CreateVideoLibraryOptions): VideoLib
       inputSchema: findVideosInput,
       execute: async ({ query }) => {
         const result = await find(query, context);
-        if (result === CATALOG_UNAVAILABLE_MARK) return { отказ: CATALOG_UNAVAILABLE };
+        if (result === CATALOG_UNAVAILABLE_MARK) throw new VideoLibraryError("catalog_unavailable", CATALOG_UNAVAILABLE);
         const found = result.map(forModel);
         return found.length > 0 ? { найдено: found } : { найдено: [], совет: NOTHING_FOUND };
       },
@@ -157,10 +161,10 @@ export function createVideoLibrary(options: CreateVideoLibraryOptions): VideoLib
       inputSchema: showVideoInput,
       execute: async ({ id, startSeconds }): Promise<ShownVideo> => {
         const video = await get(id, context);
-        if (video === CATALOG_UNAVAILABLE_MARK) return { отказ: CATALOG_UNAVAILABLE };
-        if (!video) return { отказ: NOT_IN_CATALOG };
+        if (video === CATALOG_UNAVAILABLE_MARK) throw new VideoLibraryError("catalog_unavailable", CATALOG_UNAVAILABLE);
+        if (!video) throw new VideoLibraryError("not_in_catalog", NOT_IN_CATALOG);
         if (startSeconds !== undefined && video.durationSeconds !== undefined && startSeconds >= video.durationSeconds) {
-          return { отказ: `Начало ${timeLabel(startSeconds)} за концом видео: оно длится ${timeLabel(video.durationSeconds)}.` };
+          throw new VideoLibraryError("start_after_end", `Начало ${timeLabel(startSeconds)} за концом видео: оно длится ${timeLabel(video.durationSeconds)}.`);
         }
         return shown(video, startSeconds);
       },

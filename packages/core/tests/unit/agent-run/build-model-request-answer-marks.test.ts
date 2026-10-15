@@ -104,3 +104,90 @@ describe("buildModelRequest: пометка обрыва по длине (FR-054
     expect(request.messages[0]!.content).toEqual([{ type: "text", text: "Привет" }]);
   });
 });
+
+describe("buildModelRequest: реплика сотрудника после вопроса без ответа агента", () => {
+  const staff = (id: string, text: string): AgentChatMessage => ({
+    id,
+    role: "user",
+    parts: [{ type: "data-agent-notice", data: { notices: [{ kind: "staff", title: text, staffName: "Ольга" }], deliveryKey: id, wakeAgent: false } } as Part],
+  });
+  const question: AgentChatMessage = { id: "u1", role: "user", parts: [{ type: "text", text: "Где запись эфира?" }] };
+
+  it("хода не было — пометки «ход оборвался» нет: реплика сотрудника идёт за вопросом в том же сообщении, через пустую строку", async () => {
+    const request = await build([question, staff("s1", "Вот запись")]);
+    expect(JSON.stringify(request.messages)).not.toContain(UNANSWERED_NOTE);
+    expect(request.messages.map((message) => message.role)).toEqual(["user"]);
+    const [first, second] = texts(request.messages[0]!);
+    expect(first).toBe("Где запись эфира?");
+    expect(second).toMatch(/^\n\nЖивой сотрудник «Ольга» ответил человеку вместо тебя: «Вот запись»/);
+  });
+
+  it("две реплики сотрудника подряд — тоже без пометки", async () => {
+    const request = await build([question, staff("s1", "Сейчас найду"), staff("s2", "Вот запись")]);
+    expect(JSON.stringify(request.messages)).not.toContain(UNANSWERED_NOTE);
+    expect(request.messages.map((message) => message.role)).toEqual(["user"]);
+  });
+
+  it("человек отвечает после реплики сотрудника — без пометки: его слова идут в том же сообщении", async () => {
+    const thanks: AgentChatMessage = { id: "u2", role: "user", parts: [{ type: "text", text: "Спасибо" }] };
+    const request = await build([question, staff("s1", "Вот запись"), thanks]);
+    expect(JSON.stringify(request.messages)).not.toContain(UNANSWERED_NOTE);
+    expect(request.messages.map((message) => message.role)).toEqual(["user"]);
+    expect(texts(request.messages[0]!).at(-1)).toBe("\n\nСпасибо");
+  });
+
+  it("после ответа агента: реплика сотрудника и следующий вопрос — одно сообщение, без пометки", async () => {
+    const answer: AgentChatMessage = { id: "a1", role: "assistant", parts: [{ type: "text", text: "Ищу", state: "done" }] };
+    const thanks: AgentChatMessage = { id: "u2", role: "user", parts: [{ type: "text", text: "Спасибо" }] };
+    const request = await build([question, answer, staff("s1", "Вот запись"), thanks]);
+    expect(JSON.stringify(request.messages)).not.toContain(UNANSWERED_NOTE);
+    expect(request.messages.map((message) => message.role)).toEqual(["user", "assistant", "user"]);
+    expect(texts(request.messages[2]!)[0]).toMatch(/^Живой сотрудник/);
+  });
+
+  it("кэш: следующие ход и вопрос не меняют уже отправленное начало запроса", async () => {
+    const thanks: AgentChatMessage = { id: "u2", role: "user", parts: [{ type: "text", text: "Спасибо" }] };
+    const first = await build([question, staff("s1", "Вот запись"), thanks]);
+    const next = await build([
+      question,
+      staff("s1", "Вот запись"),
+      thanks,
+      { id: "a2", role: "assistant", parts: [{ type: "text", text: "Пожалуйста", state: "done" }] },
+      { id: "u3", role: "user", parts: [{ type: "text", text: "Пока" }] },
+    ]);
+    expect(next.messages.map((message) => message.role)).toEqual(["user", "assistant", "user"]);
+    expect(JSON.stringify(next.messages[0])).toBe(JSON.stringify(first.messages[0]));
+  });
+
+  it("кэш: следующее сообщение человека после реплики сотрудника только дописывает части — отправленные не меняются", async () => {
+    const before = await build([question, staff("s1", "Вот запись")]);
+    const after = await build([question, staff("s1", "Вот запись"), { id: "u2", role: "user", parts: [{ type: "text", text: "Спасибо" }] }]);
+    expect(before.messages).toHaveLength(1);
+    expect(after.messages).toHaveLength(1);
+    const sent = before.messages[0]!.content as unknown[];
+    expect(JSON.stringify((after.messages[0]!.content as unknown[]).slice(0, sent.length))).toBe(JSON.stringify(sent));
+    expect(texts(after.messages[0]!).at(-1)).toContain("Спасибо");
+  });
+
+  it("склеивается только соседний вопрос: следующий вопрос без ответа агента — снова с пометкой", async () => {
+    const request = await build([
+      question,
+      staff("s1", "Вот запись"),
+      { id: "u2", role: "user", parts: [{ type: "text", text: "Спасибо" }] },
+      { id: "u3", role: "user", parts: [{ type: "text", text: "Алло?" }] },
+    ]);
+    expect(request.messages.map((message) => message.role)).toEqual(["user", "assistant", "user"]);
+    expect(request.messages[1]!.content).toEqual([{ type: "text", text: UNANSWERED_NOTE }]);
+  });
+
+  it("вопрос без ответа после сбоя (без сотрудника) — пометка остаётся", async () => {
+    const request = await build([question, { id: "u2", role: "user", parts: [{ type: "text", text: "Алло?" }] }]);
+    expect(request.messages[1]!.content).toEqual([{ type: "text", text: UNANSWERED_NOTE }]);
+  });
+
+  it("реплика сотрудника после ответа агента — отдельным сообщением, как раньше", async () => {
+    const request = await build([question, { id: "a1", role: "assistant", parts: [{ type: "text", text: "Ищу", state: "done" }] }, staff("s1", "Вот запись")]);
+    expect(request.messages.map((message) => message.role)).toEqual(["user", "assistant", "user"]);
+    expect(texts(request.messages[2]!)[0]).toMatch(/^Живой сотрудник/);
+  });
+});

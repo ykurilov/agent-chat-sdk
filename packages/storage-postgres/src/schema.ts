@@ -6,6 +6,7 @@ import type {
   MemoryOptimizationStatus,
   StoredMessage,
   TokenUsage,
+  TurnRequestContext,
   UsageSource,
   VoiceCut,
 } from "@ykurilov/agent-chat-core";
@@ -177,6 +178,20 @@ export const chatTurnLeases = agentChatSchema.table("chat_turn_leases", {
   chatId: text("chat_id").primaryKey(),
   holder: text("holder").notNull(),
   until: timestamp("until", { withTimezone: true, mode: "string" }).notNull(),
+});
+
+/**
+ * Ждущие пачки сообщений человека: одна запись на чат. Сроки — по часам службы. Внешним ключом с чатом не связана:
+ * удаление чата снимает её само.
+ */
+export const pendingBursts = agentChatSchema.table("pending_bursts", {
+  chatId: text("chat_id").primaryKey(),
+  ownerId: text("owner_id").notNull(),
+  messageId: text("message_id").notNull(),
+  dueAt: timestamp("due_at", { withTimezone: true, mode: "date" }).notNull(),
+  holder: text("holder").notNull(),
+  heldUntil: timestamp("held_until", { withTimezone: true, mode: "date" }).notNull(),
+  page: jsonb("page").$type<TurnRequestContext>(),
 });
 
 /**

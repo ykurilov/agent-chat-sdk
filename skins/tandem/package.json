@@ -1,6 +1,6 @@
 {
   "name": "@ykurilov/agent-chat-skin-tandem",
-  "version": "0.55.0",
+  "version": "0.58.0",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,
@@ -24,6 +24,16 @@
       "@ykurilov/agent-chat-source": "./src/messengers/index.ts",
       "types": "./dist/types/messengers/index.d.ts",
       "import": "./dist/messengers/index.js"
+    },
+    "./skills": {
+      "@ykurilov/agent-chat-source": "./src/skills/index.ts",
+      "types": "./dist/types/skills/index.d.ts",
+      "import": "./dist/skills/index.js"
+    },
+    "./mcp": {
+      "@ykurilov/agent-chat-source": "./src/mcp/index.ts",
+      "types": "./dist/types/mcp/index.d.ts",
+      "import": "./dist/mcp/index.js"
     },
     "./flows": {
       "@ykurilov/agent-chat-source": "./src/flows/index.ts",
@@ -64,15 +74,19 @@
     "react": "^19.3.0",
     "@ykurilov/agent-chat-messengers": "workspace:^",
     "@ykurilov/agent-chat-sandbox": "workspace:^",
-    "@ykurilov/agent-chat-flows": "workspace:^"
+    "@ykurilov/agent-chat-flows": "workspace:^",
+    "@ykurilov/agent-chat-skills": "workspace:^",
+    "@ykurilov/agent-chat-mcp": "workspace:^"
   },
   "devDependencies": {
     "@testing-library/react": "^16.3.3",
     "@types/react": "^19.3.0",
     "@ykurilov/agent-chat-attachments": "workspace:*",
     "@ykurilov/agent-chat-flows": "workspace:*",
+    "@ykurilov/agent-chat-mcp": "workspace:*",
     "@ykurilov/agent-chat-messengers": "workspace:*",
     "@ykurilov/agent-chat-sandbox": "workspace:*",
+    "@ykurilov/agent-chat-skills": "workspace:*",
     "@ykurilov/agent-chat-web-tools": "workspace:*",
     "jsdom": "^30.1.1",
     "react": "^19.3.0"
@@ -85,6 +99,12 @@
       "optional": true
     },
     "@ykurilov/agent-chat-flows": {
+      "optional": true
+    },
+    "@ykurilov/agent-chat-skills": {
+      "optional": true
+    },
+    "@ykurilov/agent-chat-mcp": {
       "optional": true
     }
   }

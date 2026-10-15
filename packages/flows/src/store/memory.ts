@@ -153,10 +153,18 @@ export function memoryFlowStore(): FlowStore {
       }
       return [...counts.values()].sort(byVersionAndState);
     },
+    async listFlowChats({ flowId, exceptVersionId, chatIds }) {
+      const only = chatIds && new Set(chatIds);
+      return [...chats.values()]
+        .filter((row) => row.flowId === flowId && row.versionId !== exceptVersionId && (!only || only.has(row.chatId)))
+        .sort((left, right) => compareText(left.chatId, right.chatId))
+        .map(({ chatId, ownerId, flowId: id, versionId, stateId, endedAt, endReason }) => ({ chatId, ownerId, flowId: id, versionId, stateId, endedAt, endReason }));
+    },
     async migrateBatch(input) {
       const change = migratePending(input);
+      const only = input.chatIds && new Set(input.chatIds);
       const batch = [...chats.values()]
-        .filter((row) => row.flowId === input.flowId && row.versionId !== input.toVersionId)
+        .filter((row) => row.flowId === input.flowId && row.versionId !== input.toVersionId && (!only || only.has(row.chatId)))
         .sort((left, right) => compareText(left.chatId, right.chatId))
         .slice(0, input.limit);
       for (const row of batch) {

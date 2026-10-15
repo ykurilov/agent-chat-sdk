@@ -19,7 +19,7 @@
 - Проверка ответа перед отправкой: ловит чужие слова на другом языке и выдуманные ссылки.
 - Внешний вид отделён от поведения. Готовый вид — скин «Тандем», любой компонент можно заменить своим.
 
-Версия 0.55.0.
+Версия 0.58.0.
 
 ## Установка
 
@@ -187,14 +187,17 @@ pnpm vite                  # страница: откройте http://localhost
 | [`@ykurilov/agent-chat-diagrams`](packages/diagrams) | схемы в ответах |
 | [`@ykurilov/agent-chat-flows`](packages/flows) | сценарии: разговор по карте шагов, дням и касаниям |
 | [`@ykurilov/agent-chat-history-search`](packages/history-search) | поиск по истории чатов |
+| [`@ykurilov/agent-chat-image-library`](packages/image-library) | библиотека готовых картинок |
 | [`@ykurilov/agent-chat-images`](packages/images) | картинки от агента |
 | [`@ykurilov/agent-chat-limits`](packages/limits) | лимиты расходов |
+| [`@ykurilov/agent-chat-mcp`](packages/mcp) | серверы MCP, которые подключает админ: инструменты чужих сервисов для агента |
 | [`@ykurilov/agent-chat-memory`](packages/memory) | долгая память о человеке |
 | [`@ykurilov/agent-chat-messengers`](packages/messengers) | чат в Telegram, VK и MAX |
 | [`@ykurilov/agent-chat-react`](packages/react) | экран чата на React и договор скина |
 | [`@ykurilov/agent-chat-reply-check`](packages/reply-check) | проверка ответа перед отправкой: чужие слова и выдуманные ссылки |
 | [`@ykurilov/agent-chat-sandbox`](packages/sandbox) | песочница для кода агента |
 | [`@ykurilov/agent-chat-server`](packages/server) | сервер чата для Hono и Next.js |
+| [`@ykurilov/agent-chat-skills`](packages/skills) | навыки агента: указания для отдельных задач, которые агент загружает сам |
 | [`@ykurilov/agent-chat-storage-postgres`](packages/storage-postgres) | хранилище переписки в PostgreSQL |
 | [`@ykurilov/agent-chat-storage-sqlite`](packages/storage-sqlite) | хранилище переписки в SQLite |
 | [`@ykurilov/agent-chat-videos`](packages/videos) | видео в ответах |

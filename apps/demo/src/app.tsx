@@ -1,7 +1,6 @@
 import { Button } from "@tandem/ui";
 import { attachmentsClient } from "@ykurilov/agent-chat-attachments/react";
 import { diagramsClient } from "@ykurilov/agent-chat-diagrams";
-import { imagesClient } from "@ykurilov/agent-chat-images/react";
 import { videosClient } from "@ykurilov/agent-chat-videos/react";
 import { ChatLabelsProvider, ChatWorkspace } from "@ykurilov/agent-chat-react";
 import type { ChatListSkin, ChatSkin } from "@ykurilov/agent-chat-react";
@@ -10,7 +9,7 @@ import { createVoiceInput } from "@ykurilov/agent-chat-voice";
 import { createVoiceDialogEngine } from "@ykurilov/agent-chat-voice-dialog";
 import type { LatencyReport } from "@ykurilov/agent-chat-voice-dialog";
 import { lazy, Suspense, useCallback, useMemo, useState } from "react";
-import { demoLabels, demoMessageActions, demoStepPhrases, demoWidgets } from "./chat-features";
+import { demoImageClients, demoLabels, demoMessageActions, demoStepPhrases, demoWidgets } from "./chat-features";
 import { demoComposerActions } from "./demo-composer-actions";
 import { demoAppEvents } from "./demo-app-events";
 import { CustomToolCallRow } from "./custom-tool-call-row";
@@ -56,6 +55,12 @@ const sandboxPath = "/sandbox";
 /** Страница мессенджеров тоже ленивая: `VITE_DEMO_MESSENGERS=0` вырезает её из сборки совсем. */
 const MessengersPage = import.meta.env.VITE_DEMO_MESSENGERS === "0" ? null : lazy(() => import("./messengers-page"));
 const messengersPath = "/messengers";
+/** Экран навыков агента — тоже ленивый: `VITE_DEMO_SKILLS=0` вырезает его из сборки. */
+const SkillsPage = import.meta.env.VITE_DEMO_SKILLS === "0" ? null : lazy(() => import("./skills-page"));
+const skillsPath = "/skills";
+// Серверы MCP админа: страница грузится лениво, адреса `/api/mcp` отвечают не админу 404.
+const McpPage = import.meta.env.VITE_DEMO_MCP === "0" ? null : lazy(() => import("./mcp-page"));
+const mcpPath = "/mcp";
 
 /** Экран памяти агента открывается по адресу `/memory`. */
 const memoryPath = "/memory";
@@ -101,7 +106,11 @@ export function App() {
           ? "sandbox"
           : MessengersPage && location.pathname === messengersPath
             ? "messengers"
-            : "chat";
+            : SkillsPage && location.pathname === skillsPath
+              ? "skills"
+              : McpPage && location.pathname === mcpPath
+                ? "mcp"
+                : "chat";
   // Замена одного компонента скина: остальные остаются теми же, поведение чата не трогается.
   const skin = useMemo<ChatSkin & ChatListSkin>(
     () => (customToolRow ? { ...tandemSkin, ToolCallRow: CustomToolCallRow } : tandemSkin),
@@ -174,6 +183,14 @@ export function App() {
             <Suspense fallback={null}>
               <MessengersPage key={user} />
             </Suspense>
+          ) : view === "skills" && SkillsPage ? (
+            <Suspense fallback={null}>
+              <SkillsPage key={user} />
+            </Suspense>
+          ) : view === "mcp" && McpPage ? (
+            <Suspense fallback={null}>
+              <McpPage key={user} />
+            </Suspense>
           ) : view === "panel-app" ? (
             <PanelAppRoot key={user} api={api} userKey={user} />
           ) : (
@@ -190,7 +207,7 @@ export function App() {
               widgets={demoWidgets}
               diagrams={diagramsClient}
               liveDemos
-              images={imagesClient}
+              images={demoImageClients}
               videos={videosClient}
               messageActions={demoMessageActions}
               composerActions={demoComposerActions}

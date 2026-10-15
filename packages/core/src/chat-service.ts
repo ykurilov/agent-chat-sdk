@@ -32,6 +32,7 @@ import { deliveryKeyOf, MAX_SERVER_TURNS_IN_ROW, noticeMessageParts, serverTurns
 import { noticesOfPart } from "./notices/notices-for-model";
 import type { TurnObserver } from "./agent-run/turn-observer";
 import { checkProviderFallback } from "./agent-run/next-attempt";
+import { createProviderOutages } from "./provider-errors/provider-outages";
 import type { ProviderFallbackSetting } from "./agent-run/next-attempt";
 import { resolveToolResultLimit } from "./agent-run/tool-result-limit";
 import { createToolQueue, resolveSequentialTools } from "./agent-run/sequential-tools";
@@ -59,7 +60,7 @@ import type { ChatGreeting, ImportChatInput, OpenSubjectChatInput, OpenSubjectCh
 import { branchForks, currentChildOf, nextSiblingTime, selectCurrentBranch } from "./conversation/branches";
 import { withoutGlueFragments } from "./conversation/glue-fragments";
 import { closeHangingToolCalls, partsForContinuation } from "./conversation/hanging-tool-calls";
-import { loadCurrentBranchLinks } from "./conversation/load-current-branch";
+import { loadCurrentBranch, loadCurrentBranchLinks } from "./conversation/load-current-branch";
 import { appStatePart, foldAppState, publicAppState } from "./app-state/app-state";
 import type { AppStateRecord, AppStateValues } from "./app-state/app-state";
 import { branchStateOf, readBranchState } from "./app-state/branch-state";
@@ -105,7 +106,7 @@ import type { ModelChoice, ModelMenu } from "./models/model-choice";
 import { createCacheMissWatch } from "./usage/cache-miss-watch";
 import { recordSpentTokens, usageMinusJournaled } from "./usage/record-usage";
 import { ChatBusyError, createRunningAnswerRegistry } from "./running-answers/running-answer-registry";
-import { BURST_BUSY_RETRY_MS, BURST_PART_TYPE, BURST_PENDING_GRACE_MS, burstPart, burstText, burstToAnswer, burstVerdict, createBurstWaits, isBurstPending, resolveQuietMs } from "./bursts/message-bursts";
+import { BURST_BUSY_RETRY_MS, BURST_HOLD_MS, BURST_HOLD_RENEW_MS, BURST_PART_TYPE, BURST_PENDING_GRACE_MS, BURST_SWEEP_LIMIT, burstPart, burstText, burstToAnswer, burstVerdict, createBurstWaits, isBurstPending, resolveQuietMs } from "./bursts/message-bursts";
 import { createChatTurnLeases } from "./chat-turn-lease";
 import { createTurnSteering, isCorrection, steerPart } from "./steering/turn-steering";
 import type { SteeringTurn } from "./steering/turn-steering";
@@ -119,9 +120,9 @@ import type { SpendingLimits, SpendingStatus } from "./spending/spending-limits"
 import { CHAT_DATA_MAX_BYTES, assertChatData, assertChatDataFilter, assertChatDataPatch, chatDataOfInput } from "./storage/chat-data";
 import type { ChatDataFilter } from "./storage/chat-data";
 import { MessageAlreadyFinishedError, MessageNotAwaitingError } from "./storage/chat-storage";
-import type { AwaitingMessagePatch, ChatStorage, ChatSubjectFilter } from "./storage/chat-storage";
+import type { AwaitingMessagePatch, ChatStorage, ChatSubjectFilter, StoredPendingBurst } from "./storage/chat-storage";
 import { createAfterTurn } from "./turn-hooks/after-turn";
-import { validateAppEvent } from "./turn-hooks/turn-hooks";
+import { TurnRefusedError, validateAppEvent } from "./turn-hooks/turn-hooks";
 import { APP_EVENT_PART_TYPE, markedAsCopiedAppEvents } from "./turn-hooks/app-events";
 import { ActionForbiddenError, resolveChatCapabilities } from "./access/chat-capabilities";
 import { clientVisibilityOf } from "./access/client-visibility";
@@ -161,6 +162,8 @@ import type { AgentWidgetSettings } from "./widgets/widget-types";
 import { assembleInstructions, createInstructionsAssembler } from "./instructions/assemble-instructions";
 import type { InstructionBlocks } from "./instructions/assemble-instructions";
 import { notifyTurnFinished } from "./agent-run/turn-finished";
+import { resolveViewerOutsideTurn } from "./agent-run/agent-viewer";
+import type { AgentViewerSource } from "./agent-run/agent-viewer";
 import type { TurnFinishedHandler } from "./agent-run/turn-finished";
 
 export { DEFAULT_TEXT_MODE_NOTE, DEFAULT_VOICE_MODE_HINT };
@@ -340,6 +343,16 @@ export interface AgentSettings {
    */
   contextBlocks?: ContextBlocksSource;
   /**
+   * Права человека из базы приложения (админ ли, тариф): зовётся один раз в начале хода, до `contextBlocks` и сборки
+   * инструментов; повторная попытка и запасной провайдер не зовут снова. Итог — полем `viewer` в `contextBlocks` и в
+   * модели инструментов (`AgentToolsModel.viewer`), в запрос к модели не идёт. Ещё зовётся перед сжатием истории и
+   * запуском фонового помощника: их инструменты те же (канал и группа — по последнему сообщению человека; срок ответа
+   * 10 с). Бросила или вернула не объект — ход кончается ошибкой
+   * (`other`), в журнал сервера — `[agent.viewer] …`. `isAdmin` читают пакеты (серверы MCP, навыки). Не задано —
+   * поля `viewer` нет.
+   */
+  viewer?: AgentViewerSource;
+  /**
    * Срок ответа `contextBlocks`, мс. Не ответила или бросила — блоки приложения берутся из прошлого ответа чата, в
    * журнал сервера — строка `[блоки контекста] …`; функция получает отмену через `abortSignal`. «Стоп» отменяет её
    * сразу. По умолчанию 5000; 0 или `Infinity` — без срока; иначе от 1000 до 2³¹−1.
@@ -383,6 +396,15 @@ export interface SendBurstOptions extends SendMessageOptions {
    * умолчанию 3000; целое от 0 до 600 000. 0 — без ожидания, но сообщения, пришедшие во время хода, всё равно склеиваются.
    */
   quietMs?: number;
+  /**
+   * Пачка переживает перезапуск без повтора вызова: хранилище с ждущими пачками (`savePendingBurst`) помнит её до
+   * ответа, а упала или перезапустилась копия посреди окна — ответит обход (`recoverInterruptedAnswers`, `tickBursts`).
+   * Такой ход приходит событием `turn-started` с `unattended: true`; поток — `subscribe` (ход уже кончился — `null`:
+   * ответ в истории). Запись пачки не удалась — вызов отказывает до записи сообщения. Своей очереди повторов каналу
+   * не нужно. Нет — как раньше: после перезапуска канал повторяет вызов с тем же `message.id` (так делают мессенджеры
+   * SDK; обход и повтор вместе дали бы ответ, который повтор не напечатает).
+   */
+  answerAfterRestart?: boolean;
 }
 
 /** Сообщение пачки записано; ход на пачку — позже. */
@@ -505,6 +527,12 @@ export interface ChatServiceOptions {
   lockedToolOutputs?: readonly string[];
   /** События чата вне потока ответа. Нет — служба создаёт свои (`createChatServer` создаёт сам). */
   chatEvents?: ChatEvents;
+  /**
+   * Несколько служб чата на одном хранилище (своя инструкция на версию продукта и т. п.): какой службе отдать брошенную
+   * пачку (`answerAfterRestart`), найденную обходом этой службы (при старте, регулярно, `tickBursts`). Нет — отвечает
+   * сама эта служба. Задайте один и тот же `serviceFor` всем службам на этом хранилище: брошенные проверяет любая.
+   */
+  abandonedBursts?: AbandonedBurstsOptions;
   /** Фоновые задачи (пакет `@ykurilov/agent-chat-background`). Нет — запрос к модели побайтно прежний. */
   background?: BackgroundTasks;
   /**
@@ -727,6 +755,22 @@ export class InvalidWidgetAnswerError extends Error {
 interface RequestScope {
   capabilities?: Promise<ChatCapabilities>;
 }
+
+/** «Брошены все»: единственная копия при старте берёт все ждущие пачки, других копий нет. */
+const FAR_FUTURE_ISO = "9999-12-31T23:59:59.999Z";
+
+/** Кому отдать брошенную пачку (`ChatServiceOptions.abandonedBursts`). */
+export interface AbandonedBurstsOptions {
+  /**
+   * Служба чата этой пачки: эта же, другая служба приложения или новая, созданная сейчас (`createChatService` или
+   * `createChatServer`). `null` — нужной службы нет: пачка никому не отдаётся и ждёт следующего обхода (через 30 с).
+   * Бросок — то же, со строкой в журнал. Зовётся на каждую взятую пачку, до хода; `chat` — чат из хранилища.
+   */
+  serviceFor(burst: { ownerId: string; chatId: string; chat: Chat }): ChatService | null | undefined | Promise<ChatService | null | undefined>;
+}
+
+/** Службы этого модуля и их приём брошенной пачки: обход одной службы отдаёт пачку другой (`abandonedBursts`). */
+const abandonedBurstReceivers = new WeakMap<object, (burst: StoredPendingBurst) => Promise<void>>();
 
 interface StaleSweep {
   timer?: ReturnType<typeof setTimeout>;
@@ -966,10 +1010,19 @@ export interface ChatService {
    * на пачку с `burstMessageIds`, касания сценария (`deliverNotices` с `wakeAgent`) пока ждут (`busy`). Решение — по
    * общей истории: годится для нескольких копий сервера. Повтор с тем же id (сервер упал посреди окна) не пишет копию,
    * а доводит ход. Права и закрытый чат — до записи, как у `sendMessage`; лимит расходов — при начале хода.
+   * Окно идёт по часам службы (`now`, ручной обход — `tickBursts`). С `answerAfterRestart` пачка переживает перезапуск
+   * без повтора вызова: ответит обход, событием `turn-started` с `unattended: true`.
    * @throws ChatBusyError ответ идёт на другой копии сервера или служба останавливается.
    * @throws TypeError неверное `quietMs`.
    */
   sendBurstMessage(userId: string, chatId: string, message: IncomingUserMessage, options?: SendBurstOptions): Promise<BurstMessageResult>;
+  /**
+   * Обход пачек сейчас: окна этой копии решают заново по часам службы (`now`), брошенные пачки из хранилища (их копия
+   * упала, срок удержания `BURST_HOLD_MS` после окна вышел) получают ход. Сам идёт раз в `STALE_ANSWERS_SWEEP_EVERY_MS`
+   * после `recoverInterruptedAnswers`. Звать вручную — когда часы службы подменены (тесты, прогон сценариев): сдвинули
+   * часы, вызвали, ход начался без настоящего ожидания.
+   */
+  tickBursts(): Promise<void>;
   /**
    * Поправка, пока агент отвечает: сообщение человека пишется сразу (ребёнок идущего ответа или прошлой поправки), агент
    * берёт его на ближайшей границе шага — ответ закрывается, и ход продолжается новым ответом на поправки (поток —
@@ -1336,6 +1389,8 @@ export function createChatService(input: ChatServiceOptions): ChatService {
   const modelSilence = resolveModelSilence(modelSilenceTimeout);
   const cacheMissWatch = cacheMissLog === false ? undefined : createCacheMissWatch({ logError });
   checkProviderFallback(providerFallback, options.catalog);
+  // Отказы провайдеров по деньгам и ключу — общие на службу: пауза пустого провайдера для всех чатов и фона.
+  const providerOutages = createProviderOutages({ now: () => now().getTime(), logError });
   const placeMaxLength = resolvePlaceMaxLength(placeMaxLengthSetting);
   const browserToolTimeoutMs = resolveBrowserToolTimeoutMs(browserToolTimeoutSetting);
   /** Браузерные вызовы, которые ждут ответа вкладки: в памяти процесса, как и реестр идущих ответов. */
@@ -1406,7 +1461,11 @@ export function createChatService(input: ChatServiceOptions): ChatService {
   /** Окна тишины пачек этой копии: касания ждут, остановка службы обрывает. */
   const burstWaits = createBurstWaits();
   /** Аренда хода чата в хранилище: один ход за раз на чат и между копиями сервера. */
-  const turnLeases = createChatTurnLeases({ storage, holder: crypto.randomUUID(), logError });
+  /** Эта копия службы: держатель аренд хода и записей ждущих пачек. */
+  const copyId = crypto.randomUUID();
+  const turnLeases = createChatTurnLeases({ storage, holder: copyId, logError });
+  /** Обходы ждущих пачек в пути: остановка службы ждёт их. */
+  const burstSweeps = new Set<Promise<void>>();
   /** Запись сообщений пачки по чатам — по очереди вызовов: порядок в истории тот, в каком они пришли. */
   const burstWrites = new Map<string, Promise<unknown>>();
   // Очереди инструментов «по одному» по чатам: живут, пока в них есть вызовы (FR-057).
@@ -2250,6 +2309,8 @@ export function createChatService(input: ChatServiceOptions): ChatService {
       usageSource?: UsageSource;
       /** Ответ доставит приложение (`deliverNotices` с `awaitAnswer`): в `turn-started` — `deliveredByApp`. */
       deliveredByApp?: boolean;
+      /** Ход начал обход брошенной пачки, потока у вызова нет: в `turn-started` — `unattended`. */
+      unattended?: boolean;
       /** Ход начат: id ответа и его конец (после записи итога и `afterTurn`). */
       onStarted?: (turn: { answerId: string; finished: Promise<void> }) => void;
     },
@@ -2318,6 +2379,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
           modelSilence,
           ...(limits.maxOutputTokens !== undefined && { maxOutputTokens: limits.maxOutputTokens }),
           ...(providerFallback !== undefined && { providerFallback }),
+          providerOutages,
           ...(cacheMissWatch && { cacheMissWatch }),
           ...(options.turnObserver && { turnObserver: options.turnObserver }),
           ...(options.limits && { assertWithinLimit: () => assertWithinSpendingLimit(chat.ownerId, chatId) }),
@@ -2447,7 +2509,15 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     steeringTurn = steering.begin(chatId, answerId);
     if (stopsWhileStarting.delete(chatId)) registry.abort(chatId);
     const turnEvent = { ownerId: chat.ownerId, chatId, messageId: answerId, trigger, channel };
-    chatEvents.emit({ type: "turn-started", ...turnEvent, ...(launch.deliveredByApp && { deliveredByApp: true as const }) });
+    chatEvents.emit({
+      type: "turn-started",
+      ...turnEvent,
+      ...(launch.deliveredByApp && { deliveredByApp: true as const }),
+      ...(launch.unattended && { unattended: true as const }),
+    });
+    if (launch.unattended && chatEvents.hasListeners?.() === false) {
+      logError(`Ход без вызова на пачку чата ${chatId}: на события чата никто не подписан — ответ будет только в истории`);
+    }
     launch.onStarted?.({ answerId, finished });
     // Ход пошёл: его место освобождается, когда ход закончится, а не когда закончится запуск.
     liveAnswerIds.add(answerId);
@@ -2615,6 +2685,9 @@ export function createChatService(input: ChatServiceOptions): ChatService {
           await assertStillOpen(chatId);
           const earlier = await storage.getMessage(message.id);
           if (earlier?.chatId === chatId && earlier.role === "user") return earlier;
+          // Под замком чата и до записи сообщения: записи пачки ложатся в порядке сообщений, последняя остаётся. Не
+          // записалась — вызов отказывает, сообщения нет: повтор с тем же id запишет оба.
+          if (sendOptions?.answerAfterRestart) await savingPendingBurst(userId, chatId, message.id, now().getTime() + quietMs, sendOptions.page);
           const written = await writingHumanMessage(userId, chatId, await currentBranch(chatId), message, text, files, sendOptions, { quietMs });
           chatEvents.emit({ type: "message-added", ownerId: userId, chatId, messageId: written.id });
           return written;
@@ -2644,11 +2717,17 @@ export function createChatService(input: ChatServiceOptions): ChatService {
    * сообщение или ответ уже есть — `null`. Иначе ход через `beforeTurn` (один на пачку) под замком чата; пока шла
    * проверка, пачка выросла — ход не начат (`turnNotStarted` с `busy`), ответит более позднее сообщение.
    */
-  async function answeringBurst(userId: string, chatId: string, question: StoredMessage, sendOptions: SendBurstOptions | undefined): Promise<ReadableStream<UIMessageChunk> | null> {
+  async function answeringBurst(
+    userId: string,
+    chatId: string,
+    questionId: string,
+    page: TurnRequestContext | undefined,
+    unattended = false,
+  ): Promise<ReadableStream<UIMessageChunk> | null> {
     const otherCopy = waitingForOtherCopy(chatId);
     for (;;) {
       if (closing) throw new ChatBusyError(chatId);
-      const verdict = burstVerdict(await currentBranch(chatId), question.id, now().getTime());
+      const verdict = burstVerdict(await currentBranch(chatId), questionId, now().getTime());
       if (verdict.kind === "skip") return null;
       if (verdict.kind === "wait") {
         // Остановка началась, пока читалась ветка: окно не заводится.
@@ -2665,16 +2744,20 @@ export function createChatService(input: ChatServiceOptions): ChatService {
       const burstMessageIds = verdict.burst.map((message) => message.id);
       try {
         const stream = await startingTurn(
-          { userId, chat, action: "send", text: burstText(verdict.burst), messageId: question.id, burstMessageIds },
-          async (pass): Promise<ReadableStream<UIMessageChunk> | null> => {
+          { userId, chat, action: "send", text: burstText(verdict.burst), messageId: questionId, burstMessageIds, ...(unattended && { unattended: true as const }) },
+          async (pass): Promise<ReadableStream<UIMessageChunk> | "unattended" | null> => {
             const branch = await currentBranch(chatId);
-            if (burstVerdict(branch, question.id, now().getTime()).kind !== "start") return null;
-            if (pass.kind === "hold") return heldTurn(userId, chatId, question.id);
+            if (burstVerdict(branch, questionId, now().getTime()).kind !== "start") return null;
+            if (pass.kind === "hold") return unattended ? (heldTurn(userId, chatId, questionId), "unattended") : heldTurn(userId, chatId, questionId);
             takeTurnSlot(userId, chatId);
-            return startAnswer("send", userId, chatId, branch, sendOptions?.page, undefined, undefined, replyOf(pass));
+            if (!unattended) return startAnswer("send", userId, chatId, branch, page, undefined, undefined, replyOf(pass));
+            const reply = replyOf(pass);
+            await launchTurn(userId, chatId, branch, { parentId: branch.at(-1)!.id, page, action: "send", detached: true, unattended: true, ...(reply !== undefined && { reply }) });
+            return "unattended";
           },
           (result) => (result === null ? "busy" : undefined),
         );
+        if (stream === "unattended") return null;
         return stream && viewerStream(userId, chat, {}, async () => stream);
       } catch (error) {
         // Другой ход этой копии успел занять чат между проверкой и замком: ждём его и решаем заново.
@@ -2684,6 +2767,171 @@ export function createChatService(input: ChatServiceOptions): ChatService {
         throw error;
       }
     }
+  }
+
+  /** Хранилище помнит ждущие пачки: все четыре метода есть. */
+  const keepsPendingBursts = Boolean(storage.savePendingBurst && storage.takeAbandonedBursts && storage.renewPendingBurst && storage.removePendingBurst);
+
+  /**
+   * Запись «пачке ответить не раньше конца окна» в хранилище: эта копия держит её, пока ждёт окно, и ещё `BURST_HOLD_MS`.
+   * Сбой — наружу: без записи пачка не переживёт перезапуск.
+   */
+  async function savingPendingBurst(ownerId: string, chatId: string, messageId: string, dueAt: number, page: TurnRequestContext | undefined): Promise<void> {
+    if (!keepsPendingBursts) return;
+    await storage.savePendingBurst!({
+      chatId,
+      ownerId,
+      messageId,
+      dueAt: new Date(dueAt).toISOString(),
+      holder: copyId,
+      heldUntil: new Date(dueAt + BURST_HOLD_MS).toISOString(),
+      ...(page && { page }),
+    });
+  }
+
+  /**
+   * Пока эта копия ждёт окно или решает пачку, удержание её записи продлевается каждые `BURST_HOLD_RENEW_MS`: другая
+   * копия не сочтёт пачку брошенной. Запись взяли или сняли — продление кончается. Возвращает остановку.
+   */
+  function renewingBurstHold(chatId: string, messageId: string, dueAt: number, holder: string): () => void {
+    const timer = setInterval(() => {
+      const heldUntil = new Date(Math.max(now().getTime(), dueAt) + BURST_HOLD_MS).toISOString();
+      storage.renewPendingBurst!({ chatId, messageId, holder, heldUntil }).then(
+        (held) => {
+          if (!held) clearInterval(timer);
+        },
+        (error: unknown) => logError(`Удержание пачки чата ${chatId} не продлилось: ${error instanceof Error ? error.message : String(error)}`),
+      );
+    }, BURST_HOLD_RENEW_MS);
+    (timer as { unref?: () => void }).unref?.();
+    return () => clearInterval(timer);
+  }
+
+  /** Пачка подождёт следующего обхода: чат или предел ходов человека заняты, служба останавливается. */
+  const burstWaitsForNextSweep = (error: unknown) => error instanceof ChatBusyError || error instanceof TooManyTurnsError;
+
+  /**
+   * Ход на пачку сообщения `questionId`. Пачка записана в хранилище (`kept`, конец окна `dueAt`) — пока решение не
+   * принято, удержание записи продлевается, а принято (ход начат, отвечать не этому сообщению, отказ) — запись снимается.
+   * Занятость (`ChatBusyError`, `TooManyTurnsError`) и остановка службы — запись остаётся: ответит следующий обход.
+   */
+  function answeringRecordedBurst(
+    ownerId: string,
+    chatId: string,
+    questionId: string,
+    page: TurnRequestContext | undefined,
+    burst: { kept: false } | { kept: true; dueAt: number; unattended?: boolean; holder?: string },
+  ): Promise<ReadableStream<UIMessageChunk> | null> {
+    const unattended = burst.kept && burst.unattended === true;
+    if (!burst.kept || !keepsPendingBursts) return burstWaits.holding(chatId, () => answeringBurst(ownerId, chatId, questionId, page, unattended));
+    const stopRenewing = renewingBurstHold(chatId, questionId, burst.dueAt, burst.holder ?? copyId);
+    const answering = burstWaits.holding(chatId, () => answeringBurst(ownerId, chatId, questionId, page, unattended)).finally(stopRenewing);
+    void answering
+      .then(
+        () => true,
+        (error: unknown) => !burstWaitsForNextSweep(error),
+      )
+      .then((decided) => {
+        if (decided)
+          return storage
+            .removePendingBurst!(chatId, questionId)
+            .catch((error: unknown) => logError(`Запись пачки чата ${chatId} не снялась: ${error instanceof Error ? error.message : String(error)}`));
+      });
+    return answering;
+  }
+
+  /** Сколько брошенных пачек эта копия решает сейчас, и кто ждёт свободного места (`BURST_SWEEP_LIMIT`). */
+  let burstDecisions = 0;
+  const burstDecisionWaiters = new Set<() => void>();
+  const burstDecisionFreed = () => new Promise<void>((resolve) => burstDecisionWaiters.add(resolve));
+  function releasingBurstDecision(): void {
+    burstDecisions--;
+    for (const waiter of [...burstDecisionWaiters]) {
+      burstDecisionWaiters.delete(waiter);
+      waiter();
+    }
+  }
+
+  /**
+   * Отказ хода на брошенную пачку: вызова нет — строка в журнал. Занятость — без строки: ответит следующий обход.
+   * Лимит расходов приложение узнает из `turnNotStarted` (`unattended`), отказ — из своего `beforeTurn`.
+   */
+  function reportingAbandonedBurst(chatId: string, error: unknown): void {
+    if (burstWaitsForNextSweep(error)) return;
+    const why = error instanceof TurnRefusedError ? `отказ приложения ${error.code}: ${error.message}` : error instanceof Error ? error.message : String(error);
+    logError(`Ход на брошенную пачку чата ${chatId} не начался: ${why}`);
+  }
+
+  /**
+   * Брошенная пачка, взятая обходом (этой или другой службы): ход без вызова. Чат, где эта служба сама ждёт окно, не
+   * трогается: ответит её вызов. Кончается, когда решение принято; отказ — в журнал.
+   */
+  async function receivingAbandonedBurst(burst: StoredPendingBurst): Promise<void> {
+    if (burstWaits.has(burst.chatId)) return;
+    await answeringRecordedBurst(burst.ownerId, burst.chatId, burst.messageId, burst.page, { kept: true, dueAt: Date.parse(burst.dueAt), unattended: true, holder: burst.holder }).then(
+      () => {},
+      (error: unknown) => reportingAbandonedBurst(burst.chatId, error),
+    );
+  }
+
+  /**
+   * Кому отдать взятую пачку: `abandonedBursts.serviceFor` или себе. Нужной службы нет, `serviceFor` упал или вернул не
+   * службу SDK — пачка никому не отдаётся (чужая служба не ответит) и ждёт следующего обхода: удержание кончится.
+   */
+  async function routingAbandonedBurst(burst: StoredPendingBurst): Promise<void> {
+    const serviceFor = options.abandonedBursts?.serviceFor;
+    if (!serviceFor) return receivingAbandonedBurst(burst);
+    let target: ChatService | null | undefined;
+    try {
+      const chat = await storage.getChat(burst.chatId);
+      // Чат удалён: отвечать некому, запись снимет своя служба.
+      if (!chat) return receivingAbandonedBurst(burst);
+      target = await serviceFor({ ownerId: burst.ownerId, chatId: burst.chatId, chat });
+    } catch (error) {
+      logError(`Служба для брошенной пачки чата ${burst.chatId} не нашлась (serviceFor): ${error instanceof Error ? error.message : String(error)} — пачка ждёт следующего обхода`);
+      return;
+    }
+    if (!target) {
+      logError(`Для брошенной пачки чата ${burst.chatId} нет службы (serviceFor → ${String(target)}): пачка ждёт следующего обхода`);
+      return;
+    }
+    const receive = abandonedBurstReceivers.get(target);
+    if (!receive) {
+      logError(`serviceFor для брошенной пачки чата ${burst.chatId} вернул не службу чата SDK: пачка ждёт следующего обхода`);
+      return;
+    }
+    await receive(burst);
+  }
+
+  /**
+   * Обход брошенных пачек: записи, чей срок удержания не позже `abandonedBefore` (кроме записей `exceptHolder`), переходят
+   * к этой копии порциями, пока не кончатся, и получают ход без вызова (`unattended`). Одновременно решается не больше
+   * `BURST_SWEEP_LIMIT` пачек; каждую получает служба по `abandonedBursts.serviceFor` или эта. Обход кончается, когда
+   * всё взятое разошлось по решениям, — их конца он не ждёт.
+   */
+  function sweepingBursts(take: { abandonedBefore: string; exceptHolder?: string }): Promise<void> {
+    if (!keepsPendingBursts || closing) return Promise.resolve();
+    const sweep = (async () => {
+      for (;;) {
+        if (closing) return;
+        const free = BURST_SWEEP_LIMIT - burstDecisions;
+        if (free <= 0) {
+          await burstDecisionFreed();
+          continue;
+        }
+        const heldUntil = new Date(now().getTime() + BURST_HOLD_MS).toISOString();
+        const taken = await storage.takeAbandonedBursts!({ ...take, holder: copyId, heldUntil, limit: free });
+        if (taken.length === 0) return;
+        for (const burst of taken) {
+          burstDecisions++;
+          void routingAbandonedBurst(burst).finally(releasingBurstDecision);
+        }
+      }
+    })()
+      .catch((error: unknown) => logError(`Обход ждущих пачек не удался: ${error instanceof Error ? error.message : String(error)}`))
+      .finally(() => burstSweeps.delete(sweep));
+    burstSweeps.add(sweep);
+    return sweep;
   }
 
   /**
@@ -3197,7 +3445,13 @@ export function createChatService(input: ChatServiceOptions): ChatService {
         })
         .catch(() => {});
       const question = await recording;
-      const turn = burstWaits.holding(chatId, () => answeringBurst(userId, chatId, question, burstOptions));
+      const turn = answeringRecordedBurst(
+        userId,
+        chatId,
+        question.id,
+        burstOptions?.page,
+        burstOptions?.answerAfterRestart ? { kept: true, dueAt: Date.parse(question.createdAt) + quietMs } : { kept: false },
+      );
       // Вызывающий может не ждать хода (ответит более позднее сообщение): отказ не становится «необработанным».
       turn.catch(() => {});
       return { messageId: question.id, turn };
@@ -3517,8 +3771,17 @@ export function createChatService(input: ChatServiceOptions): ChatService {
       // Хуки итога, ждущие с прошлого запуска, — до прерывания: прерванные сейчас получат свой хук сами.
       await afterTurn?.recoverPending(liveAnswerIds);
       // Задачи фона восстанавливаются вместе с ответами.
-      const [count] = await Promise.all([recoverAnswersOnStart(recoverOptions?.soleServer === true), options.background?.recover()]);
+      const soleServer = recoverOptions?.soleServer === true;
+      const [count] = await Promise.all([recoverAnswersOnStart(soleServer), options.background?.recover()]);
+      // Пачки — после ответов и аренд: чаты прошлого запуска уже свободны. Единственная копия берёт все: других нет.
+      // Единственная копия: всё, что держал прежний запуск, брошено; свои свежие записи не трогаем.
+      await sweepingBursts(soleServer ? { abandonedBefore: FAR_FUTURE_ISO, exceptHolder: copyId } : { abandonedBefore: now().toISOString() });
       return count;
+    },
+
+    async tickBursts() {
+      burstWaits.wakeAll();
+      await sweepingBursts({ abandonedBefore: now().toISOString() });
     },
 
     async closeChat({ ownerId, chatId, code, message }) {
@@ -3556,6 +3819,8 @@ export function createChatService(input: ChatServiceOptions): ChatService {
       try {
         // Идущая проверка брошенных ответов может закрыть ответ или позвать хук итога: её тоже ждём.
         await sweeping;
+        // Обход пачек в пути: взятые им пачки видят остановку и остаются в хранилище до следующего запуска.
+        while (burstSweeps.size > 0) await Promise.allSettled([...burstSweeps]);
         // Запуски, начатые до остановки, доходят до реестра или срываются: их ходы тоже ждём.
         while (startingWork.size > 0) await Promise.allSettled([...startingWork]);
         // Остановленный ход сам пишет итог; не прошла конечная запись — ход помечает ответ брошенным.
@@ -3609,7 +3874,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
           if (sweep.stopped) return;
           sweep.timer = setTimeout(() => {
             // Ждущие хуки итога — той же проверкой: брошенный упавшей копией доделывается, когда его срок с запасом вышел.
-            sweep.running = Promise.all([recoverStaleAnswers(), afterTurn?.recoverPending(liveAnswerIds)])
+            sweep.running = Promise.all([recoverStaleAnswers(), afterTurn?.recoverPending(liveAnswerIds), sweepingBursts({ abandonedBefore: now().toISOString() })])
               .then(() => undefined)
               .catch((failure: unknown) =>
                 logError(`Проверка брошенных ответов не удалась: ${failure instanceof Error ? failure.message : "неизвестная ошибка"}`),
@@ -3723,6 +3988,12 @@ export function createChatService(input: ChatServiceOptions): ChatService {
         const choice = effectiveChoiceOfChat(options.catalog, env, chat, defaultChoice);
         const found = findModel(options.catalog, choice.modelId, choice.providerId);
         const subject = subjectOfChat(chat);
+        // Канал и группа — по последнему сообщению человека, как у хода: в группе админских инструментов нет.
+        const { channel, group } = turnChannelOf(await loadCurrentBranch(storage, chatId));
+        const audience = group ? "group" : "private";
+        const viewer =
+          options.agent.viewer &&
+          (await resolveViewerOutsideTurn(options.agent.viewer, { chatId, ownerId, messageId: "", chatData: chatDataOfInput(chat), subject, channel, audience }));
         const model: AgentToolsModel = {
           profile: found.profile,
           providerId: found.provider.id,
@@ -3731,11 +4002,12 @@ export function createChatService(input: ChatServiceOptions): ChatService {
           place: null,
           // Вкладки у фоновой задачи нет: сообщать об изменённых данных некому.
           notifyDataChanged: () => {},
-          channel: "web",
-          audience: "private",
+          channel,
+          audience,
           messageId: "",
           ...(subject && { subject }),
           chat: { ...(chatDataOfInput(chat) && { data: chatDataOfInput(chat)! }) },
+          ...(viewer && { viewer }),
         };
         return helperToolsModel(model, {
           storage,
@@ -3751,6 +4023,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
           modelSilence,
           logError,
           ...(providerFallback !== undefined && { providerFallback }),
+          providerOutages,
           ...(options.turnObserver && { turnObserver: options.turnObserver }),
           ...(options.limits && { assertWithinLimit: () => assertWithinSpendingLimit(ownerId, chatId) }),
         });
@@ -3761,6 +4034,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     };
   }
 
+  abandonedBurstReceivers.set(service, receivingAbandonedBurst);
   return service;
 
   function isDetachedAnswer(last: StoredMessage | undefined, runningId: string | null): boolean {

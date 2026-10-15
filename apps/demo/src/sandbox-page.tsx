@@ -1,12 +1,11 @@
 import { attachmentsClient } from "@ykurilov/agent-chat-attachments/react";
 import { diagramsClient } from "@ykurilov/agent-chat-diagrams";
-import { imagesClient } from "@ykurilov/agent-chat-images/react";
 import { AgentSandbox } from "@ykurilov/agent-chat-sandbox/react";
 import { TandemChatNotFound, tandemSkin } from "@ykurilov/agent-chat-skin-tandem";
 import { tandemSandboxSkin } from "@ykurilov/agent-chat-skin-tandem/sandbox";
 import { videosClient } from "@ykurilov/agent-chat-videos/react";
 import { useEffect, useState } from "react";
-import { demoWidgets } from "./chat-features";
+import { demoImageClients, demoWidgets } from "./chat-features";
 
 const sandboxApi = "/api/sandbox";
 
@@ -40,7 +39,7 @@ export default function SandboxPage() {
         attachments: attachmentsClient,
         widgets: demoWidgets,
         diagrams: diagramsClient,
-        images: imagesClient,
+        images: demoImageClients,
         videos: videosClient,
       }}
       people

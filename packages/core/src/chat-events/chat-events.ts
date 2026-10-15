@@ -21,6 +21,11 @@ export type ChatEvent =
        * мессенджер его не шлют. Нет — доставляют каналы, как прежде.
        */
       deliveredByApp?: true;
+      /**
+       * Ход начал сервер сам, и потока у вызова нет: ответ на пачку, брошенную упавшей или перезапущенной копией
+       * (`sendBurstMessage`). Каналы провожают такой ход, как ход по служебному сообщению. Нет — поток у вызова.
+       */
+      unattended?: true;
     }
   | {
       type: "turn-finished";
@@ -72,6 +77,8 @@ export interface ChatEvents {
   /** Возвращает отписку. */
   subscribe(listener: (event: ChatEvent) => void): () => void;
   emit(event: ChatEvent): void;
+  /** Есть ли слушатели. Необязательный: своя рассылка (общая шина копий) может не знать — тогда не проверяется. */
+  hasListeners?(): boolean;
 }
 
 /** Рассылка событий в памяти процесса. Упавший слушатель не мешает остальным. */
@@ -84,6 +91,7 @@ export function createChatEvents(logError: (error: unknown) => void = () => {}):
         listeners.delete(listener);
       };
     },
+    hasListeners: () => listeners.size > 0,
     emit(event) {
       for (const listener of [...listeners]) {
         try {

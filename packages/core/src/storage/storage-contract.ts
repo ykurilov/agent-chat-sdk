@@ -1,5 +1,5 @@
 import { jsonSchema } from "ai";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { CURRENT_FORMAT_VERSION, newStoredMessage } from "../conversation/types";
 import type { StoredBranchSelection, StoredCompaction, StoredMessage, UsageRecord } from "../conversation/types";
 import {
@@ -10,7 +10,8 @@ import {
   MessageNotAwaitingError,
   UnsupportedFormatVersionError,
 } from "./chat-storage";
-import type { ChatStorage } from "./chat-storage";
+import type { ChatStorage, StoredPendingBurst } from "./chat-storage";
+import type { TurnRequestContext } from "../page-context/page-context";
 import { ChatDataTooLargeError } from "./chat-data";
 import type { ChatDataFilter } from "./chat-data";
 import { WidgetNotPendingError, createChatService } from "../chat-service";
@@ -57,6 +58,11 @@ export function describeChatStorageContract(
      * `clearChatTurnLeases`) обязана быть.
      */
     chatTurnLease?: "required";
+    /**
+     * `pendingBursts: "required"` — ждущие пачки (`savePendingBurst`, `takeAbandonedBursts`, `renewPendingBurst`,
+     * `removePendingBurst`) обязаны быть.
+     */
+    pendingBursts?: "required";
   } = {},
 ): void {
   const chatInput = { id: "chat-1", ownerId: "anna", modelId: "deepseek-4.1-flash", providerId: "deepseek" };
@@ -412,9 +418,11 @@ export function describeChatStorageContract(
           const accepted = results.flatMap((result, index) => (result.status === "fulfilled" ? [answers[index]!] : []));
           expect(accepted).toHaveLength(1);
           expect(results.find((result) => result.status === "rejected")).toMatchObject({ reason: expect.any(WidgetNotPendingError) });
-          await drain((await accepted[0]!.service.subscribe("anna", chat.id))!);
+          // Ход мог кончиться раньше подписки (`subscribe` → null): тогда ждём записанный ответ.
+          const stream = await accepted[0]!.service.subscribe("anna", chat.id);
+          if (stream) await drain(stream);
+          await vi.waitFor(async () => expect((await storage.listMessages(chat.id)).at(-1)!.status).toBe("complete"));
           const answer = (await storage.listMessages(chat.id)).at(-1)!;
-          expect(answer.status).toBe("complete");
           expect(answer.parts.find((part) => (part as { toolCallId?: string }).toolCallId === "w1")).toMatchObject({ output: { выбрано: accepted[0]!.choice } });
         }
         // 20 кругов на встроенной базе: при полном прогоне под нагрузкой 5 с по умолчанию не хватает.
@@ -1710,9 +1718,10 @@ export function describeChatStorageContract(
 
       it("просроченная аренда (копия упала) берётся другой копией — по часам хранилища", async (context) => {
         const storage = await leaseStorage(context);
-        expect(await storage.claimChatTurn(chatInput.id, "copy-a", 20)).toBe(true);
+        // Аренда на секунду: под нагрузкой машины вторая попытка не должна успеть «после срока».
+        expect(await storage.claimChatTurn(chatInput.id, "copy-a", 1_000)).toBe(true);
         expect(await storage.claimChatTurn(chatInput.id, "copy-b", minute)).toBe(false);
-        await new Promise((resolve) => setTimeout(resolve, 60));
+        await new Promise((resolve) => setTimeout(resolve, 1_100));
         expect(await storage.claimChatTurn(chatInput.id, "copy-b", minute)).toBe(true);
         expect(await storage.claimChatTurn(chatInput.id, "copy-a", minute)).toBe(false);
       });
@@ -1748,6 +1757,100 @@ export function describeChatStorageContract(
         await storage.clearChatTurnLeases!();
         expect(await storage.claimChatTurn(chatInput.id, "copy-c", minute)).toBe(true);
         expect(await storage.claimChatTurn("chat-2", "copy-c", minute)).toBe(true);
+      });
+    });
+
+    describe("ждущие пачки (savePendingBurst, takeAbandonedBursts, renewPendingBurst, removePendingBurst; необязательные)", () => {
+      type BurstStorage = ChatStorage & Required<Pick<ChatStorage, "savePendingBurst" | "takeAbandonedBursts" | "renewPendingBurst" | "removePendingBurst">>;
+
+      async function burstStorage(context: { skip: () => never }): Promise<BurstStorage> {
+        const storage = await createStorage();
+        if (!storage.savePendingBurst || !storage.takeAbandonedBursts || !storage.renewPendingBurst || !storage.removePendingBurst) {
+          if (options.pendingBursts === "required") throw new Error("У хранилища нет ждущих пачек");
+          context.skip();
+        }
+        await storage.createChat(chatInput);
+        return storage as BurstStorage;
+      }
+
+      const at = (seconds: number) => new Date(Date.UTC(2026, 9, 15, 12, 0, seconds)).toISOString();
+      const burst = (fields: Partial<StoredPendingBurst> = {}): StoredPendingBurst => ({
+        chatId: chatInput.id,
+        ownerId: chatInput.ownerId,
+        messageId: "m1",
+        dueAt: at(3),
+        holder: "copy-a",
+        heldUntil: at(33),
+        ...fields,
+      });
+      const take = (storage: BurstStorage, abandonedBefore: string, holder = "copy-b", limit = 10) =>
+        storage.takeAbandonedBursts({ abandonedBefore, holder, heldUntil: at(50), limit });
+
+      it("живое ожидание не берётся; брошенное — берётся один раз и переходит к взявшему", async (context) => {
+        const storage = await burstStorage(context);
+        const page: TurnRequestContext = { tabId: "tab-1", timeZone: "Europe/Moscow" };
+        await storage.savePendingBurst(burst({ page }));
+        expect(await take(storage, at(32))).toEqual([]);
+        expect(await take(storage, at(33))).toEqual([burst({ page, holder: "copy-b", heldUntil: at(50) })]);
+        // Взятая пачка жива до нового срока: вторая копия её не получит.
+        expect(await take(storage, at(40), "copy-c")).toEqual([]);
+        expect(await take(storage, at(50), "copy-c")).toEqual([expect.objectContaining({ holder: "copy-c" })]);
+      });
+
+      it("новая запись чата заменяет прежнюю; снятие — только своего сообщения", async (context) => {
+        const storage = await burstStorage(context);
+        await storage.savePendingBurst(burst());
+        await storage.savePendingBurst(burst({ messageId: "m2", dueAt: at(5), heldUntil: at(35) }));
+        await storage.removePendingBurst(chatInput.id, "m1");
+        expect(await take(storage, at(59))).toEqual([expect.objectContaining({ messageId: "m2", dueAt: at(5) })]);
+        await storage.removePendingBurst(chatInput.id, "m2");
+        expect(await take(storage, "2100-01-01T00:00:00.000Z")).toEqual([]);
+      });
+
+      it("limit и порядок: ранние сроки первыми; удалённый чат — без записи", async (context) => {
+        const storage = await burstStorage(context);
+        await storage.createChat({ ...chatInput, id: "chat-2" });
+        await storage.createChat({ ...chatInput, id: "chat-3" });
+        await storage.savePendingBurst(burst({ chatId: "chat-2", dueAt: at(9), heldUntil: at(10) }));
+        await storage.savePendingBurst(burst({ dueAt: at(1), heldUntil: at(10) }));
+        await storage.savePendingBurst(burst({ chatId: "chat-3", dueAt: at(5), heldUntil: at(10) }));
+        await storage.deleteChat("chat-3");
+        expect((await take(storage, at(20), "copy-b", 1)).map((taken) => taken.chatId)).toEqual([chatInput.id]);
+        expect((await take(storage, at(20), "copy-b", 10)).map((taken) => taken.chatId)).toEqual(["chat-2"]);
+      });
+
+      it("продление: только держатель и только той же пачки; продлённая не берётся до нового срока", async (context) => {
+        const storage = await burstStorage(context);
+        await storage.savePendingBurst(burst());
+        expect(await storage.renewPendingBurst({ chatId: chatInput.id, messageId: "m1", holder: "copy-b", heldUntil: at(59) })).toBe(false);
+        expect(await storage.renewPendingBurst({ chatId: chatInput.id, messageId: "m0", holder: "copy-a", heldUntil: at(59) })).toBe(false);
+        expect(await storage.renewPendingBurst({ chatId: "chat-none", messageId: "m1", holder: "copy-a", heldUntil: at(59) })).toBe(false);
+        expect(await storage.renewPendingBurst({ chatId: chatInput.id, messageId: "m1", holder: "copy-a", heldUntil: at(45) })).toBe(true);
+        expect(await take(storage, at(44))).toEqual([]);
+        expect(await take(storage, at(45))).toEqual([burst({ holder: "copy-b", heldUntil: at(50) })]);
+        // Пачку взяла другая копия: прежний держатель её не продлит.
+        expect(await storage.renewPendingBurst({ chatId: chatInput.id, messageId: "m1", holder: "copy-a", heldUntil: at(59) })).toBe(false);
+      });
+
+      it("exceptHolder: свои записи не берутся, сколько бы раз ни звали; чужие — берутся", async (context) => {
+        const storage = await burstStorage(context);
+        await storage.createChat({ ...chatInput, id: "chat-2" });
+        await storage.savePendingBurst(burst());
+        await storage.savePendingBurst(burst({ chatId: "chat-2", holder: "copy-b" }));
+        const far = "2100-01-01T00:00:00.000Z";
+        const takeExcept = () => storage.takeAbandonedBursts({ abandonedBefore: far, holder: "copy-b", heldUntil: at(50), limit: 10, exceptHolder: "copy-b" });
+        expect((await takeExcept()).map((taken) => taken.chatId)).toEqual([chatInput.id]);
+        expect(await takeExcept()).toEqual([]);
+      });
+
+      it("гонка: десять копий берут разом — каждую пачку получает ровно одна", async (context) => {
+        const storage = await burstStorage(context);
+        await storage.createChat({ ...chatInput, id: "chat-2" });
+        await storage.savePendingBurst(burst());
+        await storage.savePendingBurst(burst({ chatId: "chat-2" }));
+        const copies = Array.from({ length: 10 }, (_, index) => `copy-${index}`);
+        const taken = (await Promise.all(copies.map((holder) => take(storage, at(40), holder)))).flat();
+        expect(taken.map((one) => one.chatId).sort()).toEqual([chatInput.id, "chat-2"].sort());
       });
     });
 

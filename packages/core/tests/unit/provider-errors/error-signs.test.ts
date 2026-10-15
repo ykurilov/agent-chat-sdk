@@ -39,6 +39,12 @@ describe("isNotRetryable", () => {
     }
   });
 
+  it("при коде 429 общие слова о квоте и оплате — лимит в минуту, повторять можно; явный пустой счёт — нет", () => {
+    expect(isNotRetryable("Quota exceeded for metric: requests, limit: 15 per minute. Please check your plan and billing details.", 429)).toBe(false);
+    expect(isNotRetryable("You exceeded your current quota, please check your plan and billing details. insufficient_quota", 429)).toBe(true);
+    expect(isNotRetryable("Monthly usage limit reached", 429)).toBe(true);
+  });
+
   it("временный сбой — повторять можно", () => {
     expect(isNotRetryable("Provider returned error")).toBe(false);
     expect(isNotRetryable("overloaded")).toBe(false);

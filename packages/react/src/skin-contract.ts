@@ -237,7 +237,10 @@ export type LiveDemoView =
   /** Не запускается: показать исходник блоком кода и пометку `labels.demo[reason]`. */
   | { state: "code"; source: string; reason: "tooLarge" | "unfinished" | "leftPage" | "externalContent" };
 
-/** Картинки агента из вызова `generate_images` (версия 13). */
+/**
+ * Картинки агента из вызова `generate_images` (версия 13) или `show_image` библиотеки картинок (версия 26: `wide` и
+ * `caption`).
+ */
 export interface GeneratedImagesView {
   /** Заказано картинок. */
   ordered: number;
@@ -245,11 +248,26 @@ export interface GeneratedImagesView {
   aspectRatio: string;
   items: Array<
     | { state: "loading"; key: string }
-    | { state: "ready"; key: string; src: string; alt: string; width?: number; height?: number; onOpen: (trigger: HTMLElement) => void }
+    | {
+        state: "ready";
+        key: string;
+        src: string;
+        alt: string;
+        width?: number;
+        height?: number;
+        /** Версия 26, необязательное: видимая подпись под картинкой (название из библиотеки). */
+        caption?: string;
+        onOpen: (trigger: HTMLElement) => void;
+      }
     | { state: "failed"; key: string; reason: string }
   >;
   /** Человек нажал «Стоп»: показать `labels.images.stopped`. */
   stopped: boolean;
+  /**
+   * Версия 26, необязательное: картинки во всю ширину ответа, каждая своей пропорции (`width`/`height` элемента), без
+   * обрезки — готовая картинка из библиотеки. Пустой `items` при `wide` — вызов идёт, ничего не рисовать.
+   */
+  wide?: boolean;
 }
 
 /**
@@ -313,7 +331,11 @@ export interface StaffMessageView {
 }
 
 /**
- * Договор скина, версия 25 (в версии 25 добавилось только необязательное `StaffMessage` — реплика живого сотрудника,
+ * Договор скина, версия 26 (в версии 26 добавились только необязательные `GeneratedImagesView.wide` и `caption` у готовой
+ * картинки — библиотека картинок, docs/image-library.md; скин версии 25 работает без правок: картинка библиотеки
+ * рисуется плиткой сетки ближайшей обычной пропорции (1:1, 3:2, 2:3, 16:9, 9:16) без подписи, подпись остаётся в `alt`;
+ * docs/skin-v26.md).
+ * Версия 25 (в версии 25 добавилось только необязательное `StaffMessage` — реплика живого сотрудника,
  * docs/skin-v25.md; скин версии 24 работает без правок: реплика показывается ответом агента с подписью
  * `labels.notices.staffSaid`).
  * Версия 24 (в версии 24 добавилось только необязательное `AgentMessage.undelivered` — отметка

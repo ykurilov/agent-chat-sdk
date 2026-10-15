@@ -1,6 +1,7 @@
 import { and, asc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
+import { migratePostgresSchema } from "@ykurilov/agent-chat-core";
 import type { Pool } from "pg";
 import type { TaskCondition, TaskPatch, TaskRecord, TaskStore } from "../types";
 import { BACKGROUND_MIGRATION_LOCK_KEY, BACKGROUND_MIGRATIONS_TABLE } from "./migration-settings";
@@ -34,21 +35,15 @@ function toColumns(patch: TaskPatch | TaskRecord): Record<string, unknown> {
 }
 
 /**
- * Приводит таблицу задач к последней миграции. Идёт на одном соединении под блокировкой базы:
- * если несколько серверов стартуют сразу, второй ждёт первого и видит применённые миграции.
+ * Приводит таблицу задач к последней миграции. Схема `agent_chat` создаётся под общей блокировкой всех пакетов, миграции — под своей:
+ * копии пакета ждут друг друга, а разные пакеты стартуют разом на пустой базе без гонки за схему.
  */
 export async function migrateBackgroundTasksToLatest(pool: Pool, migrationsFolder: string): Promise<void> {
-  const client = await pool.connect();
-  try {
-    await client.query("select pg_advisory_lock($1)", [BACKGROUND_MIGRATION_LOCK_KEY]);
-    try {
-      await migrate(drizzle(client), { migrationsFolder, migrationsSchema: "agent_chat", migrationsTable: BACKGROUND_MIGRATIONS_TABLE });
-    } finally {
-      await client.query("select pg_advisory_unlock($1)", [BACKGROUND_MIGRATION_LOCK_KEY]);
-    }
-  } finally {
-    client.release();
-  }
+  await migratePostgresSchema({
+    connect: () => pool.connect(),
+    lockKey: BACKGROUND_MIGRATION_LOCK_KEY,
+    migrate: (client) => migrate(drizzle(client), { migrationsFolder, migrationsSchema: "agent_chat", migrationsTable: BACKGROUND_MIGRATIONS_TABLE }),
+  });
 }
 
 /**

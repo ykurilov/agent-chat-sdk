@@ -1,5 +1,78 @@
 # @ykurilov/agent-chat-flows
 
+## 0.58.0
+
+### Patch Changes
+
+- 760962e: Хранилища пакетов на PostgreSQL можно открывать одновременно на совсем пустой базе. Раньше пакеты разом создавали
+  схему `agent_chat`, проигравший падал на `CREATE SCHEMA IF NOT EXISTS`, и его хранилище не работало до перезапуска.
+  Теперь схема создаётся под общей блокировкой всех пакетов, она держится только на создании схемы. Миграции идут под
+  своей блокировкой пакета: разные пакеты друг друга не ждут, взаимной блокировки нет. Столкновение «такое уже есть»
+  повторяется само. Новое в core: `migratePostgresSchema({ connect, lockKey, migrate })` — для своих пакетов на той же
+  схеме.
+  
+  ### Как обновить приложение
+  
+  Ничего делать не нужно.
+- Updated dependencies [332d90e]
+- Updated dependencies [2ed600d]
+- Updated dependencies [760962e]
+  - @ykurilov/agent-chat-core@0.58.0
+  - @ykurilov/agent-chat-react@0.58.0
+
+## 0.57.0
+
+### Minor Changes
+
+- 7c82b87: Перевод чатов на новую версию теперь отбирает чаты. `flow.chatsByState` и `flow.migrateChats` по умолчанию не берут
+  закончившиеся разговоры и тестовые чаты редактора (`FlowTestChat`). Свой отбор — `chatIds` и `filter(chat)` (запись
+  прогона и `Chat.data`), одинаково в обоих вызовах: что посчитали, то и переведут. Вернуть прежнее поведение —
+  `includeEnded: true, includeTestChats: true`. Окно «Перевести чаты» после перевода перечитывает счётчик.
+  
+  ### Как обновить приложение
+  
+  1. Если приложение держало чужие строки `agent_chat.flow_chats` своей транзакцией (`for update`), чтобы `migrateChats`
+     их пропустил, — уберите этот обход и передайте отбор прямо в вызовы:
+  
+     Было:
+  
+     ```ts
+     await client.query("select chat_id from agent_chat.flow_chats where ... for update", [...]);
+     await flow.migrateChats({ flowId, toVersionId, map, flow: next });
+     ```
+  
+     Стало:
+  
+     ```ts
+     await flow.migrateChats({ flowId, toVersionId, map, flow: next, chatIds });
+     ```
+  
+     В `chatsByState` передайте тот же отбор (`chatIds` или `filter`).
+  2. Нужны закончившиеся разговоры или тестовые чаты в переводе — добавьте `includeEnded: true` или
+     `includeTestChats: true` в оба вызова.
+  3. Своё хранилище сценариев (`FlowStore`) — добавьте метод `listFlowChats({ flowId, exceptVersionId?, chatIds? })` и
+     поддержку `chatIds` в `migrateBatch`. Хранилища SDK (память, SQLite, PostgreSQL) уже умеют.
+  4. Проверка: `pnpm typecheck` проходит; окно «Перевести чаты» показывает число без закончившихся и тестовых чатов.
+
+### Patch Changes
+
+- 34074f9: Шапка доски сценария на телефоне: лишние кнопки уходят в меню «⋯», Прогон, Проверить граф и сохранение остаются на виду.
+  Новая подпись `labels.header.more`.
+- Updated dependencies [ade99cc]
+- Updated dependencies [86afa20]
+- Updated dependencies [624c10c]
+  - @ykurilov/agent-chat-core@0.57.0
+  - @ykurilov/agent-chat-react@0.57.0
+
+## 0.56.0
+
+### Patch Changes
+
+- Updated dependencies [1eadba9]
+- Updated dependencies [24c313e]
+  - @ykurilov/agent-chat-react@0.56.0
+  - @ykurilov/agent-chat-core@0.56.0
+
 ## 0.55.0
 
 ### Minor Changes

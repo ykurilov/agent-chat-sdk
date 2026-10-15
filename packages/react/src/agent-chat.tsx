@@ -31,7 +31,7 @@ import { answerFileViews } from "./media-viewer/answer-file-images";
 import { SubjectChatLoading } from "./subject-chat/subject-chat-loading";
 import { useSubjectChatId } from "./subject-chat/use-subject-chat-id";
 import { describeWithViewer } from "./media-viewer/open-attachments";
-import { describeGeneratedImages, generatedViewerItems } from "./media-viewer/generated-images";
+import { describeGeneratedImages, generatedViewerItems, imageClientsOf } from "./media-viewer/generated-images";
 import type { DescribeGeneratedImages } from "./media-viewer/generated-images";
 import { useMediaViewer } from "./media-viewer/use-media-viewer";
 import type { MediaViewerController } from "./media-viewer/use-media-viewer";
@@ -210,19 +210,20 @@ function AgentChatBody({ api, chatId, skin, liveness, voice, voiceDialog, attach
   const dialog = useVoiceDialog({ engine: voiceDialog, chatId, chat, ...(videos && { videos }) });
   const attachments = attachmentsPlugin?.useController({ api, chatId, modelSeesImages: chatModelSeesImages });
   const describeFiles = attachments?.describe;
+  const imageClients = useSameList(imageClientsOf(images));
   // Свойства страницы несутся вниз одним стабильным объектом: ввод в поле ответы в ленте не перерисовывает.
   const extensions = useMemo<AgentChatExtensions>(
     () => ({
       ...(widgets && { widgets }),
       ...(diagrams && { diagrams }),
       ...(liveDemos && { liveDemos }),
-      ...(images && { images }),
+      ...(imageClients.length > 0 && { images: imageClients }),
       ...(videos && { videos }),
       ...(appEvents && { appEvents }),
       ...(workView && { workView }),
       ...(stepPhrases && { stepPhrases }),
     }),
-    [widgets, diagrams, liveDemos, images, videos, appEvents, workView, stepPhrases],
+    [widgets, diagrams, liveDemos, imageClients, videos, appEvents, workView, stepPhrases],
   );
   const scrollRef = useRef<HTMLDivElement>(null);
   const feedRef = useRef<MessageFeedHandle>(null);
@@ -306,7 +307,7 @@ function AgentChatBody({ api, chatId, skin, liveness, voice, voiceDialog, attach
   const [feedView, setFeedView] = useState<{ epoch: number; openAtMessageId?: string }>({ epoch: 0 });
   // Окно просмотра: карусель — картинки текущей ветки; другой чат или ветка закрывают окно.
   // Картинки агента — только у скина с `GeneratedImages`: без него вызов остаётся строкой инструмента и в карусель не идёт.
-  const imagesShown = images && skin.GeneratedImages ? images : undefined;
+  const imagesShown = imageClients.length > 0 && skin.GeneratedImages ? imageClients : undefined;
   const viewerImages = useMemo(() => imagesShown && generatedViewerItems(describeGeneratedImages(imagesShown, { api, chatId })), [imagesShown, api, chatId]);
   const getViewerItems = useCallback(
     () => collectViewerItems({ messages: chat.messages, describeAttachments: describeFiles, extraItems: viewerImages }),
@@ -1311,4 +1312,11 @@ function approvalProps(
   }
   if (part.state === "output-denied" || approval.approved === false) return { approval: { state: "denied" } };
   return { approval: { state: approval.reason === ALWAYS_IN_CHAT ? "always" : "allowed" } };
+}
+
+/** Тот же список, пока его элементы те же: `images={[a, b]}` прямо в разметке не перерисовывает ленту на каждый ввод. */
+function useSameList<T>(list: readonly T[]): readonly T[] {
+  const kept = useRef(list);
+  if (kept.current.length !== list.length || kept.current.some((item, index) => item !== list[index])) kept.current = list;
+  return kept.current;
 }

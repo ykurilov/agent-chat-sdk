@@ -35,6 +35,7 @@ import {
   WidgetNotPendingError,
 } from "@ykurilov/agent-chat-core";
 import type {
+  AbandonedBurstsOptions,
   AfterTurnHandler,
   ModelChosenHandler,
   RecoverInterruptedAnswersOptions,
@@ -228,6 +229,8 @@ export interface ChatHandlerOptions {
   staffOfChat?: (chat: Chat) => StaffActor | null | undefined;
   /** Инструменты, чей результат правка ответа не меняет (файлы): см. `ChatServiceOptions.lockedToolOutputs`. */
   lockedToolOutputs?: readonly string[];
+  /** Несколько служб на одном хранилище: чья брошенная пачка. См. `ChatServiceOptions.abandonedBursts`. */
+  abandonedBursts?: AbandonedBurstsOptions;
   /**
    * Фоновые задачи (пакет `@ykurilov/agent-chat-background`): появляются адреса `{base}/:chatId/tasks`. Не заданы —
    * адресов задач нет (404), запрос к модели прежний.
@@ -363,6 +366,7 @@ export function createChatServer(options: ChatHandlerOptions): { handler: ChatHa
     ...(options.chatInstructions && { chatInstructions: options.chatInstructions }),
     ...(options.staffOfChat && { staffOfChat: options.staffOfChat }),
     ...(options.lockedToolOutputs && { lockedToolOutputs: options.lockedToolOutputs }),
+    ...(options.abandonedBursts && { abandonedBursts: options.abandonedBursts }),
     chatEvents: createChatEvents((error) => logError(`События чата: сбой слушателя: ${describe(error)}`)),
     ...(options.background && { background: options.background }),
     ...(options.onTurnFinished && { onTurnFinished: options.onTurnFinished }),

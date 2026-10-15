@@ -1,7 +1,9 @@
+import { APICallError } from "ai";
 import { describe, expect, it } from "vitest";
 import {
   checkProviderFallback,
   decideNextAttempt,
+  errorKindForPerson,
   fallbackProviders,
   nextSilenceProvider,
   resolveSilenceSwitch,
@@ -102,8 +104,50 @@ describe("decideNextAttempt", () => {
     expect(decideNextAttempt(failed("overloaded"), { fallbackUsed: false, fallbackProviderIds: [] })).toEqual({ action: "fail" });
   });
 
-  it.each(["invalid_key", "insufficient_funds", "context_overflow", "other"] as const)("вид %s — fail (FR-032)", (kind) => {
+  it.each(["context_overflow", "other"] as const)("вид %s — fail (FR-032)", (kind) => {
     expect(decideNextAttempt(failed(kind), { fallbackUsed: false, fallbackProviderIds: ["b"] })).toEqual({ action: "fail" });
+  });
+
+  describe("деньги кончились или ключ не принят: провайдер не ответит вовсе — сразу следующий", () => {
+    it.each(["insufficient_funds", "invalid_key"] as const)("%s → fallback на первого из списка", (kind) => {
+      expect(decideNextAttempt(failed(kind), { fallbackUsed: false, fallbackProviderIds: ["b", "c"] })).toEqual({ action: "fallback", providerId: "b" });
+    });
+
+    it.each(["insufficient_funds", "invalid_key"] as const)("%s → fallback и после перехода по перегрузке: он не тратит единственный переход", (kind) => {
+      expect(decideNextAttempt(failed(kind), { fallbackUsed: true, fallbackProviderIds: ["c"] })).toEqual({ action: "fallback", providerId: "c" });
+    });
+
+    it.each(["insufficient_funds", "invalid_key"] as const)("%s посреди ответа (на следующем шаге) → fallback, не автопродолжение у мёртвого", (kind) => {
+      const state = { fallbackUsed: false, fallbackProviderIds: ["b"], autoContinue: { done: 0, approvalRequested: false, random: () => 0 } };
+      expect(decideNextAttempt(failed(kind, true), state)).toEqual({ action: "fallback", providerId: "b" });
+    });
+
+    it.each(["insufficient_funds", "invalid_key"] as const)("%s, запасных нет — fail", (kind) => {
+      expect(decideNextAttempt(failed(kind), { fallbackUsed: false, fallbackProviderIds: [] })).toEqual({ action: "fail" });
+    });
+  });
+
+  describe("403 не по ключу и не по деньгам", () => {
+    const refused = (body: string, contentSeen = false): Extract<AttemptResult, { outcome: "failed" }> => ({
+      outcome: "failed",
+      kind: "other",
+      error: new APICallError({ message: "403", url: "https://p.test", requestBodyValues: {}, statusCode: 403, responseBody: body }),
+      contentSeen,
+    });
+    const region = '{"error":{"code":"unsupported_country_region_territory","message":"Country, region, or territory not supported"}}';
+
+    it("регион или доступ к модели — запасной, как при перегрузке: другой провайдер может ответить", () => {
+      expect(decideNextAttempt(refused(region), { fallbackUsed: false, fallbackProviderIds: ["b"] })).toEqual({ action: "fallback", providerId: "b" });
+    });
+
+    it("регион, но переход по перегрузке уже был — fail: такой переход тоже один на ход", () => {
+      expect(decideNextAttempt(refused(region), { fallbackUsed: true, fallbackProviderIds: ["b"] })).toEqual({ action: "fail" });
+    });
+
+    it("модерация («input was flagged») — fail: дело в содержимом, другому провайдеру его не передаём", () => {
+      const flagged = '{"error":{"message":"Your chosen model requires moderation and your input was flagged for \\"violence\\""}}';
+      expect(decideNextAttempt(refused(flagged), { fallbackUsed: false, fallbackProviderIds: ["b"] })).toEqual({ action: "fail" });
+    });
   });
 
   describe("переполнение (FR-012): сжать и продолжить тот же ответ", () => {
@@ -155,8 +199,8 @@ describe("decideNextAttempt", () => {
       expect(decideNextAttempt(failed("overloaded", true), state(0, { approvalRequested: true }))).toEqual({ action: "fail" });
     });
 
-    it.each(["invalid_key", "insufficient_funds", "other"] as const)("вид %s — fail", (kind) => {
-      expect(decideNextAttempt(failed(kind, true), state(0))).toEqual({ action: "fail" });
+    it("вид other — fail", () => {
+      expect(decideNextAttempt(failed("other", true), state(0))).toEqual({ action: "fail" });
     });
 
     it("context_overflow — путь сжатия, не автопродолжение", () => {
@@ -270,5 +314,20 @@ describe("checkProviderFallback: проверка настройки при со
 
   it.each([true, "a", { byModel: { m: "a" } }, { byModel: [] }])("неверная форма %j — TypeError", (setting) => {
     expect(() => checkProviderFallback(setting as never, catalog)).toThrow(TypeError);
+  });
+});
+
+describe("errorKindForPerson: что показать человеку, когда не ответил никто", () => {
+  it("отказов по деньгам и ключу в ходе не было — вид последнего сбоя", () => {
+    expect(errorKindForPerson("overloaded", undefined)).toBe("overloaded");
+    expect(errorKindForPerson("other", undefined)).toBe("other");
+  });
+
+  it.each(["insufficient_funds", "invalid_key", "other"] as const)("основной отказал по деньгам, запасной — %s: исходная причина у основного", (last) => {
+    expect(errorKindForPerson(last, "insufficient_funds")).toBe("insufficient_funds");
+  });
+
+  it.each(["overloaded", "rate_limited", "context_overflow"] as const)("запасной лишь занят или запрос велик (%s) — его вид: «попробуйте позже» поможет", (last) => {
+    expect(errorKindForPerson(last, "insufficient_funds")).toBe(last);
   });
 });

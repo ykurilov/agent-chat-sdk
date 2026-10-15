@@ -1,5 +1,14 @@
 import { createHash, randomUUID } from "node:crypto";
-import type { AgentWidgetSettings, Chat, ChatInstructionsTurn, ContextBlockEntry, PrepareTurnContext, TurnResult, WidgetAnswerContext } from "@ykurilov/agent-chat-core";
+import {
+  ChatNotFoundError,
+  type AgentWidgetSettings,
+  type Chat,
+  type ChatInstructionsTurn,
+  type ContextBlockEntry,
+  type PrepareTurnContext,
+  type TurnResult,
+  type WidgetAnswerContext,
+} from "@ykurilov/agent-chat-core";
 import type { AgentFlow } from "../format/flow-format";
 import { parseFlow } from "../format/parse-flow";
 import { checkFlow } from "../check/check-flow";
@@ -249,6 +258,7 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
         checkedFlow: (loaded) => checkedFlow(loaded.flowId, loaded.versionId, loaded.flow),
         saveVersion: saveChecked,
         rescheduleMigrated,
+        chatData,
       }),
   );
 
@@ -525,6 +535,17 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
     const { values } = await (await portOf({ ownerId, chatId })).getChatState(ownerId, chatId);
     const run = storedRun(values[FLOW_STATE_KEY]);
     if (run) await reschedule(ownerId, chatId, run, run.answerId ?? null, at);
+  }
+
+  /** Данные чата для отбора при переводе. Служба не подключена или чата в ней уже нет — пусто. */
+  async function chatData(chat: { ownerId: string; chatId: string }): Promise<Record<string, unknown>> {
+    if (!port && !attachment) return {};
+    try {
+      return await (await portOf(chat)).getChatData(chat.ownerId, chat.chatId);
+    } catch (error) {
+      if (error instanceof ChatNotFoundError) return {};
+      throw error;
+    }
   }
 
   /** Таймер переведённого чата считается по новой версии и новому месту: само место чат запишет в начале следующего хода. */

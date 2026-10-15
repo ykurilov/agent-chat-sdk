@@ -10,16 +10,21 @@ export type DescribeGeneratedImages = (part: ToolUIPart | DynamicToolUIPart) => 
 
 const noOpen = () => undefined;
 
+/** `images` страницы — всегда списком: один клиент или несколько. */
+export const imageClientsOf = (images: ImagesClient | readonly ImagesClient[] | undefined): readonly ImagesClient[] =>
+  images === undefined ? [] : Array.isArray(images) ? images : [images as ImagesClient];
+
 /**
- * Картинки агента (`images` страницы): вызов `images.toolName` → вид для скина. Нет `open` (у скина нет окна
- * просмотра) — клик по картинке ничего не делает.
+ * Картинки агента (`images` страницы): вызов инструмента одного из клиентов → вид для скина; клиент выбирается по имени
+ * инструмента. Нет `open` (у скина нет окна просмотра) — клик по картинке ничего не делает.
  */
 export function describeGeneratedImages(
-  images: ImagesClient,
+  images: ImagesClient | readonly ImagesClient[],
   call: { api: string; chatId: string; open?: ((key: string, trigger: HTMLElement) => void) | undefined },
 ): DescribeGeneratedImages {
   const openImage = call.open ?? noOpen;
-  return (part) => (getToolName(part) === images.toolName ? images.describe({ part, api: call.api, chatId: call.chatId, openImage }) : undefined);
+  const byTool = new Map(imageClientsOf(images).map((client) => [client.toolName, client]));
+  return (part) => byTool.get(getToolName(part))?.describe({ part, api: call.api, chatId: call.chatId, openImage });
 }
 
 /** Готовые картинки агента в сообщении — элементы карусели окна просмотра, по порядку частей. */

@@ -7,6 +7,8 @@ import { findModel } from "../models/model-catalog";
 import type { ModelCatalog, ProviderDescription } from "../models/model-catalog";
 import { classifyProviderError } from "../provider-errors/classify-provider-error";
 import { describeProviderFailure } from "../provider-errors/provider-failure-log";
+import { createProviderOutages, isProviderOutage } from "../provider-errors/provider-outages";
+import type { ProviderOutageKind, ProviderOutages } from "../provider-errors/provider-outages";
 import type { ModelSilenceLimits } from "../provider-errors/model-silence";
 import { SpendingLimitReachedError } from "../spending/spending-limits";
 import type { ChatStorage } from "../storage/chat-storage";
@@ -16,7 +18,7 @@ import { recordSpentTokens } from "../usage/record-usage";
 import { buildModelRequest } from "../agent-run/build-model-request";
 import { lastStepSettings } from "../agent-run/last-step";
 import { gateToolApproval, gateToolCalls } from "../agent-run/tool-call-gate";
-import { decideNextAttempt, fallbackProviders } from "../agent-run/next-attempt";
+import { decideNextAttempt, errorKindForPerson, fallbackProviders } from "../agent-run/next-attempt";
 import type { ProviderFallbackSetting } from "../agent-run/next-attempt";
 import { createRepairToolCall, describeToolInputRepair } from "../agent-run/repair-tool-call";
 import type { AgentToolsModel } from "../agent-run/run-agent-turn";
@@ -56,6 +58,8 @@ export interface HelperRunContext {
   /** Очередь инструментов «по одному» чата: помощник делит её с основным агентом. */
   toolQueue?: ToolQueue;
   providerFallback?: ProviderFallbackSetting;
+  /** Память службы об отказах провайдеров по деньгам и ключу. Нет — своя на запуск. */
+  providerOutages?: ProviderOutages;
   modelSilence?: ModelSilenceLimits;
   turnObserver?: TurnObserver;
   /** Проверка лимита расходов перед каждым шагом; бросает `SpendingLimitReachedError`. Нет — без лимита. */
@@ -108,16 +112,28 @@ export async function* helperSteps(input: {
   const messages: ModelMessage[] = [...(input.priorMessages ?? [])];
   const maxSteps = helper.maxSteps ?? DEFAULT_HELPER_MAX_STEPS;
   const { modelId } = helper.model;
-  const fallbackProviderIds = fallbackProviders({
+  const outages = context.providerOutages ?? createProviderOutages({ now: Date.now, logError: context.logError });
+  // Как у хода: запасные на паузе пропускаются, основной на паузе — сразу первый запасной.
+  const allFallbackIds = fallbackProviders({
     catalog: context.catalog,
     modelId,
     chosenProviderId: helper.model.providerId,
     env: context.env,
     ...(context.providerFallback !== undefined && { setting: context.providerFallback }),
   });
+  const fallbackProviderIds = allFallbackIds.filter((candidate) => outages.pausedKind(candidate) === undefined);
   const toolQueue = context.toolQueue ?? createToolQueue();
   let providerId = helper.model.providerId;
   let fallbackUsed = false;
+  // Отказ основного по деньгам или ключу в этом запуске — причина для человека, если и запасные не ответят.
+  let firstOutage: ProviderOutageKind | undefined;
+  const primaryPaused = outages.admit(providerId);
+  if (primaryPaused !== undefined && fallbackProviderIds[0] !== undefined) {
+    context.logError(
+      `[запасной провайдер] чат=${context.chatId} помощник=${input.name} модель=${modelId} с=${providerId} на=${fallbackProviderIds[0]} причина=${primaryPaused} основной на паузе`,
+    );
+    providerId = fallbackProviderIds[0];
+  }
   // Чужой текст: вызов инструмента с пометкой `externalContent` хоть на одном шаге (и до перезапуска тоже).
   let externalContent = false;
   const report = (status: HelperProgress["status"], extra: Partial<HelperProgress> = {}): HelperStepReport => ({
@@ -146,17 +162,31 @@ export async function* helperSteps(input: {
     } catch (error) {
       if (abortSignal.aborted) throw error;
       const kind = classifyProviderError(error, provider);
-      const next = decideNextAttempt({ outcome: "failed", kind, error, contentSeen: false }, { fallbackUsed, fallbackProviderIds });
+      // С запасного — только провайдеры после него.
+      const candidates = providerId === helper.model.providerId ? fallbackProviderIds : fallbackProviderIds.slice(fallbackProviderIds.indexOf(providerId) + 1);
+      const next = decideNextAttempt({ outcome: "failed", kind, error, contentSeen: false }, { fallbackUsed, fallbackProviderIds: candidates });
+      const outage = isProviderOutage(kind) ? kind : undefined;
+      if (outage) {
+        if (providerId === helper.model.providerId) firstOutage ??= outage;
+        outages.report({
+          providerId,
+          kind: outage,
+          ...(next.action === "fallback"
+            ? { fallbackProviderId: next.providerId }
+            : { fallbacksPaused: allFallbackIds.some((candidate) => candidate !== providerId && outages.pausedKind(candidate) !== undefined) }),
+        });
+      }
       if (next.action === "fallback") {
         context.logError(`[запасной провайдер] чат=${context.chatId} помощник=${input.name} модель=${modelId} с=${providerId} на=${next.providerId} причина=${kind}`);
-        fallbackUsed = true;
+        if (!outage) fallbackUsed = true;
         providerId = next.providerId;
         continue;
       }
       context.logError(describeProviderFailure(error, { chatId: context.chatId, modelId, providerId, kind, env: context.env, catalog: context.catalog }));
-      yield report("failed", { error: FAILURE_REASONS[kind] });
+      yield report("failed", { error: FAILURE_REASONS[errorKindForPerson(kind, firstOutage)] });
       return;
     }
+    outages.recovered(providerId);
     messages.push(...response);
     externalContent ||= callsExternalContentTool(messages, tools);
     const pendingApproval = pendingApprovalOf(messages, tools);

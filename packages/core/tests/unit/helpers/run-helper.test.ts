@@ -151,6 +151,38 @@ describe("цикл помощника", () => {
     expect(backup.doGenerateCalls).toHaveLength(1);
     expect(helperPart((await lastAnswer(service, chat.id)).parts)!.output).toMatchObject({ status: "done", text: "Ответ резервного" });
   });
+
+  it.each([
+    [402, "insufficient_funds", "кончились деньги"],
+    [401, "invalid_key", "ключ не принят"],
+  ] as const)("у провайдера помощника %i — сразу резервный, без повторов; строки журнала с причиной", async (statusCode, kind, said) => {
+    const refused = () =>
+      Promise.reject(new APICallError({ message: String(statusCode), url: "https://p.test", requestBodyValues: {}, statusCode, responseBody: "no", responseHeaders: {} }));
+    const model = helperChatModel({ stream: [callsHelper("h1", "research", "погода")], generate: [refused] });
+    const backup = helperChatModel({ generate: [helperText("Ответ резервного")] });
+    const logged: string[] = [];
+    const { service } = helperService({
+      model,
+      helpers: { research: researchHelper() },
+      extra: { catalog: mockCatalog({ mock: model, "mock-backup": backup }), logError: (line) => logged.push(line) },
+    });
+    const { chat } = await askInNewChat(service);
+    expect(model.doGenerateCalls).toHaveLength(1);
+    expect(backup.doGenerateCalls).toHaveLength(1);
+    expect(helperPart((await lastAnswer(service, chat.id)).parts)!.output).toMatchObject({ status: "done", text: "Ответ резервного" });
+    expect(logged).toContain(`[запасной провайдер] чат=${chat.id} помощник=research модель=${mockModelId} с=mock на=mock-backup причина=${kind}`);
+    expect(logged).toContain(`[ВНИМАНИЕ провайдер] mock: ${said} — ходы идут через запасной mock-backup`);
+  });
+
+  it("у провайдера помощника кончились деньги, резервного нет — помощник не справился с прежней причиной", async () => {
+    const refused = () =>
+      Promise.reject(new APICallError({ message: "402", url: "https://p.test", requestBodyValues: {}, statusCode: 402, responseBody: "no", responseHeaders: {} }));
+    const model = helperChatModel({ stream: [callsHelper("h1", "research", "погода")], generate: [refused] });
+    const { service } = helperService({ model, helpers: { research: researchHelper() } });
+    const { chat } = await askInNewChat(service);
+    expect(model.doGenerateCalls).toHaveLength(1);
+    expect(helperPart((await lastAnswer(service, chat.id)).parts)!.output).toMatchObject({ status: "failed", error: "у провайдера модели кончились средства" });
+  });
 });
 
 describe("ход помощника в ответе", () => {

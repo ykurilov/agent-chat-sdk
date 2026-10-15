@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import type { GeneratedImagesView, ImagesClient } from "@ykurilov/agent-chat-react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { stubChatListSkin } from "../../../react/tests/support/stub-chat-list-skin";
@@ -120,5 +121,41 @@ describe("AgentSandbox: раздел «Чаты людей»", () => {
     await waitFor(() => expect(screen.getByTestId("people-chats").getAttribute("data-searchable")).toBe("true"));
     expect(screen.getByTestId("sections").getAttribute("data-section")).toBe("people");
     expect(views.at(-1)).toMatchObject({ peopleState: "idle", people: [], copying: false });
+  });
+});
+
+describe("AgentSandbox: картинки нескольких источников в чатах песочницы и людей", () => {
+  it("chatProps.images списком доходит до чата человека: картинка библиотеки видна в журнале переписки", async () => {
+    const server = fakeSandboxServer();
+    vi.stubGlobal("fetch", server.fetch);
+    server.personChat.state.history = [
+      personHistory[0]!,
+      {
+        id: "a1",
+        role: "assistant",
+        parts: [
+          { type: "tool-show_image", toolCallId: "l1", state: "output-available", input: { id: "cell" }, output: { картинка: {} } },
+          { type: "text", text: "Картой на сайте.", state: "done" },
+        ],
+        metadata: { status: "complete" },
+      },
+    ];
+    const library: ImagesClient = {
+      toolName: "show_image",
+      describe: ({ part }) => ({ ordered: 1, aspectRatio: "3:2", wide: true, items: [{ state: "ready", key: part.toolCallId, src: "/library/cell.png", alt: "Схема клетки", caption: "Строение клетки", onOpen: () => undefined }], stopped: false }),
+    };
+    const generator: ImagesClient = { toolName: "generate_images", describe: () => undefined };
+    const GeneratedImages = ({ items }: GeneratedImagesView) => <div data-kind="images">{items.map((item) => (item.state === "ready" ? <span key={item.key}>{item.caption}</span> : null))}</div>;
+    render(
+      <AgentSandbox
+        skin={{ ...stubSandboxChatSkin, GeneratedImages }}
+        sandboxSkin={stubSandboxSkin}
+        chatListSkin={stubChatListSkin}
+        chatProps={{ images: [generator, library] }}
+        people
+      />,
+    );
+    await openVeraChat();
+    expect(screen.getByText("Строение клетки")).toBeTruthy();
   });
 });

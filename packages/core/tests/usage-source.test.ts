@@ -26,6 +26,11 @@ describe("виды расхода: штатные и свои", () => {
     expectTypeOf<"voice_input">().toMatchTypeOf<BuiltInUsageSource>();
   });
 
+  it("штатный вид вызова инструмента MCP есть в списке", () => {
+    expect(BUILT_IN_USAGE_SOURCES).toContain("mcp_tool");
+    expectTypeOf<"mcp_tool">().toMatchTypeOf<BuiltInUsageSource>();
+  });
+
   it("свой вид приложения — без приведения типа; пишется, суммируется и отбирается фильтром", async () => {
     const custom: UsageSource = "font_download";
     const storage = createInMemoryChatStorage();

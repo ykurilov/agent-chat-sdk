@@ -2,6 +2,7 @@ import { and, asc, eq, isNotNull, isNull, lt, ne, or } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
+import { migratePostgresSchema } from "@ykurilov/agent-chat-core";
 import type { Pool } from "pg";
 import { applyImageJobPatch, findErrorCause, ImageJobKeyTakenError, imageJobBody, isOpenImageJob } from "./image-job-store";
 import type { ImageJobFilter, ImageJobRecord, ImageJobStore } from "./image-job-store";
@@ -78,19 +79,16 @@ function filterOf(filter: ImageJobFilter): SQL | undefined {
   );
 }
 
-/** Приводит таблицу задач к последней миграции под блокировкой базы: серверы, стартующие разом, не мешают друг другу. */
+/**
+ * Приводит таблицу задач к последней миграции. Схема `agent_chat` создаётся под общей блокировкой всех пакетов, миграции — под своей:
+ * копии пакета ждут друг друга, а разные пакеты стартуют разом на пустой базе без гонки за схему.
+ */
 async function migrateImageJobsToLatest(pool: Pool, migrationsFolder: string): Promise<void> {
-  const client = await pool.connect();
-  try {
-    await client.query("select pg_advisory_lock($1)", [IMAGE_JOBS_MIGRATION_LOCK_KEY]);
-    try {
-      await migrate(drizzle(client), { migrationsFolder, migrationsSchema: "agent_chat", migrationsTable: IMAGE_JOBS_MIGRATIONS_TABLE });
-    } finally {
-      await client.query("select pg_advisory_unlock($1)", [IMAGE_JOBS_MIGRATION_LOCK_KEY]);
-    }
-  } finally {
-    client.release();
-  }
+  await migratePostgresSchema({
+    connect: () => pool.connect(),
+    lockKey: IMAGE_JOBS_MIGRATION_LOCK_KEY,
+    migrate: (client) => migrate(drizzle(client), { migrationsFolder, migrationsSchema: "agent_chat", migrationsTable: IMAGE_JOBS_MIGRATIONS_TABLE }),
+  });
 }
 
 /**

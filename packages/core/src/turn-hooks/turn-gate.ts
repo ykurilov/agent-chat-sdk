@@ -18,6 +18,8 @@ export interface TurnGateInput extends AbandonedAnswers {
   messageId?: string;
   /** Ход на пачку сообщений (`sendBurstMessage`): их id по порядку, последнее — `messageId`. */
   burstMessageIds?: string[];
+  /** Ход на пачку без вызова (обход ждущих пачек). */
+  unattended?: true;
 }
 
 /**
@@ -90,6 +92,7 @@ export function createTurnGate(hooks: {
       ...(input.text !== undefined && { text: input.text }),
       ...(input.messageId !== undefined && { messageId: input.messageId }),
       ...(input.burstMessageIds && { burstMessageIds: [...input.burstMessageIds] }),
+      ...(input.unattended && { unattended: true as const }),
       ...abandonedOf(input),
     });
     if (!decision) return TURN;
@@ -123,6 +126,7 @@ export function createTurnGate(hooks: {
         ...(input.messageId !== undefined && { messageId: input.messageId }),
         ...(input.text !== undefined && { text: input.text }),
         ...(input.burstMessageIds && { burstMessageIds: [...input.burstMessageIds] }),
+        ...(input.unattended && { unattended: true as const }),
         reason,
         ...abandonedOf(input),
       });

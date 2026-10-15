@@ -1,6 +1,10 @@
 import type { ModelCatalog } from "../models/model-catalog";
 import { AUTO_CONTINUES_PER_TURN, autoContinuePauseMs } from "./auto-continue";
+import { isAccessRefusal } from "../provider-errors/classify-provider-error";
+import { isProviderOutage } from "../provider-errors/provider-outages";
+import type { ProviderOutageKind } from "../provider-errors/provider-outages";
 import { isProviderSilence } from "../provider-errors/transient-retry-middleware";
+import type { ChatErrorKind } from "../conversation/types";
 import type { AttemptResult } from "./turn-attempt";
 
 /**
@@ -89,7 +93,10 @@ export function fallbackProviders(input: {
 }
 
 /**
- * Переход к запасному — только при перегрузке или лимите, до первого куска ответа и один раз на ход (FR-031, FR-032).
+ * Кончились деньги или не принят ключ — провайдер не ответит ни на какой запрос: сразу следующий из списка, в любом
+ * месте хода и сколько угодно раз (список только убывает). Такой переход не тратит единственный переход по перегрузке.
+ * Переход к запасному при перегрузке, лимите или отказе по доступу (403: регион, модель) — до первого куска ответа и
+ * один раз на ход (FR-031, FR-032).
  * Переполнение — сжатие: сначала истории чата, затем первых шагов ответа, каждое не больше раза на ход (FR-012).
  * После первого куска та же перегрузка или лимит — автопродолжение у того же провайдера, до двух на ход и не при
  * запросе подтверждения (FR-037, FR-042, FR-044). Запасной после первого куска не выбирается никогда.
@@ -127,8 +134,15 @@ export function decideNextAttempt(
     if (state.overflowCompaction?.answerSteps) return { action: "compact-and-continue", scope: "answer-steps" };
     return { action: "fail" };
   }
-  if (!TRANSIENT_KINDS.has(result.kind)) return { action: "fail" };
+  if (isProviderOutage(result.kind)) {
+    const next = state.fallbackProviderIds[0];
+    return next === undefined ? { action: "fail" } : { action: "fallback", providerId: next };
+  }
+  // Отказ по доступу (регион, модель) — как перегрузка: один переход на ход, до первого куска.
+  const accessRefused = result.kind === "other" && isAccessRefusal(result.error);
+  if (!TRANSIENT_KINDS.has(result.kind) && !accessRefused) return { action: "fail" };
   if (result.contentSeen) {
+    if (accessRefused) return { action: "fail" };
     const auto = state.autoContinue;
     if (!auto || auto.approvalRequested || auto.done >= AUTO_CONTINUES_PER_TURN) return { action: "fail" };
     return { action: "auto-continue", pauseMs: autoContinuePauseMs({ index: auto.done, error: result.error, random: auto.random ?? Math.random }) };
@@ -136,6 +150,16 @@ export function decideNextAttempt(
   const next = state.fallbackProviderIds[0];
   if (state.fallbackUsed || next === undefined) return { action: "fail" };
   return { action: "fallback", providerId: next };
+}
+
+/**
+ * Вид ошибки для человека, когда не ответил никто. Был отказ по деньгам или ключу (`firstOutage` — первый в ходе), а
+ * последний провайдер лишь занят или запрос велик — его вид: «попробуйте позже» или «короче» поможет. Иначе — исходная
+ * причина у основного: её и чинить владельцу.
+ */
+export function errorKindForPerson(lastKind: ChatErrorKind, firstOutage: ProviderOutageKind | undefined): ChatErrorKind {
+  if (firstOutage === undefined || TRANSIENT_KINDS.has(lastKind) || lastKind === "context_overflow") return lastKind;
+  return firstOutage;
 }
 
 /** Проверка настройки при создании службы: неверная форма, неизвестная модель или чужой провайдер — `TypeError`. */

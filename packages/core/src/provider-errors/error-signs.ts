@@ -51,10 +51,14 @@ const NOT_RETRYABLE_SIGNS = signs([
   "available balance",
   "insufficient_quota",
   "out of budget",
-  "quota exceeded",
-  "billing",
   "subscription_sharing_usage_limit_exceeded",
 ]);
+
+/**
+ * Общие слова о квоте и оплате. При коде 429 они — лимит в минуту («Quota exceeded … per minute. Please check your
+ * plan and billing details» у Gemini), а не пустой счёт: тогда не считаются.
+ */
+const QUOTA_WORDS = signs(["quota exceeded", "billing"]);
 
 /** Временные сбои: нагрузка, сеть, оборванный поток. Голых «500», «502» нет: в тексте 4xx-ответа они ложно срабатывают. */
 const RETRYABLE_SIGNS = signs([
@@ -106,9 +110,9 @@ export function isContextOverflow(text: string, statusCode?: number): boolean {
   return OVERFLOW_SIGNS.some((sign) => sign.test(text));
 }
 
-/** Квота, бюджет или оплата исчерпаны: повторять не нужно. */
-export function isNotRetryable(text: string): boolean {
-  return NOT_RETRYABLE_SIGNS.test(text);
+/** Квота, бюджет или оплата исчерпаны: повторять не нужно. При коде 429 — только явные признаки пустого счёта. */
+export function isNotRetryable(text: string, statusCode?: number): boolean {
+  return NOT_RETRYABLE_SIGNS.test(text) || (statusCode !== 429 && QUOTA_WORDS.test(text));
 }
 
 /** Текст похож на временный сбой провайдера или сети. */

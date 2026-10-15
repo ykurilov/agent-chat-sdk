@@ -4,6 +4,7 @@ import { useFlowLabels } from "@ykurilov/agent-chat-flows/react";
 import { Braces, Eye, IdCard, Maximize2, MessagesSquare, Minimize2, Play, Plus, Save, ShieldCheck, Shuffle } from "lucide-react";
 import type { CSSProperties } from "react";
 import { useEffect, useState } from "react";
+import { FlowHeaderMenu, type FlowHeaderMenuItem } from "./flow-header-menu";
 
 /** Цвета доски для стилей `@xyflow/react` слоя поведения: из токенов Тандема, светлая и тёмная тема сами. */
 const BOARD_COLORS = {
@@ -81,6 +82,19 @@ export function TandemFlowHeader(props: FlowHeaderProps) {
   const compact = "max-[1100px]:[&>span.label]:hidden";
   // На телефоне подписи прячутся у всех кнопок, иначе «Сохранить» уезжает за край.
   const phone = "max-[860px]:[&>span.label]:hidden";
+  // На узком экране второстепенные кнопки уходят в меню «⋯»; Проверить, Прогон и состояние сохранения остаются на виду.
+  const wide = "max-[860px]:hidden";
+  const fullscreenLabel = props.fullscreen?.active ? labels.board.space.exitFullscreen : labels.board.space.enterFullscreen;
+  const menuItems: FlowHeaderMenuItem[] = [
+    { key: "state", label: labels.header.state, icon: <Plus />, disabled: mode === "run" || props.readOnly === true, onSelect: props.onAddState },
+    { key: "card", label: labels.header.card, icon: <IdCard />, disabled: mode === "run", onSelect: props.onOpenCard },
+    { key: "json", label: labels.header.json, icon: <Braces />, onSelect: props.onOpenJson },
+    ...(props.onOpenMigrate ? [{ key: "migrate", label: labels.header.migrate, icon: <Shuffle />, onSelect: props.onOpenMigrate }] : []),
+    ...(props.onOpenTestChat ? [{ key: "test-chat", label: testChatLabels.title, icon: <MessagesSquare />, onSelect: props.onOpenTestChat }] : []),
+    ...(props.fullscreen
+      ? [{ key: "fullscreen", label: fullscreenLabel, icon: props.fullscreen.active ? <Minimize2 /> : <Maximize2 />, pressed: props.fullscreen.active, onSelect: props.fullscreen.onToggle }]
+      : []),
+  ];
   return (
     <div className="flex h-full min-w-0 items-center gap-2 px-4 max-[860px]:flex-wrap max-[860px]:gap-1.5 max-[860px]:py-2">
       {!narrow && <TandemMark className="size-7 shrink-0" />}
@@ -91,12 +105,12 @@ export function TandemFlowHeader(props: FlowHeaderProps) {
           {labels.header.readOnly}
         </Badge>
       )}
-      <div className="flex shrink-0 items-center gap-1.5 max-[860px]:w-full max-[860px]:gap-1 max-[860px]:overflow-x-auto">
-        <Button variant="secondary" size="sm" className={compact} onClick={props.onAddState} disabled={mode === "run" || props.readOnly} title={labels.header.state}>
+      <div className="relative flex shrink-0 items-center gap-1.5 max-[860px]:w-full max-[860px]:gap-1">
+        <Button variant="secondary" size="sm" className={cn(compact, wide)} onClick={props.onAddState} disabled={mode === "run" || props.readOnly} title={labels.header.state}>
           <Plus aria-hidden="true" className="size-4" />
           <span className="label">{labels.header.state}</span>
         </Button>
-        <Button variant="secondary" size="sm" className={compact} onClick={props.onOpenCard} disabled={mode === "run"} title={labels.header.card}>
+        <Button variant="secondary" size="sm" className={cn(compact, wide)} onClick={props.onOpenCard} disabled={mode === "run"} title={labels.header.card}>
           <IdCard aria-hidden="true" className="size-4" />
           <span className="label">{labels.header.card}</span>
         </Button>
@@ -127,11 +141,11 @@ export function TandemFlowHeader(props: FlowHeaderProps) {
           <Play aria-hidden="true" className="size-4" />
           <span className="label">{labels.header.run}</span>
         </Button>
-        <Button variant="ghost" size="sm" onClick={props.onOpenJson} title={labels.header.json} aria-label={labels.header.json}>
+        <Button variant="ghost" size="sm" className={wide} onClick={props.onOpenJson} title={labels.header.json} aria-label={labels.header.json}>
           <Braces aria-hidden="true" className="size-4" />
         </Button>
         {props.onOpenMigrate && (
-          <Button variant="ghost" size="sm" onClick={props.onOpenMigrate} title={labels.header.migrate} aria-label={labels.header.migrate}>
+          <Button variant="ghost" size="sm" className={wide} onClick={props.onOpenMigrate} title={labels.header.migrate} aria-label={labels.header.migrate}>
             <Shuffle aria-hidden="true" className="size-4" />
           </Button>
         )}
@@ -139,6 +153,7 @@ export function TandemFlowHeader(props: FlowHeaderProps) {
           <Button
             variant="ghost"
             size="sm"
+            className={wide}
             data-flow-fullscreen-toggle=""
             aria-pressed={props.fullscreen.active}
             onClick={props.fullscreen.onToggle}
@@ -149,11 +164,12 @@ export function TandemFlowHeader(props: FlowHeaderProps) {
           </Button>
         )}
         {props.onOpenTestChat && (
-          <Button variant="ghost" size="sm" className={phone} onClick={props.onOpenTestChat} title={testChatLabels.title}>
+          <Button variant="ghost" size="sm" className={wide} onClick={props.onOpenTestChat} title={testChatLabels.title}>
             <MessagesSquare aria-hidden="true" className="size-4" />
             <span className="label">{testChatLabels.title}</span>
           </Button>
         )}
+        <FlowHeaderMenu label={labels.header.more} items={menuItems} className="hidden max-[860px]:block" />
         {props.onSave && (
           <Button
             variant={props.saveFailed ? "secondary" : props.dirty ? "primary" : "ghost"}

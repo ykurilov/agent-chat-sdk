@@ -1,5 +1,36 @@
 # @ykurilov/agent-chat-server
 
+## 0.58.0
+
+### Minor Changes
+
+- 332d90e: Новый параметр службы `abandonedBursts: { serviceFor }`: при нескольких службах на одном хранилище обход брошенных пачек
+  (`answerAfterRestart`) отдаёт пачку службе, которую назвало приложение, — её инструкция и модель отвечают. `serviceFor`
+  может создать службу по требованию; вернула `null` или упала — пачка ждёт следующего обхода, чужая служба её не берёт. Тот же параметр — у `createChatServer`.
+
+### Patch Changes
+
+- Updated dependencies [332d90e]
+- Updated dependencies [2ed600d]
+- Updated dependencies [760962e]
+  - @ykurilov/agent-chat-core@0.58.0
+
+## 0.57.0
+
+### Patch Changes
+
+- Updated dependencies [ade99cc]
+- Updated dependencies [86afa20]
+- Updated dependencies [624c10c]
+  - @ykurilov/agent-chat-core@0.57.0
+
+## 0.56.0
+
+### Patch Changes
+
+- Updated dependencies [24c313e]
+  - @ykurilov/agent-chat-core@0.56.0
+
 ## 0.55.0
 
 ### Patch Changes

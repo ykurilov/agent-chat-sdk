@@ -1,6 +1,7 @@
 import { and, asc, count, eq, gt, gte, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
+import { migratePostgresSchema } from "@ykurilov/agent-chat-core";
 import type { Pool } from "pg";
 import type { ButtonAction, ClosableMessengerStore, ConversationKey, MessengerConversation, MessengerLink, PendingDelivery } from "../types";
 import { MESSENGERS_MIGRATION_LOCK_KEY, MESSENGERS_MIGRATIONS_TABLE } from "./migration-settings";
@@ -22,21 +23,15 @@ function withoutNul<T>(value: T): T {
 }
 
 /**
- * Приводит таблицы мессенджеров к последней миграции. Идёт на одном соединении под блокировкой базы:
- * если несколько серверов стартуют сразу, второй ждёт первого и видит применённые миграции.
+ * Приводит таблицы мессенджеров к последней миграции. Схема `agent_chat` создаётся под общей блокировкой всех пакетов, миграции — под своей:
+ * копии пакета ждут друг друга, а разные пакеты стартуют разом на пустой базе без гонки за схему.
  */
 export async function migrateMessengersToLatest(pool: Pool, migrationsFolder: string): Promise<void> {
-  const client = await pool.connect();
-  try {
-    await client.query("select pg_advisory_lock($1)", [MESSENGERS_MIGRATION_LOCK_KEY]);
-    try {
-      await migrate(drizzle(client), { migrationsFolder, migrationsSchema: "agent_chat", migrationsTable: MESSENGERS_MIGRATIONS_TABLE });
-    } finally {
-      await client.query("select pg_advisory_unlock($1)", [MESSENGERS_MIGRATION_LOCK_KEY]);
-    }
-  } finally {
-    client.release();
-  }
+  await migratePostgresSchema({
+    connect: () => pool.connect(),
+    lockKey: MESSENGERS_MIGRATION_LOCK_KEY,
+    migrate: (client) => migrate(drizzle(client), { migrationsFolder, migrationsSchema: "agent_chat", migrationsTable: MESSENGERS_MIGRATIONS_TABLE }),
+  });
 }
 
 /** Хранилище мессенджеров в PostgreSQL (схема `agent_chat`). Одноразовое берётся одним условным запросом. Закрытие закрывает пул, повторное — ничего не делает. */

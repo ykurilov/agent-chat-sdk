@@ -36,6 +36,8 @@ export interface FlowEditorLabels {
     readOnly: string;
     readOnlyHint: string;
     migrate: string;
+    /** Меню «⋯» шапки на узком экране: подпись кнопки. */
+    more: string;
   };
   board: {
     anyState: string;
@@ -304,6 +306,7 @@ export const russianFlowEditorLabels: FlowEditorLabels = {
     readOnly: "Только просмотр",
     readOnlyHint: "Сценарий сейчас правит агент. Смотреть и прогонять можно, править нельзя.",
     migrate: "Перевести чаты",
+    more: "Ещё действия",
   },
   board: {
     anyState: "Из любого состояния",
@@ -552,6 +555,7 @@ export const englishFlowEditorLabels: FlowEditorLabels = {
     readOnly: "View only",
     readOnlyHint: "An agent is editing this flow right now. You can look and run it, but not edit.",
     migrate: "Move chats",
+    more: "More actions",
   },
   board: {
     anyState: "From any state",

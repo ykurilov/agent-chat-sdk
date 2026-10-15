@@ -125,3 +125,52 @@ describe("AgentChat: картинки агента (T046, FR-033, FR-043, FR-046
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 });
+
+describe("AgentChat: несколько источников картинок в одном чате (генерация + библиотека)", () => {
+  const library: ImagesClient = {
+    toolName: "show_image",
+    describe: ({ part, openImage }) =>
+      part.state === "output-available"
+        ? {
+            ordered: 1,
+            aspectRatio: "3:2",
+            wide: true,
+            items: [{ state: "ready", key: part.toolCallId, src: "/library/cell.png", alt: "Схема клетки", caption: "Строение клетки", width: 1200, height: 800, onOpen: (trigger) => openImage(part.toolCallId, trigger) }],
+            stopped: false,
+          }
+        : undefined,
+  };
+  const libraryCall = (toolCallId: string) => ({ type: "tool-show_image", toolCallId, state: "output-available", input: { id: "cell" }, output: { картинка: {} } });
+  const mixed = [question("u1", [file("a")]), answer("m1", [imagesCall("g1", ["x"]), libraryCall("l1"), { type: "tool-search", toolCallId: "s1", state: "output-available", input: {}, output: "найдено" }])];
+
+  it("images списком: каждый вызов рисует свой клиент, вид с подписью доходит до скина", async () => {
+    let seen: GeneratedImagesView | undefined;
+    const Spy = (view: GeneratedImagesView) => {
+      if (view.wide) seen = view;
+      return <GeneratedImages {...view} />;
+    };
+    renderAgentChat(fakeChatServer({ history: mixed }), { skin: { ...fullSkin, GeneratedImages: Spy }, images: [images, library] });
+    await screen.findByText("ответ m1");
+    expect(document.querySelector('[data-image="x"]')).not.toBeNull();
+    expect(document.querySelector('[data-image="l1"]')?.getAttribute("data-src")).toBe("/library/cell.png");
+    expect(toolRows()).toEqual(["search"]);
+    expect(seen?.items[0]).toMatchObject({ caption: "Строение клетки" });
+  });
+
+  it("окно просмотра листает картинки обоих источников по порядку ответа", async () => {
+    renderAgentChat(fakeChatServer({ history: mixed }), { skin: fullSkin, images: [images, library], attachments });
+    await screen.findByText("ответ m1");
+    fireEvent.click(document.querySelector('[data-image="l1"]')!);
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog.getAttribute("data-keys")).toBe("a,x,l1");
+    expect(dialog.getAttribute("data-index")).toBe("2");
+    expect(dialog.dataset.sizes!.split(",")[2]).toBe("1200x800");
+  });
+
+  it("один клиент, как раньше, работает без изменений; библиотека без генерации — тоже", async () => {
+    renderAgentChat(fakeChatServer({ history: mixed }), { skin: fullSkin, images: library });
+    await screen.findByText("ответ m1");
+    expect(document.querySelector('[data-image="l1"]')).not.toBeNull();
+    expect(toolRows()).toEqual(["generate_images", "search"]);
+  });
+});

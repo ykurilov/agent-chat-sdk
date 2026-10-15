@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800">
+  <rect width="1200" height="800" fill="#eef6f1"/>
+  <ellipse cx="600" cy="400" rx="470" ry="300" fill="#cfe9d9" stroke="#3b8a5c" stroke-width="10"/>
+  <circle cx="600" cy="390" r="120" fill="#a6c8f0" stroke="#2c5d9c" stroke-width="8"/>
+  <circle cx="620" cy="370" r="36" fill="#2c5d9c"/>
+  <ellipse cx="330" cy="300" rx="80" ry="38" fill="#f2b880" stroke="#b5651d" stroke-width="6"/>
+  <ellipse cx="880" cy="520" rx="80" ry="38" fill="#f2b880" stroke="#b5651d" stroke-width="6"/>
+  <ellipse cx="380" cy="540" rx="60" ry="28" fill="#f2b880" stroke="#b5651d" stroke-width="6"/>
+  <g font-family="sans-serif" font-size="34" fill="#1d3b2a">
+    <text x="600" y="560" text-anchor="middle">ядро</text>
+    <text x="330" y="250" text-anchor="middle">митохондрия</text>
+    <text x="1000" y="160" text-anchor="middle">мембрана</text>
+  </g>
+</svg>

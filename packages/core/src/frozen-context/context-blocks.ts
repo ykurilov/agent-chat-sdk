@@ -2,6 +2,7 @@ import type { AgentAudience, AgentChannel, ChatSubject } from "../conversation/t
 import type { AppStateValues } from "../app-state/app-state";
 import type { AgentNotice } from "../notices/agent-notice";
 import type { StaffActor } from "../turn-hooks/turn-hooks";
+import type { AgentViewer } from "../agent-run/agent-viewer";
 
 /** Тип служебной части ответа с застывшими блоками хода. Клиенту не уходит, модели — только текстом блоков. */
 export const FROZEN_CONTEXT_PART_TYPE = "data-frozen-context";
@@ -50,6 +51,8 @@ export interface ContextBlocksInput {
   audience: AgentAudience;
   /** Сотрудник, который делает ход в копии чата человека; нет — ход делает сам владелец. */
   staff?: StaffActor;
+  /** Права человека на ход (`agent.viewer`), тот же объект, что у инструментов. Нет `agent.viewer` — поля нет. */
+  viewer?: AgentViewer;
   modelId: string;
   providerId: string;
   /** Отмена: «Стоп», срок функции (`agent.contextBlocksTimeoutMs`), срок хода. */
