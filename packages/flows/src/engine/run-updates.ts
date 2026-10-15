@@ -63,6 +63,7 @@ export function applyTransition(flow: AgentFlow, run: FlowRun, transition: Trans
     }),
     chain: run.chain + 1,
     lastRejected: null,
+    enteredAfterAnswer: run.answerId,
   };
 }
 

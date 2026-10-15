@@ -17,7 +17,6 @@ import type { FlowTimeZones } from "./first-message-rules";
  * свою ветку: правка или «Переделать» начинают ветку с другим ответом — переход снимается.
  */
 export type ChatFlowRun = FlowRun & {
-  answerId?: string;
   /** Почему агент пишет первым в ответе `answerId`; ход на сообщение человека — нет. Для хвоста приложения. */
   firstReasons?: FlowFirstReason[];
 };

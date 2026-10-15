@@ -303,6 +303,16 @@ describe("путь и метки (В6)", () => {
     expect(run.lastRejected).toBeNull();
   });
 
+  it("переход помнит ответ агента, на котором вошли в состояние: судья после хода смотрит реплики с него", () => {
+    const sales = fixtureFlow("sales-review");
+    let run = go(sales, { ...runIn(sales, "intro", T0), answerId: "a1" }, verdict("intro_clear"), T0 + MIN);
+    expect(run.enteredAfterAnswer).toBe("a1");
+    run = go(sales, { ...noteHumanMessage(run, T0 + 2 * MIN), answerId: "a2" }, verdict("block_found"), T0 + 3 * MIN);
+    expect(run.enteredAfterAnswer).toBe("a2");
+    // Симуляция редактора без ответов: отметки нет.
+    expect(go(sales, runIn(sales, "intro", T0), verdict("intro_clear"), T0 + MIN).enteredAfterAnswer).toBeUndefined();
+  });
+
   it(`в пути не больше ${FLOW_PATH_LIMIT} записей`, () => {
     const flow = fixtureFlow("sheets-lesson");
     let run = runIn(flow, "hint", T0);

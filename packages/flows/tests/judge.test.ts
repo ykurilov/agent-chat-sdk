@@ -1,6 +1,6 @@
 import type { AskModelInput, RecordExternalUsageInput } from "@ykurilov/agent-chat-core";
 import { describe, expect, it } from "vitest";
-import type { JudgeMessage, JudgeSettings } from "../src/runtime/flow-types";
+import type { FlowJudgeEntry, JudgeMessage, JudgeSettings } from "../src/runtime/flow-types";
 import { JUDGE_INPUT_CHARS } from "../src/runtime/judge-context";
 import { createFlowJudge, DEFAULT_JUDGE_MODEL } from "../src/runtime/judge";
 
@@ -36,6 +36,8 @@ interface Setup {
   env?: Record<string, string | undefined>;
   /** Лимит расходов: бросает, когда исчерпан. */
   limit?: () => Promise<void>;
+  /** Журнал судьи бросает. */
+  journalFails?: boolean;
 }
 
 function setup(options: Setup = {}) {
@@ -43,6 +45,7 @@ function setup(options: Setup = {}) {
   const asked: AskModelInput[] = [];
   const usage: RecordExternalUsageInput[] = [];
   const errors: string[] = [];
+  const journal: FlowJudgeEntry[] = [];
   const behavior: FetchBehavior = options.fetch ?? (async () => decision({}));
   const fetch = (async (url: string | URL | Request, init?: RequestInit) => {
     const call: Call = { url: String(url), body: JSON.parse(String(init?.body)), headers: init?.headers as Record<string, string> };
@@ -67,9 +70,17 @@ function setup(options: Setup = {}) {
   const judge = createFlowJudge(
     { fallback: FALLBACK, ...options.settings },
     port,
-    { fetch, env: options.env ?? { OPENROUTER_API_KEY: "sk-or-тест" }, logError: (message) => errors.push(message) },
+    {
+      fetch,
+      env: options.env ?? { OPENROUTER_API_KEY: "sk-or-тест" },
+      logError: (message) => errors.push(message),
+      logJudge: (entry) => {
+        if (options.journalFails) throw new Error("журнал недоступен");
+        journal.push(entry);
+      },
+    },
   );
-  return { judge, calls, asked, usage, errors };
+  return { judge, calls, asked, usage, errors, journal };
 }
 
 const talk = (count: number): JudgeMessage[] => Array.from({ length: count }, (_, index) => ({ role: index % 2 === 0 ? "human" : "agent", text: `реплика ${index}` }));
@@ -345,5 +356,83 @@ describe("судья: обрезка входа под 32 тыс. токенов
     const { judge, asked } = setup({ fetch: async () => new Response("{}", { status: 500 }), ask: () => ({ met: [] }) });
     await judge.checkClaim(claim({ goal: huge, why: huge, messages: [{ role: "human", text: huge }] }));
     expect(asked[0]!.prompt.length).toBeLessThanOrEqual(JUDGE_INPUT_CHARS + 2000);
+  });
+});
+
+describe("судья: журнал входа (092)", () => {
+  it("по умолчанию боевой переход — без текстов реплик: выход, вероятность, число и длины реплик", async () => {
+    const { judge, journal } = setup({ fetch: async () => decision({ own_1: 0.92, own_2: 0.1, common_1: 0.02 }) });
+    await judge.checkAll(all({ messages: [{ role: "human", text: "мой телефон +7 900 000-00-00" }, ...talk(2)] }));
+
+    expect(journal).toHaveLength(1);
+    const [entry] = journal;
+    expect(entry).toMatchObject({
+      ownerId: OWNER,
+      chatId: CHAT,
+      kind: "after_turn",
+      model: DEFAULT_JUDGE_MODEL,
+      threshold: 0.7,
+      source: "decision",
+      replies: [
+        { role: "human", length: "мой телефон +7 900 000-00-00".length },
+        { role: "human", length: talk(2)[0]!.text.length },
+        { role: "agent", length: talk(2)[1]!.text.length },
+      ],
+      conditions: [
+        { exitId: "own_1", text: "Понятна тема", probability: 0.92, confirmed: true },
+        { exitId: "own_2", text: "Человек отказался", probability: 0.1, confirmed: false },
+        { exitId: "common_1", text: "Просит оператора", probability: 0.02, confirmed: false },
+      ],
+    });
+    expect(entry!.conversation).toBeUndefined();
+    expect(JSON.stringify(entry)).not.toContain("телефон");
+  });
+
+  it("journal: «transitions» — боевой переход с текстами (усечённо, без ключа); без подтверждения — молчит", async () => {
+    const { judge, journal } = setup({ settings: { journal: "transitions" }, fetch: async () => decision({ own_1: 0.92, own_2: 0.1, common_1: 0.02 }) });
+    await judge.checkAll(all({ messages: [{ role: "human", text: "а адрес обязательно латиницей? " + "ж".repeat(1000) }, ...talk(2)] }));
+    expect(journal).toHaveLength(1);
+    expect(journal[0]).toMatchObject({ goal: "Понять тему курса", conditions: [expect.objectContaining({ exitId: "own_1", confirmed: true }), expect.anything(), expect.anything()] });
+    expect(journal[0]!.conversation).toHaveLength(3);
+    expect(journal[0]!.conversation![0]!.text.startsWith("а адрес обязательно латиницей?")).toBe(true);
+    expect(journal[0]!.conversation![0]!.text.length).toBeLessThanOrEqual(300);
+    expect(JSON.stringify(journal[0])).not.toContain("sk-or-тест");
+
+    const quiet = setup({ settings: { journal: "transitions" }, fetch: async () => decision({ own_1: 0.1, own_2: 0.1, common_1: 0.1 }) });
+    await quiet.judge.checkAll(all());
+    expect(quiet.journal).toHaveLength(0);
+  });
+
+  it("по умолчанию: ничего не подтверждено — журнал молчит; тестовый чат — пишется всегда и с текстами", async () => {
+    const quiet = setup({ fetch: async () => decision({ own_1: 0.1, own_2: 0.1, common_1: 0.1 }) });
+    await quiet.judge.checkAll(all());
+    expect(quiet.journal).toHaveLength(0);
+
+    const test = setup({ fetch: async () => decision({ intro_clear: 0.1 }) });
+    await test.judge.checkClaim(claim({ testChat: true }));
+    expect(test.journal).toEqual([
+      expect.objectContaining({ kind: "claim", agentWords: "Человек назвал тему и продажи", conversation: expect.any(Array), conditions: [expect.objectContaining({ probability: 0.1, confirmed: false })] }),
+    ]);
+  });
+
+  it("journal: «always» — каждый вопрос; «off» — никогда, даже в тестовом чате", async () => {
+    const always = setup({ settings: { journal: "always" }, fetch: async () => decision({ own_1: 0.1, own_2: 0.1, common_1: 0.1 }) });
+    await always.judge.checkAll(all());
+    expect(always.journal).toHaveLength(1);
+
+    const off = setup({ settings: { journal: "off" }, fetch: async () => decision({ intro_clear: 0.99 }) });
+    await off.judge.checkClaim(claim({ testChat: true }));
+    expect(off.journal).toHaveLength(0);
+  });
+
+  it("ответила запасная модель — в журнале её решение; журнал упал — решение судьи не теряется", async () => {
+    const { judge, journal } = setup({ fetch: async () => new Response("{}", { status: 500 }), ask: () => ({ met: ["intro_clear"] }) });
+    await judge.checkClaim(claim());
+    expect(journal).toEqual([expect.objectContaining({ source: "fallback", conditions: [expect.objectContaining({ probability: 1, confirmed: true })] })]);
+    expect(journal[0]).not.toHaveProperty("agentWords");
+
+    const broken = setup({ journalFails: true, fetch: async () => decision({ intro_clear: 0.9 }) });
+    expect(await broken.judge.checkClaim(claim())).toMatchObject({ confirmed: true });
+    expect(broken.errors).toEqual([expect.stringContaining("журнал недоступен")]);
   });
 });

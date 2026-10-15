@@ -37,6 +37,7 @@ import type {
   FlowEndInput,
   FlowChatOptions,
   FlowJudge,
+  FlowJudgeEntry,
   FlowPort,
   FlowRunView,
   FlowTimers,
@@ -127,6 +128,22 @@ function judgeMessages(messages: ReadonlyArray<{ role: string; parts: readonly u
   });
 }
 
+type HistoryMessage = { id?: string; role: string; parts: readonly unknown[] };
+
+/**
+ * Реплики для судьи после хода — по истории ветки, от ответа агента, на котором вошли в текущее состояние (на что
+ * человек отвечает), до ответа этого хода. Сказанное раньше уже судили по условиям прошлого состояния: «А адрес обязательно
+ * латиницей?» из «Публикации» — не «спросил про свой домен» в «Доработке». Судья идёт в фоне: человек мог уже написать
+ * дальше — это судит следующий ход. А пока ход не закрыт, история прячет его ответ — он берётся из итога хода. Отметки
+ * входа нет или её ответа нет в ветке (правка, другая ветка) — последние реплики, как раньше.
+ */
+function turnWindow(messages: readonly HistoryMessage[], run: FlowRun, answer: { id: string; parts: readonly unknown[] }): readonly HistoryMessage[] {
+  const answerAt = messages.findIndex((message) => message.id === answer.id);
+  const upToAnswer = answerAt >= 0 ? messages.slice(0, answerAt + 1) : [...messages, { role: "assistant", parts: answer.parts }];
+  const enteredAt = run.enteredAfterAnswer === undefined ? -1 : upToAnswer.findIndex((message) => message.id === run.enteredAfterAnswer);
+  return enteredAt >= 0 ? upToAnswer.slice(enteredAt) : upToAnswer;
+}
+
 /** Сборка сценария с подменяемыми модулями. Приложению — `createAgentFlow`. */
 export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules = {}): BuiltAgentFlow {
   const { store } = options;
@@ -196,7 +213,8 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
     });
   }
 
-  const judge = lazy(() => modules.judge ?? createFlowJudge(options.judge, portOf, { logError }));
+  const logJudge = options.logJudge ?? ((entry: FlowJudgeEntry) => console.info(`[сценарий] судья: ${JSON.stringify(entry)}`));
+  const judge = lazy(() => modules.judge ?? createFlowJudge(options.judge, portOf, { logError, logJudge }));
   const firstMessages = lazy(() => (modules.firstMessages !== undefined ? modules.firstMessages : createFirstMessageRules(options.firstMessages, store)));
   // Пояс приложения (`agent.timeZone`, пояс лимитов) свой у каждой службы: его называет `withChat`, а чат относит к
   // службе `portFor`. Пока служба не сделала ни одного хода, берётся пояс последнего `withChat` (как в 0.48).
@@ -520,9 +538,10 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
     }),
   );
 
-  async function history(ownerId: string, chatId: string): Promise<JudgeMessage[]> {
+  /** Последние реплики для судьи; `turn` — судья после хода: окно хода (`turnWindow`). */
+  async function history(ownerId: string, chatId: string, turn?: { run: FlowRun; answer: { id: string; parts: readonly unknown[] } }): Promise<JudgeMessage[]> {
     const { messages } = await (await portOf({ ownerId, chatId })).peekHistory(ownerId, chatId);
-    return judgeMessages(messages).slice(-JUDGE_HISTORY);
+    return judgeMessages(turn ? turnWindow(messages, turn.run, turn.answer) : messages).slice(-JUDGE_HISTORY);
   }
 
   async function reschedule(ownerId: string, chatId: string, run: FlowRun, branchHead: string | null, failedAt?: number): Promise<void> {
@@ -604,7 +623,15 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
     const conditions = judgeExits(pinned.flow, run.state);
     if (conditions.length === 0) return;
 
-    const verdicts = await judge().checkAll({ ownerId, chatId, goal: stateGoal(state.instructions), conditions, messages: await history(ownerId, chatId) });
+    const verdicts = await judge().checkAll({
+      ownerId,
+      chatId,
+      goal: stateGoal(state.instructions),
+      conditions,
+      messages: await history(ownerId, chatId, { run, answer: { id: messageId, parts: result.parts } }),
+      // Сдвиг часов есть только у тестового чата редактора.
+      ...(run.timeOffset !== undefined && { testChat: true }),
+    });
     const met = conditions.map(({ exitId }) => verdicts.find((verdict) => verdict.exitId === exitId && verdict.confirmed)).find(Boolean);
     if (!met) return;
     const transition = nextTransition(pinned.flow, run, { type: "verdict", exitId: met.exitId, probability: met.probability, decidedBy: "judge" }, chatTime(run, now()));

@@ -178,6 +178,97 @@ describe("T043 судья после хода", () => {
   });
 });
 
+describe("092 судья после хода видит реплики только с входа в состояние", () => {
+  it("вопрос из прошлого состояния не уходит судье нового: только реплики после входа и реплика агента перед ними", async () => {
+    const chat = flowChat({ yes: ["intro_clear"] });
+    const { id } = await newChat(chat.service);
+    // «Публикация» Ольги: вопрос про адрес задан до входа в следующее состояние.
+    await say(chat.service, id, "а адрес обязательно латиницей?");
+    await chat.flow.settled();
+    chat.yes.clear();
+    // Переход судьи применяется в начале этого хода: сообщение — уже в новом состоянии.
+    await say(chat.service, id, "тоже не открывается");
+    await chat.flow.settled();
+    await say(chat.service, id, "открылось, спасибо");
+    await chat.flow.settled();
+
+    expect((await runOf(chat.service, id))?.state).toBe("block");
+    const asked = chat.judge.checkAll.mock.calls.at(-1)![0];
+    expect(asked.conditions.map(({ exitId }) => exitId)).toEqual(["block_not_ready", "block_found"]);
+    expect(asked.messages).toEqual([
+      { role: "agent", text: "ответ 1" },
+      { role: "human", text: "тоже не открывается" },
+      { role: "agent", text: "ответ 2" },
+      { role: "human", text: "открылось, спасибо" },
+      { role: "agent", text: "ответ 3" },
+    ]);
+  });
+
+  it("гонка: человек уже написал дальше, пока судья читал историю, — окно кончается ответом этого хода", async () => {
+    const chat = flowChat({ yes: ["intro_clear"] });
+    const { id } = await newChat(chat.service);
+    await say(chat.service, id, "а адрес обязательно латиницей?");
+    await chat.flow.settled();
+    chat.yes.clear();
+    await say(chat.service, id, "тоже не открывается");
+    await chat.flow.settled();
+    // Ход кончился, человек уже написал следующее и пошёл новый ответ, а судья прошлого хода читает историю только сейчас.
+    const peek = chat.service.peekHistory;
+    chat.service.peekHistory = async (owner, chatId) => {
+      const history = await peek(owner, chatId);
+      const answerId = ((await chat.service.getChatState(owner, chatId)).values.flow as { answerId: string }).answerId;
+      const shown = history.messages.some((message) => message.id === answerId)
+        ? history.messages
+        : [...history.messages, { id: answerId, role: "assistant" as const, parts: [{ type: "text" as const, text: "ответ 3" }] }];
+      const later = [
+        { id: "later-human", role: "user" as const, parts: [{ type: "text" as const, text: "уже следующее" }] },
+        { id: "later-answer", role: "assistant" as const, parts: [{ type: "text" as const, text: "ответ 4" }] },
+      ];
+      return { ...history, messages: [...shown, ...later] };
+    };
+    await say(chat.service, id, "открылось, спасибо");
+    await chat.flow.settled();
+
+    expect(chat.judge.checkAll.mock.calls.at(-1)![0].messages.map(({ text }) => text)).toEqual(["ответ 1", "тоже не открывается", "ответ 2", "открылось, спасибо", "ответ 3"]);
+  });
+
+  it("сообщение человека, принятое мимо хода, — в окне: окно считается по истории ветки, а не по счётчику ходов", async () => {
+    const chat = flowChat({ yes: ["intro_clear"] });
+    const { id } = await newChat(chat.service);
+    await say(chat.service, id, "а адрес обязательно латиницей?");
+    await chat.flow.settled();
+    chat.yes.clear();
+    await say(chat.service, id, "тоже не открывается");
+    await chat.flow.settled();
+    // Сообщение легло в ветку без хода (счётчик сообщений человека его не видел).
+    const { messages } = await chat.service.getHistory(OWNER, id);
+    await chat.storage.insertMessage({ id: "aside", chatId: id, parentId: messages.at(-1)!.id, role: "user", parts: [{ type: "text", text: "написала ещё в мессенджере" }], createdAt: new Date().toISOString() } as never);
+    await say(chat.service, id, "открылось, спасибо");
+    await chat.flow.settled();
+
+    expect(chat.judge.checkAll.mock.calls.at(-1)![0].messages.map(({ text }) => text)).toEqual([
+      "ответ 1",
+      "тоже не открывается",
+      "ответ 2",
+      "написала ещё в мессенджере",
+      "открылось, спасибо",
+      "ответ 3",
+    ]);
+  });
+
+  it("переходов ещё не было (или место записано до 0.62) — последние реплики, как раньше; ответ этого хода есть, хотя история его ещё прячет", async () => {
+    // Судья после хода идёт в фоне: в стенде он читает историю, пока ход не закрыт, — ответа хода в ней ещё нет.
+    const chat = flowChat();
+    const { id } = await newChat(chat.service);
+    await say(chat.service, id, "привет");
+    await chat.flow.settled();
+    await say(chat.service, id, "ещё");
+    await chat.flow.settled();
+
+    expect(chat.judge.checkAll.mock.calls.at(-1)![0].messages.map(({ text }) => text)).toEqual(["привет", "ответ 1", "ещё", "ответ 2"]);
+  });
+});
+
 describe("T044 события и охрана инструментов", () => {
   it("тишина → «Напоминание», сообщение человека → «назад» в последнее основное состояние", async () => {
     const chat = flowChat();

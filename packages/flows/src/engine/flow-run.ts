@@ -51,6 +51,13 @@ export interface FlowRun {
   /** Заметки этого чата по `id` поля `chatNotes`. */
   notes: Record<string, unknown>;
   humanMessages: number;
+  /** Ответ агента, к которому записано место чата. У симуляции редактора нет. */
+  answerId?: string;
+  /**
+   * Ответ агента, на котором вошли в текущее состояние, с 0.62: судья после хода смотрит реплики с него. Нет — переходов
+   * ещё не было, место записано раньше или это симуляция: судья видит последние реплики.
+   */
+  enteredAfterAnswer?: string;
   agentAnswers: number;
   /** На каком сообщении человека (`humanMessages`) был последний вопрос между делом. */
   sideQuestionAt: number | null;

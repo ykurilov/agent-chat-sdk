@@ -1,22 +1,27 @@
 import type { AskModel, ChatService, RecordUsage } from "@ykurilov/agent-chat-core";
 import { requestDecision } from "./decisions-client";
-import type { FlowJudge, JudgeMessage, JudgeSettings, JudgeVerdict } from "./flow-types";
-import { buildJudgeContext } from "./judge-context";
+import type { FlowJudge, FlowJudgeEntry, JudgeMessage, JudgeSettings, JudgeVerdict } from "./flow-types";
+import { buildJudgeContext, type JudgeContext } from "./judge-context";
 
 export const DEFAULT_JUDGE_THRESHOLD = 0.7;
 export const DEFAULT_JUDGE_MODEL = "microsoft/microsoft-decision-1";
 export const DEFAULT_JUDGE_TIMEOUT_MS = 5000;
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
+/** Длина текста в журнале судьи, знаков. */
+const JOURNAL_CHARS = 300;
 
 /** Что подменяют тесты. Окружение — откуда берутся ключ и адрес OpenRouter, если в настройках судьи их нет. */
 export interface JudgeDeps {
   fetch?: typeof fetch;
   env?: Record<string, string | undefined>;
   logError?: (message: string) => void;
+  /** Журнал судьи (`settings.journal`). Нет — журнала нет. */
+  logJudge?: (entry: FlowJudgeEntry) => void;
 }
 
 interface Question {
+  kind: FlowJudgeEntry["kind"];
   ownerId: string;
   chatId: string;
   goal?: string;
@@ -24,6 +29,7 @@ interface Question {
   messages: JudgeMessage[];
   conditions: Array<{ exitId: string; text: string }>;
   signal?: AbortSignal;
+  testChat?: boolean;
 }
 
 const FALLBACK_INSTRUCTIONS =
@@ -49,6 +55,37 @@ export function createFlowJudge(settings: JudgeSettings, port: (chat: { ownerId:
   const timeoutMs = settings.timeoutMs ?? DEFAULT_JUDGE_TIMEOUT_MS;
   const env = deps.env ?? process.env;
   const logError = deps.logError ?? (() => {});
+  const journal = settings.journal;
+
+  /** Вход и ответ — в журнал: всегда, в тестовом чате или когда условие подтверждено. Сбой журнала решение не трогает. */
+  function writeJournal(question: Question, context: JudgeContext, verdicts: JudgeVerdict[] | null): void {
+    if (!deps.logJudge || journal === "off") return;
+    const confirmed = verdicts?.some((verdict) => verdict.confirmed) ?? false;
+    // Тексты реплик в общем журнале сервера — только по явной настройке: у людей в них бывают пароли и телефоны.
+    const withTexts = journal === "always" || question.testChat === true || (journal === "transitions" && confirmed);
+    if (!withTexts && !confirmed) return;
+    const { goal, conversation, agent_words: agentWords } = context.state;
+    try {
+      deps.logJudge({
+        ownerId: question.ownerId,
+        chatId: question.chatId,
+        kind: question.kind,
+        model,
+        threshold,
+        source: verdicts?.[0]?.source ?? null,
+        ...(goal !== undefined && { goal: clip(goal) }),
+        ...(withTexts && agentWords !== undefined && { agentWords: clip(agentWords) }),
+        ...(withTexts && { conversation: conversation.map(({ role, text }) => ({ role, text: clip(text) })) }),
+        replies: conversation.map(({ role, text }) => ({ role, length: text.length })),
+        conditions: context.conditions.map(({ exitId, text }) => {
+          const verdict = verdicts?.find((item) => item.exitId === exitId);
+          return { exitId, text: clip(text), probability: verdict?.probability ?? null, confirmed: verdict?.confirmed ?? false };
+        }),
+      });
+    } catch (error) {
+      logError(`Судья: журнал не записан — ${errorText(error)}`);
+    }
+  }
 
   /** Вероятности основного судьи по `id` условий; `null` — не ответил. Расход записывается, даже если ответ негодный. */
   async function askDecision(question: Question, conditions: Question["conditions"], state: unknown): Promise<Record<string, number> | null> {
@@ -125,6 +162,12 @@ export function createFlowJudge(settings: JudgeSettings, port: (chat: { ownerId:
       logError(`Судья не спрошен: ${errorText(error)}`);
       return null;
     }
+    const verdicts = await ask(question, context);
+    writeJournal(question, context, verdicts);
+    return verdicts;
+  }
+
+  async function ask(question: Question, context: JudgeContext): Promise<JudgeVerdict[] | null> {
     const answers = await askDecision(question, context.conditions, context.state);
     if (answers) {
       return context.conditions.map(({ exitId }) => ({ exitId, probability: answers[exitId]!, confirmed: answers[exitId]! >= threshold, source: "decision" }));
@@ -136,8 +179,9 @@ export function createFlowJudge(settings: JudgeSettings, port: (chat: { ownerId:
   }
 
   return {
-    async checkClaim({ ownerId, chatId, exitId, condition, goal, why, messages, signal }) {
+    async checkClaim({ ownerId, chatId, exitId, condition, goal, why, messages, signal, testChat }) {
       const verdicts = await judge({
+        kind: "claim",
         ownerId,
         chatId,
         ...(goal !== undefined && { goal }),
@@ -145,16 +189,28 @@ export function createFlowJudge(settings: JudgeSettings, port: (chat: { ownerId:
         messages,
         conditions: [{ exitId, text: condition }],
         ...(signal && { signal }),
+        ...(testChat && { testChat }),
       });
       return verdicts?.[0] ?? null;
     },
-    async checkAll({ ownerId, chatId, goal, conditions, messages, signal }) {
+    async checkAll({ ownerId, chatId, goal, conditions, messages, signal, testChat }) {
       if (conditions.length === 0) return [];
-      const verdicts = await judge({ ownerId, chatId, ...(goal !== undefined && { goal }), messages, conditions, ...(signal && { signal }) });
+      const verdicts = await judge({
+        kind: "after_turn",
+        ownerId,
+        chatId,
+        ...(goal !== undefined && { goal }),
+        messages,
+        conditions,
+        ...(signal && { signal }),
+        ...(testChat && { testChat }),
+      });
       return verdicts?.filter((verdict) => verdict.confirmed) ?? [];
     },
   };
 }
+
+const clip = (text: string) => (text.length <= JOURNAL_CHARS ? text : `${text.slice(0, JOURNAL_CHARS - 1)}…`);
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);

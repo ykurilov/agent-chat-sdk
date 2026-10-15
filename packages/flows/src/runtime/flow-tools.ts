@@ -149,6 +149,7 @@ function flowExitTool(input: FlowToolsInput, model: AgentToolsModel): Tool {
           why,
           messages: await input.history(model.ownerId, model.chatId),
           ...(abortSignal && { signal: abortSignal }),
+          ...(turn.run.timeOffset !== undefined && { testChat: true }),
         });
       } catch (error) {
         runtime.logError(`[сценарий] чат=${model.chatId} судья упал: ${error instanceof Error ? error.message : String(error)}`);

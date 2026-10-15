@@ -84,9 +84,9 @@ export function flowChat(setup: FlowChatSetup = {}) {
     ...(setup.withCatalog && { catalog: mockCatalog({ mock: model }) }),
     ...setup.chatOptions,
   });
-  const { service } = noticeService(model, { ...options, logError });
+  const { service, storage } = noticeService(model, { ...options, logError });
   flow.attach(service);
-  return { model, store, judge, yes: fake.yes, timers, logError, loadFlow, flow, service, json, options };
+  return { model, storage, store, judge, yes: fake.yes, timers, logError, loadFlow, flow, service, json, options };
 }
 
 /** Новый чат; дальше — `say`. */

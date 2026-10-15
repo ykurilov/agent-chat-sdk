@@ -124,6 +124,35 @@ export interface JudgeSettings {
   openrouter?: { apiKey?: string; baseUrl?: string; headers?: Record<string, string> };
   /** Срок основного судьи, мс. По умолчанию 5000. */
   timeoutMs?: number;
+  /**
+   * Журнал входа судьи, с 0.62: что ушло (цель, реплики, условия — усечённо, без ключей) и что ответил — в `logJudge`.
+   * По умолчанию тексты реплик пишутся только в тестовом чате редактора, каждый вопрос. Боевой переход по судье —
+   * запись без текстов реплик и слов агента: выход, вероятность, число и длины реплик. Реплики людей бывают с паролями
+   * и телефонами, а журнал сервера общий. `"transitions"` — боевые переходы с текстами; `"always"` — каждый вопрос с
+   * текстами; `"off"` — никогда.
+   */
+  journal?: "transitions" | "always" | "off";
+}
+
+/** Запись журнала судьи: один вопрос и ответ. Тексты усечены до 300 знаков. */
+export interface FlowJudgeEntry {
+  ownerId: string;
+  chatId: string;
+  /** `after_turn` — судья после хода, `claim` — заявка агента `flow_exit`. */
+  kind: "after_turn" | "claim";
+  model: string;
+  threshold: number;
+  /** Кто ответил; `null` — ни основной судья, ни запасная модель. */
+  source: "decision" | "fallback" | null;
+  goal?: string;
+  /** Слова агента при заявке; только в записи с текстами. */
+  agentWords?: string;
+  /** Реплики, которые видел судья. Нет — запись без текстов (по умолчанию у боевых переходов). */
+  conversation?: JudgeMessage[];
+  /** Число реплик и длина каждой, как её видел судья. */
+  replies: Array<{ role: JudgeMessage["role"]; length: number }>;
+  /** Условия в порядке вопроса; `probability: null` — ответа нет. */
+  conditions: Array<{ exitId: string; text: string; probability: number | null; confirmed: boolean }>;
 }
 
 export interface FlowJudge {
@@ -142,6 +171,8 @@ export interface FlowJudge {
     why?: string;
     messages: JudgeMessage[];
     signal?: AbortSignal;
+    /** Тестовый чат редактора: журнал судьи пишется всегда. */
+    testChat?: boolean;
   }): Promise<JudgeVerdict | null>;
   /** После хода: условия словами, которые выполнены, в порядке `conditions` (своё раньше общего). Пусто — ни одно или не проверено. */
   checkAll(input: {
@@ -152,6 +183,8 @@ export interface FlowJudge {
     conditions: Array<{ exitId: string; text: string }>;
     messages: JudgeMessage[];
     signal?: AbortSignal;
+    /** Тестовый чат редактора: журнал судьи пишется всегда. */
+    testChat?: boolean;
   }): Promise<JudgeVerdict[]>;
 }
 
@@ -484,6 +517,8 @@ export interface AgentFlowOptions {
   pause?: FlowPauseSettings;
   timers?: FlowTimerSettings;
   logError?: (message: string) => void;
+  /** Журнал судьи (`judge.journal`), с 0.62. По умолчанию — строка `[сценарий] судья: {…}` в `console.info`. */
+  logJudge?: (entry: FlowJudgeEntry) => void;
   /** Часы; для тестов. */
   now?: () => Date;
 }
