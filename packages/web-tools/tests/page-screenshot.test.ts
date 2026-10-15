@@ -6,6 +6,7 @@ import type { PageReaderService, PageScreenshotService, WebSearchService } from 
 import { WebToolError } from "../src/web-tool-error";
 import { executeOptions, noImages, publicHost, sampleHits, samplePage } from "./support";
 
+
 const pngBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
 const shotUrl = "https://storage.example/shots/abc.png?sig=secret-signature";
 
@@ -36,15 +37,28 @@ afterEach(() => vi.useRealTimers());
 describe("page_screenshot: когда инструмент есть в наборе", () => {
   it.each([
     { name: "видит картинки и видит их в результате инструмента у этого провайдера", acceptsImages: true, seenVia: ["openai"], providerId: "openai", expected: true },
-    { name: "видит картинки, но у этого провайдера из результата инструмента не видит", acceptsImages: true, seenVia: ["openai"], providerId: "deepseek", expected: false },
+    { name: "видит картинки, провайдер не проверен (не проверено — не значит «не умеет»)", acceptsImages: true, seenVia: ["openai"], providerId: "deepseek", expected: true },
     { name: "отметка есть, но модель не видит картинки", acceptsImages: false, seenVia: ["openai"], providerId: "openai", expected: false },
-    { name: "отметки нет", acceptsImages: true, seenVia: undefined, providerId: "openai", expected: false },
-    { name: "отметка пуста", acceptsImages: true, seenVia: [], providerId: "openai", expected: false },
+    { name: "отметки нет", acceptsImages: true, seenVia: undefined, providerId: "openai", expected: true },
+    { name: "отметка пуста", acceptsImages: true, seenVia: [], providerId: "openai", expected: true },
+    { name: "провайдер помечен «точно не видит»", acceptsImages: true, blindVia: ["openai"], providerId: "openai", expected: false },
     { name: "модель видит, но у этого провайдера картинок не видит", acceptsImages: true, byProvider: { openai: false }, seenVia: ["openai"], providerId: "openai", expected: false },
     { name: "модель не видит, но у этого провайдера видит", acceptsImages: false, byProvider: { openai: true }, seenVia: ["openai"], providerId: "openai", expected: true },
-  ])("$name → инструмент есть: $expected", ({ acceptsImages, byProvider, seenVia, providerId, expected }) => {
+  ])("$name → инструмент есть: $expected", ({ acceptsImages, byProvider, seenVia, blindVia, providerId, expected }: {
+    acceptsImages: boolean;
+    byProvider?: Record<string, boolean>;
+    seenVia?: string[];
+    blindVia?: string[];
+    providerId: string;
+    expected: boolean;
+  }) => {
     const tools = createWebTools(parts())({
-      profile: { acceptsImages, ...(byProvider && { acceptsImagesByProvider: byProvider }), ...(seenVia && { toolResultImageProviders: seenVia }) },
+      profile: {
+        acceptsImages,
+        ...(byProvider && { acceptsImagesByProvider: byProvider }),
+        ...(seenVia && { toolResultImageProviders: seenVia }),
+        ...(blindVia && { blindToolResultImageProviders: blindVia }),
+      },
       providerId,
     });
     expect("page_screenshot" in tools).toBe(expected);
@@ -90,6 +104,16 @@ describe("page_screenshot: запись в историю", () => {
     expect(JSON.stringify(result).length).toBeLessThan(2048);
   });
 
+  it("служба вернула и текст страницы — он в записи (по пределу), чтобы модели без картинки было что показать", async () => {
+    const service = { takeScreenshot: vi.fn<PageScreenshotService["takeScreenshot"]>(async () => ({ imageUrl: shotUrl, page: { ...samplePage, markdown: "Абзац один.\n\nАбзац два длинный." } })) };
+    const tools = createWebTools(parts({ screenshots: service, pageCharacterLimit: 12 }))(seesImages);
+    const result = (await tools.page_screenshot?.execute?.({ url: "https://example.com/a" } as never, executeOptions())) as { text?: string };
+    expect(result).toMatchObject({ pageUrl: "https://example.com/a", screenshotUrl: shotUrl });
+    expect(result.text).toContain("Абзац один.");
+    expect(result.text).not.toContain("Абзац два");
+    expect(result.text).toMatch(/Текст обрезан/);
+  });
+
   it("локальный адрес отклоняется до обращения к службе", async () => {
     const service = screenshotService();
     const tools = createWebTools(parts({ screenshots: service }))(seesImages);
@@ -121,6 +145,21 @@ describe("page_screenshot: что получает модель", () => {
     expect(value[1]).toMatchObject({ type: "file", mediaType: "image/png", data: { type: "data" } });
     const data = (value[1] as { data: { data: Uint8Array } }).data.data;
     expect(Array.from(data)).toEqual(Array.from(pngBytes));
+  });
+
+  it("есть текст страницы — он идёт запасным текстом после картинки: модель без картинки получит его, а не base64", async () => {
+    const tools = createWebTools(parts({ fetch: imageFetch() }))(seesImages);
+    const converted = (await convert(tools, { ...output, text: "# Студия\nМаникюр" })) as { value: Array<Record<string, unknown>> };
+    expect(converted.value[1]).toMatchObject({ type: "file" });
+    expect(converted.value[2]).toMatchObject({ type: "text", text: expect.stringContaining("Маникюр"), providerOptions: { agentChat: { toolImageFallback: true } } });
+  });
+
+  it("снимок не скачался, а текст страницы есть — модели уходит текст страницы", async () => {
+    const tools = createWebTools(parts({ fetch: imageFetch("нет", { status: 404, headers: { "content-type": "text/plain" } }) }))(seesImages);
+    const converted = (await convert(tools, { ...output, text: "# Студия\nМаникюр" })) as { type: string; value: string };
+    expect(converted.type).toBe("text");
+    expect(converted.value).toContain("больше недоступен");
+    expect(converted.value).toContain("Маникюр");
   });
 
   it.each([

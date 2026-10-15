@@ -12,6 +12,8 @@ describe("тело запроса песочницы", () => {
     let pulled = 0;
     const body = new ReadableStream<Uint8Array>({
       pull(controller) {
+        // Потолок 2 МиБ: сломанный предел роняет тест на `pulled`, а не раздувает память.
+        if (pulled >= 2048) return controller.close();
         pulled += 1;
         controller.enqueue(new Uint8Array(1024));
       },
@@ -35,6 +37,8 @@ describe("тело запроса песочницы", () => {
     let cancelled = false;
     const body = new ReadableStream<Uint8Array>({
       pull(controller) {
+        // Потолок 8 МиБ: сломанный предел роняет тест на `pulled`, а не раздувает память.
+        if (pulled >= 128) return controller.close();
         pulled += 1;
         controller.enqueue(new Uint8Array(64 * 1024).fill(32));
       },

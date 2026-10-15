@@ -85,6 +85,19 @@ describe("разбор PDF в отдельном потоке", () => {
     expect((error as AttachmentRejectedError).kind).toBe("unreadable");
   }, 30_000);
 
+  it("бомба отклоняется по размеру распакованного потока, а не по памяти: даже с большим потолком памяти — unreadable", async () => {
+    // 180 МБ распакованного содержимого страницы. Потолок памяти 4 ГБ её бы пропустил: отказ — только от предела потока.
+    const error = await extractText("pdf", makeInflatingPdf(6_000_000), { timeoutMs: 20_000, maxMemoryMb: 4096 }).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(AttachmentRejectedError);
+    expect((error as AttachmentRejectedError).kind).toBe("unreadable");
+  }, 30_000);
+
+  it("предел распакованного потока настраивается; сжатый поток ниже предела читается", async () => {
+    const packed = makeInflatingPdf(100_000); // 3 МБ распакованного содержимого
+    expect(await extractText("pdf", packed)).toMatch(/^a+$/);
+    await expect(extractText("pdf", packed, { maxStreamBytes: 1_000_000 })).rejects.toMatchObject({ kind: "unreadable" });
+  }, 30_000);
+
   it("после отказа следующий разбор работает: один плохой файл поток не ломает", async () => {
     await extractText("pdf", makeManyPagesPdf(3000, 200), { timeoutMs: 20 }).catch(() => undefined);
     expect(await extractText("pdf", makePdf(["still fine"]))).toContain("still fine");

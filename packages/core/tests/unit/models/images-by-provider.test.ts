@@ -84,16 +84,32 @@ describe("зрение по паре «модель + провайдер»", () 
 });
 
 describe("стандартный каталог: кто видит картинку в сообщении", () => {
-  it("через Together DeepSeek 4.1 Flash и GLM 5.3 Flash картинок не видят (каталог Together: только текст), у остальных провайдеров видят", () => {
+  it("через Together GLM 5.3 Flash картинок не видит (каталог Together: только текст; DeepSeek 4.1 Flash там видит — живой замер 2026-10-15), у остальных провайдеров видят", () => {
     const seen = Object.fromEntries(
       standardCatalog.models.map((model) => [model.id, Object.fromEntries(Object.keys(model.providerModelIds).map((providerId) => [providerId, modelAcceptsImages(model, providerId)]))]),
     );
     expect(seen).toEqual({
-      "deepseek-4.1-flash": { deepseek: true, fireworks: true, together: false, openrouter: true },
+      "deepseek-4.1-flash": { deepseek: true, fireworks: true, together: true, openrouter: true },
       "glm-5.3-flash": { fireworks: true, together: false, openrouter: true },
       "gpt-6-luna": { openrouter: true },
       "gemini-3.8-flash": { openrouter: true },
       "claude-haiku-5.5": { openrouter: true },
     });
+  });
+});
+
+describe("пометка «точно не видит картинку в результате инструмента» у маршрутов OpenRouter", () => {
+  it("маршрут наследует пометку провайдера-образца и сам передаёт картинки инструментов", () => {
+    const blindModel: ModelProfile = {
+      ...standardCatalog.models.find((model) => model.id === "glm-5.3-flash")!,
+      id: "blind-glm",
+      toolResultImageProviders: [],
+      blindToolResultImageProviders: ["openrouter"],
+    };
+    const route = createOpenRouterProvider({ id: "openrouter-z", only: ["z-ai"] });
+    const catalog = extendCatalog(standardCatalog, { addProviders: [route], addModels: [blindModel] });
+    const found = catalog.models.find((model) => model.id === "blind-glm")!;
+    expect(found.blindToolResultImageProviders).toEqual(["openrouter", "openrouter-z"]);
+    expect(route.toolResultImages).toBe(true);
   });
 });

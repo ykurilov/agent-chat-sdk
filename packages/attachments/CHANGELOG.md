@@ -1,5 +1,22 @@
 # @ykurilov/agent-chat-attachments
 
+## 0.61.0
+
+### Patch Changes
+
+- ebfbed9: PDF-«бомба» (маленький сжатый поток, который распаковывается в сотни мегабайт) теперь всегда получает отказ `unreadable`. До разбора каждый сжатый поток PDF, кроме картинок, распаковывается с жёстким пределом — по умолчанию 64 МБ, настраивается `maxStreamBytes` в параметрах `extractText`. Раньше отказ держался только на потолке памяти потока разбора и зависел от сборки мусора: иногда вместо отказа приходили мегабайты текста. Потолок памяти остался второй линией защиты.
+- Updated dependencies [b3f42a3]
+  - @ykurilov/agent-chat-core@0.61.0
+  - @ykurilov/agent-chat-react@0.61.0
+
+## 0.60.0
+
+### Patch Changes
+
+- Updated dependencies [6e8723c]
+  - @ykurilov/agent-chat-core@0.60.0
+  - @ykurilov/agent-chat-react@0.60.0
+
 ## 0.59.0
 
 ### Minor Changes

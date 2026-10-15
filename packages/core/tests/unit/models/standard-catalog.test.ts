@@ -85,10 +85,10 @@ describe("standardCatalog", () => {
 });
 
 describe("картинка в результате инструмента (живые замеры через OpenRouter)", () => {
-  it("видят GPT 6 Luna, Gemini 3.8 Flash и Claude Haiku 5.5 через OpenRouter, DeepSeek 4.1 Flash — у самого DeepSeek и через OpenRouter, GLM 5.3 Flash — через OpenRouter", () => {
+  it("видят GPT 6 Luna, Gemini 3.8 Flash и Claude Haiku 5.5 через OpenRouter, DeepSeek 4.1 Flash — у DeepSeek, Together, Fireworks и через OpenRouter, GLM 5.3 Flash — через OpenRouter", () => {
     const seen = Object.fromEntries(standardCatalog.models.map((model) => [model.id, model.toolResultImageProviders ?? []]));
     expect(seen).toEqual({
-      "deepseek-4.1-flash": ["deepseek", "openrouter"],
+      "deepseek-4.1-flash": ["deepseek", "together", "fireworks", "openrouter"],
       "glm-5.3-flash": ["openrouter"],
       "gpt-6-luna": ["openrouter"],
       "gemini-3.8-flash": ["openrouter"],

@@ -15,10 +15,12 @@ export function stateGoal(instructions: string): string {
 }
 
 /**
- * Блок `flow:state`: текущее состояние, цель, условия выхода, что узнать. Зависит только от состояния — пока оно то же,
- * блок не меняется и в новые вопросы не дописывается (→ В9). Первого текста здесь нет: его несёт переход.
+ * Блок `flow:state`: текущее состояние, цель, условия выхода, что узнать. Зависит только от состояния и набора
+ * инструментов модели хода — пока они те же, блок не меняется и в новые вопросы не дописывается (→ В9). Первого текста
+ * здесь нет: его несёт переход. `present` — имена в наборе модели хода: инструментов сценария вне набора карточка не
+ * называет. Нет — набор неизвестен, называются все.
  */
-export function stateCard(flow: AgentFlow, run: FlowRun): string {
+export function stateCard(flow: AgentFlow, run: FlowRun, present?: ReadonlySet<string>): string {
   const state = stateById(flow, run.state);
   if (!state) return `Состояние «${run.state}» в сценарии не найдено: веди разговор по общим правилам.`;
   const [goal = "", ...rest] = state.instructions.split("\n");
@@ -36,8 +38,10 @@ export function stateCard(flow: AgentFlow, run: FlowRun): string {
     lines.push("", "Условия выхода (номер — для flow_exit):", ...conditions.map((condition, index) => `${index + 1}. ${condition.text}`));
   }
 
-  if (state.tools.length > 0) lines.push("", `Инструменты этого состояния: ${state.tools.join(", ")}.`);
-  const unavailable = flow.tools.filter((name) => !state.tools.includes(name));
+  const inSet = (name: string) => !present || present.has(name);
+  const tools = state.tools.filter(inSet);
+  if (tools.length > 0) lines.push("", `Инструменты этого состояния: ${tools.join(", ")}.`);
+  const unavailable = flow.tools.filter((name) => inSet(name) && !state.tools.includes(name));
   if (unavailable.length > 0) lines.push(`Сейчас недоступны: ${unavailable.join(", ")}.`);
   return lines.join("\n");
 }

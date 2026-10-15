@@ -1,5 +1,5 @@
 import type { ToolSet } from "ai";
-import { modelAcceptsImages } from "@ykurilov/agent-chat-core";
+import { modelMaySeeToolResultImages } from "@ykurilov/agent-chat-core";
 import type { ChatStorage } from "@ykurilov/agent-chat-core";
 import { dnsHostResolver } from "./dns-host-resolver";
 import type { HostResolver } from "./page-address";
@@ -46,8 +46,16 @@ export interface WebToolsSpending {
 
 /** Выбранная модель: то, что ядро передаёт функции-набору инструментов. */
 export interface WebToolsModel {
-  /** `toolResultImageProviders` — профиль модели: через каких провайдеров она видит картинку в результате инструмента. */
-  profile: { acceptsImages: boolean; acceptsImagesByProvider?: Readonly<Record<string, boolean>>; toolResultImageProviders?: readonly string[] };
+  /**
+   * Профиль модели. Снимок даётся, если модель видит картинки и провайдер не помечен «точно не видит картинку в
+   * результате инструмента» (`blindToolResultImageProviders`); `toolResultImageProviders` — справка о проверенных.
+   */
+  profile: {
+    acceptsImages: boolean;
+    acceptsImagesByProvider?: Readonly<Record<string, boolean>>;
+    toolResultImageProviders?: readonly string[];
+    blindToolResultImageProviders?: readonly string[];
+  };
   providerId: string;
   /** Чей ход и в каком чате: на них пишется расход (`spending`). Ядро передаёт их само. */
   ownerId?: string;
@@ -63,16 +71,15 @@ export function createWebTools(options: CreateWebToolsOptions): (model: WebTools
     web_search: webSearchTool(options.search, options.searchResultLimit ?? defaultSearchResultLimit),
     read_page: readPageTool(options.reader, options.pageCharacterLimit ?? defaultPageCharacterLimit),
   };
+  const pageCharacterLimit = options.pageCharacterLimit ?? defaultPageCharacterLimit;
   const screenshotTool =
-    options.screenshots && pageScreenshotTool(options.screenshots, options.fetch ?? globalThis.fetch, options.resolveHost ?? dnsHostResolver);
+    options.screenshots &&
+    pageScreenshotTool(options.screenshots, options.fetch ?? globalThis.fetch, options.resolveHost ?? dnsHostResolver, pageCharacterLimit);
   const withScreenshot: ToolSet = screenshotTool ? { ...tools, page_screenshot: screenshotTool } : tools;
   const counted = options.spending && countingSpending(options.spending);
 
   return (model) => {
-    const chosen =
-      screenshotTool && modelAcceptsImages(model.profile, model.providerId) && model.profile.toolResultImageProviders?.includes(model.providerId)
-        ? withScreenshot
-        : tools;
+    const chosen = screenshotTool && modelMaySeeToolResultImages(model.profile, model.providerId) ? withScreenshot : tools;
     return counted && model.ownerId && model.chatId ? counted(chosen, model.ownerId, model.chatId) : chosen;
   };
 }

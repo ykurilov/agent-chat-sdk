@@ -1,5 +1,25 @@
 # @ykurilov/agent-chat-flows
 
+## 0.61.0
+
+### Patch Changes
+
+- Updated dependencies [b3f42a3]
+  - @ykurilov/agent-chat-core@0.61.0
+  - @ykurilov/agent-chat-react@0.61.0
+
+## 0.60.0
+
+### Minor Changes
+
+- 6e8723c: Снимок страницы в ответе инструмента уходит картинкой к Together и Fireworks (раньше — строкой текста, ход зависал); профиль DeepSeek 4.1 Flash видит снимки через DeepSeek, Together, Fireworks и OpenRouter. Сценарии не называют инструменты, которых нет у модели этого хода; правила просмотра ссылок — в описании инструмента.
+
+### Patch Changes
+
+- Updated dependencies [6e8723c]
+  - @ykurilov/agent-chat-core@0.60.0
+  - @ykurilov/agent-chat-react@0.60.0
+
 ## 0.59.0
 
 ### Minor Changes

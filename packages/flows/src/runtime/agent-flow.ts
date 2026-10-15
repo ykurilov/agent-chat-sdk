@@ -6,11 +6,13 @@ import {
   type Chat,
   type ChatInstructionsTurn,
   type ContextBlockEntry,
+  type ModelCatalog,
   type PrepareTurnContext,
   type TurnResult,
   type WidgetAnswerContext,
 } from "@ykurilov/agent-chat-core";
 import type { AgentFlow } from "../format/flow-format";
+import { turnToolNames } from "./turn-tool-names";
 import { parseFlow } from "../format/parse-flow";
 import { checkFlow } from "../check/check-flow";
 import { FLOW_STATE_KEY, type FlowRun, type Transition } from "../engine/flow-run";
@@ -774,7 +776,9 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
             const pinned = await chatFlow(input.ownerId, input.chatId);
             if (!pinned) return own;
             const run = currentRun(pinned.flow, input.state, now());
-            const blocks: ContextBlockEntry[] = [...own, { key: "flow:state", text: stateCard(pinned.flow, run) }];
+            // Инструменты сценария вне набора модели хода карточка не называет: модель их не вызовет впустую.
+            const present = turnToolNames(agent.tools, (chat as { catalog?: ModelCatalog }).catalog, input);
+            const blocks: ContextBlockEntry[] = [...own, { key: "flow:state", text: stateCard(pinned.flow, run, present) }];
             const client = await clientCard()?.block({ ownerId: input.ownerId, flow: pinned.flow, run });
             if (client?.trim()) blocks.push({ key: "flow:client", text: client, private: true });
             return blocks;

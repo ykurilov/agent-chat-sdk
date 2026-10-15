@@ -131,7 +131,15 @@ describe("снимок", () => {
     const shot = await createFirecrawlServices({ apiKey, fetch }).screenshots.takeScreenshot("https://example.com", {});
 
     expect(shot).toEqual({ imageUrl: "https://storage.example/shot.png?sig=1" });
-    expect(calls[0]).toMatchObject({ url: "https://api.firecrawl.dev/v2/scrape", body: { url: "https://example.com", formats: ["screenshot"] } });
+    expect(calls[0]).toMatchObject({ url: "https://api.firecrawl.dev/v2/scrape", body: { url: "https://example.com", formats: ["markdown", "screenshot"] } });
+  });
+
+  it("тем же запросом (1 кредит) — текст страницы: он нужен модели, которой картинка не дойдёт", async () => {
+    const { fetch } = fakeFetch(() =>
+      jsonResponse({ success: true, data: { screenshot: "https://storage.example/shot.png", markdown: "Маникюр", metadata: { title: "Студия", sourceURL: "https://example.com/" } } }),
+    );
+    const shot = await createFirecrawlServices({ apiKey, fetch }).screenshots.takeScreenshot("https://example.com", {});
+    expect(shot).toEqual({ imageUrl: "https://storage.example/shot.png", page: { url: "https://example.com/", title: "Студия", markdown: "Маникюр" } });
   });
 
   it.each(["javascript:alert(1)", "file:///etc/passwd", "data:image/png;base64,AAAA"])("адрес снимка %s — неожиданный ответ", async (screenshot) => {

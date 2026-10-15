@@ -5,11 +5,11 @@ export const deepseek41FlashProfile: ModelProfile = {
   displayName: "DeepSeek 4.1 Flash",
   contextWindowTokens: 1_000_000,
   acceptsImages: true,
-  // Together даёт модель только с текстом (каталог Together, 2026-10-11): картинка туда не уходит.
-  acceptsImagesByProvider: { together: false },
-  // Картинку в результате инструмента видит у самого DeepSeek (проверено вживую 2026-10-05) и через OpenRouter у всех
-  // хозяев, кроме запрещённых ниже: одни её не видят, другие отвергают запрос (замер всех хозяев модели в OpenRouter 2026-10-06, docs/research/openrouter-tool-images.md).
-  toolResultImageProviders: ["deepseek", "openrouter"],
+  // Картинку в результате инструмента видит у самого DeepSeek (проверено вживую 2026-10-05), у Together и Fireworks
+  // (вживую 2026-10-15: картинка в ответе инструмента и в сообщении человека — цвет назван верно; запись каталога
+  // Together «только текст» устарела) и через OpenRouter у всех хозяев, кроме запрещённых ниже: одни её не видят,
+  // другие отвергают запрос (замер всех хозяев модели в OpenRouter 2026-10-06, docs/research/openrouter-tool-images.md).
+  toolResultImageProviders: ["deepseek", "together", "fireworks", "openrouter"],
   reasoning: { replayPastTurns: true, levels: ["off", "on"], defaultLevel: "on" },
   // Запрет стоит всегда, а не только при картинке: запрос одинаков в каждом ходе, кэш и выбранный хозяин не теряются.
   providerOptions: { openrouter: { provider: { ignore: ["deepinfra", "open-inference", "phala", "sail-research", "venice"] } } },

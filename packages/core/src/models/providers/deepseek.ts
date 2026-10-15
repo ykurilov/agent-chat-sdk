@@ -23,6 +23,7 @@ export function createDeepSeekProvider(connectionOptions: ProviderConnection = {
     // незнакомые поля не шлёт: `samplingRequest` нет, `sampling.minP` модели сюда не уходит.
     // Кончившиеся деньги DeepSeek описывает телом ответа; код бывает не только 402.
     errorHints: [{ match: /insufficient balance/i, kind: "insufficient_funds" }],
+    toolResultImages: true,
     ...connectionField(connection),
     ...silenceField("DeepSeek", connectionOptions),
     ...hiddenField("DeepSeek", connectionOptions),

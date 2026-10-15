@@ -21,5 +21,9 @@ export interface PageReaderService {
 }
 
 export interface PageScreenshotService {
-  takeScreenshot(url: string, options: { signal?: AbortSignal }): Promise<{ imageUrl: string }>;
+  /**
+   * `page` — текст той же страницы, если служба отдаёт его тем же запросом (Firecrawl — за тот же кредит). Его получит
+   * модель, которой картинка не дойдёт; нет текста — она получит только пометку, что снимок не показан.
+   */
+  takeScreenshot(url: string, options: { signal?: AbortSignal }): Promise<{ imageUrl: string; page?: PageContent }>;
 }

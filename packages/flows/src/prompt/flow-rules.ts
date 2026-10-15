@@ -3,7 +3,6 @@ import type { FlowRulePart } from "./rules/rule-part";
 import { timeZoneRules } from "./rules/time-zone";
 import { dayFrameRules } from "./rules/day-frame";
 import { sideTaskRules } from "./rules/side-tasks";
-import { linkViewRules } from "./rules/link-views";
 
 /** Как агент ведёт разговор по сценарию. Текст не зависит от состояния: инструкция одна на весь чат (→ В9). */
 const FLOW_RULES = `# Разговор по сценарию
@@ -25,7 +24,7 @@ const FLOW_RULES = `# Разговор по сценарию
 - Спросил о постороннем — ответь коротко и вернись к цели состояния.`;
 
 /** Части правил по возможностям сценария, по порядку. Каждую делает свой модуль. */
-export const FLOW_RULE_PARTS: readonly FlowRulePart[] = [timeZoneRules, dayFrameRules, sideTaskRules, linkViewRules];
+export const FLOW_RULE_PARTS: readonly FlowRulePart[] = [timeZoneRules, dayFrameRules, sideTaskRules];
 
 /**
  * Постоянная часть инструкции: как работает сценарий, правила такта, части по возможностям сценария и «Общее для всех

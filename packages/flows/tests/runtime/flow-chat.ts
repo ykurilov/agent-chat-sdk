@@ -1,7 +1,7 @@
 import type { AgentSettings, AgentToolsSource, ChatService } from "@ykurilov/agent-chat-core";
 import { vi } from "vitest";
 import { noticeService, scriptedModel, userMessage } from "../../../core/tests/unit/support/notice-chat";
-import { mockModelId, readAll } from "../../../core/tests/unit/support/mock-model";
+import { mockCatalog, mockModelId, readAll } from "../../../core/tests/unit/support/mock-model";
 import { buildAgentFlow, type FlowModules } from "../../src/runtime/agent-flow";
 import type { AgentFlowOptions, ClientCardTools, FlowJudge, FlowTimers, JudgeVerdict } from "../../src/runtime/flow-types";
 import { memoryFlowStore } from "../../src/store/memory";
@@ -51,6 +51,8 @@ export interface FlowChatSetup {
   chatInstructions?: (chat: { id: string }) => Promise<string | null>;
   onTransition?: AgentFlowOptions["onTransition"];
   store?: FlowStore;
+  /** Каталог службы и в `withChat`: сценарий знает набор инструментов модели хода. */
+  withCatalog?: boolean;
   /** Остальные настройки службы чата: `privateStateKeys`, `staffOfChat`… */
   chatOptions?: Record<string, unknown>;
 }
@@ -79,6 +81,7 @@ export function flowChat(setup: FlowChatSetup = {}) {
   const options = flow.withChat({
     agent: { instructions: "Ты помощник.", ...(setup.tools && { tools: setup.tools }), ...setup.agent },
     ...(setup.chatInstructions && { chatInstructions: setup.chatInstructions }),
+    ...(setup.withCatalog && { catalog: mockCatalog({ mock: model }) }),
     ...setup.chatOptions,
   });
   const { service } = noticeService(model, { ...options, logError });

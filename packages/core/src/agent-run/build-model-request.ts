@@ -35,6 +35,7 @@ import type { FrozenContextData } from "../frozen-context/context-blocks";
 import { withoutUndelivered } from "./undelivered";
 import { withoutGarbledTails } from "./garbled-tail";
 import { withoutForgedBlocks } from "./forged-blocks";
+import { withToolResultImagePolicy } from "./tool-result-images-policy";
 import type { ServiceBlockFormat } from "./forged-blocks";
 
 export interface ModelRequest {
@@ -130,7 +131,13 @@ export async function buildModelRequest(input: {
 }): Promise<ModelRequest> {
   const found = findModel(input.catalog, input.modelId, input.providerId);
   const { profile, provider } = found;
-  const base = resolveLanguageModel(found, input.env, input.fetch);
+  // Картинки в результатах инструментов — картинкой или текстом страницы; явный отказ провайдера — тот же запрос текстом.
+  const base = withToolResultImagePolicy(resolveLanguageModel(found, input.env, input.fetch), {
+    catalog: input.catalog,
+    profile,
+    provider,
+    ...(input.logError && { logError: input.logError }),
+  });
   const observed = input.observe
     ? observeModelCalls(base, {
         ...input.observe,

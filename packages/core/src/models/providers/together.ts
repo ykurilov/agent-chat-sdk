@@ -2,6 +2,7 @@ import { createTogetherAI } from "@ai-sdk/togetherai";
 import type { ProviderConnection, ProviderDescription, ProviderOptionsByProvider } from "../model-catalog";
 import { checkedConnection, connectable, connectionField, hiddenField, silenceField } from "./provider-connection";
 import { sdkReasoningRequest } from "./sdk-reasoning";
+import { withToolResultImages } from "./tool-result-images";
 
 /**
  * Together AI (`api.together.xyz`), совместим с OpenAI.
@@ -24,10 +25,11 @@ export function createTogetherProvider(connectionOptions: ProviderConnection = {
     displayName: "Together AI",
     apiKeyEnv: "TOGETHER_API_KEY",
     createLanguageModel: (providerModelId, apiKey, options) =>
-      createTogetherAI({ apiKey, fetch: options?.fetch, ...connection })(providerModelId),
+      createTogetherAI({ apiKey, fetch: withToolResultImages(options?.fetch), ...connection })(providerModelId),
     reasoningRequest: (level) => sdkReasoningRequest(level),
     samplingRequest: ({ minP }): ProviderOptionsByProvider => (minP === undefined ? {} : { togetherai: { min_p: minP } }),
     requestOptions: () => ({}),
+    toolResultImages: true,
     ...connectionField(connection),
     ...silenceField("Together AI", connectionOptions),
     ...hiddenField("Together AI", connectionOptions),

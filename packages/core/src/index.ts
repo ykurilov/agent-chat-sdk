@@ -72,6 +72,7 @@ export type { ActiveCompaction } from "./compaction/compaction-plan";
 export { extendCatalog } from "./models/catalog-changes";
 export type { CatalogChange } from "./models/catalog-changes";
 export { cachePriceWarnings, modelAcceptsImages } from "./models/model-catalog";
+export { modelMaySeeToolResultImages, toolImageFallbackText } from "./agent-run/tool-result-images-policy";
 export type {
   CacheTtl,
   GenerationUsage,

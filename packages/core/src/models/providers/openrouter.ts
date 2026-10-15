@@ -136,6 +136,7 @@ export function createOpenRouterProvider(options: OpenRouterProviderOptions = {}
     id,
     displayName,
     ...(id !== OPENROUTER_ID && { servesModelsOf: OPENROUTER_ID }),
+    toolResultImages: true,
     ...connectionField(connection),
     ...silenceField("OpenRouter", options),
     ...hiddenField("OpenRouter", options),

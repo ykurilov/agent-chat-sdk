@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { DownloadTooLargeError, downloadedFile } from "../src/messenger-files";
 
-/** Бесконечный поток по `chunk` байт: считает, сколько кусков у него забрали. */
+/**
+ * «Бесконечный» поток по `chunk` байт: считает, сколько кусков у него забрали. Потолок 1000 кусков: если предел
+ * сломается, тест упадёт на `pulled`, а не съест всю память (07.10 такой поток без потолка раздул процесс тестов до 19 ГБ).
+ */
 function endless(chunk: number) {
   const state = { pulled: 0 };
   const stream = new ReadableStream<Uint8Array>({
     pull(controller) {
+      if (state.pulled >= 1000) return controller.close();
       state.pulled++;
       controller.enqueue(new Uint8Array(chunk));
     },

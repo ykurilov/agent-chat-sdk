@@ -1,4 +1,4 @@
-import { tool } from "ai";
+import { tool, type ToolSet } from "ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { callTool, saying, userMessage, waitTurn } from "../../../core/tests/unit/support/notice-chat";
@@ -215,6 +215,40 @@ describe("T044 события и охрана инструментов", () => {
 
     expect(toolOutput(chat.model.doStreamCalls[1]!, "t1")).toContain("в этом состоянии недоступно");
     expect(execute).not.toHaveBeenCalled();
+  });
+
+  it("инструмента состояния нет в наборе модели хода — карточка его не называет", async () => {
+    const chat = flowChat({
+      withCatalog: true,
+      edit: (json) => {
+        json.tools.push("call_expert", "give_booking_link");
+        stateOf(json, "intro").tools = ["call_expert", "give_booking_link"];
+      },
+      // Как `person_link_view` у модели, которая не может им пользоваться: набор без инструмента
+      tools: (model): ToolSet => (model.providerId === "nowhere" ? { call_expert: tool({ description: "Позвать Анну", inputSchema: z.object({}), execute: async () => "ok" }) } : {}),
+    });
+    const { id } = await newChat(chat.service);
+    await say(chat.service, id, "привет");
+
+    const texts = userTexts(chat.model.doStreamCalls[0]!);
+    expect(texts).toContain("Понять тему курса");
+    expect(texts).not.toContain("call_expert");
+    expect(texts).not.toContain("give_booking_link");
+  });
+
+  it("инструмент состояния есть в наборе модели хода — карточка его называет", async () => {
+    const chat = flowChat({
+      withCatalog: true,
+      edit: (json) => {
+        json.tools.push("call_expert");
+        stateOf(json, "intro").tools = ["call_expert"];
+      },
+      tools: (model) => ({ call_expert: tool({ description: `Позвать Анну (${model.providerId})`, inputSchema: z.object({}), execute: async () => "ok" }) }),
+    });
+    const { id } = await newChat(chat.service);
+    await say(chat.service, id, "привет");
+
+    expect(userTexts(chat.model.doStreamCalls[0]!)).toContain("Инструменты этого состояния: call_expert.");
   });
 
   it("вызван инструмент — переход, в результате карточка нового состояния", async () => {

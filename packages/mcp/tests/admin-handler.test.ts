@@ -33,8 +33,11 @@ describe("адреса экрана админа", () => {
   it("тело больше предела — 400, читается не больше предела: бесконечный поток не держит запрос", async () => {
     const { handler } = await setupHandler();
     let pulled = 0;
+    // «Бесконечный» для обработчика, но с потолком: если предел сломается, тест упадёт на `pulled`, а не съест всю память
+    // (15.10 такой поток без потолка раздул процесс тестов до 97 ГБ).
     const endless = new ReadableStream<Uint8Array>({
       pull(controller) {
+        if (pulled >= 1024 * 1024) return controller.close();
         pulled += 16 * 1024;
         controller.enqueue(new Uint8Array(16 * 1024).fill(0x20));
       },

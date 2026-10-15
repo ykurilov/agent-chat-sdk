@@ -126,25 +126,30 @@ export function createFirecrawlServices(options: FirecrawlOptions): FirecrawlSer
           timeoutMs: options.timeoutMs ?? scrapeTimeoutMs,
         });
         if (typeof response.data.markdown !== "string") throw serviceFailure("bad_response");
-        const metadata = response.data.metadata;
-        const page: PageContent = {
-          url: [metadata?.url, metadata?.sourceURL].find((candidate) => candidate && isHttpAddress(candidate)) || url,
-          title: (metadata?.title ?? "").trim(),
-          markdown: response.data.markdown,
-        };
-        return page;
+        return pageOf(url, response.data);
       },
     },
     screenshots: {
       async takeScreenshot(url, { signal }) {
-        const response = await post("/v2/scrape", { url, formats: ["screenshot"] }, scrapeResponse, {
+        // Текст страницы тем же запросом: кредит тот же (проверено 15.10.2026, `creditsUsed: 1`)
+        const response = await post("/v2/scrape", { url, formats: ["markdown", "screenshot"], onlyMainContent: true }, scrapeResponse, {
           signal,
           timeoutMs: options.timeoutMs ?? scrapeTimeoutMs,
         });
         if (!response.data.screenshot || !isHttpAddress(response.data.screenshot)) throw serviceFailure("bad_response");
-        return { imageUrl: response.data.screenshot };
+        if (typeof response.data.markdown !== "string") return { imageUrl: response.data.screenshot };
+        return { imageUrl: response.data.screenshot, page: pageOf(url, response.data) };
       },
     },
+  };
+}
+
+function pageOf(url: string, data: z.infer<typeof scrapeResponse>["data"]): PageContent {
+  const metadata = data.metadata;
+  return {
+    url: [metadata?.url, metadata?.sourceURL].find((candidate) => candidate && isHttpAddress(candidate)) || url,
+    title: (metadata?.title ?? "").trim(),
+    markdown: data.markdown ?? "",
   };
 }
 

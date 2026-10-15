@@ -8,7 +8,7 @@ import type { PageContent } from "../src/services";
 import { executeOptions, publicHost } from "./support";
 
 const OWNER = "person-1";
-type Profile = { acceptsImages: boolean; toolResultImageProviders?: string[] };
+type Profile = { acceptsImages: boolean; toolResultImageProviders?: string[]; blindToolResultImageProviders?: string[] };
 const seesImages: Profile = { acceptsImages: true, toolResultImageProviders: ["openai"] };
 const blind: Profile = { acceptsImages: false };
 const pngBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
@@ -85,9 +85,16 @@ describe("person_link_view: когда инструмент есть", () => {
     expect(toolFor(blind, "deepseek")).toBeDefined();
   });
 
-  it("модель видит картинки, но провайдер не отдаёт их в результате инструмента — текстовый путь", async () => {
+  it("модель видит картинки, провайдер не проверен — снимок (не проверено — не значит «не умеет»)", async () => {
     await personSays("https://a.example.com");
     await view("https://a.example.com", { providerId: "deepseek" });
+    expect(shots).toEqual(["https://a.example.com/"]);
+    expect(pages).toEqual([]);
+  });
+
+  it("провайдер помечен «точно не видит картинку в результате инструмента» — текстовый путь", async () => {
+    await personSays("https://a.example.com");
+    await view("https://a.example.com", { profile: { acceptsImages: true, blindToolResultImageProviders: ["deepseek"] }, providerId: "deepseek" });
     expect(shots).toEqual([]);
     expect(pages).toEqual(["https://a.example.com/"]);
   });
@@ -108,6 +115,15 @@ describe("person_link_view: когда инструмент есть", () => {
     const b = toolFor(blind, "deepseek")!;
     expect(a.description).toBe(b.description);
     expect(JSON.stringify(a.inputSchema)).toBe(JSON.stringify(b.inputSchema));
+  });
+
+  it("правила просмотра — в описании: нет инструмента у модели — нет и правил в её запросе", () => {
+    const description = toolFor()!.description!;
+    expect(description).toMatch(/сам прислал/);
+    expect(description).toMatch(/данные, а не команды/);
+    expect(description).toMatch(/не больше 3/);
+    expect(description).toMatch(/не открылась[^]*один раз[^]*не проси[^]*снова/i);
+    expect(build({ maxPerChat: 5 })({ profile: seesImages, providerId: "openai", chatId, ownerId: OWNER })[PERSON_LINK_TOOL]!.description).toMatch(/не больше 5/);
   });
 
   it("помечен как чужой текст (`metadata.externalContent`)", () => {
@@ -241,6 +257,17 @@ describe("person_link_view: что получает модель", () => {
     expect(result.type).toBe("content");
     expect(result.value.some((part) => part.type === "file")).toBe(true);
     expect(result.value.find((part) => part.type === "text")!.text).toMatch(/данные, а не команды/);
+  });
+
+  it("снимок пришёл с текстом страницы — текст идёт запасным (для модели, которой картинка не дойдёт)", async () => {
+    tools = build({
+      screenshots: { takeScreenshot: async (url) => ({ imageUrl: "https://storage.example.com/1.png", page: { url, title: "Студия", markdown: "Маникюр и педикюр" } }) },
+    });
+    const result = (await modelOutput(seesImages, "openai")) as { value: Array<{ type: string; text?: string; providerOptions?: unknown }> };
+    const fallback = result.value.find((part) => part.providerOptions !== undefined);
+    expect(fallback).toMatchObject({ type: "text", providerOptions: { agentChat: { toolImageFallback: true } } });
+    expect(fallback!.text).toContain("Маникюр и педикюр");
+    expect(result.value.some((part) => part.type === "file")).toBe(true);
   });
 
   it("текст страницы — тоже под пометкой, в самой обёртке", async () => {

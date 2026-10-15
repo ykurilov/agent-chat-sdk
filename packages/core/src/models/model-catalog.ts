@@ -119,10 +119,17 @@ export interface ModelProfile {
    */
   acceptsImagesByProvider?: Record<string, boolean>;
   /**
-   * Провайдеры, через которых модель видит картинку в результате инструмента (по проверке вживую). Нет или пусто —
-   * не видит: картинка в сообщении собеседника от этого не зависит. Ядро отметку не читает, её читают инструменты приложения.
+   * Провайдеры, через которых модель видит картинку в результате инструмента, — проверено вживую. Такой провайдер умеет
+   * передавать картинку и без `ProviderDescription.toolResultImages`. Не проверено — не значит «не видит»
+   * (`modelMaySeeToolResultImages`).
    */
   toolResultImageProviders?: string[];
+  /**
+   * Провайдеры, через которых модель точно не видит картинку в результате инструмента (проверено вживую). У них снимок
+   * инструмента уходит модели текстом страницы. Провайдера нет ни здесь, ни в `toolResultImageProviders` — картинка
+   * пробуется; явный отказ провайдера ядро запоминает само (см. `ProviderDescription.toolResultImages`).
+   */
+  blindToolResultImageProviders?: string[];
   reasoning: {
     /** Возвращать ли рассуждения прошлых ходов. Внутри хода — всегда. */
     replayPastTurns: boolean;
@@ -250,6 +257,12 @@ export interface ProviderDescription {
   generationUsage?: GenerationUsage;
   /** Подключение через прокси, если задано: по нему вычищаются секреты заголовков. */
   connection?: ProviderConnection;
+  /**
+   * Провайдер передаёт модели картинку из результата инструмента картинкой (часть `file` SDK). Нет — ядро никогда не
+   * шлёт ему такую картинку (иначе она ушла бы base64-строкой), кроме провайдеров из `toolResultImageProviders` профиля
+   * модели: модель получает текст страницы (`toolImageFallbackText`). Встроенные провайдеры помечены.
+   */
+  toolResultImages?: boolean;
   /** Свои сроки молчания провайдера (`ProviderConnection.modelSilenceTimeout`); нет — общие сроки агента. */
   modelSilenceTimeout?: ModelSilenceSetting;
   /** Скрыт из меню выбора модели (`ProviderConnection.hiddenFromMenu`); нет — виден. */
@@ -318,6 +331,7 @@ function withRouteModels(models: ModelProfile[], providers: ProviderDescription[
     const pricing = model.pricing && { ...model.pricing };
     const imageProviders = model.toolResultImageProviders && [...model.toolResultImageProviders];
     const imagesByProvider = model.acceptsImagesByProvider && { ...model.acceptsImagesByProvider };
+    const blindProviders = model.blindToolResultImageProviders && [...model.blindToolResultImageProviders];
     for (const route of routes) {
       const source = route.servesModelsOf!;
       if (!model.providerModelIds[source]) continue;
@@ -325,6 +339,7 @@ function withRouteModels(models: ModelProfile[], providers: ProviderDescription[
       if (pricing?.[source] && !pricing[route.id]) pricing[route.id] = pricing[source];
       if (imageProviders?.includes(source) && !imageProviders.includes(route.id)) imageProviders.push(route.id);
       if (imagesByProvider && source in imagesByProvider && !(route.id in imagesByProvider)) imagesByProvider[route.id] = imagesByProvider[source]!;
+      if (blindProviders?.includes(source) && !blindProviders.includes(route.id) && !imageProviders?.includes(route.id)) blindProviders.push(route.id);
     }
     return {
       ...model,
@@ -332,6 +347,7 @@ function withRouteModels(models: ModelProfile[], providers: ProviderDescription[
       ...(pricing && { pricing }),
       ...(imageProviders && { toolResultImageProviders: imageProviders }),
       ...(imagesByProvider && { acceptsImagesByProvider: imagesByProvider }),
+      ...(blindProviders && { blindToolResultImageProviders: blindProviders }),
     };
   });
 }
