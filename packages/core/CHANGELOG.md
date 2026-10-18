@@ -1,5 +1,21 @@
 # @ykurilov/agent-chat-core
 
+## 0.64.0
+
+### Minor Changes
+
+- 99cded9: Подробности сбоя провайдера для админа. Ответ, упавший на провайдере, хранит `error.details`: провайдер, модель, код, причина одной строкой (до 300 знаков; ключи окружения, `Bearer`, значения `key=`/`token`/`api-key`/`password`, маски ключей со `*`, параметры адресов, `org-…`/`proj_…` и e-mail вычищены; модерация может повторять текст человека) и `resetsAt` — когда провайдер снимет предел (OpenRouter «resets 2026-11-01»; только будущее до двух лет, без пояса — UTC). В браузер подробности уходят только по новому праву `chatCapabilities` → `errorDetails: true` (по умолчанию `false`, при `modelDetails: false` тоже `false`) — в истории, потоке и при переподключении; остальным — только `error.kind`. `afterTurn` получает их всегда. Экран: подпись-функция `labels.errorText(error, plain)`, без неё или если она бросила исключение — прежний текст `labels.errors[kind]`; типы `ChatError`, `ChatErrorDetails`, помощник `customErrorText`. Хранилища: тип колонки `error` — `ChatError`, миграций нет.
+
+## 0.63.2
+
+### Patch Changes
+
+- c772243: Исчерпанный предел расходов ключа (OpenRouter 403 «Key limit exceeded», `limit_source: openrouter_key_limit`; бюджеты ключа у шлюзов — «ExceededBudget», «Budget has been exceeded») — теперь `insufficient_funds`, а не `invalid_key`: переход к запасному, пауза основного, человеку «кончились средства», громкая строка «исчерпан предел расходов ключа». Обычный 403 — как раньше.
+
+## 0.63.1
+
+No changes in this release.
+
 ## 0.63.0
 
 No changes in this release.

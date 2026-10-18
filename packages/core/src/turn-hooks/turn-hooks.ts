@@ -1,4 +1,4 @@
-import type { AgentChannel, Chat, ChatErrorKind, ChatSubject, FinalAnswerStatus, StoredMessage, TokenUsage } from "../conversation/types";
+import type { AgentChannel, Chat, ChatError, ChatSubject, FinalAnswerStatus, StoredMessage, TokenUsage } from "../conversation/types";
 
 /** Что человек делает с чатом, когда приложение решает, пускать ли ход. */
 export type TurnAction = "send" | "edit" | "retry" | "regenerate" | "approval" | "widget" | "notice";
@@ -141,7 +141,8 @@ export interface TurnResult {
   usage: TokenUsage | null;
   /** Цена хода в долларах; `null` — у модели нет цены. */
   costUsd: number | null;
-  error?: { kind: ChatErrorKind };
+  /** Вид сбоя и подробности провайдера (`details`): хук на сервере получает их всегда. */
+  error?: ChatError;
   /**
    * Каким действием начат ход (см. `TurnAction`). `null` — итог доделан после перезапуска (`recovered`), а ядро не
    * помнит действие; ход по служебному сообщению и тогда — `notice`.

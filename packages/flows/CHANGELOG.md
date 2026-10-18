@@ -1,5 +1,33 @@
 # @ykurilov/agent-chat-flows
 
+## 0.64.0
+
+### Minor Changes
+
+- 1ea05c0: Тестовый чат: кнопка «К следующему напоминанию» проматывает часы ровно к моменту, когда сценарий сам напишет первым (касание, утреннее, выход по сроку, «срок вышел», «не завершил»; ночь и потолки учтены), и поле «своё время» («15 мин», «1 ч 30 мин», «2 дня»). Сервер: `flow.advanceTestClock({ ownerId, chatId, to: "next_first_message" })` → `{ timeOffset, reason }`, впереди ничего — `FlowTestClockError` с `code: "nothing_scheduled"`. Браузер: `FlowTestChatConnection.advanceToNextFirstMessage`. Разбор длительности — `parseDuration` из `/format`. Скин: необязательные `onNextFirstMessage`, `nothingScheduled`, `onAdvanceText` и пять надписей. Как подключить — CHANGES.md, раздел 0.64.0.
+
+### Patch Changes
+
+- Updated dependencies [99cded9]
+  - @ykurilov/agent-chat-core@0.64.0
+  - @ykurilov/agent-chat-react@0.64.0
+
+## 0.63.2
+
+### Patch Changes
+
+- Updated dependencies [c772243]
+  - @ykurilov/agent-chat-core@0.63.2
+  - @ykurilov/agent-chat-react@0.63.2
+
+## 0.63.1
+
+### Patch Changes
+
+- Updated dependencies [8bcee93]
+  - @ykurilov/agent-chat-react@0.63.1
+  - @ykurilov/agent-chat-core@0.63.1
+
 ## 0.63.0
 
 ### Minor Changes

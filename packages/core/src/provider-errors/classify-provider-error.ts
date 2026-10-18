@@ -7,8 +7,15 @@ import { isProviderSilence } from "./transient-retry-middleware";
 
 /** 403 с явными словами о ключе: ключ не принят. */
 const KEY_SIGNS = /api[ _-]?key|authenticat|unauthori[sz]ed|credential|access[ _-]?token|key (?:is )?(?:invalid|revoked|expired|disabled)/i;
-/** 403 с явными словами о деньгах (OpenRouter: «Key limit exceeded» — кончился предел расходов ключа). */
-const FUNDS_SIGNS = /key limit exceeded|insufficient (?:credits|funds|balance)/i;
+/**
+ * Исчерпан предел расходов ключа: бюджет кончился, ключ при этом верный. OpenRouter — «Key limit exceeded» и
+ * `limit_source: openrouter_key_limit` (403, в тексте бывает «API key»); шлюзы с бюджетом ключа — «ExceededBudget»,
+ * «Budget has been exceeded» (401, 400). Проверяется раньше кода и слов о ключе.
+ */
+const KEY_LIMIT_SIGNS =
+  /key limit exceeded|openrouter_key_limit|ExceededBudget|budget has been exceeded|(?:key|token) has (?:reached|exceeded) its (?:spend(?:ing)?|budget|usage) limit/i;
+/** 403 с явными словами о деньгах. */
+const FUNDS_SIGNS = /insufficient (?:credits|funds|balance)/i;
 /** 403 модерации: провайдер отказал из-за содержимого. */
 const MODERATION_SIGNS = /flagged|moderation|content[ _-]?policy|safety/i;
 
@@ -33,6 +40,7 @@ export function classifyProviderError(
   for (const hint of provider?.errorHints ?? []) {
     if (hint.match.test(text)) return hint.kind;
   }
+  if (KEY_LIMIT_SIGNS.test(text)) return "insufficient_funds";
   if (status === 401) return "invalid_key";
   // 403 — не только ключ: модерация, регион, доступ к модели. Ключ и деньги — только по явным словам.
   if (status === 403) {
@@ -57,4 +65,9 @@ export function classifyProviderError(
 export function isAccessRefusal(error: unknown): boolean {
   const cause = underlyingError(error);
   return errorStatusCode(cause) === 403 && !MODERATION_SIGNS.test(errorText(cause));
+}
+
+/** Отказ — исчерпанный предел расходов ключа, а не пустой счёт: для громкой строки владельцу. */
+export function isKeyLimit(error: unknown): boolean {
+  return KEY_LIMIT_SIGNS.test(errorText(underlyingError(error)));
 }

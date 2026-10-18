@@ -125,6 +125,18 @@ import { AgentChat, ChatLabelsProvider, russianLabels } from "@ykurilov/agent-ch
 (`process.env.NODE_ENV !== "production"`) в консоли подсказка, какой адрес вписать.
 Состояние — `refusal: "signed_out" | "too_many_turns" | "forbidden_origin" | null` у `useAgentChat`; скин получает их в `ErrorNotice` как `kind`
 (текст — `labels.errors[kind]`).
+Сбой ответа подписывается `labels.errors[kind]`. Своя подпись — функция `labels.errorText(error, plain)`: `error` — вид и,
+если сервер их отдал (право `errorDetails`), подробности `details` (`providerId`, `modelId`, `statusCode`, `reason`,
+`resetsAt`); `plain` — `errors[kind]`. Текст уходит скину в `ErrorNotice` как `text` и диктору. Функция бросила
+исключение — подпись `plain` и одна запись в консоль. Например, админу:
+
+```tsx
+const labels = {
+  ...russianLabels,
+  errorText: (error, plain) =>
+    error.details?.resetsAt ? `${plain}. Предел снимут ${new Date(error.details.resetsAt).toLocaleDateString("ru")}` : plain,
+};
+```
 Ответ брошен упавшей копией сервера — экран сам перечитывает историю раз в 3 с и через 30 с показывает «прерван» с «Повторить»; обновлять страницу не нужно.
 Подробности — [contracts/liveness.md](../../docs/contracts/fast-feed-and-liveness/liveness.md).
 

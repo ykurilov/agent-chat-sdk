@@ -27,6 +27,8 @@ const ALL_ALLOWED: ChatCapabilities = {
   toolDetails: true,
   steer: true,
   modelDetails: true,
+  // Подробности сбоя открываются только явно.
+  errorDetails: false,
 };
 
 const CLOSURE = { code: "form_completed", message: "Заявка отправлена. Чат только для чтения." };
@@ -86,7 +88,7 @@ async function answered(service: ReturnType<typeof setup>["service"], chatId: st
 const forbidden = (action: keyof ChatCapabilities) => ({ name: "ActionForbiddenError", action });
 
 describe("служба чата: права посетителя (chatCapabilities)", () => {
-  it("без функции прав история отдаёт все права true", async () => {
+  it("без функции прав история отдаёт все права true, кроме errorDetails", async () => {
     const { service } = setup();
     const chat = await service.createChat("anna");
     expect((await service.getHistory("anna", chat.id)).capabilities).toEqual(ALL_ALLOWED);

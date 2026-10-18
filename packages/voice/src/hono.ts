@@ -16,7 +16,9 @@ export function mountVoiceRelay(app: Hono, path: string, relay: VoiceRelay, upgr
     async (context, next) => {
       const access = await relay.authorize(context.req.raw);
       if ("refusal" in access) {
-        if (access.closeCode === undefined) return access.refusal;
+        // Код закрытия нужен только браузеру с WebSocket; обычному запросу — сам HTTP-отказ, а не «не найдено».
+        const upgrading = context.req.header("upgrade")?.toLowerCase() === "websocket";
+        if (access.closeCode === undefined || !upgrading) return access.refusal;
         context.set("voiceCloseCode", access.closeCode);
       } else {
         context.set("voiceUser", access.user);

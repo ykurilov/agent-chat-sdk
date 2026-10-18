@@ -11,7 +11,8 @@ function readLocalEnv(): Record<string, string> {
 /**
  * Потолок памяти тестов, общий для всех пакетов. 15.10 один тест раздул процесс до 97 ГБ и положил Мак.
  * - куча V8 каждого воркера — не больше 4 ГБ (`--max-old-space-size`);
- * - не больше 6 воркеров сразу: даже при сбое всех вместе тесты не съедят всю память;
+ * - не больше 6 воркеров сразу: даже при сбое всех вместе тесты не съедят всю память. На машине GitHub Actions
+ *   (4 ядра, 16 ГБ) воркеров 3 — их задаёт AGENT_CHAT_TEST_MAX_WORKERS в .github/workflows/ci.yml;
  * - память вне кучи (буферы, WASM pglite, sqlite) стережёт `worker-memory-guard`: воркер больше 4 ГБ вместе с потомками
  *   убивается с понятной строкой в выводе (порог — AGENT_CHAT_TEST_WORKER_RSS_MB).
  */
@@ -23,7 +24,7 @@ const workerMemoryGuard = "scripts/vitest/worker-memory-guard.global-setup.ts";
 
 export default defineConfig({
   test: {
-    maxWorkers: 6,
+    maxWorkers: Number(process.env.AGENT_CHAT_TEST_MAX_WORKERS) || 6,
     projects: [
       {
         // Внутри репозитория пакеты берутся из исходников (без сборки): условие из `exports` каждого пакета.

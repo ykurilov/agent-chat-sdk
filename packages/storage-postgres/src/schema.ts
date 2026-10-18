@@ -1,7 +1,7 @@
 import type {
   AnswerStatus,
   ChatClosure,
-  ChatErrorKind,
+  ChatError,
   MemoryMergeGroup,
   MemoryOptimizationStatus,
   StoredMessage,
@@ -63,7 +63,7 @@ export const messages = agentChatSchema.table(
     providerId: text("provider_id"),
     usage: json("usage").$type<TokenUsage>(),
     reasoningDurationsMs: json("reasoning_durations_ms").$type<Record<string, number>>().notNull(),
-    error: json("error").$type<{ kind: ChatErrorKind }>(),
+    error: json("error").$type<ChatError>(),
     /** Отметка обрыва озвучки (голосовой режим); пусто — озвучку не обрывали. */
     voiceCut: json("voice_cut").$type<VoiceCut>(),
     /** Состояние хука итога хода; пусто — хук не зовётся. */

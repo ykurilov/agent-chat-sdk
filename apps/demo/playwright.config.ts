@@ -39,7 +39,8 @@ const notOnDesktop = ["phone.spec.ts", "model-picker-phone.spec.ts", "branches-p
 export default defineConfig({
   testDir: "./e2e",
   globalTeardown: "./e2e/global-teardown.ts",
-  workers: 6,
+  // На машине GitHub Actions (4 ядра) воркеров меньше: DEMO_E2E_WORKERS в .github/workflows/ci.yml.
+  workers: Number(process.env.DEMO_E2E_WORKERS) || 6,
   timeout: 60_000,
   expect: { timeout: 10_000 },
   reporter: [["list"]],

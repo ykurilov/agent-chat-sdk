@@ -12,8 +12,16 @@ const SECRET_FIELD = String.raw`[\w-]*(?:password|passwd|secret|token|api[_-]?ke
 /** Значение поля: в кавычках целиком или до разделителя. Число — не секрет (`token=5`, `max_tokens=0`). */
 const FIELD_VALUE = String.raw`(?!\d+(?![^&\s"',;]))(?:"[^"]*"|'[^']*'|[^&\s"',;]+)`;
 
-/** Узнаваемые ключи сервисов: OpenAI и похожие, Stripe, GitHub, Slack, AWS, Google, Hugging Face, Groq, npm, SendGrid, JWT, PEM. */
+/**
+ * Значение, похожее на секрет: от 8 знаков без пробелов, есть и буква, и цифра. Так `token limit`, `key expired` и
+ * `primary key=id` остаются как есть.
+ */
+const SECRET_LIKE = String.raw`(?=[^\s"',;]*\d)(?=[^\s"',;]*[A-Za-z])[^\s"',;]{8,}`;
+
+/** Узнаваемые ключи сервисов: маски со звёздочками (`sk-proj-****abcd`), OpenAI и похожие, Stripe, GitHub, Slack, AWS, Google, Hugging Face, Groq, npm, SendGrid, JWT, PEM. */
 const KNOWN_KEY_PATTERNS = [
+  // Маска ключа целиком: провайдер показывает начало и последние знаки ключа.
+  /[\w-]*\*{4,}[\w-]*/g,
   /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
   /\bsk-[A-Za-z0-9_-]{8,}/g,
   /\b[spr]k_(?:live|test)_[A-Za-z0-9]{8,}/g,
@@ -38,7 +46,9 @@ const URL_PASSWORD = /\b([a-z][a-z0-9+.-]*:\/\/[^\s:@/]*):\S*?@(?=[\w.-]+(?::\d+
 /**
  * Вычищает секреты из текста, который уходит человеку, в базу, в журнал или модели: известные значения
  * (`knownSecrets`, например ключи провайдеров из окружения), пароль в адресе `схема://логин:пароль@`,
- * заголовок `Authorization`, `?key=…`, поля вроде `password=…`, `password: …` и `"token": "…"`, узнаваемые ключи сервисов.
+ * заголовок `Authorization`, `Bearer …` в любом регистре, `key=…`, поля вроде `password=…`, `password: …` и `"token": "…"`,
+ * слово ключа через пробел перед похожим на секрет значением (`token abc123def456`), узнаваемые ключи сервисов и их
+ * маски со звёздочками.
  */
 export function scrubSecrets(text: string, knownSecrets: Iterable<string | undefined> = []): string {
   let scrubbed = text;
@@ -49,8 +59,10 @@ export function scrubSecrets(text: string, knownSecrets: Iterable<string | undef
   return scrubbed
     .replace(URL_PASSWORD, `$1:${HIDDEN}@`)
     .replace(/\b((?:Proxy-)?Authorization\s*[:=]\s*)(?:(Basic|Bearer|Token|Digest)\s+)?[^\s"',;]+/gi, (_, head: string, scheme?: string) => `${head}${scheme ? `${scheme} ` : ""}${HIDDEN}`)
-    .replace(/\bBearer\s+(?!\[скрыто\])[^\s"',;]+/g, `Bearer ${HIDDEN}`)
+    .replace(/\b(Bearer\s+)(?!\[скрыто\])[^\s"',;]+/gi, `$1${HIDDEN}`)
     .replace(/([?&;]key=)[^&\s"]+/g, `$1${HIDDEN}`)
+    .replace(new RegExp(String.raw`(?<![\w-])(key\s*[:=]\s*)${SECRET_LIKE}`, "gi"), `$1${HIDDEN}`)
+    .replace(new RegExp(String.raw`(?<![\w-])((?:token|api[_-]?key|secret|password|passwd|key)\s+)${SECRET_LIKE}`, "gi"), `$1${HIDDEN}`)
     .replace(new RegExp(String.raw`("${SECRET_FIELD}"\s*:\s*)"[^"]*"`, "gi"), `$1"${HIDDEN}"`)
     .replace(new RegExp(String.raw`(?<![\w-])(${SECRET_FIELD}\s*[:=]\s*)(?!"\[скрыто\]")(${FIELD_VALUE})`, "gi"), (_, head: string, value: string) =>
       /^["']/.test(value) ? `${head}${value[0]}${HIDDEN}${value[0]}` : `${head}${HIDDEN}`,

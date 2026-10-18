@@ -5,3 +5,4 @@ export { migrateFlow } from "./migrate-flow";
 export { catalogEventLabel, catalogEventNames } from "./catalog-events";
 export { compactFlow } from "./compact-flow";
 export { flowJsonSchema } from "./flow-json-schema";
+export { parseDuration } from "./parse-duration";

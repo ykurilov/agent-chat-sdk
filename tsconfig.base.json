@@ -13,8 +13,9 @@
     "isolatedModules": true,
     "noEmit": true,
     "types": ["node"],
-    // TypeScript 7.0 при чтении файлов в несколько потоков изредка (≈1 раз из 30) путает подпути одного пакета:
-    // `drizzle-orm/node-postgres` получает файл `drizzle-orm/better-sqlite3` и наоборот. В 7.1 исправлено — тогда флаг убрать.
+    // TypeScript 7.0 изредка путает одинаковые файлы, которые pnpm сделал одним файлом на диске (жёсткие ссылки):
+    // `drizzle-orm/node-postgres` получает файл `drizzle-orm/better-sqlite3` и наоборот. Один поток этого не убирает,
+    // лечит `packageImportMethod: clone-or-copy` в pnpm-workspace.yaml. Флаг оставлен до 7.1, где это исправлено.
     "singleThreaded": true
   }
 }

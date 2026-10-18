@@ -163,7 +163,8 @@ describe("SkillsAdmin", () => {
     fireEvent.click(screen.getByText("beta everyone v1 loads:0"));
     fireEvent.click(editor().getByText("discard"));
     await waitFor(() => expect((editor().getByLabelText("body") as HTMLTextAreaElement).value).toBe("beta v1"));
-    expect(unload()).toBe(false);
+    // Предупреждение снимает эффект React, он идёт после отрисовки: на медленной машине — позже, чем текст в поле.
+    await waitFor(() => expect(unload()).toBe(false));
   });
 
   it("гонка правок: «навык успели изменить» и загрузка свежей версии", async () => {

@@ -1715,10 +1715,21 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     return scope.capabilities;
   }
 
+  let warnedErrorDetailsWithoutModel = false;
+
+  /** `errorDetails: true` при `modelDetails: false` молча выключено — одна строка в журнал на службу, чтобы админ не гадал. */
+  function warnErrorDetailsWithoutModel(given: Partial<ChatCapabilities> | undefined | void): void {
+    if (warnedErrorDetailsWithoutModel || given?.errorDetails !== true || given.modelDetails !== false) return;
+    warnedErrorDetailsWithoutModel = true;
+    logError("chatCapabilities: errorDetails: true при modelDetails: false выключено — подробности сбоя называют модель и провайдера.");
+  }
+
   async function askCapabilities(userId: string, chat: Chat): Promise<ChatCapabilities> {
     if (!options.chatCapabilities) return resolveChatCapabilities(undefined);
     try {
-      return resolveChatCapabilities(await options.chatCapabilities({ userId, chat }));
+      const given = await options.chatCapabilities({ userId, chat });
+      warnErrorDetailsWithoutModel(given);
+      return resolveChatCapabilities(given);
     } catch (error) {
       logError(`chatCapabilities упал или вернул неверные права (чат ${chat.id}): ${error instanceof Error ? error.message : String(error)}`);
       throw error;

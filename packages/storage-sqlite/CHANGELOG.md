@@ -1,5 +1,29 @@
 # @ykurilov/agent-chat-storage-sqlite
 
+## 0.64.0
+
+### Minor Changes
+
+- 99cded9: Подробности сбоя провайдера для админа. Ответ, упавший на провайдере, хранит `error.details`: провайдер, модель, код, причина одной строкой (до 300 знаков; ключи окружения, `Bearer`, значения `key=`/`token`/`api-key`/`password`, маски ключей со `*`, параметры адресов, `org-…`/`proj_…` и e-mail вычищены; модерация может повторять текст человека) и `resetsAt` — когда провайдер снимет предел (OpenRouter «resets 2026-11-01»; только будущее до двух лет, без пояса — UTC). В браузер подробности уходят только по новому праву `chatCapabilities` → `errorDetails: true` (по умолчанию `false`, при `modelDetails: false` тоже `false`) — в истории, потоке и при переподключении; остальным — только `error.kind`. `afterTurn` получает их всегда. Экран: подпись-функция `labels.errorText(error, plain)`, без неё или если она бросила исключение — прежний текст `labels.errors[kind]`; типы `ChatError`, `ChatErrorDetails`, помощник `customErrorText`. Хранилища: тип колонки `error` — `ChatError`, миграций нет.
+
+### Patch Changes
+
+- Updated dependencies [99cded9]
+  - @ykurilov/agent-chat-core@0.64.0
+
+## 0.63.2
+
+### Patch Changes
+
+- Updated dependencies [c772243]
+  - @ykurilov/agent-chat-core@0.63.2
+
+## 0.63.1
+
+### Patch Changes
+
+- @ykurilov/agent-chat-core@0.63.1
+
 ## 0.63.0
 
 ### Patch Changes

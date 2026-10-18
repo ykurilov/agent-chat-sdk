@@ -149,7 +149,7 @@ describe("runAgentTurn: запасной провайдер той же моде
     // Обрыв и два автопродолжения у того же провайдера (US7).
     expect(primary.doStreamCalls).toHaveLength(3);
     expect(answer.status).toBe("error");
-    expect(answer.error).toEqual({ kind: "overloaded" });
+    expect(answer.error?.kind).toBe("overloaded");
     expect(answer.providerId).toBe("mock");
     expect(textOf(answer.parts)).toBe("НачалоНачалоНачало");
     expect(logged.some((line) => line.startsWith("[запасной провайдер]"))).toBe(false);
@@ -159,14 +159,14 @@ describe("runAgentTurn: запасной провайдер той же моде
     const backup = answering();
     const { answer } = await turnWithBackup(failing(400), backup);
     expect(backup.doStreamCalls).toHaveLength(0);
-    expect(answer.error).toEqual({ kind: "other" });
+    expect(answer.error?.kind).toBe("other");
   });
 
   it("запасные выключены (false) — ошибка, запасной не пробуется", async () => {
     const backup = answering();
     const { answer } = await turnWithBackup(failing(503), backup, { providerFallback: false });
     expect(backup.doStreamCalls).toHaveLength(0);
-    expect(answer.error).toEqual({ kind: "overloaded" });
+    expect(answer.error?.kind).toBe("overloaded");
   });
 
   it("у запасного тоже перегрузка — один переход, ошибка вида overloaded, сообщение с выбранным провайдером", async () => {
@@ -178,7 +178,7 @@ describe("runAgentTurn: запасной провайдер той же моде
     expect(primary.doStreamCalls).toHaveLength(4);
     expect(backup.doStreamCalls).toHaveLength(4);
     expect(answer.status).toBe("error");
-    expect(answer.error).toEqual({ kind: "overloaded" });
+    expect(answer.error?.kind).toBe("overloaded");
     expect(answer.providerId).toBe("mock");
     expect(chunks.filter((chunk) => chunk.type === "start")).toHaveLength(1);
     expect(chunks.filter((chunk) => chunk.type === "error")).toEqual([{ type: "error", errorText: "overloaded" }]);

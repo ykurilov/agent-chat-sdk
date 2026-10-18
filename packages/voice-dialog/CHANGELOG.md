@@ -1,5 +1,33 @@
 # @ykurilov/agent-chat-voice-dialog
 
+## 0.64.0
+
+### Patch Changes
+
+- Updated dependencies [99cded9]
+  - @ykurilov/agent-chat-core@0.64.0
+  - @ykurilov/agent-chat-react@0.64.0
+  - @ykurilov/agent-chat-voice@0.64.0
+
+## 0.63.2
+
+### Patch Changes
+
+- Updated dependencies [c772243]
+  - @ykurilov/agent-chat-core@0.63.2
+  - @ykurilov/agent-chat-voice@0.63.2
+  - @ykurilov/agent-chat-react@0.63.2
+
+## 0.63.1
+
+### Patch Changes
+
+- Updated dependencies [8bcee93]
+- Updated dependencies [0479393]
+  - @ykurilov/agent-chat-react@0.63.1
+  - @ykurilov/agent-chat-voice@0.63.1
+  - @ykurilov/agent-chat-core@0.63.1
+
 ## 0.63.0
 
 ### Patch Changes

@@ -11,6 +11,25 @@ export type FinalAnswerStatus = Exclude<AnswerStatus, "streaming">;
 
 export type ChatErrorKind = "overloaded" | "rate_limited" | "insufficient_funds" | "invalid_key" | "context_overflow" | "other";
 
+/**
+ * Подробности сбоя провайдера для того, кому приложение их открыло (право `errorDetails`): кто не ответил и почему.
+ * `reason` — одна строка до 300 знаков из сообщения провайдера, секреты и параметры адресов вычищены. `resetsAt` — когда
+ * провайдер обещал снять предел (ISO), если сообщил.
+ */
+export interface ChatErrorDetails {
+  providerId: string;
+  modelId: string;
+  statusCode?: number;
+  reason?: string;
+  resetsAt?: string;
+}
+
+/** Сбой ответа: вид для подписи и, если есть, подробности (хранятся всегда, в браузер — по праву `errorDetails`). */
+export interface ChatError {
+  kind: ChatErrorKind;
+  details?: ChatErrorDetails;
+}
+
 export interface TokenUsage {
   inputTokens: number;
   cachedInputTokens: number;
@@ -115,7 +134,7 @@ export interface ChatMessageMetadata {
   usage?: TokenUsage;
   reasoningDurationsMs?: Record<string, number>;
   status?: AnswerStatus;
-  error?: { kind: ChatErrorKind };
+  error?: ChatError;
   /** Есть, если озвучку ответа оборвало перебивание. */
   voiceCut?: VoiceCut;
   /** Ответ не дошёл до человека (`markUndelivered`): модель его не видит, экран подписывает «не доставлено». */
@@ -136,7 +155,7 @@ export interface StoredMessage {
   providerId: string | null;
   usage: TokenUsage | null;
   reasoningDurationsMs: Record<string, number>;
-  error: { kind: ChatErrorKind } | null;
+  error: ChatError | null;
   /**
    * Отметка обрыва озвучки. Необязательное поле: старые данные и хранилища без голосового режима его не знают;
    * встроенные хранилища читают отсутствие как `null`.

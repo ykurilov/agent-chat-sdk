@@ -15,6 +15,14 @@ export interface FlowTestChatLabels {
   failed: string;
   /** Перемотка к началу следующего дня сценария. */
   nextDay: string;
+  /** Перемотка к моменту, когда сценарий сам напишет первым. */
+  nextFirstMessage: string;
+  /** Впереди сценарий сам ничего не напишет: перематывать к напоминанию не к чему. */
+  nothingScheduled: string;
+  /** Поле «своё время»: подпись, пример и подсказка на непонятное. */
+  customTime: string;
+  customTimePlaceholder: string;
+  customTimeInvalid: string;
   /** «День 2 из 3», «День 2». */
   day: (day: number, totalDays?: number) => string;
   /** Вечер позднего старта: первый день ещё не начался. */
@@ -32,6 +40,11 @@ export const russianFlowTestChatLabels: FlowTestChatLabels = {
   close: "Закрыть",
   failed: "Не получилось — попробуйте ещё раз",
   nextDay: "К началу следующего дня",
+  nextFirstMessage: "К следующему напоминанию",
+  nothingScheduled: "Впереди сценарий сам ничего не напишет",
+  customTime: "Своё время",
+  customTimePlaceholder: "15 мин, 1 ч 30 мин, 2 дня",
+  customTimeInvalid: "Не понял время — например, «1 ч 30 мин» или «2 дня»",
   day: (day, totalDays) => (totalDays === undefined ? `День ${day}` : `День ${day} из ${totalDays}`),
   beforeFirstDay: "До первого дня",
 };
@@ -47,6 +60,11 @@ export const englishFlowTestChatLabels: FlowTestChatLabels = {
   close: "Close",
   failed: "Something went wrong — try again",
   nextDay: "To the start of the next day",
+  nextFirstMessage: "To the next reminder",
+  nothingScheduled: "The flow won't write first from here on",
+  customTime: "Custom time",
+  customTimePlaceholder: "15 min, 1h 30m, 2 days",
+  customTimeInvalid: "Couldn't read the time — try “1h 30m” or “2 days”",
   day: (day, totalDays) => (totalDays === undefined ? `Day ${day}` : `Day ${day} of ${totalDays}`),
   beforeFirstDay: "Before day one",
 };

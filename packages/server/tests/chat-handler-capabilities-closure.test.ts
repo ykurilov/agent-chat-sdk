@@ -19,7 +19,7 @@ function fakeAttachments(): ChatAttachments {
 }
 
 describe("обработчик чата: права посетителя", () => {
-  it("история отдаёт права; без chatCapabilities — все true", async () => {
+  it("история отдаёт права; без chatCapabilities — все true, кроме errorDetails", async () => {
     const limited = createTestChat({ chatCapabilities: () => ({ edit: false, modelChoice: false }) });
     const chatId = await limited.createChat();
     const { capabilities } = (await (await limited.call("GET", `/${chatId}`)).json()) as { capabilities: ChatCapabilities };
@@ -27,7 +27,10 @@ describe("обработчик чата: права посетителя", () =>
     const open = createTestChat();
     const other = await open.createChat();
     const all = ((await (await open.call("GET", `/${other}`)).json()) as { capabilities: ChatCapabilities }).capabilities;
-    expect(Object.values(all).every(Boolean)).toBe(true);
+    const { errorDetails, ...rest } = all;
+    expect(Object.values(rest).every(Boolean)).toBe(true);
+    // Подробности сбоя провайдера — только по явному разрешению.
+    expect(errorDetails).toBe(false);
   });
 
   it("запрещённая правка: 403 action_forbidden с кодом и текстом, beforeTurn не зван, ничего не записано", async () => {

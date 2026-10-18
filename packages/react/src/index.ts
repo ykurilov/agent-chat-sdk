@@ -27,6 +27,8 @@ export type {
   AnswerStatus,
   ApprovalDecision,
   BranchFork,
+  ChatError,
+  ChatErrorDetails,
   ChatErrorKind,
   ChatMessageMetadata,
   ErrorNoticeKind,
@@ -37,7 +39,7 @@ export type {
   VoiceCut,
   VoiceSound,
 } from "./chat-types";
-export { ChatLabelsProvider, englishLabels, englishWorkLabels, englishWorkViewLabels, russianLabels, useChatLabels, voiceErrorText } from "./labels";
+export { ChatLabelsProvider, customErrorText, englishLabels, englishWorkLabels, englishWorkViewLabels, russianLabels, useChatLabels, voiceErrorText } from "./labels";
 export { useThinkingStatus } from "./thinking-status/thinking-status";
 export type { ThinkingStatus } from "./thinking-status/thinking-status";
 export type {

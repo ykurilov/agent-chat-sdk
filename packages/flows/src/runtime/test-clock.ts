@@ -1,8 +1,9 @@
 import { FLOW_STATE_KEY, type FlowRun } from "../engine/flow-run";
 import { flowDay } from "../engine/flow-days";
+import { FLOW_FIRST_EXIT } from "../engine/timers";
 import { runOutsideTurn, storedRun, type FlowRuntime } from "./flow-events";
 import type { AgentFlow } from "../format/flow-format";
-import type { FlowPort, FlowTestClockInput, FlowTimers } from "./flow-types";
+import type { FlowPort, FlowTestClockInput, FlowTestClockReason, FlowTestClockResult, FlowTimers } from "./flow-types";
 
 // Часы тестового чата редактора: автор перематывает их вперёд и видит напоминания без ожидания. Сдвиг хранится в данных
 // чата (`Chat.data`) — их можно писать вне хода, и их видят все копии сервера. Ход копирует сдвиг в место
@@ -26,6 +27,20 @@ export function testChatOffset(data: Record<string, unknown> | undefined): numbe
 
 /** Часы чата, мс: часы сервера плюс сдвиг тестового чата. */
 export const chatTime = (run: Pick<FlowRun, "timeOffset"> | null | undefined, serverNow: number): number => serverNow + (run?.timeOffset ?? 0);
+
+/** Перемотка не удалась по понятной причине: `nothing_scheduled` — впереди сценарий сам ничего не напишет. */
+export class FlowTestClockError extends Error {
+  constructor(
+    readonly code: "nothing_scheduled" | "not_reached",
+    message: string,
+  ) {
+    super(message);
+    this.name = "FlowTestClockError";
+  }
+}
+
+/** Сколько раз подряд срок может отложиться (ночь, потолок дня, правила приложения), пока перемотка ищет отправку. */
+const NEXT_FIRST_MESSAGE_STEPS = 50;
 
 /** Сколько ходов подряд перемотка ждёт (ход таймера и следующий за ним, например прощание). */
 const TURN_WAIT_LIMIT = 5;
@@ -75,11 +90,12 @@ export async function advanceTestClock(input: {
   ownerId: string;
   chatId: string;
   clock: FlowTestClockInput;
-}): Promise<{ timeOffset: number }> {
+}): Promise<FlowTestClockResult> {
   const { runtime, port, timers, ownerId, chatId, clock } = input;
   const offset = testChatOffset(await port.getChatData(ownerId, chatId));
   if (offset === null) throw new Error(`Чат ${chatId} не тестовый: часы перематываются только у тестовых чатов`);
-  const ms = clock.to === "next_day_start" ? await msToNextDay(runtime, port, ownerId, chatId, offset) : clock.ms;
+  if (clock.to === "next_first_message") return advanceToNextFirstMessage({ runtime, port, timers, ownerId, chatId, offset });
+  const ms = clock.to === "next_day_start" ? await msToNextDay(runtime, port, ownerId, chatId, offset) : (clock.ms ?? Number.NaN);
   if (!Number.isFinite(ms) || ms <= 0) throw new Error("Перемотка часов: нужен сдвиг вперёд, мс больше нуля");
   const timeOffset = offset + ms;
   await port.updateChatData(ownerId, chatId, { [FLOW_TEST_CHAT_KEY]: { timeOffset } });
@@ -93,4 +109,52 @@ export async function advanceTestClock(input: {
   await timers.tick();
   await turnFinished(port, ownerId, chatId);
   return { timeOffset };
+}
+
+const nothingScheduled = (chatId: string) =>
+  new FlowTestClockError("nothing_scheduled", `Чат ${chatId}: впереди сценарий сам ничего не напишет — перематывать не к чему`);
+
+/**
+ * Перемотка к моменту, когда сценарий напишет первым. Сдвиг — ровно до срока таймера; срабатывание проверяет те же
+ * правила, что и без перемотки. Срок отложился (ночь, потолок дня, три часа после сообщения человека) — следующий шаг до
+ * нового срока, пока не уйдёт сообщение, не выйдет срок разговора или «не завершил».
+ */
+async function advanceToNextFirstMessage(input: {
+  runtime: FlowRuntime;
+  port: FlowPort;
+  timers: FlowTimers | null;
+  ownerId: string;
+  chatId: string;
+  offset: number;
+}): Promise<FlowTestClockResult> {
+  const { runtime, port, timers, ownerId, chatId } = input;
+  const pinned = timers && (await runtime.chatFlow(ownerId, chatId));
+  if (!timers?.watch || !pinned) throw nothingScheduled(chatId);
+  let timeOffset = input.offset;
+  for (let step = 0; step < NEXT_FIRST_MESSAGE_STEPS; step += 1) {
+    const run = await placeRun(runtime, port, { ownerId, chatId }, pinned.flow, runtime.now() + timeOffset);
+    if (!run) throw nothingScheduled(chatId);
+    // Первый шаг пересчитывает срок по текущему сдвигу; дальше срок в хранилище — уже отложенный таймером (ночь, правила).
+    if (step === 0) await timers.reschedule({ ownerId, chatId, run: { ...run, timeOffset }, branchHead: run.answerId ?? null });
+    const record = await runtime.store.getChat(chatId);
+    if (!record || record.endedAt !== null || record.dueAt === null) throw nothingScheduled(chatId);
+    const serverNow = runtime.now();
+    const shift = Math.max(0, Date.parse(record.dueAt) - serverNow);
+    if (shift > 0) {
+      timeOffset += shift;
+      await port.updateChatData(ownerId, chatId, { [FLOW_TEST_CHAT_KEY]: { timeOffset } });
+      // Срок в хранилище — по часам сервера: с новым сдвигом он наступает сейчас. Выход ноды и ветка остаются его.
+      await runtime.store.setDue(chatId, { at: new Date(serverNow).toISOString(), exitId: record.dueExitId ?? FLOW_FIRST_EXIT, branchHead: record.dueBranchHead });
+    }
+    let reason: FlowTestClockReason | null = null;
+    const unwatch = timers.watch(chatId, (fired) => (reason ??= fired));
+    try {
+      await timers.tick();
+      await turnFinished(port, ownerId, chatId);
+    } finally {
+      unwatch();
+    }
+    if (reason) return { timeOffset, reason };
+  }
+  throw new FlowTestClockError("not_reached", `Чат ${chatId}: срок сообщения откладывался ${NEXT_FIRST_MESSAGE_STEPS} раз подряд — перемотка остановлена`);
 }

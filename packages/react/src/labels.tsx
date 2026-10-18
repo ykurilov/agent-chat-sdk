@@ -1,6 +1,6 @@
 import { createContext, useContext, useMemo } from "react";
 import type { ReactNode } from "react";
-import type { ErrorNoticeKind, ReasoningLevelId } from "./chat-types";
+import type { ChatError, ErrorNoticeKind, ReasoningLevelId } from "./chat-types";
 import type { MemoryFailure } from "./memory/memory-types";
 import type { ChatOriginView, HelperCallStatus, TaskStatusView } from "./skin-contract";
 import type { SpendingInfo } from "./spending-status";
@@ -267,6 +267,12 @@ export interface ChatLabels {
   /** Чат чужой или его нет: сервер не различает эти случаи. */
   chatNotFound: string;
   errors: Record<ErrorNoticeKind, string>;
+  /**
+   * Подпись сбоя ответа функцией от сбоя: вид и подробности `details`, если сервер их отдал (право `errorDetails`).
+   * `plain` — `errors[kind]`; вернуть его — подпись как раньше. Нет функции — `errors[kind]`. Скину уходит текстом
+   * (`ErrorNotice` `text`), без разметки; диктору — тот же текст.
+   */
+  errorText?: (error: ChatError, plain: string) => string;
   /** Названия уровней рассуждений в меню выбора; названия моделей и провайдеров приходят с сервера. */
   reasoningLevels: Record<ReasoningLevelId, string>;
   /** Разделитель на границе сжатой истории. */
@@ -492,6 +498,26 @@ export type VoiceErrorLabels = Record<Exclude<VoiceErrorKind, "time_limit" | "li
 
 /** Предел записи, если сервер его не назвал (старый сервер): как у сервера по умолчанию. */
 const DEFAULT_VOICE_LIMIT_SECONDS = 300;
+
+let reportedErrorTextFailure = false;
+
+/**
+ * Подпись сбоя ответа от `errorText` словаря; функции нет — `undefined`: скин покажет `errors[kind]` сам. Функция
+ * приложения упала — прежняя подпись `errors[kind]` и одна строка в консоль: ответ не падает при отрисовке.
+ */
+export function customErrorText(labels: Pick<ResolvedChatLabels, "errors" | "errorText">, error: ChatError | undefined): string | undefined {
+  if (!error || !labels.errorText) return undefined;
+  const plain = labels.errors[error.kind];
+  try {
+    return labels.errorText(error, plain);
+  } catch (failure) {
+    if (!reportedErrorTextFailure) {
+      reportedErrorTextFailure = true;
+      console.error("labels.errorText упал — показана обычная подпись сбоя.", failure);
+    }
+    return plain;
+  }
+}
 
 /** Подпись ошибки голоса для человека. */
 export function voiceErrorText(errors: VoiceErrorLabels, kind: VoiceErrorKind, details?: VoiceErrorDetails): string {

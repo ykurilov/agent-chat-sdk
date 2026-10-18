@@ -1,3 +1,4 @@
+import type { UIMessageChunk } from "ai";
 import type { MockLanguageModelV4 } from "ai/test";
 import { runAgentTurn } from "../../../src/agent-run/run-agent-turn";
 import { todayBlock } from "../../../src/agent-run/today";
@@ -65,3 +66,16 @@ export async function runTurn(model: MockLanguageModelV4, extra: Partial<AgentTu
 
 /** Весь текст из частей сообщения. */
 export const textOf = (parts: StoredMessage["parts"]) => parts.map((part) => (part.type === "text" ? part.text : "")).join("");
+
+/**
+ * Куски хода без подробностей сбоя (`error.details` в метаданных): так их видит браузер без права `errorDetails`.
+ * Текст провайдера ход кладёт только туда.
+ */
+export function withoutErrorDetails(chunks: UIMessageChunk[]): UIMessageChunk[] {
+  return chunks.map((chunk) => {
+    const metadata = (chunk as { messageMetadata?: { error?: { details?: unknown } } }).messageMetadata;
+    if (!metadata?.error?.details) return chunk;
+    const { details: _details, ...error } = metadata.error;
+    return { ...chunk, messageMetadata: { ...metadata, error } } as UIMessageChunk;
+  });
+}

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { russianLabels } from "../src/labels";
 import type { ChatLabels } from "../src/labels";
 import { fakeChatServer } from "./support/fake-chat-server";
@@ -70,6 +70,51 @@ describe("AgentChat: ошибки и «повторить»", () => {
     });
     expect(await screen.findByText("Пополните счёт")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Ещё раз" })).toBeTruthy();
+  });
+
+  it("подпись функцией errorText: получает вид и подробности сбоя; без подробностей — прежний текст", async () => {
+    const details = { providerId: "openrouter", modelId: "m", statusCode: 403, reason: "Key limit exceeded", resetsAt: "2026-11-01T00:00:00.000Z" };
+    const server = fakeChatServer({
+      history: [
+        question,
+        answer("a1", "", { status: "error", error: { kind: "insufficient_funds", details } }),
+        { id: "u2", role: "user", parts: [{ type: "text", text: "Ещё" }] },
+        answer("a2", "", { status: "error", error: { kind: "overloaded" } }),
+      ],
+    });
+    const seen: unknown[] = [];
+    renderChat(server, {
+      ...russianLabels,
+      errorText: (error, plain) => {
+        seen.push(error);
+        return error.details ? `${plain}: ${error.details.providerId} — ${error.details.reason}, обнулится ${error.details.resetsAt!.slice(0, 10)}` : plain;
+      },
+    });
+    expect(await screen.findByText("На счёте провайдера закончились деньги: openrouter — Key limit exceeded, обнулится 2026-11-01")).toBeTruthy();
+    expect(screen.getByText(russianLabels.errors.overloaded)).toBeTruthy();
+    expect(seen).toContainEqual({ kind: "insufficient_funds", details });
+  });
+
+  it("errorText приложения бросил исключение — ответ рисуется с прежней подписью, в консоли одна запись", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const server = fakeChatServer({
+      history: [
+        question,
+        answer("a1", "", { status: "error", error: { kind: "insufficient_funds" } }),
+        { id: "u2", role: "user", parts: [{ type: "text", text: "Ещё" }] },
+        answer("a2", "", { status: "error", error: { kind: "overloaded" } }),
+      ],
+    });
+    renderChat(server, {
+      ...russianLabels,
+      errorText: () => {
+        throw new Error("опечатка в приложении");
+      },
+    });
+    expect(await screen.findByText(russianLabels.errors.insufficient_funds)).toBeTruthy();
+    expect(screen.getByText(russianLabels.errors.overloaded)).toBeTruthy();
+    expect(consoleError.mock.calls.filter(([line]) => String(line).includes("labels.errorText"))).toHaveLength(1);
+    consoleError.mockRestore();
   });
 
   it("ответ с ошибкой без вида — other", async () => {

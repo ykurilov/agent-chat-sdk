@@ -60,7 +60,8 @@ test("звук идёт через наш сервер: в браузере не
   const [relay] = sockets;
   expect(new URL(relay!.url).host).toBe(new URL(page.url()).host);
   expect(new URL(relay!.url).pathname).toBe("/api/voice/stream");
-  expect(relay!.sent[0]).toBe(JSON.stringify({ audio_format: "auto" }));
+  // Приветствие: формат звука и язык записи — язык экрана чата.
+  expect(relay!.sent[0]).toBe(JSON.stringify({ audio_format: "auto", language_hints: ["ru"] }));
   expect(relay!.sent.at(-1)).toBe(JSON.stringify({ type: "finalize" }));
   const everything = [...relay!.sent, ...relay!.received].map((payload) => (typeof payload === "string" ? payload : "<звук>")).join("\n");
   expect(everything).not.toMatch(/api_key|mock|temporary/);

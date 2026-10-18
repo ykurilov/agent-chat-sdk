@@ -8,6 +8,8 @@ import { newStoredMessage } from "../conversation/types";
 import type { AgentAudience, AgentChannel, ChatSubject, GroupTurn, UsageSource } from "../conversation/types";
 import type {
   AgentChatMessage,
+  ChatError,
+  ChatErrorDetails,
   ChatErrorKind,
   ChatMessageMetadata,
   FinalAnswerStatus,
@@ -25,8 +27,9 @@ import type { DataChange, ScreenPlace } from "../page-context/page-context";
 import { prepareToolApproval } from "../tool-approval/tool-approval-policy";
 import { findModel, MissingProviderKeyError } from "../models/model-catalog";
 import type { ModelCatalog, ModelProfile, ProviderDescription, ResolvedModel } from "../models/model-catalog";
-import { classifyProviderError } from "../provider-errors/classify-provider-error";
+import { classifyProviderError, isKeyLimit } from "../provider-errors/classify-provider-error";
 import { describeProviderFailure } from "../provider-errors/provider-failure-log";
+import { providerErrorDetails } from "../provider-errors/provider-error-details";
 import { sleep } from "../provider-errors/transient-retry-middleware";
 import { createProviderOutages, isProviderOutage } from "../provider-errors/provider-outages";
 import type { ProviderOutageKind, ProviderOutages } from "../provider-errors/provider-outages";
@@ -332,7 +335,7 @@ export interface AgentTurnInput {
     status: FinalAnswerStatus;
     parts: AgentChatMessage["parts"];
     usage: TokenUsage | null;
-    error: { kind: ChatErrorKind } | null;
+    error: ChatError | null;
     providerId: string;
   }, stopWaiting: AbortSignal) => Promise<AppEvent[]>;
   /** Итог ответа записан в хранилище, до расхода и `afterTurn`: для срока хода, который не должен обрывать хук. */
@@ -575,6 +578,16 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
     let errors: UIMessageChunk[] = [];
     let terminal: UIMessageChunk[] = [];
     let errorKind: ChatErrorKind | undefined;
+    // Подробности сбоя для админа: какой провайдер и почему. В браузер — только по праву `errorDetails`.
+    let errorDetails: ChatErrorDetails | undefined;
+    const detailsOf = (error: unknown, failedProviderId: string): ChatErrorDetails =>
+      providerErrorDetails(error, {
+        providerId: failedProviderId,
+        modelId,
+        env: input.env,
+        catalog: input.catalog,
+        now: () => (input.now ?? (() => new Date()))().getTime(),
+      });
     let providerId = input.providerId;
     let answeredProviderId = input.providerId;
     let viewer: AgentViewer | undefined;
@@ -629,6 +642,7 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
       const fallbackProviderIds = allFallbackIds.filter((candidate) => outages.pausedKind(candidate) === undefined);
       // Отказ основного по деньгам или ключу в этом ходе: человеку — эта причина, если и запасные не ответят.
       let firstOutage: ProviderOutageKind | undefined;
+      let firstOutageDetails: ChatErrorDetails | undefined;
       // Основной на паузе или его пробует другой ход — этот ход сразу у запасного, в пустой счёт не стучит. Запасных
       // нет — основной: другого пути нет.
       const primaryPaused = outages.admit(input.providerId);
@@ -753,7 +767,9 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
           if (error instanceof MissingProviderKeyError) logError(error.message);
           if (!input.abortSignal.aborted) {
             // Запасной не собрался после отказа основного по деньгам или ключу — человеку причина у основного.
-            errorKind = errorKindForPerson(classify(error), firstOutage);
+            const kind = classify(error);
+            errorKind = errorKindForPerson(kind, firstOutage);
+            errorDetails = errorKind === firstOutage ? firstOutageDetails : detailsOf(error, providerId);
             errors = [{ type: "error", errorText: errorKind }];
           }
           break;
@@ -802,10 +818,14 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
         let next: NextAttempt = stepsDone < maxSteps ? decideNextAttempt(result, nextState()) : { action: "fail" };
         const outage = isProviderOutage(result.kind) ? result.kind : undefined;
         if (outage) {
-          if (providerId === input.providerId) firstOutage ??= outage;
+          if (providerId === input.providerId && firstOutage === undefined) {
+            firstOutage = outage;
+            firstOutageDetails = detailsOf(result.error, providerId);
+          }
           outages.report({
             providerId,
             kind: outage,
+            ...(isKeyLimit(result.error) && { keyLimit: true }),
             ...(next.action === "fallback"
               ? { fallbackProviderId: next.providerId }
               : { fallbacksPaused: allFallbackIds.some((candidate) => candidate !== providerId && outages.pausedKind(candidate) !== undefined) }),
@@ -906,6 +926,8 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
           continue;
         }
         errorKind = errorKindForPerson(result.kind, firstOutage);
+        // Человеку причина основного — и подробности про него, даже если запасной упал так же.
+        errorDetails = errorKind === firstOutage ? firstOutageDetails : detailsOf(result.error, providerId);
         errors = errorKind === result.kind ? attempt.errors : [{ type: "error", errorText: errorKind }];
         terminal = attempt.terminal;
         logError(
@@ -950,6 +972,7 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
       if (!input.abortSignal.aborted) {
         if (error instanceof AgentViewerError) logError(`[agent.viewer] чат=${input.chatId} ход не начат: ${error.message}`);
         errorKind = error instanceof AgentViewerError ? "other" : classifyProviderError(error, undefined);
+        errorDetails = undefined;
         errors = [{ type: "error", errorText: errorKind }];
       }
     }
@@ -1046,7 +1069,7 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
     turnUsage.closeAttempt();
     // В сообщении расход копится по паузам и продолжениям, а в журнал расходов идёт только этот ход: до паузы он уже записан.
     const usage = messageUsage();
-    const error = status === "error" ? { kind: errorKind ?? "other" } : null;
+    const error: ChatError | null = status === "error" ? { kind: errorKind ?? "other", ...(errorDetails && { details: errorDetails }) } : null;
     // Ответил запасной — сообщение помнит его (FR-031); выбор чата не меняется.
     const answeredByBackup = answeredProviderId !== input.providerId && { providerId: answeredProviderId };
     let finished = false;

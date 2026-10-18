@@ -6,3 +6,7 @@ packages:
 onlyBuiltDependencies:
   - better-sqlite3
   - esbuild
+
+# Свой файл на каждую копию в node_modules, а не жёсткая ссылка на общий. TypeScript 7.0 изредка путает одинаковые
+# файлы-ссылки (у drizzle-orm входы драйверов, две копии vitest), и typecheck изредка падает.
+packageImportMethod: clone-or-copy

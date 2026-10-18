@@ -46,7 +46,7 @@ describe("runAgentTurn: провайдер замолчал или присла�
     const { chunks, answer } = await runTurnWithClock(model, 3 * 120_000 + 2_500 + 6_250);
 
     expect(answer.status).toBe("error");
-    expect(answer.error).toEqual({ kind: "overloaded" });
+    expect(answer.error?.kind).toBe("overloaded");
     expect(textOf(answer.parts)).toBe("кусок 1. кусок 2. кусок 3. ");
     expect(chunks.filter((chunk) => chunk.type === "error")).toEqual([{ type: "error", errorText: "overloaded" }]);
     expect(model.doStreamCalls).toHaveLength(3);

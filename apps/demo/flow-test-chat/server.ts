@@ -1,7 +1,7 @@
 import { serve } from "@hono/node-server";
 import { MockLanguageModelV4 } from "ai/test";
 import { extendCatalog, standardCatalog, createInMemoryChatStorage } from "@ykurilov/agent-chat-core";
-import { createAgentFlow, flowTestChatData, memoryFlowStore, testChatOffset } from "@ykurilov/agent-chat-flows";
+import { createAgentFlow, FlowTestClockError, flowTestChatData, memoryFlowStore, testChatOffset } from "@ykurilov/agent-chat-flows";
 import { createChatServer } from "@ykurilov/agent-chat-server";
 import { mountChat } from "@ykurilov/agent-chat-server/hono";
 import { Hono } from "hono";
@@ -10,7 +10,8 @@ import { Hono } from "hono";
  * Сервер стенда тестового чата (этап 10 плана 058): чат со сценарием на модели-заглушке, в памяти. Платных запросов
  * нет: модель отвечает «Понял: <вопрос>», судья ходит на закрытый порт и молча падает («не проверено»).
  * POST /api/flow-test/start { flow } — новый тестовый чат по сценарию из редактора; POST /api/flow-test/advance
- * { chatId, ms } или { chatId, to: "next_day_start" } — перемотка его часов (на мс или до начала следующего дня сценария); POST /api/flow-test/run { chatId } — место чата для доски (посетителю оно не
+ * { chatId, ms } или { chatId, to: "next_day_start" | "next_first_message" } — перемотка его часов (на мс, до начала
+ * следующего дня сценария или к следующему сообщению сценария; впереди ничего — 409 { code: "nothing_scheduled" }); POST /api/flow-test/run { chatId } — место чата для доски (посетителю оно не
  * уходит). Эндпоинты закрыты: только тестовые чаты автора — в приложении это права редактора.
  */
 
@@ -89,12 +90,13 @@ const ownTestChat = async (chatId: string) => {
   return data !== null && testChatOffset(data) !== null;
 };
 app.post("/api/flow-test/advance", async (c) => {
-  const { chatId, ms, to } = await c.req.json<{ chatId: string; ms?: number; to?: "next_day_start" }>();
+  const { chatId, ms, to } = await c.req.json<{ chatId: string; ms?: number; to?: "next_day_start" | "next_first_message" }>();
   if (!(await ownTestChat(chatId))) return c.json({ error: "not_found" }, 404);
-  const clock = to === "next_day_start" ? ({ to } as const) : { ms: Number(ms) };
+  const clock = to === "next_day_start" || to === "next_first_message" ? { to } : { ms: Number(ms) };
   try {
     return c.json(await flow.advanceTestClock({ ownerId: USER, chatId, ...clock }));
   } catch (error) {
+    if (error instanceof FlowTestClockError) return c.json({ error: error.message, code: error.code }, 409);
     return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);
   }
 });

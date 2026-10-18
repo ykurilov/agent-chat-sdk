@@ -286,7 +286,7 @@ describe("runAgentTurn: автопродолжение после обрыва �
 
     expect(model.doStreamCalls).toHaveLength(3);
     expect(answer.status).toBe("error");
-    expect(answer.error).toEqual({ kind: "rate_limited" });
+    expect(answer.error?.kind).toBe("rate_limited");
     expect(textOf(answer.parts)).toBe("АБВ");
     expect(chunks.filter((chunk) => chunk.type === "error")).toEqual([{ type: "error", errorText: "rate_limited" }]);
     expect(autoContinueLines(logged).map((line) => line.match(/попытка=\d из 2/)![0])).toEqual(["попытка=1 из 2", "попытка=2 из 2"]);
@@ -354,7 +354,7 @@ describe("runAgentTurn: автопродолжение после обрыва �
 
     expect(model.doStreamCalls).toHaveLength(1);
     expect(answer.status).toBe("error");
-    expect(answer.error).toEqual({ kind });
+    expect(answer.error?.kind).toBe(kind);
     expect(autoContinueLines(logged)).toEqual([]);
   });
 

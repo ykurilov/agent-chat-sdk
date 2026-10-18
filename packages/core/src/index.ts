@@ -7,6 +7,8 @@ export type {
   AnswerAliveMark,
   AnswerStatus,
   Chat,
+  ChatError,
+  ChatErrorDetails,
   ChatErrorKind,
   ChatMessageMetadata,
   ChatSubject,

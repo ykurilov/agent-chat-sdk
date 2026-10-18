@@ -210,6 +210,8 @@ export interface FlowTimers {
   tick(): Promise<void>;
   /** Пересчитать ближайший таймер чата после хода или перехода. `failedAt` — касание не дошло (часы сервера): срок не раньше. */
   reschedule(input: { ownerId: string; chatId: string; run: FlowRun; branchHead: string | null; failedAt?: number }): Promise<void>;
+  /** Слушать, что сработало по таймеру чата (ход «пишет первым», «срок вышел», «не завершил»); возврат — отписка. */
+  watch?(chatId: string, onFired: (fired: FlowTestClockReason) => void): () => void;
 }
 
 export interface FirstMessageRules {
@@ -341,8 +343,32 @@ export type FlowAdmitDecision =
   /** Отвечает живой сотрудник: агент молчит. */
   | { kind: "paused" };
 
-/** Перемотка тестового чата: на `ms` или до начала следующего дня сценария. */
-export type FlowTestClockInput = { ownerId: string; chatId: string } & ({ ms: number; to?: undefined } | { to: "next_day_start"; ms?: undefined });
+/**
+ * Перемотка тестового чата: на `ms`, до начала следующего дня сценария или ровно к моменту, когда сценарий напишет первым
+ * (`next_first_message`, с 0.64).
+ */
+export type FlowTestClockInput = { ownerId: string; chatId: string } & (
+  | { ms: number; to?: undefined }
+  | { to: "next_day_start" | "next_first_message"; ms?: undefined }
+);
+
+/**
+ * Что случилось в момент, куда перемотал `next_first_message`: вид — первая причина хода «пишет первым» (`transition`,
+ * `morning`, `silence`…), `deadline` — «срок вышел», `give_up` — «не завершил». `stateId` — нода после срабатывания,
+ * `exitId` — выход ноды по таймеру, `reasons` — все причины хода.
+ */
+export interface FlowTestClockReason {
+  kind: FlowFirstReason["kind"] | "deadline" | "give_up";
+  stateId: string;
+  exitId?: string;
+  reasons?: FlowFirstReason[];
+}
+
+/** Итог перемотки тестового чата: новый сдвиг часов, мс; у `next_first_message` — что сработало. */
+export interface FlowTestClockResult {
+  timeOffset: number;
+  reason?: FlowTestClockReason;
+}
 
 export interface FlowAdmitInput {
   ownerId: string;
@@ -567,9 +593,11 @@ export interface AgentFlowHandle {
   /**
    * Тестовый чат редактора (создан с `flowTestChatData()`): промотать его часы вперёд на `ms` или до начала следующего
    * дня сценария (`to: "next_day_start"`, по часам человека). Наступивший таймер срабатывает сразу; ответ ждёт конца
-   * его хода. Рабочий чат — ошибка.
+   * его хода. Рабочий чат — ошибка. `to: "next_first_message"` — ровно к моменту, когда сценарий сам напишет первым
+   * (касание, утреннее, выход ноды по сроку, «срок вышел», «не завершил»), с учётом ночи и потолков; впереди ничего —
+   * `FlowTestClockError` с кодом `nothing_scheduled`, часы не тронуты.
    */
-  advanceTestClock(input: FlowTestClockInput): Promise<{ timeOffset: number }>;
+  advanceTestClock(input: FlowTestClockInput): Promise<FlowTestClockResult>;
   start(): void;
   stop(): Promise<void>;
   /**

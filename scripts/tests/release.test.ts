@@ -30,7 +30,7 @@ beforeEach(() => {
   mkdirSync(join(project, "scripts"));
   mkdirSync(join(project, ".changeset"));
   mkdirSync(join(project, "packages/core"), { recursive: true });
-  for (const file of ["release.mjs", "verified-stamp.mjs"]) copyFileSync(join(scriptsFolder, file), join(project, "scripts", file));
+  for (const file of ["release.mjs", "release-in-actions.mjs", "verified-stamp.mjs"]) copyFileSync(join(scriptsFolder, file), join(project, "scripts", file));
   writeFileSync(join(project, ".changeset/README.md"), "# записи\n");
   writeFileSync(join(project, "packages/core/package.json"), JSON.stringify({ name: "@ykurilov/agent-chat-core", version: "1.2.3" }));
   writeFileSync(logFile, "");
@@ -73,7 +73,10 @@ afterEach(() => {
 const addChangeset = () => writeFileSync(join(project, ".changeset/fix.md"), '---\n"@ykurilov/agent-chat-core": patch\n---\n\nПравка.\n');
 const addToken = () => writeFileSync(join(home, ".npmrc"), "//registry.npmjs.org/:_authToken=abc123\n");
 
-function release(args: string[] = [], env: Record<string, string> = {}) {
+/** Выпуск на этой машине (`--local`): так же он идёт и на GitHub Actions. */
+const release = (args: string[] = [], env: Record<string, string> = {}) => runRelease(["--local", ...args], env);
+
+function runRelease(args: string[], env: Record<string, string>) {
   const result = spawnSync("node", [join(project, "scripts/release.mjs"), ...args], {
     cwd: project,
     encoding: "utf8",
@@ -259,6 +262,91 @@ describe("release.mjs: ветки выпуска", () => {
     const result = release();
     expect(result.status).toBe(0);
     expect(result.output).toContain("опубликована не у всех пакетов");
+    expect(result.calls).toContain("pnpm exec changeset publish");
+  });
+});
+
+describe("release.mjs с Мака: выпуск запускается на GitHub Actions", () => {
+  beforeEach(() => {
+    // HEAD и origin/main — один коммит, пока не задан FAKE_UNPUSHED; ветки на GitHub — из FAKE_REMOTE_BRANCHES.
+    fakeCommand(
+      "git",
+      `case "$1 $2" in
+  "rev-parse --abbrev-ref") echo "\${FAKE_BRANCH:-main}" ;;
+  "rev-parse HEAD") if [ -n "\${FAKE_UNPUSHED:-}" ]; then echo local; else echo same; fi ;;
+  "rev-parse --verify") case " \${FAKE_REMOTE_BRANCHES:-main} " in *" \${4#origin/} "*) echo same ;; *) exit 1 ;; esac ;;
+  "status --porcelain") printf "%s" "\${FAKE_DIRTY:-}" ;;
+  "log -1") echo "abc123 последний коммит" ;;
+esac
+exit 0`,
+    );
+    fakeCommand(
+      "gh",
+      `case "$1 $2" in
+  "workflow run") echo "https://github.com/owner/repo/actions/runs/42" ;;
+  "run watch") [ "\${FAKE_CONCLUSION:-success}" = success ] ;;
+  "run view") case "$*" in
+      *".url"*) echo "https://github.com/owner/repo/actions/runs/42" ;;
+      *".conclusion"*) echo "\${FAKE_CONCLUSION:-success}" ;;
+      *--log-failed*) echo "шаг pnpm release упал" ;;
+    esac ;;
+esac
+exit 0`,
+    );
+  });
+
+  it("выпуск: запускает release.yml на main без сухого режима, ждёт и печатает ссылку на прогон", () => {
+    const result = runRelease([], {});
+    expect(result.status).toBe(0);
+    expect(result.calls).toContain("gh workflow run release.yml --ref main -f dry_run=false");
+    expect(result.calls).toContain("gh run watch 42 --compact --exit-status --interval 30");
+    expect(result.output).toContain("Выпуск прошёл. Прогон: https://github.com/owner/repo/actions/runs/42");
+    expect(result.calls.some((call) => call.startsWith("pnpm") || call.startsWith("npm"))).toBe(false);
+  });
+
+  it("сухой прогон: на текущей ветке, если она есть на GitHub", () => {
+    const result = runRelease(["--dry-run"], { FAKE_BRANCH: "094-github-ci", FAKE_REMOTE_BRANCHES: "main 094-github-ci" });
+    expect(result.status).toBe(0);
+    expect(result.calls).toContain("gh workflow run release.yml --ref 094-github-ci -f dry_run=true");
+  });
+
+  it("сухой прогон с ветки, которой нет на GitHub: на main", () => {
+    const result = runRelease(["--dry-run"], { FAKE_BRANCH: "local-only" });
+    expect(result.calls).toContain("gh workflow run release.yml --ref main -f dry_run=true");
+  });
+
+  it("локальный main не запушен: стоп до запуска", () => {
+    const result = runRelease([], { FAKE_UNPUSHED: "1" });
+    expect(result.status).toBe(1);
+    expect(result.output).toContain("git push");
+    expect(result.calls.some((call) => call.startsWith("gh"))).toBe(false);
+  });
+
+  it("незакоммиченные изменения в main: стоп до запуска", () => {
+    const result = runRelease([], { FAKE_DIRTY: " M packages/core/src/index.ts" });
+    expect(result.status).toBe(1);
+    expect(result.calls.some((call) => call.startsWith("gh"))).toBe(false);
+  });
+
+  it("прогон упал: код 1, конец журнала и ссылка", () => {
+    const result = runRelease([], { FAKE_CONCLUSION: "failure" });
+    expect(result.status).toBe(1);
+    expect(result.output).toContain("шаг pnpm release упал");
+    expect(result.output).toContain("Выпуск не прошёл (failure). Прогон: https://github.com/owner/repo/actions/runs/42");
+  });
+
+  it("на GitHub Actions выпуск идёт на месте, без запуска нового прогона", () => {
+    addToken();
+    const result = runRelease([], { GITHUB_ACTIONS: "true" });
+    expect(result.status).toBe(0);
+    expect(result.calls.some((call) => call.startsWith("gh"))).toBe(false);
+    expect(result.calls).toContain("git push origin main --tags");
+  });
+
+  it("на GitHub Actions без ключа, но с OIDC: стопа «нет ключа» нет, публикация доверенной публикацией", () => {
+    const result = runRelease([], { GITHUB_ACTIONS: "true", ACTIONS_ID_TOKEN_REQUEST_URL: "https://example.invalid/token" });
+    expect(result.status).toBe(0);
+    expect(result.output).not.toContain("Нет ключа npm");
     expect(result.calls).toContain("pnpm exec changeset publish");
   });
 });

@@ -60,6 +60,15 @@ describe("runAgentTurn: у основного кончились деньги и
     expect(lines(logged, "[сбой провайдера]")).toEqual([]);
   });
 
+  it("403 OpenRouter «Key limit exceeded» — кончился бюджет ключа: запасной, причина insufficient_funds, строка о пределе ключа", async () => {
+    const keyLimit = () =>
+      apiError(403, '{"error":{"message":"Key limit exceeded (monthly limit). $10.00 of $10.00 used; resets 2026-11-01.","code":403,"metadata":{"limit_source":"openrouter_key_limit"}}}');
+    const { answer, logged } = await turn({ primary: failingWith(keyLimit), backup: answering() });
+    expect(answer.providerId).toBe("mock-backup");
+    expect(logged).toContain(`[запасной провайдер] чат=chat-1 модель=${mockModelId} с=mock на=mock-backup причина=insufficient_funds кэш потерян`);
+    expect(logged).toContain("[ВНИМАНИЕ провайдер] mock: исчерпан предел расходов ключа — ходы идут через запасной mock-backup");
+  });
+
   it("401 (ключ не принят) — так же: ответ от запасного, причина invalid_key", async () => {
     const primary = failingWith(badKey);
     const backup = answering();
@@ -82,7 +91,7 @@ describe("runAgentTurn: у основного кончились деньги и
     expect(primary.doStreamCalls).toHaveLength(1);
     expect(backup.doStreamCalls).toHaveLength(0);
     expect(answer.status).toBe("error");
-    expect(answer.error).toEqual({ kind: "insufficient_funds" });
+    expect(answer.error?.kind).toBe("insufficient_funds");
     expect(chunks.filter((chunk) => chunk.type === "error")).toEqual([{ type: "error", errorText: "insufficient_funds" }]);
     expect(logged).toContain("[ВНИМАНИЕ провайдер] mock: кончились деньги — запасного нет, ходы падают с ошибкой");
     expect(lines(logged, "[сбой провайдера]")).toHaveLength(1);
@@ -97,7 +106,7 @@ describe("runAgentTurn: у основного кончились деньги и
 
     expect(primary.doStreamCalls).toHaveLength(1);
     expect(backup.doStreamCalls).toHaveLength(1);
-    expect(answer.error).toEqual({ kind: "insufficient_funds" });
+    expect(answer.error?.kind).toBe("insufficient_funds");
     expect(lines(logged, "[ВНИМАНИЕ провайдер]")).toEqual([
       "[ВНИМАНИЕ провайдер] mock: кончились деньги — ходы идут через запасной mock-backup",
       "[ВНИМАНИЕ провайдер] mock-backup: кончились деньги — запасного нет, ходы падают с ошибкой",
@@ -108,7 +117,7 @@ describe("runAgentTurn: у основного кончились деньги и
 
   it("основному не принят ключ, у запасного кончились деньги — человеку исходная причина: invalid_key", async () => {
     const { answer, chunks } = await turn({ primary: failingWith(badKey), backup: failingWith(noMoney) });
-    expect(answer.error).toEqual({ kind: "invalid_key" });
+    expect(answer.error?.kind).toBe("invalid_key");
     expect(chunks.filter((chunk) => chunk.type === "error")).toEqual([{ type: "error", errorText: "invalid_key" }]);
   });
 
@@ -117,14 +126,14 @@ describe("runAgentTurn: у основного кончились деньги и
     const logged: string[] = [];
     const { answer } = await runTurn(primary, { catalog: mockCatalog({ mock: primary }), providerFallback: {}, logError: (line) => logged.push(line) });
     expect(logged).toContain(`[запасной провайдер] чат=chat-1 модель=${mockModelId} с=mock на=mock-backup причина=insufficient_funds кэш потерян`);
-    expect(answer.error).toEqual({ kind: "insufficient_funds" });
+    expect(answer.error?.kind).toBe("insufficient_funds");
   });
 
   it("запасной лишь перегружен — человеку overloaded: «попробуйте позже» поможет", async () => {
     const backup = failingWith(busy);
     const { answer } = await turn({ primary: failingWith(noMoney), backup });
     expect(backup.doStreamCalls).toHaveLength(4);
-    expect(answer.error).toEqual({ kind: "overloaded" });
+    expect(answer.error?.kind).toBe("overloaded");
   });
 
   it("первый запасной тоже без денег — ход идёт к следующему по списку", async () => {
@@ -216,7 +225,7 @@ describe("runAgentTurn: пауза основного после отказа (�
     await turn({ primary, backup: answering() }, { providerOutages, providerFallback: false });
     const { answer } = await turn({ primary, backup: answering() }, { providerOutages, providerFallback: false });
     expect(primary.doStreamCalls).toHaveLength(2);
-    expect(answer.error).toEqual({ kind: "insufficient_funds" });
+    expect(answer.error?.kind).toBe("insufficient_funds");
   });
 
   it("основной на паузе, запасной тоже без денег — человеку insufficient_funds", async () => {
@@ -228,7 +237,7 @@ describe("runAgentTurn: пауза основного после отказа (�
     const { answer } = await turn({ primary, backup }, { providerOutages });
     expect(primary.doStreamCalls).toHaveLength(1);
     expect(backup.doStreamCalls).toHaveLength(1);
-    expect(answer.error).toEqual({ kind: "insufficient_funds" });
+    expect(answer.error?.kind).toBe("insufficient_funds");
   });
 
   it("запасной на паузе — при перегрузке основного ход идёт мимо него к следующему", async () => {
@@ -268,7 +277,7 @@ describe("runAgentTurn: пауза основного после отказа (�
     advance(60_000);
     const { answer } = await turn({ primary, backup: failingWith(() => apiError(400, '{"error":{"message":"bad request"}}')) }, { providerOutages });
     expect(primary.doStreamCalls).toHaveLength(1);
-    expect(answer.error).toEqual({ kind: "other" });
+    expect(answer.error?.kind).toBe("other");
   });
 
   it("пауза кончилась — основного пробует один ход; ход, пришедший во время пробы, идёт к запасному", async () => {
@@ -304,7 +313,7 @@ describe("runAgentTurn: пауза основного после отказа (�
     const { providerOutages, logged } = sharedOutages();
     providerOutages.report({ providerId: "mock-backup", kind: "insufficient_funds" });
     const { answer } = await turn({ primary: failingWith(noMoney), backup: answering() }, { providerOutages });
-    expect(answer.error).toEqual({ kind: "insufficient_funds" });
+    expect(answer.error?.kind).toBe("insufficient_funds");
     expect(lines(logged, "[ВНИМАНИЕ провайдер] mock:")).toEqual(["[ВНИМАНИЕ провайдер] mock: кончились деньги — запасные тоже на паузе, ходы падают с ошибкой"]);
   });
 });
@@ -324,7 +333,7 @@ describe("runAgentTurn: отказы, после которых пауза не 
     const flagged = () => apiError(403, '{"error":{"message":"Your chosen model requires moderation and your input was flagged for \\"violence\\""}}');
     const backup = answering();
     const { answer } = await turn({ primary: failingWith(flagged), backup }, { providerOutages });
-    expect(answer.error).toEqual({ kind: "other" });
+    expect(answer.error?.kind).toBe("other");
     expect(backup.doStreamCalls).toHaveLength(0);
     expect(providerOutages.pausedKind("mock")).toBeUndefined();
   });
@@ -336,5 +345,38 @@ describe("runAgentTurn: отказы, после которых пауза не 
     expect(answer.providerId).toBe("mock-backup");
     expect(providerOutages.pausedKind("mock")).toBeUndefined();
     expect(lines(logged, "[ВНИМАНИЕ провайдер]")).toEqual([]);
+  });
+});
+
+describe("runAgentTurn: подробности сбоя в итоге ответа (error.details)", () => {
+  const keyLimit = () =>
+    apiError(
+      403,
+      '{"error":{"message":"Key limit exceeded (monthly limit). $10.00 of $10.00 used; resets 2026-11-01. Manage: https://openrouter.ai/settings/keys?token=t0p-s3cret","code":403,"metadata":{"limit_source":"openrouter_key_limit"}}}',
+    );
+
+  it("запасных нет — провайдер, модель, код, причина без параметров адреса и дата обнуления в сообщении и в последнем куске метаданных", async () => {
+    const { answer, chunks } = await turn({ primary: failingWith(keyLimit), backup: answering() }, { providerFallback: false });
+    const details = {
+      providerId: "mock",
+      modelId: mockModelId,
+      statusCode: 403,
+      reason: "Key limit exceeded (monthly limit). $10.00 of $10.00 used; resets 2026-11-01. Manage: https://openrouter.ai/settings/keys",
+      resetsAt: "2026-11-01T00:00:00.000Z",
+    };
+    expect(answer.error).toEqual({ kind: "insufficient_funds", details });
+    const final = chunks.filter((chunk) => chunk.type === "message-metadata").at(-1) as { messageMetadata: { error?: unknown } };
+    expect(final.messageMetadata.error).toEqual({ kind: "insufficient_funds", details });
+    expect(JSON.stringify(chunks)).not.toContain("t0p-s3cret");
+  });
+
+  it("основному предел ключа, запасной без денег — человеку причина основного, подробности тоже про основного", async () => {
+    const { answer } = await turn({ primary: failingWith(keyLimit), backup: failingWith(noMoney) });
+    expect(answer.error).toMatchObject({ kind: "insufficient_funds", details: { providerId: "mock", statusCode: 403, resetsAt: "2026-11-01T00:00:00.000Z" } });
+  });
+
+  it("запасной лишь перегружен — вид overloaded, подробности про запасного", async () => {
+    const { answer } = await turn({ primary: failingWith(keyLimit), backup: failingWith(busy) });
+    expect(answer.error).toMatchObject({ kind: "overloaded", details: { providerId: "mock-backup", statusCode: 503, reason: "busy" } });
   });
 });

@@ -57,6 +57,11 @@ describe("Hono: причина отказа доходит до браузера
     expect(await outcome(port)).toEqual({ opened: true, closeCode: 4401 });
   });
 
+  it("обычный HTTP-запрос без подъёма WebSocket — сам отказ (401), а не «не найдено»", async () => {
+    const port = await honoWith({ resolveUser: async () => null });
+    expect((await fetch(`http://127.0.0.1:${port}/api/voice/stream`)).status).toBe(401);
+  });
+
   it("чужая страница — HTTP 403 без соединения", async () => {
     const port = await honoWith({});
     expect(await outcome(port, { origin: "https://evil.test", "sec-fetch-site": "cross-site" })).toEqual({ opened: false, httpStatus: 403 });

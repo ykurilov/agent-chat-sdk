@@ -23,7 +23,8 @@ const initial: AgentFlow = parsed.flow;
 
 async function post<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-  if (!response.ok) throw new Error(`${path}: ${response.status}`);
+  // Код ошибки сервера (`nothing_scheduled` у перемотки к напоминанию) — дальше, тестовому чату.
+  if (!response.ok) throw Object.assign(new Error(`${path}: ${response.status}`), await response.json().catch(() => ({})));
   return (await response.json()) as T;
 }
 
@@ -31,6 +32,7 @@ const testChat: FlowTestChatConnection = {
   start: (flow) => post("/api/flow-test/start", { flow }),
   advance: (chatId, ms) => post("/api/flow-test/advance", { chatId, ms }),
   advanceToNextDay: (chatId) => post("/api/flow-test/advance", { chatId, to: "next_day_start" }),
+  advanceToNextFirstMessage: (chatId) => post("/api/flow-test/advance", { chatId, to: "next_first_message" }),
   readRun: (chatId) => post("/api/flow-test/run", { chatId }),
   renderChat: (chatId) => <AgentChat api="/api/chat" chatId={chatId} skin={tandemSkin} />,
 };

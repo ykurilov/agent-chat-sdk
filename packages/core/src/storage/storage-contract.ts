@@ -278,6 +278,18 @@ export function describeChatStorageContract(
       expect(saved?.parts).toEqual([{ type: "text", text: "часть", state: "done" }]);
     });
 
+    it("finishMessage хранит подробности сбоя провайдера (error.details) и отдаёт их как есть", async () => {
+      const storage = await storageWithChat();
+      await storage.insertMessage(userMessage("u1", "2099-01-01T00:00:00.000Z"));
+      await storage.insertMessage(streamingAnswer("a1", "u1", "2099-01-01T00:00:01.000Z"));
+      const error = {
+        kind: "insufficient_funds" as const,
+        details: { providerId: "openrouter", modelId: "m", statusCode: 403, reason: "Key limit exceeded", resetsAt: "2099-11-01T00:00:00.000Z" },
+      };
+      await storage.finishMessage("a1", { status: "error", parts: [], usage: null, error });
+      expect((await storage.listMessages(chatInput.id)).find((message) => message.id === "a1")?.error).toEqual(error);
+    });
+
     it("finishMessage с providerId меняет провайдера ответа, без поля — провайдер прежний", async () => {
       const storage = await storageWithChat();
       await storage.insertMessage(userMessage("u1", "2099-01-01T00:00:00.000Z"));

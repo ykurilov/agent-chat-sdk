@@ -1,6 +1,7 @@
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 import type { FlowDayInfo } from "../../engine/flow-days";
 import { stateById } from "../../engine/flow-graph";
+import { parseDuration } from "../../format/parse-duration";
 import { russianFlowTestChatLabels, type FlowTestChatLabels } from "../../labels/test-chat";
 import { FlowEditor, type FlowEditorProps } from "../editor/flow-editor";
 import { useFlowLabels } from "../flow-labels";
@@ -104,6 +105,12 @@ export function FlowTestChat({ testChat, advanceSteps = DEFAULT_ADVANCE_STEPS, s
       onAdvance={controller.advance}
       day={formatDayLine(controller.day, (editor.now?.() ?? Date.now()) + controller.timeOffset, editor.timeZone ?? browserTimeZone(), labels)}
       {...(controller.nextDay && editor.value.schedule ? { onNextDay: controller.nextDay } : {})}
+      {...(controller.nextFirstMessage && { onNextFirstMessage: controller.nextFirstMessage, nothingScheduled: controller.nothingScheduled })}
+      onAdvanceText={(text) => {
+        const ms = parseDuration(text);
+        if (ms !== undefined) controller.advance(ms);
+        return ms !== undefined;
+      }}
       busy={controller.busy}
       failed={controller.failed}
       onReset={controller.reset}

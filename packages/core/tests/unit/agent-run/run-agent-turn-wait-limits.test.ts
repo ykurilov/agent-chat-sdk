@@ -226,7 +226,7 @@ describe("runAgentTurn: предел молчания потока модели"
     // Две попытки по 90 с и одна пауза повтора (1 с, разброс до 25%).
     const { chunks, answer } = await runWithClock(model, 2 * 90_000 + 1_250, { providerFallback: false });
     expect(answer.status).toBe("error");
-    expect(answer.error).toEqual({ kind: "overloaded" });
+    expect(answer.error?.kind).toBe("overloaded");
     expect(chunks.filter((chunk) => chunk.type === "error")).toEqual([{ type: "error", errorText: "overloaded" }]);
     expect(model.doStreamCalls).toHaveLength(2);
   });

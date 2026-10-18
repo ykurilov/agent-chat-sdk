@@ -885,6 +885,10 @@ onTransition: async ({ ownerId, chatId, from, to, exitId, decidedBy, tags }) => 
 - **Тестовый чат.** Автор пишет агенту прямо в редакторе, на доске подсвечено текущее состояние. Кнопки «Промотать»
   проверяют напоминания без ожидания. «К началу следующего дня» проматывает до утра сценария с «Днями и временем»
   (`advanceToNextDay` у подключения, на сервере `flow.advanceTestClock({ ownerId, chatId, to: "next_day_start" })`).
+  «К следующему напоминанию» проматывает ровно к моменту, когда сценарий сам напишет первым: касание по тишине,
+  утреннее, выход состояния по сроку, «срок вышел», «не завершил» (`advanceToNextFirstMessage` у подключения, на
+  сервере `to: "next_first_message"`). Поле «своё время» понимает «15 мин», «1 ч 30 мин», «2 дня», «1h 30m» и
+  перематывает через `advance`.
 - **Свои проверки приложения.** `checks` у `FlowEditor` и `FlowTestChat` — функция `(flow) => [{ path, message }]`.
   Те же проверки на сервере: `checkFlow(flow, catalog, { checks })`. Тип `FlowAppChecks` — из
   `@ykurilov/agent-chat-flows/format`.
@@ -904,7 +908,36 @@ const testChat: FlowTestChatConnection = {
 
 Посетитель места чата не получает, поэтому доска читает его отдельно — методом `readRun`. Адреса тестового чата
 (перемотка и место) приложение закрывает правами само: только редактору и только для тестовых чатов. Перемотка
-работает только у тестового чата. У рабочего чата `advanceTestClock` — ошибка. Рабочий пример:
+работает только у тестового чата. У рабочего чата `advanceTestClock` — ошибка.
+
+**К следующему сообщению сценария.** `flow.advanceTestClock({ ownerId, chatId, to: "next_first_message" })` сдвигает
+часы чата к фактической отправке, а не к сырому сроку. Срок касания попал на ночь, на потолок дня или на три часа
+после сообщения человека — перемотка идёт дальше, до утра или до конца запрета. Ответ —
+`{ timeOffset, reason: { kind, stateId, exitId?, reasons? } }`: `kind` — что сработало (`silence`, `morning`,
+`transition`, `deadline`, `give_up`…), `stateId` — состояние после срабатывания, `exitId` — выход по сроку. Впереди
+сценарий сам ничего не напишет (касаний нет, разговор закончен, ходов ещё не было) — `FlowTestClockError` с
+`code: "nothing_scheduled"`, часы не тронуты. Код ошибки передайте в браузер: тестовый чат по нему пишет «Впереди
+сценарий сам ничего не напишет».
+
+```ts
+app.post("/flow-test/advance", async (c) => {
+  const { chatId, ms, to } = await c.req.json();
+  const clock = to ? { to } : { ms: Number(ms) };
+  try {
+    return c.json(await flow.advanceTestClock({ ownerId, chatId, ...clock }));
+  } catch (error) {
+    if (error instanceof FlowTestClockError) return c.json({ code: error.code }, 409);
+    throw error;
+  }
+});
+// в браузере: advanceToNextFirstMessage: (chatId) => api.post("/flow-test/advance", { chatId, to: "next_first_message" })
+// ошибка с { code: "nothing_scheduled" } — тестовый чат покажет «впереди ничего»
+```
+
+Разбор длительности словами для своих полей — `parseDuration("1 ч 30 мин")` → мс из
+`@ykurilov/agent-chat-flows/format`; непонятное, пустое или ноль — `undefined`.
+
+Рабочий пример:
 [apps/demo/flow-test-chat](../apps/demo/flow-test-chat).
 
 ## Кэш модели

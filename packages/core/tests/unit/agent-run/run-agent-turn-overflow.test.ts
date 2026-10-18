@@ -126,7 +126,7 @@ describe("runAgentTurn: переполнение — сжать и продол�
     expect(model.doStreamCalls).toHaveLength(2);
     expect(compactForOverflow).toHaveBeenCalledTimes(1);
     expect(answer.status).toBe("error");
-    expect(answer.error).toEqual({ kind: "context_overflow" });
+    expect(answer.error?.kind).toBe("context_overflow");
     expect(chunks.filter((chunk) => chunk.type === "error")).toEqual([{ type: "error", errorText: "context_overflow" }]);
     expect(logged.filter((line) => line.startsWith("[сбой провайдера]"))).toHaveLength(1);
   });
@@ -137,13 +137,13 @@ describe("runAgentTurn: переполнение — сжать и продол�
     const { answer } = await overflowTurn(model, { compactForOverflow: async () => null });
 
     expect(model.doStreamCalls).toHaveLength(1);
-    expect(answer.error).toEqual({ kind: "context_overflow" });
+    expect(answer.error?.kind).toBe("context_overflow");
   });
 
   it("сжатия у хода нет — переполнение сразу ошибка", async () => {
     const model = scriptedModel([overflowError()]);
     const { answer } = await overflowTurn(model, { compactForOverflow: undefined });
-    expect(answer.error).toEqual({ kind: "context_overflow" });
+    expect(answer.error?.kind).toBe("context_overflow");
   });
 
   it("«Too many tokens, please wait» — лимит, а не переполнение: сжатия нет (сц. 5)", async () => {
@@ -156,7 +156,7 @@ describe("runAgentTurn: переполнение — сжать и продол�
     const { answer, compactForOverflow } = await overflowTurn(model, { providerFallback: false });
 
     expect(compactForOverflow).not.toHaveBeenCalled();
-    expect(answer.error).toEqual({ kind: "rate_limited" });
+    expect(answer.error?.kind).toBe("rate_limited");
   });
 
   it("«Стоп» во время сжатия — ход остановлен, нового запроса нет", async () => {
@@ -292,7 +292,7 @@ describe("runAgentTurn: сжатие внутри хода — пересказ 
 
     expect(compactAnswerSteps).not.toHaveBeenCalled();
     expect(model.doStreamCalls).toHaveLength(3);
-    expect(answer.error).toEqual({ kind: "context_overflow" });
+    expect(answer.error?.kind).toBe("context_overflow");
   });
 
   it("и после пересказа не влезло — error / context_overflow, третьего сжатия нет", async () => {
@@ -303,7 +303,7 @@ describe("runAgentTurn: сжатие внутри хода — пересказ 
 
     expect(compactAnswerSteps).toHaveBeenCalledTimes(1);
     expect(model.doStreamCalls).toHaveLength(5);
-    expect(answer.error).toEqual({ kind: "context_overflow" });
+    expect(answer.error?.kind).toBe("context_overflow");
   });
 });
 
@@ -325,7 +325,7 @@ describe("runAgentTurn: попытки хода делят его лимит ш�
 
     const { answer, storage } = await overflowTurn(model);
 
-    expect(answer.error).toEqual({ kind: "context_overflow" });
+    expect(answer.error?.kind).toBe("context_overflow");
     // Шаг c1 первой попытки: 100 на вход, 30 на выход; вторая попытка шагов не сделала.
     expect(answer.usage).toMatchObject({ inputTokens: 100, outputTokens: 30 });
     expect(await storage.sumUsage({ ownerId: "anna" })).toEqual([expect.objectContaining({ inputTokens: 100, outputTokens: 30 })]);

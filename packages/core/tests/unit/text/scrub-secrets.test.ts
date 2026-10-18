@@ -93,6 +93,29 @@ describe("scrubSecrets", () => {
     }
   });
 
+  it("key= без разделителя перед ним, bearer в любом регистре, слово ключа через пробел", () => {
+    expect(scrubSecrets("fetch failed key=abcd1234")).toBe("fetch failed key=[скрыто]");
+    expect(scrubSecrets("KEY: abcd1234efgh")).toBe("KEY: [скрыто]");
+    expect(scrubSecrets("header bearer abc123def456")).toBe("header bearer [скрыто]");
+    expect(scrubSecrets("BEARER abc123def456")).toBe("BEARER [скрыто]");
+    expect(scrubSecrets("invalid token abc123def456 given")).toBe("invalid token [скрыто] given");
+    expect(scrubSecrets("bad api-key abcdef123456")).toBe("bad api-key [скрыто]");
+    expect(scrubSecrets("wrong Password Xy7#pq2Lmn!")).toBe("wrong Password [скрыто]");
+  });
+
+  it("маски ключей со звёздочками целиком: последние знаки ключа не уходят", () => {
+    expect(scrubSecrets("Incorrect API key provided: sk-proj-********************abcd. You can find")).toBe(
+      "Incorrect API key provided: [скрыто]. You can find",
+    );
+    expect(scrubSecrets("key sk-ab****wxyz")).not.toContain("wxyz");
+  });
+
+  it("слово ключа через пробел не трогает обычные слова и числа", () => {
+    for (const text of ["token limit exceeded", "token 4096 too long", "invalid token in request", "password is wrong", "api-key missing", "key expired"]) {
+      expect(scrubSecrets(text)).toBe(text);
+    }
+  });
+
   it("обычный текст без секретов не меняется", () => {
     const text = "Сервис недоступен: таймаут 30 с при запросе https://api.example.com/v1/items?id=5";
     expect(scrubSecrets(text)).toBe(text);

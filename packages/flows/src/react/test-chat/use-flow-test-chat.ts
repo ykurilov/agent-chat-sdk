@@ -17,6 +17,12 @@ export interface FlowTestChatConnection {
    * Нет — кнопки «К началу следующего дня» нет.
    */
   advanceToNextDay?(chatId: string): Promise<{ timeOffset: number }>;
+  /**
+   * Промотать часы ровно к моменту, когда сценарий сам напишет первым: на сервере
+   * `flow.advanceTestClock({ chatId, to: "next_first_message" })`. Впереди ничего — ошибка с `code: "nothing_scheduled"`
+   * (у `FlowTestClockError`; через сеть передайте код). Нет — кнопки «К следующему напоминанию» нет.
+   */
+  advanceToNextFirstMessage?(chatId: string): Promise<{ timeOffset: number }>;
   /** Место чата: на сервере `flow.readRun`. В браузер посетителя место не уходит, доска читает его отдельно. */
   readRun(chatId: string): Promise<(Pick<FlowRun, "state" | "path"> & { day?: FlowDayInfo }) | null>;
   /** Экран чата приложения: `<AgentChat api=… chatId={chatId} skin=… />`. */
@@ -42,6 +48,10 @@ export interface FlowTestChatController {
   advance(ms: number): void;
   /** К началу следующего дня сценария; `null` — приложение не дало `advanceToNextDay`. */
   nextDay: (() => void) | null;
+  /** К следующему сообщению сценария; `null` — приложение не дало `advanceToNextFirstMessage`. */
+  nextFirstMessage: (() => void) | null;
+  /** Последняя перемотка к напоминанию: впереди сценарий сам ничего не напишет. */
+  nothingScheduled: boolean;
 }
 
 type BoardRun = { state: string; visited: ReadonlySet<string>; day: FlowDayInfo | null };
@@ -68,6 +78,7 @@ export function useFlowTestChat(connection: FlowTestChatConnection, flow: AgentF
   const [timeOffset, setTimeOffset] = useState(0);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [nothingScheduled, setNothingScheduled] = useState(false);
   const [run, setRun] = useState<BoardRun | null>(null);
   const latest = useRef({ connection, flow, chatId });
   latest.current = { connection, flow, chatId };
@@ -92,9 +103,14 @@ export function useFlowTestChat(connection: FlowTestChatConnection, flow: AgentF
   const work = useCallback(async (job: () => Promise<void>) => {
     setBusy(true);
     setFailed(false);
+    setNothingScheduled(false);
     try {
       await job();
     } catch (error) {
+      if ((error as { code?: unknown } | null)?.code === "nothing_scheduled") {
+        setNothingScheduled(true);
+        return;
+      }
       console.error("[flow] test chat:", error);
       setFailed(true);
     } finally {
@@ -130,6 +146,7 @@ export function useFlowTestChat(connection: FlowTestChatConnection, flow: AgentF
     timeOffset,
     busy,
     failed,
+    nothingScheduled,
     stateId: chatId === null ? null : (run?.state ?? flow.start),
     visited: run?.visited ?? NOTHING_VISITED,
     day: chatId === null ? null : (run?.day ?? null),
@@ -141,5 +158,6 @@ export function useFlowTestChat(connection: FlowTestChatConnection, flow: AgentF
     reset: () => void start(),
     advance: (ms) => shift((id) => latest.current.connection.advance(id, ms)),
     nextDay: connection.advanceToNextDay ? () => shift((id) => latest.current.connection.advanceToNextDay!(id)) : null,
+    nextFirstMessage: connection.advanceToNextFirstMessage ? () => shift((id) => latest.current.connection.advanceToNextFirstMessage!(id)) : null,
   };
 }

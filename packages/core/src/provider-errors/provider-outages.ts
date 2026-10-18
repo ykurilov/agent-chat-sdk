@@ -28,9 +28,10 @@ export interface ProviderOutages {
   /**
    * Провайдер отказал: пауза на `PROVIDER_OUTAGE_PAUSE_MS` и, не чаще раза в `PROVIDER_OUTAGE_ALERT_EVERY_MS`, строка
    * `[ВНИМАНИЕ провайдер]` в журнал. `fallbackProviderId` — кто отвечает вместо; нет — ходы падают, а
-   * `fallbacksPaused` говорит, что запасные есть, но тоже на паузе.
+   * `fallbacksPaused` говорит, что запасные есть, но тоже на паузе. `keyLimit` — деньги не на счёте кончились, а
+   * исчерпан предел расходов ключа: строка говорит об этом.
    */
-  report(input: { providerId: string; kind: ProviderOutageKind; fallbackProviderId?: string; fallbacksPaused?: boolean }): void;
+  report(input: { providerId: string; kind: ProviderOutageKind; fallbackProviderId?: string; fallbacksPaused?: boolean; keyLimit?: boolean }): void;
   /** Вид отказа, пока провайдер на паузе или его пробует другой ход; иначе `undefined`. Ничего не меняет. */
   pausedKind(providerId: string): ProviderOutageKind | undefined;
   /**
@@ -52,7 +53,7 @@ export function createProviderOutages(options: { now: () => number; logError: (m
     return time < outage.pausedUntil || time < (outage.probeUntil ?? 0) ? outage.kind : undefined;
   };
   return {
-    report({ providerId, kind, fallbackProviderId, fallbacksPaused }) {
+    report({ providerId, kind, fallbackProviderId, fallbacksPaused, keyLimit }) {
       const time = options.now();
       outages.set(providerId, { kind, pausedUntil: time + PROVIDER_OUTAGE_PAUSE_MS });
       const last = alertedAt.get(providerId);
@@ -62,7 +63,8 @@ export function createProviderOutages(options: { now: () => number; logError: (m
         fallbackProviderId !== undefined
           ? `ходы идут через запасной ${fallbackProviderId}`
           : `${fallbacksPaused ? "запасные тоже на паузе" : "запасного нет"}, ходы падают с ошибкой`;
-      options.logError(`[ВНИМАНИЕ провайдер] ${providerId}: ${SAID[kind]} — ${route}`);
+      const said = keyLimit && kind === "insufficient_funds" ? "исчерпан предел расходов ключа" : SAID[kind];
+      options.logError(`[ВНИМАНИЕ провайдер] ${providerId}: ${said} — ${route}`);
     },
     pausedKind,
     admit(providerId) {

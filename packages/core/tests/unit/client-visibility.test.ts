@@ -125,3 +125,24 @@ describe("видимость: метаданные поставщика у ит�
     expect(visible.parts[0]).toMatchObject({ resultProviderMetadata: { openrouter: { provider: "Anthropic" } } });
   });
 });
+
+describe("видимость: подробности сбоя (errorDetails)", () => {
+  const failed = {
+    role: "assistant",
+    parts: [{ type: "text", text: "" }],
+    metadata: { status: "error", error: { kind: "insufficient_funds", details: { providerId: "openrouter", modelId: "m", reason: "Key limit exceeded" } } },
+  };
+  const errorOf = (visibility: ReturnType<typeof clientVisibilityOf>) => (visibility.visibleMessage(failed).metadata as { error: unknown }).error;
+
+  it("нет права — только вид; есть — подробности остаются и при скрытых мыслях", () => {
+    expect(errorOf(clientVisibilityOf({ reasoning: true, toolDetails: true }, () => false))).toEqual({ kind: "insufficient_funds" });
+    expect(errorOf(clientVisibilityOf({ reasoning: false, toolDetails: true, errorDetails: true }, () => false))).toEqual(failed.metadata.error);
+    expect(clientVisibilityOf({ reasoning: true, toolDetails: true, errorDetails: true }, () => false).showsEverything).toBe(true);
+  });
+
+  it("modelDetails: false — подробностей нет даже с errorDetails: true", () => {
+    expect(errorOf(clientVisibilityOf({ reasoning: true, toolDetails: true, modelDetails: false, errorDetails: true }, () => false))).toEqual({
+      kind: "insufficient_funds",
+    });
+  });
+});

@@ -4,7 +4,7 @@ import { MockLanguageModelV4 } from "ai/test";
 import { describe, expect, it } from "vitest";
 import { onFakeClock } from "../support/fake-clock";
 import { finishPart, mockEnv, mockModelId, streamOf, streamStart, textParts } from "../support/mock-model";
-import { runTurn } from "../support/turn-fixtures";
+import { runTurn, withoutErrorDetails } from "../support/turn-fixtures";
 
 function apiError(statusCode: number, responseBody: string): APICallError {
   return new APICallError({
@@ -74,7 +74,7 @@ describe("runAgentTurn: журнал сбоев провайдера (US5)", () 
     ]);
   });
 
-  it("сбой после первого куска — тоже одна строка; в потоке к браузеру только вид (сц. 4)", async () => {
+  it("сбой после первого куска — тоже одна строка; в потоке текст провайдера только в подробностях сбоя (сц. 4)", async () => {
     const secret = "сырой-текст-провайдера";
     const parts: LanguageModelV4StreamPart[] = [
       streamStart,
@@ -93,6 +93,9 @@ describe("runAgentTurn: журнал сбоев провайдера (US5)", () 
     expect(failures[0]).toContain(`вид=overloaded код=503`);
     expect(failures[0]).toContain(secret);
     expect(chunks.filter((chunk) => chunk.type === "error")).toEqual([{ type: "error", errorText: "overloaded" }]);
-    expect(JSON.stringify(chunks)).not.toContain(secret);
+    // Текст провайдера — только в `error.details` итога: браузеру их отдаёт лишь право `errorDetails`.
+    const final = chunks.filter((chunk) => chunk.type === "message-metadata").at(-1) as { messageMetadata: { error?: { details?: { reason?: string } } } };
+    expect(final.messageMetadata.error?.details?.reason).toBe(secret);
+    expect(JSON.stringify(withoutErrorDetails(chunks))).not.toContain(secret);
   });
 });

@@ -45,6 +45,12 @@ describe("createProviderOutages: пауза провайдера и громка
     expect(logged).toEqual(["[ВНИМАНИЕ провайдер] deepseek: кончились деньги — ходы идут через запасной openrouter"]);
   });
 
+  it("громкая строка: исчерпан предел расходов ключа", () => {
+    const { outages, logged } = outagesOnClock();
+    outages.report({ providerId: "openrouter", kind: "insufficient_funds", keyLimit: true, fallbackProviderId: "deepseek" });
+    expect(logged).toEqual(["[ВНИМАНИЕ провайдер] openrouter: исчерпан предел расходов ключа — ходы идут через запасной deepseek"]);
+  });
+
   it("громкая строка: ключ не принят; запасного нет — ходы падают", () => {
     const { outages, logged } = outagesOnClock();
     outages.report({ providerId: "deepseek", kind: "invalid_key" });

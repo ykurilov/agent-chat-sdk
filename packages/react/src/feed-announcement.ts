@@ -3,7 +3,7 @@ import { messageText } from "./chat-types";
 import { voiceAnswerIds } from "./voice-turn";
 import { withoutMarkdown } from "./without-markdown";
 import type { AgentChatMessage } from "./chat-types";
-import { useChatLabels } from "./labels";
+import { customErrorText, useChatLabels } from "./labels";
 import type { ResolvedChatLabels } from "./labels";
 
 /*
@@ -38,7 +38,7 @@ function announcementFor(messages: AgentChatMessage[], labels: ResolvedChatLabel
   const answer = messages.findLast((message) => message.role === "assistant");
   if (!answer) return "";
   const status = answer.metadata?.status ?? "complete";
-  if (status === "error") return labels.errors[answer.metadata?.error?.kind ?? "other"];
+  if (status === "error") return customErrorText(labels, answer.metadata?.error) ?? labels.errors[answer.metadata?.error?.kind ?? "other"];
   if (status === "stopped") return labels.answerStopped;
   if (status === "interrupted") return labels.answerInterrupted;
   if (status === "awaiting_approval") return widgetQuestionOf(answer, labels) ?? labels.approvalAnnouncement;

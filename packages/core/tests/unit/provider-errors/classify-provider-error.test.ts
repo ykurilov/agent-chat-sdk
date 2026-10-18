@@ -1,6 +1,6 @@
 import { APICallError, RetryError } from "ai";
 import { describe, expect, it } from "vitest";
-import { classifyProviderError } from "../../../src/provider-errors/classify-provider-error";
+import { classifyProviderError, isKeyLimit } from "../../../src/provider-errors/classify-provider-error";
 import { FirstChunkTimeoutError, StreamStallError } from "../../../src/provider-errors/transient-retry-middleware";
 import { deepseekProvider } from "../../../src/models/providers/deepseek";
 import { MissingProviderKeyError } from "../../../src/models/model-catalog";
@@ -127,6 +127,43 @@ describe("classifyProviderError", () => {
       ['{"error":{"message":"You do not have access to the model gpt-6"}}', "доступ к модели"],
     ])("%s (%s) → other", (body) => {
       expect(classifyProviderError(apiError(403, body))).toBe("other");
+    });
+  });
+
+  describe("исчерпан предел расходов ключа — insufficient_funds при любом коде, даже со словами о ключе", () => {
+    // Тело из прода конструктор приложений: OpenRouter, месячный предел ключа.
+    const openRouterKeyLimit =
+      '{"error":{"message":"Key limit exceeded (monthly limit). $10.00 of $10.00 used; resets 2026-11-01. Raise the limit of this API key in your settings.","code":403,"metadata":{"limit_source":"openrouter_key_limit"}}}';
+
+    it("OpenRouter 403 «Key limit exceeded (monthly limit)» со словами «API key» → insufficient_funds", () => {
+      const error = apiError(403, openRouterKeyLimit);
+      expect(classifyProviderError(error)).toBe("insufficient_funds");
+      expect(isKeyLimit(error)).toBe(true);
+    });
+
+    it("только metadata.limit_source = openrouter_key_limit, без текста → insufficient_funds", () => {
+      expect(classifyProviderError(apiError(403, '{"error":{"message":"Forbidden","code":403,"metadata":{"limit_source":"openrouter_key_limit"}}}'))).toBe("insufficient_funds");
+    });
+
+    it("кусок потока с тем же отказом (объект, не APICallError) → insufficient_funds", () => {
+      const chunk = { error: { code: 403, message: "Key limit exceeded (monthly limit).", metadata: { limit_source: "openrouter_key_limit" } } };
+      expect(classifyProviderError(chunk)).toBe("insufficient_funds");
+      expect(isKeyLimit(chunk)).toBe(true);
+    });
+
+    it.each([
+      [401, '{"error":{"message":"Authentication Error - ExceededBudget: User=anna over budget. Spend=10.2, Budget=10.0"}}', "шлюз с бюджетом ключа, 401"],
+      [400, '{"error":{"message":"Budget has been exceeded! Current cost: 10.2, Max budget: 10.0"}}', "шлюз с бюджетом ключа, 400"],
+      [403, '{"error":{"message":"This API key has reached its spending limit"}}', "предел расходов ключа"],
+    ])("%i %s (%s) → insufficient_funds", (status, body) => {
+      expect(classifyProviderError(apiError(status, body))).toBe("insufficient_funds");
+    });
+
+    it("обычный 403 без признаков — по-прежнему other; непринятый ключ — invalid_key, а не предел", () => {
+      expect(classifyProviderError(apiError(403, '{"error":{"message":"Forbidden"}}'))).toBe("other");
+      const badKey = apiError(403, '{"error":{"message":"Invalid API key provided"}}');
+      expect(classifyProviderError(badKey)).toBe("invalid_key");
+      expect(isKeyLimit(badKey)).toBe(false);
     });
   });
 

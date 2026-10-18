@@ -60,6 +60,8 @@ export interface MessageFeedProps {
   keepLastMounted: boolean;
   /** Что показать при первом показе: сообщение с этим id встаёт у верха; по умолчанию лента внизу. */
   openAtMessageId?: string;
+  /** Сообщение с открытым полем правки остаётся в дереве за краем окна ленты: поле не теряет фокус и место ввода. */
+  keepMountedMessageId?: string;
   ref?: Ref<MessageFeedHandle>;
 }
 
@@ -84,7 +86,7 @@ function isTextField(target: EventTarget | null): boolean {
  * за растущим ответом, а после шага читателя вверх (колесо, касание, клавиша) стоит на месте.
  * Снова прилипает, когда читатель вернулся к низу ближе чем на 96 px.
  */
-function MessageFeedView({ scrollRef, messages, renderMessage, keepLastMounted, openAtMessageId, ref }: MessageFeedProps) {
+function MessageFeedView({ scrollRef, messages, renderMessage, keepLastMounted, openAtMessageId, keepMountedMessageId, ref }: MessageFeedProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const virtualizerRef = useRef<VirtualizerHandle>(null);
   const stuck = useRef(true);
@@ -332,14 +334,17 @@ function MessageFeedView({ scrollRef, messages, renderMessage, keepLastMounted, 
   // сообщения над экраном снимались бы с каждым шагом за растущим ответом и разбирались заново. Пока лента прилипла
   // к низу, запас над экраном держится здесь.
   const virtualizer = virtualizerRef.current;
+  const editedIndex = keepMountedMessageId === undefined ? -1 : messages.findIndex((message) => message.id === keepMountedMessageId);
   const tailStart =
     positioned && followingBottom && virtualizer && lastIndex >= 0
       ? Math.min(lastIndex, Math.max(0, virtualizer.findItemIndex(virtualizer.scrollOffset - BUFFER_PX)))
       : lastIndex + 1;
   const keepMounted = useMemo(() => {
-    const kept = Array.from({ length: Math.max(0, lastIndex + 1 - tailStart) }, (_, offset) => tailStart + offset);
-    return keepLastMounted && lastIndex >= 0 && kept.at(-1) !== lastIndex ? [...kept, lastIndex] : kept;
-  }, [keepLastMounted, lastIndex, tailStart]);
+    const kept = new Set(Array.from({ length: Math.max(0, lastIndex + 1 - tailStart) }, (_, offset) => tailStart + offset));
+    if (keepLastMounted && lastIndex >= 0) kept.add(lastIndex);
+    if (editedIndex >= 0) kept.add(editedIndex);
+    return [...kept].sort((a, b) => a - b);
+  }, [editedIndex, keepLastMounted, lastIndex, tailStart]);
 
   return (
     <div ref={rootRef}>

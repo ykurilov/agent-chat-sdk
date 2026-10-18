@@ -5,11 +5,12 @@ import type { FlowRun, Transition } from "../engine/flow-run";
 import { FLOW_STATE_KEY } from "../engine/flow-run";
 import { noteAgentAnswer, withNudgeStep, withoutUndeliveredTouch } from "../engine/run-updates";
 import { deadlineAt, nextDayStartAfter } from "../engine/flow-days";
+import { stateById } from "../engine/flow-graph";
 import type { FirstWakeContext, FlowFirstReason } from "../engine/nudges";
 import { dayStartHoldUntil } from "../engine/nudges";
 import { deferredWake, dueReasons, endingWake, FLOW_FIRST_EXIT, nextFirstMessageAfter, nextWake, type FlowDue } from "../engine/timers";
 import type { FlowChatRecord, FlowStore } from "../store/flow-store";
-import type { FirstMessageRules, FlowPort, FlowTimers, FlowTimerSettings } from "./flow-types";
+import type { FirstMessageRules, FlowPort, FlowTestClockReason, FlowTimers, FlowTimerSettings } from "./flow-types";
 import { advance, chainLimitMessage, chatRun, exactFirstText, storedRun, withPending, type ChatFlowRun } from "./flow-events";
 import { chatWriteBlock } from "./first-message-rules";
 import { FIRST_MESSAGE_RETRY_MS } from "./first-message-retry";
@@ -86,6 +87,11 @@ export function createFlowTimers(input: {
   const owner = `flow-timers:${randomUUID()}`;
   let interval: ReturnType<typeof setInterval> | undefined;
   let running: Promise<void> | null = null;
+  /** Слушатели срабатываний по чатам: перемотка тестового чата узнаёт, что именно сработало. */
+  const watchers = new Map<string, Set<(fired: FlowTestClockReason) => void>>();
+  const fired = (chatId: string, reason: FlowTestClockReason) => {
+    for (const onFired of watchers.get(chatId) ?? []) onFired(reason);
+  };
 
   // Сроки считаются по часам чата, а в хранилище лежат по часам сервера: у тестового чата часы сдвинуты на `offset`.
   const dueInput = (due: FlowDue, branchHead: string | null, offset: number) => ({ at: isoOf(due.at - offset), exitId: due.exitId, branchHead });
@@ -258,11 +264,14 @@ export function createFlowTimers(input: {
       // Момент самого срока: ближайшим сроком могло быть отложенное касание до него.
       const endAt = flow.schedule ? (deadlineAt(run, timeZone, flow.schedule) ?? wake.at) : wake.at;
       await input.onDeadline?.({ record, flow, run, at: endAt, timeZone });
+      const deadlineState = flow.schedule?.deadlineState;
+      fired(chatId, { kind: "deadline", stateId: deadlineState && stateById(flow, deadlineState) ? deadlineState : run.state });
       return;
     }
     if (due.giveUp) {
       await store.setDue(chatId, null);
       await input.onGiveUp?.({ record, flow, run, at });
+      fired(chatId, { kind: "give_up", stateId: run.state });
       return;
     }
     const transitions: Transition[] = [];
@@ -368,6 +377,7 @@ export function createFlowTimers(input: {
     const answered = nudgeStep === undefined ? noteAgentAnswer(next, at) : withNudgeStep(noteAgentAnswer(next, at), nudgeStep, nudgeStepOwn === true);
     const following = nextWake(flow, answered, at, timeZone, { pausedUntil: context.pausedUntil ?? null });
     await store.setDue(chatId, following ? dueInput(following, result.messageId ?? null, offset) : null, { unlessDelivery: true });
+    fired(chatId, { kind: reasons[0]!.kind, stateId: next.state, ...(moved && { exitId: due.exitId! }), reasons });
     if (!delivery) {
       await firstMessages?.record({ ownerId, at, timeZone });
       return;
@@ -431,5 +441,13 @@ export function createFlowTimers(input: {
     },
     tick,
     reschedule,
+    watch(chatId, onFired) {
+      const listeners = watchers.get(chatId) ?? new Set();
+      watchers.set(chatId, listeners.add(onFired));
+      return () => {
+        listeners.delete(onFired);
+        if (listeners.size === 0) watchers.delete(chatId);
+      };
+    },
   };
 }

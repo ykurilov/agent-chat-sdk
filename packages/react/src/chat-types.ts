@@ -12,6 +12,24 @@ export type AnswerStatus = "streaming" | "complete" | "stopped" | "error" | "int
 export type ChatErrorKind = "overloaded" | "rate_limited" | "insufficient_funds" | "invalid_key" | "context_overflow" | "other";
 
 /**
+ * Подробности сбоя провайдера: приходят, только если сервер открыл их этому человеку (право `errorDetails` ядра, обычно
+ * для админа). `reason` — одна строка до 300 знаков без секретов, `resetsAt` — когда провайдер снимет предел (ISO).
+ */
+export interface ChatErrorDetails {
+  providerId: string;
+  modelId: string;
+  statusCode?: number;
+  reason?: string;
+  resetsAt?: string;
+}
+
+/** Сбой ответа: вид и, если сервер их отдал, подробности. */
+export interface ChatError {
+  kind: ChatErrorKind;
+  details?: ChatErrorDetails;
+}
+
+/**
  * Что показывает `ErrorNotice`: ошибка ответа или отказ сервера чату целиком. `signed_out` — вход истёк (401),
  * `too_many_turns` — у человека уже идут ответы в других чатах (429), ход не начат; `forbidden_origin` — сервер
  * не признал страницу своей (403): фронт и API на разных адресах, а адреса фронта нет в `allowedOrigins` сервера.
@@ -71,7 +89,7 @@ export interface ChatMessageMetadata {
   /** Длительность рассуждений по порядковому номеру части рассуждения в сообщении. */
   reasoningDurationsMs?: Record<string, number>;
   status?: AnswerStatus;
-  error?: { kind: ChatErrorKind };
+  error?: ChatError;
   /** Есть, если озвучку ответа оборвало перебивание. */
   voiceCut?: VoiceCut;
   /** Ответ не дошёл до человека (сервер пометил «не доставлено»): модель его не видит. */

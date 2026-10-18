@@ -153,11 +153,12 @@ describe("цикл помощника", () => {
   });
 
   it.each([
-    [402, "insufficient_funds", "кончились деньги"],
-    [401, "invalid_key", "ключ не принят"],
-  ] as const)("у провайдера помощника %i — сразу резервный, без повторов; строки журнала с причиной", async (statusCode, kind, said) => {
+    [402, "no", "insufficient_funds", "кончились деньги"],
+    [401, "no", "invalid_key", "ключ не принят"],
+    [403, '{"error":{"message":"Key limit exceeded (monthly limit).","metadata":{"limit_source":"openrouter_key_limit"}}}', "insufficient_funds", "исчерпан предел расходов ключа"],
+  ] as const)("у провайдера помощника %i — сразу резервный, без повторов; строки журнала с причиной", async (statusCode, responseBody, kind, said) => {
     const refused = () =>
-      Promise.reject(new APICallError({ message: String(statusCode), url: "https://p.test", requestBodyValues: {}, statusCode, responseBody: "no", responseHeaders: {} }));
+      Promise.reject(new APICallError({ message: String(statusCode), url: "https://p.test", requestBodyValues: {}, statusCode, responseBody, responseHeaders: {} }));
     const model = helperChatModel({ stream: [callsHelper("h1", "research", "погода")], generate: [refused] });
     const backup = helperChatModel({ generate: [helperText("Ответ резервного")] });
     const logged: string[] = [];

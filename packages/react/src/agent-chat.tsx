@@ -11,12 +11,13 @@ import type { ExpandedParts } from "./expanded-parts";
 import type { EditErrorKind } from "./labels";
 import { useFeedAnnouncement } from "./feed-announcement";
 import { isLiveTask, taskElapsedMs, useBackgroundTasks } from "./background-tasks/use-background-tasks";
-import { useChatLabels } from "./labels";
+import { customErrorText, useChatLabels } from "./labels";
 import { agentNoticesOf, noticesAsText, noticeViewOf, staffRepliesOf } from "./notices/agent-notices";
 import type { NoticeTaskControls, StaffReply } from "./notices/agent-notices";
 import type { ChatLabels, ResolvedChatLabels } from "./labels";
 import type { SpendingView } from "./spending-status";
 import { MessageFeed } from "./message-feed";
+import { useMessageEditing } from "./message-editing/use-message-editing";
 import type { MessageFeedHandle } from "./message-feed";
 import type { AgentChatExtensions } from "./agent-chat-extensions";
 import { answerEdited } from "./answer-editing/answer-editing";
@@ -297,12 +298,20 @@ function AgentChatBody({ api, chatId, skin, liveness, voice, voiceDialog, attach
   const dividers = useMemo(() => dividersByMessage(chat.compactions), [chat.compactions]);
   const voiceAnswers = useVoiceAnswerIds(chat.messages);
   const forkByMessage = useMemo(() => new Map(chat.forks.map((fork) => [fork.messageId, fork])), [chat.forks]);
-  /** Открытое поле правки; `text` и `error` появляются после отказа: поле открывается снова с тем, что печатал собеседник. */
-  const [editing, setEditing] = useState<{ id: string; attempt: number; text?: string; error?: string } | null>(null);
-  const editingId = editing?.id ?? null;
   /** Ответ агента, на месте которого стоит редактор страницы. */
   const [editingAnswerId, setEditingAnswerId] = useState<string | null>(null);
   const saving = useRef(false);
+  const composerValue = useRef(chat.value);
+  composerValue.current = chat.value;
+  const { setValue: setComposerValue } = chat;
+  // Сообщения с открытым полем правки больше нет: набранное уходит в поле ввода, а не пропадает.
+  const draftLost = useCallback(
+    (text: string) => setComposerValue(composerValue.current.trim().length > 0 ? `${composerValue.current}\n\n${text}` : text),
+    [setComposerValue],
+  );
+  /** Открытое поле правки; после отказа открывается снова с тем, что печатал собеседник, и ошибкой. */
+  const editing = useMessageEditing(chat.messages, { saving, onDraftLost: draftLost });
+  const editingId = editing.id;
   /** Лента открывается заново при смене ветки: замеры прежних сообщений новым не подходят. */
   const [feedView, setFeedView] = useState<{ epoch: number; openAtMessageId?: string }>({ epoch: 0 });
   // Окно просмотра: карусель — картинки текущей ветки; другой чат или ветка закрывают окно.
@@ -376,7 +385,7 @@ function AgentChatBody({ api, chatId, skin, liveness, voice, voiceDialog, attach
       try {
         const outcome = await edit(messageId, text);
         if (outcome.status === "started") {
-          setEditing(null);
+          editing.close();
           feedRef.current?.scrollToBottom();
           return;
         }
@@ -388,12 +397,12 @@ function AgentChatBody({ api, chatId, skin, liveness, voice, voiceDialog, attach
               : "rejected";
         const messageLimit = outcome.status === "refused" && outcome.reason === "spending_limit" && outcome.unit === "messages";
         const error = (outcome.status === "refused" && outcome.text) || (messageLimit ? labels.editMessageLimit : labels.editErrors[kind]);
-        setEditing((current) => ({ id: messageId, attempt: (current?.attempt ?? 0) + 1, text, error }));
+        editing.refuse(messageId, text, error);
       } finally {
         saving.current = false;
       }
     },
-    [edit, labels],
+    [edit, editing, labels],
   );
   const { tasks: backgroundTaskList, decisions: taskDecisions, decide: decideTask } = backgroundTasks;
   const noticeControls = useMemo<NoticeTaskControls>(
@@ -425,14 +434,15 @@ function AgentChatBody({ api, chatId, skin, liveness, voice, voiceDialog, attach
         ) : message.role === "user" ? (
           editingId === message.id ? (
             <MessageEditorRow
-              key={editing?.attempt}
+              key={editing.attempt}
               skin={skin}
-              initialText={editing?.text ?? messageText(message)}
+              initialText={editing.draftOf(message)}
               describe={describeAttachments}
               message={message}
-              {...(editing?.error && { error: editing.error })}
+              {...(editing.error && { error: editing.error })}
+              onDraftChange={editing.type}
               onSave={(text) => void saveEdit(message.id, text)}
-              onCancel={() => setEditing(null)}
+              onCancel={editing.close}
             />
           ) : (
             <UserMessage
@@ -440,7 +450,7 @@ function AgentChatBody({ api, chatId, skin, liveness, voice, voiceDialog, attach
               message={message}
               describe={describeAttachments}
               branchSwitcher={branchSwitcher}
-              {...(canEdit && { onEdit: () => setEditing({ id: message.id, attempt: 0 }) })}
+              {...(canEdit && { onEdit: () => editing.open(message.id) })}
             />
           )
         ) : editingAnswerId === message.id && answerEditing ? (
@@ -561,6 +571,7 @@ function AgentChatBody({ api, chatId, skin, liveness, voice, voiceDialog, attach
       scrollRef={scrollRef}
       messages={feedMessages}
       keepLastMounted={busy}
+      {...(editingId !== null && { keepMountedMessageId: editingId })}
       {...(feedView.openAtMessageId && { openAtMessageId: feedView.openAtMessageId })}
       renderMessage={renderMessage}
     />
@@ -810,6 +821,7 @@ function MessageEditorRow({
   initialText,
   describe,
   error,
+  onDraftChange,
   onSave,
   onCancel,
 }: {
@@ -818,6 +830,8 @@ function MessageEditorRow({
   initialText: string;
   describe: ((message: AgentChatMessage) => MessageAttachmentsView | undefined) | undefined;
   error?: string;
+  /** Набранный текст хранит чат: поле, пересозданное лентой, открывается с ним. */
+  onDraftChange: (text: string) => void;
   onSave: (text: string) => void;
   onCancel: () => void;
 }) {
@@ -831,6 +845,7 @@ function MessageEditorRow({
       value={draft}
       onValueChange={(value) => {
         setDraft(value);
+        onDraftChange(value);
         setShownError(undefined);
       }}
       onSave={() => canSave && onSave(draft)}
@@ -1099,9 +1114,10 @@ const AgentAnswer = memo(function AgentAnswer({
     onRun: () => onRunAction?.(action, message, text),
   }));
   // У ответа с ошибкой «повторить» живёт в блоке ошибки, второй кнопки нет.
+  const errorText = status === "error" ? customErrorText(labels, message.metadata?.error) : undefined;
   const notice =
     status === "error" ? (
-      <skin.ErrorNotice kind={message.metadata?.error?.kind ?? "other"} {...(onRetry && { onRetry })} />
+      <skin.ErrorNotice kind={message.metadata?.error?.kind ?? "other"} {...(errorText !== undefined && { text: errorText })} {...(onRetry && { onRetry })} />
     ) : undefined;
   return (
     <ThinkingClockProvider id={message.id} waiting={status === "streaming"}>

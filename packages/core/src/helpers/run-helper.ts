@@ -5,7 +5,7 @@ import { emptyTokenUsage, addTokenUsage } from "../conversation/token-usage";
 import type { AgentChatMessage, ChatErrorKind, UsageSource } from "../conversation/types";
 import { findModel } from "../models/model-catalog";
 import type { ModelCatalog, ProviderDescription } from "../models/model-catalog";
-import { classifyProviderError } from "../provider-errors/classify-provider-error";
+import { classifyProviderError, isKeyLimit } from "../provider-errors/classify-provider-error";
 import { describeProviderFailure } from "../provider-errors/provider-failure-log";
 import { createProviderOutages, isProviderOutage } from "../provider-errors/provider-outages";
 import type { ProviderOutageKind, ProviderOutages } from "../provider-errors/provider-outages";
@@ -171,6 +171,7 @@ export async function* helperSteps(input: {
         outages.report({
           providerId,
           kind: outage,
+          ...(isKeyLimit(error) && { keyLimit: true }),
           ...(next.action === "fallback"
             ? { fallbackProviderId: next.providerId }
             : { fallbacksPaused: allFallbackIds.some((candidate) => candidate !== providerId && outages.pausedKind(candidate) !== undefined) }),

@@ -1,5 +1,27 @@
 # @ykurilov/agent-chat-voice
 
+## 0.64.0
+
+### Patch Changes
+
+- Updated dependencies [99cded9]
+  - @ykurilov/agent-chat-core@0.64.0
+
+## 0.63.2
+
+### Patch Changes
+
+- Updated dependencies [c772243]
+  - @ykurilov/agent-chat-core@0.63.2
+
+## 0.63.1
+
+### Patch Changes
+
+- 0479393: Hono: обычный HTTP-запрос к адресу голоса (без подъёма WebSocket) снова получает сам отказ — 401 «не вошёл», 402
+  «лимит» и т. д., — а не 404. Код закрытия по-прежнему получает только браузер с WebSocket.
+- @ykurilov/agent-chat-core@0.63.1
+
 ## 0.63.0
 
 ### Patch Changes

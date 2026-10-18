@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 import { renderHook } from "@testing-library/react";
+import { createElement } from "react";
+import type { ReactNode } from "react";
 import { describe, expect, it } from "vitest";
 import type { AgentChatMessage, ChatMessageMetadata } from "../src/chat-types";
 import { useFeedAnnouncement } from "../src/feed-announcement";
-import { russianLabels } from "../src/labels";
+import { ChatLabelsProvider, russianLabels } from "../src/labels";
 
 const question: AgentChatMessage = { id: "u1", role: "user", parts: [{ type: "text", text: "Сколько будет 2+2?" }] };
 
@@ -127,5 +129,16 @@ describe("текст для диктора", () => {
     });
     view.rerender({ messages: [question, answer("Четыре")], busy: false, chatId: "b" });
     expect(view.result.current).toBe("");
+  });
+
+  it("ответ с ошибкой и подписью errorText — диктор слышит её текст", () => {
+    const final = answer("", { status: "error", error: { kind: "insufficient_funds", details: { providerId: "openrouter", modelId: "m", reason: "Key limit exceeded" } } });
+    const view = renderHook((props: { messages: AgentChatMessage[]; busy: boolean }) => useFeedAnnouncement(props.messages, props.busy), {
+      initialProps: { messages: [question, answer("", { status: "streaming" })], busy: true },
+      wrapper: ({ children }: { children: ReactNode }) =>
+        createElement(ChatLabelsProvider, { labels: { ...russianLabels, errorText: (error, plain) => `${plain} (${error.details?.reason ?? "?"})` }, children }),
+    });
+    view.rerender({ messages: [question, final], busy: false });
+    expect(view.result.current).toBe(`${russianLabels.errors.insufficient_funds} (Key limit exceeded)`);
   });
 });

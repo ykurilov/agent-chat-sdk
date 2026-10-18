@@ -1,7 +1,7 @@
 import type {
   AnswerStatus,
   ChatClosure,
-  ChatErrorKind,
+  ChatError,
   MemoryMergeGroup,
   MemoryOptimizationStatus,
   StoredMessage,
@@ -56,7 +56,7 @@ export const messages = sqliteTable(
     providerId: text("provider_id"),
     usage: text("usage", { mode: "json" }).$type<TokenUsage>(),
     reasoningDurationsMs: text("reasoning_durations_ms", { mode: "json" }).$type<Record<string, number>>().notNull(),
-    error: text("error", { mode: "json" }).$type<{ kind: ChatErrorKind }>(),
+    error: text("error", { mode: "json" }).$type<ChatError>(),
     /** Отметка обрыва озвучки (голосовой режим); пусто — озвучку не обрывали. */
     voiceCut: text("voice_cut", { mode: "json" }).$type<VoiceCut>(),
     /** Состояние хука итога хода; пусто — хук не зовётся. */

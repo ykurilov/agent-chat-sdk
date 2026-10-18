@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 // Один выпуск SDK: `pnpm release`.
+// С Мака команда сама не выпускает, а запускает этот же скрипт на GitHub Actions (release-in-actions.mjs) и ждёт итога.
+// Сам выпуск по шагам ниже идёт на машине GitHub Actions (GITHUB_ACTIONS=true) или на Маке с флагом `--local` — запасной путь.
 //   проверка открытой выгрузки → проверки (юнит-тесты, типы, сборка) → changeset version → коммит → публикация → тег → push.
 // Проверки пропускаются, если `pnpm verify` уже прогнал их на этом же коде (отметка в node_modules/.cache);
 // `--full` проверяет заново принудительно.
@@ -9,6 +11,7 @@
 // доводит его до конца, не создавая новую версию.
 // Ключ npm: переменная NPM_TOKEN или файл ~/.config/agent-chat-sdk/npm-token. Другой путь — NPM_TOKEN_FILE в окружении
 // или в ~/.config/agent-chat-sdk/release.env (строка NPM_TOKEN_FILE=…; файл вне репозитория, настройка своей машины).
+// На GitHub Actions — секрет репозитория NPM_TOKEN, а без него доверенная публикация npm (OIDC, RELEASING.md).
 // Ключ попадает в публикацию только через временный .npmrc со ссылкой ${NPM_TOKEN} и нигде не печатается.
 // npm показывает новую версию не сразу (бывает, через 10+ минут), поэтому тег и push — только когда
 // у каждого публичного пакета latest стал новой версией.
@@ -19,6 +22,11 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseEnv } from "node:util";
 import { checkStamp } from "./verified-stamp.mjs";
+
+if (!process.argv.includes("--local") && process.env.GITHUB_ACTIONS !== "true") {
+  const { releaseInActions } = await import("./release-in-actions.mjs");
+  process.exit(releaseInActions(process.argv.slice(2)));
+}
 
 const full = process.argv.includes("--full");
 const dryRun = process.argv.includes("--dry-run");
@@ -126,8 +134,11 @@ function readNpmToken() {
 const npmToken = readNpmToken();
 // npm не выдаёт токен через `npm config get` (он защищён), поэтому ищем строку в пользовательском .npmrc.
 const userNpmrc = join(process.env.HOME ?? "", ".npmrc");
+// На GitHub Actions с id-token: write npm публикует и без ключа — доверенной публикацией (OIDC).
+const hasTrustedPublishing = Boolean(process.env.ACTIONS_ID_TOKEN_REQUEST_URL);
 const hasToken =
   Boolean(npmToken) ||
+  hasTrustedPublishing ||
   Boolean(process.env.NODE_AUTH_TOKEN) ||
   (existsSync(userNpmrc) && /^\/\/registry\.npmjs\.org\/:_authToken=\S+/m.test(readFileSync(userNpmrc, "utf8")));
 if (!hasToken) {

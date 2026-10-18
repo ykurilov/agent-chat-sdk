@@ -1,8 +1,40 @@
-import { Button } from "@tandem/ui";
+import { Button, Input } from "@tandem/ui";
 import type { FlowTestChatFrameProps } from "@ykurilov/agent-chat-flows/react";
 import { useFlowLabels } from "@ykurilov/agent-chat-flows/react";
-import { Clock, RotateCcw, Sunrise, X } from "lucide-react";
+import { BellRing, Clock, RotateCcw, Sunrise, X } from "lucide-react";
+import { useState } from "react";
 import { IconButton } from "./flow-parts";
+
+/** Поле «своё время»: «1 ч 30 мин» по Enter. Понял — перемотка и поле пустое; нет — подсказка, текст остаётся. */
+function CustomTimeField({ onAdvanceText, busy }: { onAdvanceText: (text: string) => boolean; busy: boolean }) {
+  const labels = useFlowLabels().testChat;
+  const [text, setText] = useState("");
+  const [invalid, setInvalid] = useState(false);
+  return (
+    <div className="w-full">
+      <Input
+        aria-label={labels.customTime}
+        aria-invalid={invalid}
+        placeholder={labels.customTimePlaceholder}
+        className="h-8 w-full text-sm"
+        disabled={busy}
+        value={text}
+        onChange={(event) => {
+          setText(event.target.value);
+          setInvalid(false);
+        }}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter" || !text.trim()) return;
+          event.preventDefault();
+          const understood = onAdvanceText(text);
+          setInvalid(!understood);
+          if (understood) setText("");
+        }}
+      />
+      {invalid && <p className="mt-1 text-xs text-[var(--destructive-text)]">{labels.customTimeInvalid}</p>}
+    </div>
+  );
+}
 
 /** Тестовый чат в панели рядом с доской: где агент, часы чата с перемоткой и сам чат приложения. */
 export function TandemFlowTestChatFrame(props: FlowTestChatFrameProps) {
@@ -48,7 +80,19 @@ export function TandemFlowTestChatFrame(props: FlowTestChatFrameProps) {
             {labels.nextDay}
           </Button>
         )}
+        {props.onNextFirstMessage && (
+          <Button variant="secondary" size="sm" disabled={props.busy} onClick={props.onNextFirstMessage}>
+            <BellRing aria-hidden="true" className="size-3.5" />
+            {labels.nextFirstMessage}
+          </Button>
+        )}
+        {props.onAdvanceText && <CustomTimeField onAdvanceText={props.onAdvanceText} busy={props.busy} />}
       </div>
+      {props.nothingScheduled && (
+        <p role="status" className="mx-5 mt-2 rounded-[var(--radius-small)] bg-[var(--surface-muted)] px-3 py-2 text-xs text-[var(--foreground-muted)]">
+          {labels.nothingScheduled}
+        </p>
+      )}
       {props.failed && (
         <p role="alert" className="mx-5 mt-2 rounded-[var(--radius-small)] bg-[color-mix(in_oklab,var(--destructive)_10%,transparent)] px-3 py-2 text-xs text-[var(--destructive-text)]">
           {labels.failed}

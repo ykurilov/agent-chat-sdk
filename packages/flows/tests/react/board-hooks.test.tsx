@@ -96,6 +96,16 @@ const skin = {
       <p data-testid="clock">{props.clock}</p>
       <p data-testid="day">{props.day ?? "нет"}</p>
       {props.onNextDay && <button onClick={props.onNextDay}>утро</button>}
+      {props.onNextFirstMessage && <button onClick={props.onNextFirstMessage}>напоминание</button>}
+      {props.onAdvanceText && (
+        <input
+          aria-label="своё время"
+          onKeyDown={(event) => {
+            if (event.key === "Enter") event.currentTarget.dataset.invalid = String(!props.onAdvanceText!(event.currentTarget.value));
+          }}
+        />
+      )}
+      {props.nothingScheduled && <p data-testid="nothing">впереди пусто</p>}
       {props.children}
     </section>
   ),
@@ -139,5 +149,62 @@ describe("T1004 тестовый чат: к началу следующего д
     fireEvent.click(screen.getByText("тест"));
     await screen.findByTestId("chat");
     expect(screen.queryByText("утро")).toBeNull();
+  });
+});
+
+describe("099 тестовый чат: к следующему напоминанию и своё время", () => {
+  const MINUTE = 60_000;
+  function connection(next?: () => Promise<{ timeOffset: number }>) {
+    return {
+      start: async () => ({ chatId: "test-1" }),
+      advance: vi.fn(async (_chatId: string, ms: number) => ({ timeOffset: ms })),
+      ...(next && { advanceToNextFirstMessage: vi.fn(next) }),
+      readRun: async () => ({ state: "intro", path: [] }),
+      renderChat: (chatId: string) => <p data-testid="chat">{chatId}</p>,
+    } satisfies FlowTestChatConnection;
+  }
+  const open = async (testChat: FlowTestChatConnection) => {
+    render(<FlowTestChat skin={skin} value={flow} onChange={() => {}} catalog={catalog} testChat={testChat} />);
+    fireEvent.click(screen.getByText("тест"));
+    await screen.findByTestId("chat");
+  };
+
+  it("кнопка перематывает к следующему сообщению сценария; впереди пусто — так и сказано", async () => {
+    let reply: Promise<{ timeOffset: number }> = Promise.resolve({ timeOffset: 15 * MINUTE });
+    const testChat = connection(() => reply);
+    await open(testChat);
+    fireEvent.click(screen.getByText("напоминание"));
+    await waitFor(() => expect(screen.getByTestId("clock").textContent).toBe("+15 мин"));
+    expect(testChat.advanceToNextFirstMessage).toHaveBeenCalledWith("test-1");
+    expect(screen.queryByTestId("nothing")).toBeNull();
+
+    reply = Promise.reject(Object.assign(new Error("пусто"), { code: "nothing_scheduled" }));
+    reply.catch(() => {});
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    fireEvent.click(screen.getByText("напоминание"));
+    await screen.findByTestId("nothing");
+    expect(screen.getByTestId("clock").textContent).toBe("+15 мин");
+    spy.mockRestore();
+  });
+
+  it("приложение не дало перемотку к напоминанию — кнопки нет", async () => {
+    await open(connection());
+    expect(screen.queryByText("напоминание")).toBeNull();
+  });
+
+  it("своё время: «1 ч 30 мин» по Enter — перемотка; непонятное — без перемотки", async () => {
+    const testChat = connection();
+    await open(testChat);
+    const field = screen.getByLabelText("своё время");
+    fireEvent.change(field, { target: { value: "1 ч 30 мин" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+    await waitFor(() => expect(screen.getByTestId("clock").textContent).toBe("+1 ч 30 мин"));
+    expect(testChat.advance).toHaveBeenCalledWith("test-1", 90 * MINUTE);
+    expect(field.dataset.invalid).toBe("false");
+
+    fireEvent.change(field, { target: { value: "скоро" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+    expect(field.dataset.invalid).toBe("true");
+    expect(testChat.advance).toHaveBeenCalledTimes(1);
   });
 });
