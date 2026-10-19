@@ -34,7 +34,8 @@ const testChat: FlowTestChatConnection = {
   advanceToNextDay: (chatId) => post("/api/flow-test/advance", { chatId, to: "next_day_start" }),
   advanceToNextFirstMessage: (chatId) => post("/api/flow-test/advance", { chatId, to: "next_first_message" }),
   readRun: (chatId) => post("/api/flow-test/run", { chatId }),
-  renderChat: (chatId) => <AgentChat api="/api/chat" chatId={chatId} skin={tandemSkin} />,
+  // Строки «Агент написал первым — человек молчал 1 ч 7 мин»: сервер даёт тестовым чатам право `appNotices`.
+  renderChat: (chatId, { noticeLines }) => <AgentChat api="/api/chat" chatId={chatId} skin={tandemSkin} noticeLines={noticeLines} />,
 };
 
 function Page() {

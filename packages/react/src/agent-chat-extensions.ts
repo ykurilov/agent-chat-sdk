@@ -3,6 +3,13 @@ import type { ComponentType } from "react";
 import type { AppEventViews } from "./app-events";
 import type { AgentVideoView, CustomWidgetProps, DiagramColors, GeneratedImagesView } from "./skin-contract";
 import type { StepPhrases, WorkView } from "./work-view/step-phrases";
+import type { AppNotice } from "./notices/agent-notices";
+
+/**
+ * Строки служебных пометок приложения (`kind: "app"`): имя пометки → текст серой строки перед ответом агента
+ * («Агент написал первым — человек молчал 1 ч 7 мин»). `null` или `undefined` — эту пометку не показывать.
+ */
+export type NoticeLines = Record<string, (notice: AppNotice) => string | null | undefined>;
 
 /** Рисовальщик схем (пакет `@ykurilov/agent-chat-diagrams`, `diagramsClient`): тот же договор, что в пакете схем. */
 export interface DiagramsClient {
@@ -74,4 +81,10 @@ export interface AgentChatExtensions {
    * Нет фразы — `title` инструмента, иначе общая из `labels.workView`. Таблицу держите постоянной.
    */
   stepPhrases?: StepPhrases;
+  /**
+   * Служебные пометки приложения на экране (с 0.65): имя пометки → текст строки. Нужны и право чата `appNotices`
+   * (по умолчанию выключено: клиент в боевом чате их не видит), и `ServiceLine` у скина (версия 27). Нет — пометок
+   * не видно. Готовые строки сценариев — `flowNoticeLines()` из `@ykurilov/agent-chat-flows/react`. Таблицу держите постоянной.
+   */
+  noticeLines?: NoticeLines;
 }

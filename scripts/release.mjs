@@ -2,7 +2,7 @@
 // Один выпуск SDK: `pnpm release`.
 // С Мака команда сама не выпускает, а запускает этот же скрипт на GitHub Actions (release-in-actions.mjs) и ждёт итога.
 // Сам выпуск по шагам ниже идёт на машине GitHub Actions (GITHUB_ACTIONS=true) или на Маке с флагом `--local` — запасной путь.
-//   проверка открытой выгрузки → проверки (юнит-тесты, типы, сборка) → changeset version → коммит → публикация → тег → push.
+//   проверка открытой выгрузки → проверки (юнит-тесты, типы, сборка) → changeset version → коммит → публикация →\n//   коммит выпуска поверх свежего origin/main → теги → атомарный push main и тегов.
 // Проверки пропускаются, если `pnpm verify` уже прогнал их на этом же коде (отметка в node_modules/.cache);
 // `--full` проверяет заново принудительно.
 // `--dry-run` показывает, что выпуск сделал бы, и останавливается до changeset version: ничего не меняет и не запускает.
@@ -105,7 +105,7 @@ function waitUntilVisible(version) {
     waiting = waiting.filter((name) => npmView(name, "dist-tags.latest") !== version);
     if (waiting.length === 0) return;
     if (Date.now() >= deadline) {
-      stop(`За ${Math.round(timeoutMs / 60_000)} мин npm так и не показал ${version} как latest у: ${waiting.join(", ")}. Тег и push не сделаны; проверьте https://www.npmjs.com/package/${waiting[0]} и запустите pnpm release снова.`);
+      stop(`За ${Math.round(timeoutMs / 60_000)} мин npm так и не показал ${version} как latest у: ${waiting.join(", ")}. Пакеты отправлены в npm, а тег и push не сделаны; проверьте https://www.npmjs.com/package/${waiting[0]} и запустите pnpm release снова.`);
     }
     console.log(`npm ещё не показывает ${version} у ${waiting.length} пакетов, жду…`);
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, intervalMs);
@@ -226,9 +226,43 @@ function publishWithToken() {
   }
 }
 
-step("Тег и push");
+/** Git без остановки: код выхода и вывод, решение — за вызывающим. */
+function tryGit(args) {
+  const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
+  return { ok: result.status === 0, output: `${result.stdout ?? ""}${result.stderr ?? ""}`.trim() };
+}
+const isAncestor = (older, newer) => tryGit(["merge-base", "--is-ancestor", older, newer]).ok;
+
+// Пока шёл выпуск, в main могли запушить: коммит выпуска встаёт поверх свежего origin/main, теги — на итоговый
+// коммит, main и теги уходят одним атомарным push (или всё, или ничего). Пакеты к этому шагу уже в npm.
+step("Коммит выпуска поверх свежего main, теги и push");
 const tag = `v${version}`;
-if (run("git", ["tag", "--list", tag], { quiet: true }) === "") run("git", ["tag", "-a", tag, "-m", `Agent Chat SDK ${version}`]);
-run("git", ["push", "origin", "main", "--tags"]);
+const tagMessage = (name) => (name === tag ? `Agent Chat SDK ${version}` : name);
+// Теги пакетов ставит changeset publish на HEAD; тег SDK — свой.
+const releaseTags = [...new Set([...run("git", ["tag", "--points-at", "HEAD"], { quiet: true }).split("\n").filter(Boolean), tag])];
+const notPushed = (reason, todo) =>
+  stop(
+    `${reason}\n   Пакеты ${version} уже в npm, а на GitHub не хватает коммита выпуска chore(release): v${version} и тегов: ${releaseTags.join(", ")}.\n` +
+      `   Сделайте: ${todo}`,
+  );
+const manualFix =
+  "на свежем main повторите правки выпуска (pnpm exec changeset version даст ту же версию), закоммитьте chore(release): v" +
+  `${version}, поставьте на этот коммит теги и отправьте: git push --atomic origin main ${releaseTags.map((name) => `refs/tags/${name}`).join(" ")}`;
+
+const fetched = tryGit(["fetch", "origin", "main"]);
+if (!fetched.ok) notPushed(`Не получил свежий main с GitHub:\n${fetched.output}`, `проверьте доступ к GitHub; затем ${manualFix}`);
+// Есть ли свой коммит, которого нет на GitHub (при доводке прошлого выпуска его может не быть).
+const hasOwnCommit = !isAncestor("HEAD", "origin/main");
+if (hasOwnCommit && !isAncestor("origin/main", "HEAD")) {
+  console.log("main на GitHub ушёл вперёд — ставлю коммит выпуска поверх него.");
+  const rebased = tryGit(["rebase", "origin/main"]);
+  if (!rebased.ok) {
+    tryGit(["rebase", "--abort"]);
+    notPushed(`Свежие правки в main задели файлы выпуска (package.json, CHANGELOG.md, файл-замок) — коммит выпуска не встал поверх:\n${rebased.output}`, manualFix);
+  }
+}
+for (const name of releaseTags) run("git", ["tag", "-f", "-a", name, "-m", tagMessage(name)], { quiet: true, failure: `пакеты ${version} уже в npm, теги не поставлены` });
+const pushed = tryGit(["push", "--atomic", "origin", ...(hasOwnCommit ? ["HEAD:refs/heads/main"] : []), ...releaseTags.map((name) => `refs/tags/${name}`)]);
+if (!pushed.ok) notPushed(`GitHub не принял push (атомарный: не ушло ничего):\n${pushed.output}`, `запустите pnpm release снова — опубликованное в npm он пропустит; или вручную: ${manualFix}`);
 
 console.log(`\n✅ Agent Chat SDK ${version} выпущен. Тег ${tag} отправлен. Журнал: packages/*/CHANGELOG.md`);

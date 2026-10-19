@@ -1,10 +1,11 @@
 import { expect, test } from "@playwright/test";
+import { screenshotFolder } from "../e2e/support/screen";
 
 // T102: тестовый чат из редактора — сообщение, перемотка часов (таймер тишины срабатывает, агент пишет первым),
 // подсветка текущего состояния на доске. Модель — заглушка сервера стенда.
 
 const REMIND = "Вы ещё здесь? Можем продолжить, когда будет удобно.";
-const shots = process.env.FLOW_TEST_SHOTS ?? "/tmp/058-s10-shots";
+const shots = process.env.FLOW_TEST_SHOTS ?? screenshotFolder("agent-chat-flow-test-chat");
 
 test("тестовый чат: сообщение, «+3 ч» — агент пишет первым, доска показывает текущее состояние", async ({ page }) => {
   await page.goto("/?theme=light");

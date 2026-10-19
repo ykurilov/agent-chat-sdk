@@ -89,19 +89,23 @@ export function publicAppStateParts<P extends { type: string }>(parts: readonly 
 
 /**
  * Сообщения для браузера: части без служебных ключей, без застывших блоков контекста, отметки `endTurn` и служебных
- * сообщений вида `app` (они только для модели);
+ * сообщений вида `app` (они только для модели; с `appNoticeViews` — остаются те, у кого есть проекция для экрана: без
+ * текста для модели, `data` — проекция);
  * сообщение человека, у которого не осталось частей, не уходит. Служебное сообщение состояния (`isStateMessage`) перед
  * обычным не показывается: его открытые записи едут в начале этого сообщения, и экран сворачивает то же состояние.
  */
 export function publicMessages<M extends { role: string; parts: ReadonlyArray<{ type: string }> }>(
   messages: readonly M[],
   hidden: HiddenStateKey = isReservedAppStateKey,
+  options: { appNoticeViews?: AppNoticeViews } = {},
 ): M[] {
+  const views = options.appNoticeViews;
+  const toScreen = views ? <P extends { type: string }>(part: P) => appNoticesForScreen(part, views) : withoutAppNotices;
   const shown: M[] = [];
   let waiting: M[] = [];
   for (const message of messages) {
     const hasService = message.parts.some((part) => part.type === APP_STATE_PART_TYPE || isModelOnlyPart(part) || hasAppNotice(part));
-    const parts = hasService ? publicAppStateParts(message.parts.filter((part) => !isModelOnlyPart(part)).flatMap(withoutAppNotices), hidden) : [...message.parts];
+    const parts = hasService ? publicAppStateParts(message.parts.filter((part) => !isModelOnlyPart(part)).flatMap(toScreen), hidden) : [...message.parts];
     if (message.role === "user" && parts.length === 0) continue;
     const visible = hasService ? { ...message, parts } : message;
     if (isStateMessage(message)) {
@@ -130,6 +134,34 @@ function withoutAppNotices<P extends { type: string }>(part: P): P[] {
   if (part.type !== AGENT_NOTICE_PART_TYPE || !hasAppNotice(part)) return [part];
   const notices = noticesOfPart(part).filter((notice) => notice.kind !== "app");
   return notices.length === 0 ? [] : [{ ...part, data: { ...(part as { data?: object }).data, notices } }];
+}
+
+/**
+ * Проекции пометок приложения для экрана (`appNoticeViews` службы): имя пометки → безопасные для браузера данные из
+ * `data`. Нет проекции, она вернула `undefined` или упала — пометка в браузер не уходит.
+ */
+export type AppNoticeViews = Readonly<Record<string, (data: unknown) => unknown>>;
+
+/** Часть служебных сообщений, где у вида `app` остались только пометки с проекцией: `name` и её данные, без текста для модели. */
+function appNoticesForScreen<P extends { type: string }>(part: P, views: AppNoticeViews): P[] {
+  if (part.type !== AGENT_NOTICE_PART_TYPE || !hasAppNotice(part)) return [part];
+  // Экрану — без `title` (текста для модели): форма уже не `AgentNotice`.
+  const notices = noticesOfPart(part).flatMap((notice): object[] => {
+    if (notice.kind !== "app") return [notice];
+    const data = screenDataOf(notice.name, notice.data, views);
+    return data === undefined ? [] : [{ kind: "app" as const, name: notice.name, data }];
+  });
+  return notices.length === 0 ? [] : [{ ...part, data: { ...(part as { data?: object }).data, notices } }];
+}
+
+function screenDataOf(name: string | undefined, data: unknown, views: AppNoticeViews): unknown {
+  const view = name !== undefined && Object.hasOwn(views, name) ? views[name] : undefined;
+  if (!view) return undefined;
+  try {
+    return view(data);
+  } catch {
+    return undefined;
+  }
 }
 
 /** Части только для модели: застывшие блоки контекста и отметка конца хода инструментом без слов. */

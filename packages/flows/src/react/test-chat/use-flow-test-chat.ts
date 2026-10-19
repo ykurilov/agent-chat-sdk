@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import type { FlowDayInfo } from "../../engine/flow-days";
 import type { FlowRun } from "../../engine/flow-run";
 import type { AgentFlow } from "../../format/flow-format";
+import type { FlowNoticeLines } from "../notice-lines";
 
 /** Как часто тестовый чат перечитывает место, пока открыт, мс. */
 const RUN_POLL_MS = 1000;
@@ -25,8 +26,12 @@ export interface FlowTestChatConnection {
   advanceToNextFirstMessage?(chatId: string): Promise<{ timeOffset: number }>;
   /** Место чата: на сервере `flow.readRun`. В браузер посетителя место не уходит, доска читает его отдельно. */
   readRun(chatId: string): Promise<(Pick<FlowRun, "state" | "path"> & { day?: FlowDayInfo }) | null>;
-  /** Экран чата приложения: `<AgentChat api=… chatId={chatId} skin=… />`. */
-  renderChat(chatId: string): ReactNode;
+  /**
+   * Экран чата приложения: `<AgentChat api=… chatId={chatId} skin=… noticeLines={options.noticeLines} />`.
+   * `options.noticeLines` (с 0.65) — строки «Агент написал первым — человек молчал 1 ч 7 мин»: в тестовом чате они
+   * включены по умолчанию. Видны, если сервер дал тестовым чатам право `appNotices`.
+   */
+  renderChat(chatId: string, options: { noticeLines: FlowNoticeLines }): ReactNode;
 }
 
 export interface FlowTestChatController {

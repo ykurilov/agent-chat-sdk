@@ -12,14 +12,14 @@ import type { EditErrorKind } from "./labels";
 import { useFeedAnnouncement } from "./feed-announcement";
 import { isLiveTask, taskElapsedMs, useBackgroundTasks } from "./background-tasks/use-background-tasks";
 import { customErrorText, useChatLabels } from "./labels";
-import { agentNoticesOf, noticesAsText, noticeViewOf, staffRepliesOf } from "./notices/agent-notices";
-import type { NoticeTaskControls, StaffReply } from "./notices/agent-notices";
+import { agentNoticesOf, appNoticesOf, isAgentNoticePart, noticesAsText, noticeViewOf, staffRepliesOf } from "./notices/agent-notices";
+import type { AppNotice, NoticeTaskControls, StaffReply } from "./notices/agent-notices";
 import type { ChatLabels, ResolvedChatLabels } from "./labels";
 import type { SpendingView } from "./spending-status";
 import { MessageFeed } from "./message-feed";
 import { useMessageEditing } from "./message-editing/use-message-editing";
 import type { MessageFeedHandle } from "./message-feed";
-import type { AgentChatExtensions } from "./agent-chat-extensions";
+import type { AgentChatExtensions, NoticeLines } from "./agent-chat-extensions";
 import { answerEdited } from "./answer-editing/answer-editing";
 import type { AnswerEditing, AnswerEditMark } from "./answer-editing/answer-editing";
 import { createDiagramRenders } from "./diagrams/diagram-renders";
@@ -173,7 +173,7 @@ function SubjectAgentChat(props: AgentChatProps & { subject: string }) {
   return <SubjectChatLoading skin={props.skin} />;
 }
 
-function AgentChatBody({ api, chatId, skin, liveness, voice, voiceDialog, attachments: attachmentsPlugin, spendingLimits, onBusyChange, appBridge, initialDraft, answerEditing, onFeedChange, messageActions, onTurnFinished, onTurnRefused, composerActions, onAppEvent, onChatAccessChange, onStateChange, onModelChosen, onChatUnavailable, reloadKey, steering, widgets, diagrams, liveDemos, images, videos, appEvents, workView, stepPhrases }: AgentChatProps & { chatId: string }) {
+function AgentChatBody({ api, chatId, skin, liveness, voice, voiceDialog, attachments: attachmentsPlugin, spendingLimits, onBusyChange, appBridge, initialDraft, answerEditing, onFeedChange, messageActions, onTurnFinished, onTurnRefused, composerActions, onAppEvent, onChatAccessChange, onStateChange, onModelChosen, onChatUnavailable, reloadKey, steering, widgets, diagrams, liveDemos, images, videos, appEvents, workView, stepPhrases, noticeLines }: AgentChatProps & { chatId: string }) {
   const spendingNoticeId = useId();
   const closedNoticeId = useId();
   const chat = useAgentChat({
@@ -223,8 +223,9 @@ function AgentChatBody({ api, chatId, skin, liveness, voice, voiceDialog, attach
       ...(appEvents && { appEvents }),
       ...(workView && { workView }),
       ...(stepPhrases && { stepPhrases }),
+      ...(noticeLines && { noticeLines }),
     }),
-    [widgets, diagrams, liveDemos, imageClients, videos, appEvents, workView, stepPhrases],
+    [widgets, diagrams, liveDemos, imageClients, videos, appEvents, workView, stepPhrases, noticeLines],
   );
   const scrollRef = useRef<HTMLDivElement>(null);
   const feedRef = useRef<MessageFeedHandle>(null);
@@ -417,8 +418,14 @@ function AgentChatBody({ api, chatId, skin, liveness, voice, voiceDialog, attach
       const NoticeView = skin.AgentNoticeView;
       const notices = agentNoticesOf(message);
       const staffReplies = staffRepliesOf(message);
-      const shown =
-        staffReplies.length > 0 ? (
+      const appNotices = appNoticesOf(message);
+      // Пометки приложения — серыми строками перед всем остальным в сообщении; только они — больше ничего.
+      const serviceLines = appNotices.length > 0 && <ServiceLines skin={skin} notices={appNotices} lines={extensions.noticeLines} />;
+      const onlyAppNotices = appNotices.length > 0 && notices.length === 0 && staffReplies.length === 0 && message.parts.every(isAgentNoticePart);
+      const content =
+        onlyAppNotices ? (
+          <></>
+        ) : staffReplies.length > 0 ? (
           <StaffReplies skin={skin} replies={staffReplies} label={labels.notices.staffSaid} />
         ) : notices.length > 0 ? (
           NoticeView ? (
@@ -504,6 +511,14 @@ function AgentChatBody({ api, chatId, skin, liveness, voice, voiceDialog, attach
             })}
           />
         );
+      const shown = serviceLines ? (
+        <>
+          {serviceLines}
+          {content}
+        </>
+      ) : (
+        content
+      );
       const markers = dividers.get(message.id);
       // Разделитель живёт в элементе ленты сообщения, после которого стоит: индексы и замеры ленты не меняются.
       return markers ? (
@@ -764,6 +779,23 @@ const EDIT_REFUSAL_ERRORS: Record<EditRefusalReason, EditErrorKind> = {
   // Текст сервера идёт в редактор как есть; надпись — на случай, если текста почему-то нет.
   server_refused: "rejected",
 };
+
+/** Пометки приложения серыми строками (`ServiceLine`, версия 27); нет строки у пометки или компонента у скина — ничего. */
+function ServiceLines({ skin, notices, lines }: { skin: ChatSkin; notices: AppNotice[]; lines: NoticeLines | undefined }) {
+  const View = skin.ServiceLine;
+  if (!View || !lines) return null;
+  const texts = notices.flatMap((notice) => {
+    const text = Object.hasOwn(lines, notice.name) ? lines[notice.name]!(notice) : undefined;
+    return text ? [{ name: notice.name, text }] : [];
+  });
+  return (
+    <>
+      {texts.map(({ name, text }, index) => (
+        <View key={`${name}-${index}`} text={text} />
+      ))}
+    </>
+  );
+}
 
 /** Реплики живого сотрудника: `StaffMessage` скина; скин без него (до версии 25) — ответом агента с подписью. */
 function StaffReplies({ skin, replies, label }: { skin: ChatSkin; replies: StaffReply[]; label: (staffName: string | undefined) => string }) {

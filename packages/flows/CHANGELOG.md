@@ -1,5 +1,33 @@
 # @ykurilov/agent-chat-flows
 
+## 0.66.0
+
+### Patch Changes
+
+- Updated dependencies [1d57795]
+  - @ykurilov/agent-chat-core@0.66.0
+  - @ykurilov/agent-chat-react@0.66.0
+
+## 0.65.1
+
+### Patch Changes
+
+- Updated dependencies [ca56c29]
+  - @ykurilov/agent-chat-core@0.65.1
+  - @ykurilov/agent-chat-react@0.65.1
+
+## 0.65.0
+
+### Minor Changes
+
+- 814ee7f: Пометка «Агент написал первым — человек молчал 1 ч 7 мин» перед ответом, который агент написал сам. Ядро: право чата `appNotices` (по умолчанию выключено) — служебные пометки приложения (`kind: "app"`) уходят в историю без текста для модели и только через белый список `appNoticeViews` (имя → безопасные данные для экрана; без функции пометка не уходит); `modelDetails: false` выключает и `appNotices`. React: `noticeLines` у `AgentChat` (имя пометки → строка), договор скина 27 — необязательный `ServiceLine`. Сценарии: в данных пометки `silentMs` (от последнего сообщения человека) и `exit`, проекция для экрана регистрируется в `withChat`, готовые строки `flowNoticeLines()` с подписями `russianFlowNoticeLabels`/`englishFlowNoticeLabels` (`FlowLabels.notices`); `FlowTestChat` передаёт их в `renderChat(chatId, { noticeLines })`. Тандем рисует `ServiceLine`. Как подключить — CHANGES.md, раздел 0.65.0.
+
+### Patch Changes
+
+- Updated dependencies [814ee7f]
+  - @ykurilov/agent-chat-core@0.65.0
+  - @ykurilov/agent-chat-react@0.65.0
+
 ## 0.64.0
 
 ### Minor Changes

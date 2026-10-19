@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { parseFlow, type AgentFlow } from "../../src/format";
 import { FlowTestChat, formatClockOffset, type FlowTestChatConnection } from "../../src/react/test-chat";
-import type { FlowEditorSkin } from "../../src/react";
+import type { FlowEditorSkin, FlowNoticeLines } from "../../src/react";
 import salesReview from "../fixtures/sales-review.json";
 
 const MIN = 60_000;
@@ -170,5 +170,19 @@ describe("T101 FlowTestChat", () => {
     fireEvent.click(screen.getByText("заново"));
     await waitFor(() => expect(screen.getByTestId("chat").textContent).toBe("test-2"));
     expect(screen.getByTestId("clock").textContent).toBe("как сейчас");
+  });
+});
+
+describe("100 тестовый чат показывает пометки «агент написал первым»", () => {
+  it("renderChat получает noticeLines сценария: строки включены по умолчанию", async () => {
+    const testChat = connection();
+    const renderChat = vi.fn((chatId: string, _options?: { noticeLines: FlowNoticeLines }) => <p data-testid="chat">{chatId}</p>);
+    renderEditor({ ...testChat, renderChat });
+    fireEvent.click(screen.getByText("тест"));
+    await screen.findByTestId("chat");
+    const { noticeLines } = renderChat.mock.calls.at(-1)![1]!;
+    expect(noticeLines.flow_timer!({ name: "flow_timer", data: { reasons: [{ kind: "silence", step: 1 }], silentMs: 67 * MIN } })).toBe(
+      "Агент написал первым — человек молчал 1 ч 7 мин",
+    );
   });
 });

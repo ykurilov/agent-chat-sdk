@@ -11,7 +11,7 @@ import "../src/styles.css";
 /*
  * Витрина частей фона и мессенджеров скина Тандем (T023 плана 027) для снимков тем: строка помощника во всех состояниях,
  * карточка фоновой задачи во всех статусах, плашки служебных сообщений, реплика сотрудника (0.53), панель подключения
- * мессенджеров. Без сервера.
+ * мессенджеров, служебная строка пометки приложения (0.65, «Агент написал первым»). Без сервера.
  *   theme=light|dark
  */
 
@@ -137,6 +137,24 @@ createRoot(document.getElementById("root")!).render(
           <div data-gallery="staff-reply" className="flex flex-col gap-2">
             <StaffReply staffName="Ольга" text="Здравствуйте! Запись эфира пришлю сегодня вечером, а пока посмотрите урок про композицию." />
             <StaffReply text="Подключила вас к закрытому чату курса." />
+          </div>
+        </Section>
+        <Section title="Пометки приложения">
+          <div data-gallery="service-lines" className="flex flex-col gap-2">
+            <tandemSkin.UserMessage text="Хочу научиться рисовать акварелью, но не знаю, с чего начать" />
+            <tandemSkin.AgentMessage status="complete" empty={false} onCopy={noop}>
+              <tandemSkin.AgentText markdown="Отлично! Расскажите, что у вас уже есть: краски, кисти, бумага?" streaming={false} />
+            </tandemSkin.AgentMessage>
+            {tandemSkin.ServiceLine && <tandemSkin.ServiceLine text="Агент написал первым — человек молчал 1 ч 7 мин" />}
+            <tandemSkin.AgentMessage status="complete" empty={false} onCopy={noop}>
+              <tandemSkin.AgentText markdown="Начнём с самого простого: возьмите один цвет и попробуйте залить квадрат ровным слоем." streaming={false} />
+            </tandemSkin.AgentMessage>
+            {tandemSkin.ServiceLine && (
+              <tandemSkin.ServiceLine text="Агент написал первым — срок шага вышел (шаг длился 2 д) → «Практика», утро нового дня, человек молчал 14 ч 20 мин" />
+            )}
+            <tandemSkin.AgentMessage status="complete" empty={false} onCopy={noop}>
+              <tandemSkin.AgentText markdown="Доброе утро! Сегодня — первое практическое задание." streaming={false} />
+            </tandemSkin.AgentMessage>
           </div>
         </Section>
         <Section title="Мессенджеры">

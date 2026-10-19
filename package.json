@@ -8,6 +8,7 @@
   },
   "scripts": {
     "build": "pnpm -r --filter \"./packages/*\" --filter \"./skins/*\" build",
+    "check-rules": "node scripts/check-rules.mjs",
     "test": "node scripts/check-rules.mjs && node scripts/check-extension-bundles.mjs && vitest run --project unit",
     "test:next": "pnpm --filter @ykurilov/agent-chat-next-example test:next",
     "test:live": "node scripts/test-live.mjs",

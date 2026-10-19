@@ -7,6 +7,7 @@ import { FLOW_DEADLINE_EXIT } from "../engine/timers";
 import type { FirstMessageRules, FlowFinish, FlowPort } from "./flow-types";
 import type { ChatFlowRun, FlowRuntime, PinnedFlow } from "./flow-events";
 import type { FlowDelivery } from "./flow-delivery";
+import { silentMsOf } from "./first-reasons-notice";
 
 // Конец разговора — запись `endedAt/endReason`, событие `onFinish`, прощание при сроке. По plan.md, «Конец разговора».
 // Конец — точка передачи, а не тупик: событие несёт всё, что нужно передать человека дальше (место с заметками чата,
@@ -134,7 +135,7 @@ export function createFlowFinish(input: { runtime: FlowRuntime; onFinish?: (even
       return { run: endedRun(pinned.flow, next, { endedAt: at, endReason: "deadline" }), ended };
     },
 
-    async farewell({ ownerId, chatId, pinned, at, timeZone, port, firstMessages, delivery }) {
+    async farewell({ ownerId, chatId, pinned, run, at, timeZone, port, firstMessages, delivery }) {
       const schedule = pinned.flow.schedule;
       if (!schedule?.farewellOnDeadline) return;
       const record = await runtime.store.getChat(chatId);
@@ -145,10 +146,11 @@ export function createFlowFinish(input: { runtime: FlowRuntime; onFinish?: (even
       // Нельзя писать сейчас — прощания нет: разговор уже закрыт, таймеров после конца нет.
       if (!allowed.allowed) return;
       const text = schedule.farewellText?.trim();
+      const silentMs = silentMsOf(run, at);
       const result = await port.deliverNotices({
         ownerId,
         chatId,
-        notices: [{ kind: "app", name: FLOW_DEADLINE_NOTICE, title: FAREWELL_NOTICE, data: { reasons: [{ kind: "farewell" }] } }],
+        notices: [{ kind: "app", name: FLOW_DEADLINE_NOTICE, title: FAREWELL_NOTICE, data: { reasons: [{ kind: "farewell" }], ...(silentMs !== undefined && { silentMs }) } }],
         wakeAgent: true,
         deliveryKey: `flow:${chatId}:deadline`,
         usageSource: "first_message",

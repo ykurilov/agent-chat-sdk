@@ -888,7 +888,15 @@ onTransition: async ({ ownerId, chatId, from, to, exitId, decidedBy, tags }) => 
   «К следующему напоминанию» проматывает ровно к моменту, когда сценарий сам напишет первым: касание по тишине,
   утреннее, выход состояния по сроку, «срок вышел», «не завершил» (`advanceToNextFirstMessage` у подключения, на
   сервере `to: "next_first_message"`). Поле «своё время» понимает «15 мин», «1 ч 30 мин», «2 дня», «1h 30m» и
-  перематывает через `advance`.
+  перематывает через `advance`. Перед ответом, который агент написал сам, — серая строка «Агент написал первым —
+  человек молчал 1 ч 7 мин» (своя на каждую причину: касание, утро, расписание, срок шага, общий срок, прощание, ночные
+  сообщения). `FlowTestChat` отдаёт строки в `renderChat(chatId, { noticeLines })`; видны они, если сервер дал тестовым
+  чатам право `appNotices`: `chatCapabilities: ({ chat }) => ({ appNotices: testChatOffset(chat.data) !== null })`.
+  Свой экран проверки — `<AgentChat noticeLines={flowNoticeLines()} />`; подписи — `russianFlowNoticeLabels`,
+  `englishFlowNoticeLabels` или свои. Данные пометки на экране (`flow_timer`, `flow_deadline`): `reasons` — вид причины
+  (у расписания `at`, у ночных `count`), `silentMs` — сколько прошло от последнего сообщения человека по часам чата,
+  `exit` — `{ stateTitle, when }` перехода по сроку (только таймер). Остальное, в том числе сигналы приложения
+  (`flow_event`), в браузер не уходит: `withChat` регистрирует проекцию в `appNoticeViews` службы чата.
 - **Свои проверки приложения.** `checks` у `FlowEditor` и `FlowTestChat` — функция `(flow) => [{ path, message }]`.
   Те же проверки на сервере: `checkFlow(flow, catalog, { checks })`. Тип `FlowAppChecks` — из
   `@ykurilov/agent-chat-flows/format`.
@@ -900,7 +908,7 @@ const testChat: FlowTestChatConnection = {
   start: (flow) => api.post("/flow-test/start", { flow }), // сервер: service.createChat(userId, { data: flowTestChatData() })
   advance: (chatId, ms) => api.post("/flow-test/advance", { chatId, ms }), // сервер: flow.advanceTestClock({ ownerId, chatId, ms })
   readRun: (chatId) => api.post("/flow-test/run", { chatId }), // сервер: flow.readRun(ownerId, chatId) — место для доски
-  renderChat: (chatId) => <AgentChat api="/api/chat" chatId={chatId} skin={tandemSkin} />,
+  renderChat: (chatId, { noticeLines }) => <AgentChat api="/api/chat" chatId={chatId} skin={tandemSkin} noticeLines={noticeLines} />,
 };
 
 <FlowTestChat skin={tandemFlowEditorSkin} value={flow} onChange={setFlow} catalog={catalog} testChat={testChat} />;

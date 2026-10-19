@@ -13,6 +13,7 @@ import {
 } from "@ykurilov/agent-chat-core";
 import type { AgentFlow } from "../format/flow-format";
 import { turnToolNames } from "./turn-tool-names";
+import { FLOW_APP_NOTICE_VIEWS } from "./notice-screen";
 import { parseFlow } from "../format/parse-flow";
 import { checkFlow } from "../check/check-flow";
 import { FLOW_STATE_KEY, type FlowRun, type Transition } from "../engine/flow-run";
@@ -768,6 +769,8 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
         ...chat,
         // Место в сценарии — служебное: посетитель его не видит, редактор и тестовый чат читают `readRun`.
         privateStateKeys: [...new Set([...(chat.privateStateKeys ?? []), FLOW_STATE_KEY])],
+        // Строки «Агент написал первым» на экране (право `appNotices`): только проекция, сырые данные пометок не уходят.
+        appNoticeViews: { ...chat.appNoticeViews, ...FLOW_APP_NOTICE_VIEWS },
         beforeTurn: async (input) => {
           const own = await chat.beforeTurn?.(input);
           return own ?? gate(input);

@@ -9,7 +9,8 @@ export type {
   MessageAttachmentsView,
 } from "./attachments-contract";
 export type { AgentChatProps } from "./agent-chat";
-export type { AgentChatExtensions, CustomWidgets, DiagramsClient, ImagesClient, VideosClient } from "./agent-chat-extensions";
+export type { AgentChatExtensions, NoticeLines, CustomWidgets, DiagramsClient, ImagesClient, VideosClient } from "./agent-chat-extensions";
+export type { AppNotice } from "./notices/agent-notices";
 export type { MediaViewerItem } from "./media-viewer/media-viewer-types";
 export type { MessageAction, MessageActionContext, MessageActionTarget } from "./message-actions";
 export type { ComposerActions, ComposerHelper } from "./composer-actions";

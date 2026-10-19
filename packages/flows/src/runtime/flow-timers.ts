@@ -14,7 +14,7 @@ import type { FirstMessageRules, FlowPort, FlowTestClockReason, FlowTimers, Flow
 import { advance, chainLimitMessage, chatRun, exactFirstText, storedRun, withPending, type ChatFlowRun } from "./flow-events";
 import { chatWriteBlock } from "./first-message-rules";
 import { FIRST_MESSAGE_RETRY_MS } from "./first-message-retry";
-import { firstReasonsNotice } from "./first-reasons-notice";
+import { firstReasonsNotice, silentMsOf } from "./first-reasons-notice";
 import { FLOW_DELIVERY_EXIT, type FlowDelivery } from "./flow-delivery";
 import { testChatOffset } from "./test-clock";
 import { withHeldHuman } from "./held-messages";
@@ -341,7 +341,7 @@ export function createFlowTimers(input: {
       await defer(flow.schedule ? nextDayStartAfter(at, timeZone, flow.schedule) : at + DAY_MS);
       return;
     }
-    const reasonsNotice = firstReasonsNotice(flow, reasons, moved ? due.exitId : null, due.ownNudge);
+    const reasonsNotice = firstReasonsNotice(flow, reasons, moved ? due.exitId : null, due.ownNudge, silentMsOf(run, at));
     // Прошлое касание не дошло: ход откатит его счёт и в месте чата.
     const notice = undelivered ? { ...reasonsNotice, data: { ...(reasonsNotice.data as object), undelivered } } : reasonsNotice;
     const reply = moved ? exactFirstText(flow, next.state) : null;

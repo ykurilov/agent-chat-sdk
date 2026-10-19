@@ -53,6 +53,9 @@ export function createAnswerSaver(
   // Последний знак жизни: любая запись или лёгкая отметка.
   let lastSignAt = lastWriteAt;
   let unsaved = false;
+  // Номер изменения ответа и номер, который уже ушёл в запись: «записать сейчас» пишет до известного ему номера.
+  let changes = 0;
+  let savedChanges = 0;
   let closed = false;
   let writing: Promise<void> | null = null;
   let lastFence = 0;
@@ -77,6 +80,7 @@ export function createAnswerSaver(
 
   async function write(): Promise<void> {
     unsaved = false;
+    const writtenChanges = changes;
     lastWriteAt = Date.now();
     lastSignAt = lastWriteAt;
     const parts = latest;
@@ -90,6 +94,7 @@ export function createAnswerSaver(
     } catch (failure) {
       noteFailure(failure);
     }
+    savedChanges = Math.max(savedChanges, writtenChanges);
     callsWritten(parts);
   }
 
@@ -185,7 +190,7 @@ export function createAnswerSaver(
           reachedFence = fence;
           reachFence(fence);
         } else {
-          unsaved = true;
+          noteChange();
           scheduleWrite();
         }
       }
@@ -202,14 +207,24 @@ export function createAnswerSaver(
     else feed.enqueue(chunk);
   }
 
-  /** Пишет всё несохранённое сейчас, не дожидаясь окна записи; идущую запись сначала ждёт. */
+  /** Ответ изменился: его надо записать. */
+  function noteChange(): void {
+    changes++;
+    unsaved = true;
+  }
+
+  /**
+   * Пишет сейчас, не дожидаясь окна записи, всё, что собрано к вызову; идущую запись сначала ждёт. Куски, пришедшие
+   * во время записи, идут обычным окном: иначе поток промежуточных результатов писался бы на каждый кусок.
+   */
   async function writeNow(): Promise<void> {
+    const target = changes;
     for (;;) {
       clearTimeout(timer);
       timer = undefined;
       if (writing) await writing;
-      else if (unsaved && !closed) startWrite();
-      else return;
+      else if (savedChanges < target && !closed) startWrite();
+      else return scheduleWrite();
     }
   }
 
@@ -249,7 +264,7 @@ export function createAnswerSaver(
         const held = waiting;
         waiting = null;
         for (const chunk of held) feed.enqueue(chunk);
-        unsaved = true;
+        noteChange();
         await writeNow();
       };
       const current = erase().finally(() => {
@@ -267,7 +282,7 @@ export function createAnswerSaver(
       released = true;
       clearTimeout(aliveTimer);
       await rewinding?.catch(() => {});
-      unsaved = true;
+      noteChange();
       await settleAssembly();
       await writeNow();
     },

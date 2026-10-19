@@ -21,6 +21,7 @@ import { gateToolApproval, gateToolCalls } from "../agent-run/tool-call-gate";
 import { decideNextAttempt, errorKindForPerson, fallbackProviders } from "../agent-run/next-attempt";
 import type { ProviderFallbackSetting } from "../agent-run/next-attempt";
 import { createRepairToolCall, describeToolInputRepair } from "../agent-run/repair-tool-call";
+import type { RepairToolInput } from "../agent-run/repair-tool-call";
 import type { AgentToolsModel } from "../agent-run/run-agent-turn";
 import { withToolObserver } from "../agent-run/run-agent-turn";
 import { withoutEndTurn } from "../agent-run/end-turn";
@@ -54,6 +55,7 @@ export interface HelperRunContext {
   usageSource: Extract<UsageSource, "helper" | "background">;
   toolResultLimit?: ResolvedToolResultLimit;
   toolTimeout?: ResolvedToolTimeout;
+  repairToolInput?: RepairToolInput;
   sequentialTools?: ResolvedSequentialTools;
   /** Очередь инструментов «по одному» чата: помощник делит её с основным агентом. */
   toolQueue?: ToolQueue;
@@ -264,6 +266,7 @@ async function helperStep(input: {
     maxRetries: 0,
     abortSignal: input.abortSignal,
     repairToolCall: createRepairToolCall({
+      ...(context.repairToolInput && { repairToolInput: context.repairToolInput }),
       onRepaired: (repair) => context.logError(describeToolInputRepair(repair, { chatId: context.chatId, modelId: helper.model.modelId, providerId })),
     }),
   });

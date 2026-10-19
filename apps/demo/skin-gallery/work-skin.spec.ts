@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
+import { screenshotFolder } from "../e2e/support/screen";
 
 /*
  * T023 плана 027: части фона и мессенджеров скина Тандем — строка помощника, карточка задачи во всех статусах, плашки,
@@ -35,4 +36,19 @@ for (const theme of ["light", "dark"] as const) {
       await page.screenshot({ path: `${screenshotDir}/${theme}-${width}.png`, fullPage: true });
     });
   }
+}
+
+// 100: служебная строка «Агент написал первым» — без пузыря, тихим текстом между ответами. Снимки тем — для просмотра глазами.
+const serviceLineDir = screenshotFolder("agent-chat-service-line");
+mkdirSync(serviceLineDir, { recursive: true });
+
+for (const theme of ["light", "dark"] as const) {
+  test(`${theme}: служебная строка пометки приложения`, async ({ page }) => {
+    await page.setViewportSize({ width: 720, height: 900 });
+    await open(page, theme);
+    const lines = page.locator('[data-gallery="service-lines"]');
+    await expect(lines.locator("[data-service-line]")).toHaveCount(2);
+    await expect(lines.getByText("Агент написал первым — человек молчал 1 ч 7 мин")).toBeVisible();
+    await lines.screenshot({ path: `${serviceLineDir}/service-line-${theme}.png` });
+  });
 }

@@ -4,8 +4,14 @@ import { MockLanguageModelV4 } from "ai/test";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { createRepairToolCall, describeToolInputRepair } from "../../../src/agent-run/repair-tool-call";
-import type { ToolInputRepair } from "../../../src/agent-run/repair-tool-call";
-import { extraCloserAtEnd, extraCloserInside } from "../support/broken-tool-inputs";
+import type { RepairToolInput, ToolInputRepair } from "../../../src/agent-run/repair-tool-call";
+import {
+  extraCloserAtEnd,
+  extraCloserInside,
+  fieldsExtraBraceAtEndChangesText,
+  flowMissingArrayCloserChangesText,
+  instructionExtraBraceBeforeArrayCloserChangesText,
+} from "../support/broken-tool-inputs";
 import { finishPart, reasoningAndTextParts, streamOf, streamStart } from "../support/mock-model";
 
 /** Модель: на первом шаге вызывает инструмент с заданным сырым `input`, на втором отвечает текстом. */
@@ -25,14 +31,20 @@ function callingModel(toolName: string, rawInput: string): MockLanguageModelV4 {
   });
 }
 
-async function runCall(tools: ToolSet, rawInput: string, toolName = "update_task", onRepaired?: (repair: ToolInputRepair) => void) {
+async function runCall(
+  tools: ToolSet,
+  rawInput: string,
+  toolName = "update_task",
+  onRepaired?: (repair: ToolInputRepair) => void,
+  repairToolInput?: RepairToolInput,
+) {
   const model = callingModel(toolName, rawInput);
   const result = streamText({
     model,
     tools,
     prompt: "сделай",
     stopWhen: ({ steps }) => steps.length >= 2,
-    repairToolCall: createRepairToolCall(onRepaired && { onRepaired }),
+    repairToolCall: createRepairToolCall({ ...(onRepaired && { onRepaired }), ...(repairToolInput && { repairToolInput }) }),
   });
   const parts: Array<{ type: string; [key: string]: unknown }> = [];
   for await (const part of result.fullStream) parts.push(part as { type: string });
@@ -193,7 +205,7 @@ describe("createRepairToolCall: лишние закрывающие скобки
     expect(parts.some((part) => part.type === "tool-call" && part.invalid === true)).toBe(false);
     expect(historyToolCall(model)).toMatchObject({ toolName: "remember", input: expected });
     expect(repairs).toEqual([
-      { toolName: "remember", inputLength: extraCloserAtEnd.length, strayClosers: { inside: 0, end: 1 }, missingClosers: 0, strings: false, types: false },
+      { toolName: "remember", inputLength: extraCloserAtEnd.length, strayClosers: { inside: 0, end: 1 }, missingClosers: 0, nestedJson: false, byApp: false, strings: false, types: false },
     ]);
   });
 
@@ -224,7 +236,7 @@ describe("createRepairToolCall: лишние закрывающие скобки
     expect(execute).toHaveBeenCalledExactlyOnceWith({ facts: ["a", "b"] });
     expect(historyToolCall(model)).toMatchObject({ input: { facts: ["a", "b"] } });
     expect(repairs).toEqual([
-      { toolName: "remember", inputLength: raw.length, strayClosers: { inside: 0, end: 0 }, missingClosers: 1, strings: false, types: false },
+      { toolName: "remember", inputLength: raw.length, strayClosers: { inside: 0, end: 0 }, missingClosers: 1, nestedJson: false, byApp: false, strings: false, types: false },
     ]);
   });
 
@@ -273,19 +285,181 @@ describe("createRepairToolCall: лишние закрывающие скобки
   it("старые починки тоже попадают в журнал: строки и типы", async () => {
     const repairs: ToolInputRepair[] = [];
     await runCall(updateTask(() => "ok"), '{"taskId":"2","done":"true"}', "update_task", (repair) => repairs.push(repair));
-    expect(repairs).toEqual([{ toolName: "update_task", inputLength: 28, strayClosers: { inside: 0, end: 0 }, missingClosers: 0, strings: false, types: true }]);
+    expect(repairs).toEqual([{ toolName: "update_task", inputLength: 28, strayClosers: { inside: 0, end: 0 }, missingClosers: 0, nestedJson: false, byApp: false, strings: false, types: true }]);
   });
 });
 
 describe("describeToolInputRepair", () => {
   it("строка журнала: что поправлено и длина, без содержимого аргументов", () => {
     const line = describeToolInputRepair(
-      { toolName: "remember", inputLength: 237, strayClosers: { inside: 1, end: 2 }, missingClosers: 3, strings: true, types: true },
+      { toolName: "remember", inputLength: 237, strayClosers: { inside: 1, end: 2 }, missingClosers: 3, nestedJson: true, byApp: true, strings: true, types: true },
       { chatId: "chat-1", modelId: "deepseek-v4.1-flash", providerId: "deepseek" },
     );
     expect(line).toBe(
       "[аргументы починены] чат=chat-1 инструмент=remember модель=deepseek-v4.1-flash провайдер=deepseek " +
-        "правка=лишние скобки внутри ×1, лишние скобки в конце ×2, дописаны скобки ×3, записи в строках, типы по схеме длина=237",
+        "правка=лишние скобки внутри ×1, лишние скобки в конце ×2, дописаны скобки ×3, JSON из строки, записи в строках, типы по схеме, правка приложения длина=237",
     );
+  });
+});
+
+/** Что модель увидит в истории на следующем шаге в ответ на кривой вызов. */
+function historyToolError(model: MockLanguageModelV4): string {
+  const prompt = model.doStreamCalls[1]!.prompt;
+  const result = prompt.flatMap((message) => (message.role === "tool" ? message.content : [])).find((part) => part.type === "tool-result");
+  return JSON.stringify((result as { output?: unknown } | undefined)?.output ?? "");
+}
+
+const looseChangesTool = (execute: (input: unknown) => unknown) =>
+  ({
+    edit_lead_magnet: tool({
+      description: "Правка.",
+      inputSchema: z.object({ changes: z.array(z.record(z.string(), z.unknown())) }),
+      execute: async (input) => execute(input),
+    }),
+  }) as ToolSet;
+
+describe("createRepairToolCall: JSON внутри строки и посреди объекта (прогон оценки 2026-10-19)", () => {
+  it("`changes` пришёл строкой, внутри лишняя `}` перед `]` → правка выполнена массивом", async () => {
+    const execute = vi.fn((_input: unknown) => "ok");
+    const repairs: ToolInputRepair[] = [];
+    const raw = JSON.stringify({ changes: instructionExtraBraceBeforeArrayCloserChangesText });
+    await runCall(editTool(execute), raw, "edit_lead_magnet", (repair) => repairs.push(repair));
+    expect(execute).toHaveBeenCalledOnce();
+    const changes = (execute.mock.calls[0]![0] as { changes: Array<{ op: string; field: string }> }).changes;
+    expect(changes).toMatchObject([{ op: "set", field: "instruction" }]);
+    expect(repairs).toEqual([
+      { toolName: "edit_lead_magnet", inputLength: raw.length, strayClosers: { inside: 1, end: 0 }, missingClosers: 0, nestedJson: true, byApp: false, strings: false, types: false },
+    ]);
+  });
+
+  it("`changes` строкой, лишняя `}` в конце после `]` → выполнено", async () => {
+    const execute = vi.fn((_input: unknown) => "ok");
+    const repairs: ToolInputRepair[] = [];
+    await runCall(looseChangesTool(execute), JSON.stringify({ changes: fieldsExtraBraceAtEndChangesText }), "edit_lead_magnet", (repair) => repairs.push(repair));
+    expect(execute).toHaveBeenCalledOnce();
+    expect(repairs[0]).toMatchObject({ nestedJson: true, strayClosers: { inside: 0, end: 1 } });
+  });
+
+  it("`changes` строкой, забыта `]` в конце → выполнено", async () => {
+    const execute = vi.fn((_input: unknown) => "ok");
+    const repairs: ToolInputRepair[] = [];
+    await runCall(looseChangesTool(execute), JSON.stringify({ changes: flowMissingArrayCloserChangesText }), "edit_lead_magnet", (repair) => repairs.push(repair));
+    expect(execute).toHaveBeenCalledOnce();
+    expect(repairs[0]).toMatchObject({ nestedJson: true, missingClosers: 1 });
+  });
+
+  it("строка в поле-строке с JSON внутри остаётся строкой", async () => {
+    const execute = vi.fn((_input: unknown) => "ok");
+    const tools = {
+      note: tool({ description: "Заметка.", inputSchema: z.object({ text: z.string() }), execute: async (input) => execute(input) }),
+    } as ToolSet;
+    await runCall(tools, JSON.stringify({ text: '{"a": 1}}' }), "note");
+    expect(execute).toHaveBeenCalledExactlyOnceWith({ text: '{"a": 1}}' });
+  });
+
+  it("лишняя `}` посреди объекта (не в конце) → выполнено", async () => {
+    const execute = vi.fn((_input: unknown) => "ok");
+    const tools = {
+      plan: tool({
+        description: "План.",
+        inputSchema: z.object({ owner: z.object({ id: z.number() }), title: z.string() }),
+        execute: async (input) => execute(input),
+      }),
+    } as ToolSet;
+    const repairs: ToolInputRepair[] = [];
+    await runCall(tools, '{"owner": {"id": 1}}, "title": "x"}', "plan", (repair) => repairs.push(repair));
+    expect(execute).toHaveBeenCalledExactlyOnceWith({ owner: { id: 1 }, title: "x" });
+    expect(repairs[0]?.strayClosers).toEqual({ inside: 1, end: 0 });
+  });
+});
+
+describe("createRepairToolCall: короткая ошибка модели", () => {
+  const bulky = "ЗЗЗ".repeat(300);
+
+  it("JSON не чинится → 1–2 строки: что не так, около какой позиции и кусок текста; аргументов целиком нет", async () => {
+    const execute = vi.fn((_input: unknown) => "ok");
+    const raw = `{"facts": ["${bulky}", "обрыв`;
+    const { model } = await runCall(rememberTool(execute), raw, "remember");
+    expect(execute).not.toHaveBeenCalled();
+    const message = historyToolError(model);
+    expect(message).toContain("не разбираются как JSON");
+    expect(message).toMatch(/позици/);
+    expect(message).toContain("пришли вызов заново");
+    expect(message).not.toContain(bulky);
+    expect(message.length).toBeLessThan(400);
+  });
+
+  it("лишняя скобка, которую не починить, → ошибка называет скобку и позицию", async () => {
+    const { model } = await runCall(rememberTool(() => "ok"), '{"facts": ["a"]} }} }} x', "remember");
+    expect(historyToolError(model)).toMatch(/`\}`.*позици/);
+  });
+
+  it("ошибка схемы → коротко какие поля не так, без аргументов целиком", async () => {
+    const execute = vi.fn((_input: unknown) => "ok");
+    const raw = JSON.stringify({ changes: [{ op: "set", field: "name", value: bulky, extra: 1 }] });
+    const { model } = await runCall(editTool(execute), raw, "edit_lead_magnet");
+    expect(execute).not.toHaveBeenCalled();
+    const message = historyToolError(model);
+    expect(message).toContain("changes");
+    expect(message).toMatch(/extra/);
+    expect(message).not.toContain(bulky);
+    expect(message.length).toBeLessThan(500);
+  });
+
+  it("после починки схема не прошла → ошибка короткая, аргументов целиком нет", async () => {
+    const execute = vi.fn((_input: unknown) => "ok");
+    const raw = `{"changes": [{"op": "set", "field": "name", "value": "${bulky}", "extra": 1}}`;
+    const { model } = await runCall(editTool(execute), raw, "edit_lead_magnet");
+    expect(execute).not.toHaveBeenCalled();
+    const message = historyToolError(model);
+    expect(message).not.toContain(bulky);
+    expect(message.length).toBeLessThan(500);
+  });
+});
+
+describe("createRepairToolCall: repairToolInput приложения", () => {
+  it("не зовётся, если встроенная починка справилась", async () => {
+    const repairToolInput = vi.fn(() => undefined);
+    const execute = vi.fn((_input: unknown) => "ok");
+    await runCall(rememberTool(execute), extraCloserAtEnd, "remember", undefined, repairToolInput);
+    expect(execute).toHaveBeenCalledOnce();
+    expect(repairToolInput).not.toHaveBeenCalled();
+  });
+
+  it("зовётся с именем инструмента, текстом и ошибкой; починенный текст проходит схему → выполнено, в журнале byApp", async () => {
+    const repairs: ToolInputRepair[] = [];
+    const execute = vi.fn((_input: unknown) => "ok");
+    const raw = '{"facts": ["a", "b';
+    const repairToolInput = vi.fn(async ({ text }: { toolName: string; text: string; error: unknown }) => text + '"]}');
+    await runCall(rememberTool(execute), raw, "remember", (repair) => repairs.push(repair), repairToolInput);
+    expect(repairToolInput).toHaveBeenCalledOnce();
+    expect(repairToolInput.mock.calls[0]![0]).toMatchObject({ toolName: "remember", text: raw });
+    expect((repairToolInput.mock.calls[0]![0] as { error: unknown }).error).toBeInstanceOf(Error);
+    expect(execute).toHaveBeenCalledExactlyOnceWith({ facts: ["a", "b"] });
+    expect(repairs[0]).toMatchObject({ toolName: "remember", byApp: true });
+  });
+
+  it("приложение вернуло текст, который не проходит схему → инструмент не вызван, журнал молчит", async () => {
+    const onRepaired = vi.fn();
+    const execute = vi.fn((_input: unknown) => "ok");
+    await runCall(rememberTool(execute), '{"facts": ["a", "b', "remember", onRepaired, () => '{"facts": 5}');
+    expect(execute).not.toHaveBeenCalled();
+    expect(onRepaired).not.toHaveBeenCalled();
+  });
+
+  it("приложение вернуло undefined или упало → ошибка модели как раньше, ход не падает", async () => {
+    for (const hook of [() => undefined, () => { throw new Error("сбой"); }]) {
+      const execute = vi.fn((_input: unknown) => "ok");
+      const { parts } = await runCall(rememberTool(execute), '{"facts": ["a", "b', "remember", undefined, hook);
+      expect(execute).not.toHaveBeenCalled();
+      expect(parts.some((part) => part.type === "tool-call" && part.invalid === true)).toBe(true);
+    }
+  });
+
+  it("приложение может взять за основу встроенный починщик", async () => {
+    const { repairToolArguments } = await import("../../../src/agent-run/tool-arguments-repair");
+    const execute = vi.fn((_input: unknown) => "ok");
+    await runCall(rememberTool(execute), '{"facts": ["a"]} }}', "remember", undefined, ({ text }) => repairToolArguments(text.replace(/\s*\}\}$/, "")));
+    expect(execute).toHaveBeenCalledOnce();
   });
 });

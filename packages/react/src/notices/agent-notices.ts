@@ -16,9 +16,28 @@ export interface AgentNotice {
 
 export const AGENT_NOTICE_PART_TYPE = "data-agent-notice";
 
-/** Служебные сообщения из сообщения человека, кроме реплик сотрудника; пусто — это обычное сообщение или реплика. */
+export const isAgentNoticePart = (part: { type: string }): boolean => part.type === AGENT_NOTICE_PART_TYPE;
+
+/** Служебные сообщения из сообщения человека, кроме реплик сотрудника и пометок приложения; пусто — это обычное сообщение, реплика или пометка. */
 export function agentNoticesOf(message: AgentChatMessage): AgentNotice[] {
-  return rawNoticesOf(message).filter((notice) => notice.kind !== STAFF_NOTICE_KIND) as AgentNotice[];
+  return rawNoticesOf(message).filter((notice) => notice.kind !== STAFF_NOTICE_KIND && notice.kind !== APP_NOTICE_KIND) as AgentNotice[];
+}
+
+/** Пометка приложения (`kind: "app"`, право чата `appNotices`): имя события и его данные, без текста для модели. */
+export interface AppNotice {
+  name: string;
+  data: unknown;
+}
+
+const APP_NOTICE_KIND = "app";
+
+/** Пометки приложения из сообщения; пусто — их нет (или право `appNotices` выключено и сервер их не прислал). */
+export function appNoticesOf(message: AgentChatMessage): AppNotice[] {
+  return rawNoticesOf(message).flatMap((notice) => {
+    if (notice.kind !== APP_NOTICE_KIND) return [];
+    const { name, data } = notice as { name?: unknown; data?: unknown };
+    return typeof name === "string" ? [{ name, data }] : [];
+  });
 }
 
 /** Реплика живого сотрудника человеку (служебное сообщение вида `staff`, с 0.53). */

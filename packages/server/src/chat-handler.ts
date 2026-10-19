@@ -129,7 +129,14 @@ export interface ChatAttachments extends MessageAttachments {
   handle(input: { request: Request; userId: string; chatId: string; segments: string[] }): Promise<Response>;
 }
 
-export interface ChatHandlerOptions {
+/** Опции службы ядра, которые сервер принимает от приложения: все, кроме тех, что сервер заводит сам. */
+type ServiceOptionsOfServer = Omit<Parameters<typeof createChatService>[0], "registry" | "chatEvents">;
+
+/**
+ * Опции сервера: все опции службы ядра (`createChatService`) плюс свои. Новая опция службы доходит сама — без правки
+ * сервера; ниже повторены только поля с пояснением для сервера.
+ */
+export interface ChatHandlerOptions extends ServiceOptionsOfServer {
   /** Путь, под которым смонтирован обработчик, например `/api/chat`. */
   basePath: string;
   storage: ChatStorage;
@@ -319,6 +326,24 @@ export interface ChatServerService extends ChatService {
 /** Значение из адреса для строки журнала: с управляющими символами — в кавычках и экранировано, чтобы не подделать строки. */
 const logValue = (value: string): string => (/[\p{Cc}\u2028\u2029]/u.test(value) ? JSON.stringify(value) : value);
 
+/** Поля сервера, которых у службы нет: всё остальное уходит в `createChatService` как есть. */
+const SERVER_ONLY_OPTIONS = {
+  basePath: true,
+  resolveUser: true,
+  chatList: true,
+  subjectChats: true,
+  newChatData: true,
+  allowedOrigins: true,
+  heartbeatIntervalMs: true,
+} satisfies Record<Exclude<keyof ChatHandlerOptions, keyof ServiceOptionsOfServer>, true>;
+
+/** Опции службы из опций сервера: без полей сервера и без пустых (`undefined` — как не заданное). */
+function serviceOptionsOf(options: ChatHandlerOptions): ServiceOptionsOfServer {
+  return Object.fromEntries(
+    Object.entries(options).filter(([key, value]) => value !== undefined && !Object.hasOwn(SERVER_ONLY_OPTIONS, key)),
+  ) as unknown as ServiceOptionsOfServer;
+}
+
 /** HTTP-обработчик чата на стандартных `Request`/`Response` (contracts/http-api.md). */
 export function createChatHandler(options: ChatHandlerOptions): ChatHandler {
   return createChatServer(options).handler;
@@ -346,41 +371,10 @@ export function createChatServer(options: ChatHandlerOptions): { handler: ChatHa
     throw new Error("subjectChats требует хранилища с findChatBySubject: хранилище приложения его не умеет.");
   }
   const service = createChatService({
-    storage: options.storage,
-    catalog: options.catalog,
+    ...serviceOptionsOf(options),
     registry: createRunningAnswerRegistry(),
-    ...(options.defaultChoice && { defaultChoice: options.defaultChoice }),
-    agent: options.agent,
-    ...(options.compaction !== undefined && { compaction: options.compaction }),
-    ...(options.attachments && { attachments: options.attachments }),
-    ...(options.limits && { limits: options.limits }),
-    ...(options.maxConcurrentTurnsPerUser !== undefined && { maxConcurrentTurnsPerUser: options.maxConcurrentTurnsPerUser }),
-    ...(options.beforeTurn && { beforeTurn: options.beforeTurn }),
-    ...(options.turnNotStarted && { turnNotStarted: options.turnNotStarted }),
-    ...(options.chatCapabilities && { chatCapabilities: options.chatCapabilities }),
-    ...(options.beforeCreateChat && { beforeCreateChat: options.beforeCreateChat }),
-    ...(options.memory && { memory: options.memory }),
-    ...(options.env && { env: options.env }),
     logError,
-    ...(options.turnObserver && { turnObserver: options.turnObserver }),
-    ...(options.chatInstructions && { chatInstructions: options.chatInstructions }),
-    ...(options.staffOfChat && { staffOfChat: options.staffOfChat }),
-    ...(options.lockedToolOutputs && { lockedToolOutputs: options.lockedToolOutputs }),
-    ...(options.abandonedBursts && { abandonedBursts: options.abandonedBursts }),
     chatEvents: createChatEvents((error) => logError(`События чата: сбой слушателя: ${describe(error)}`)),
-    ...(options.background && { background: options.background }),
-    ...(options.onTurnFinished && { onTurnFinished: options.onTurnFinished }),
-    ...(options.afterTurn && { afterTurn: options.afterTurn }),
-    ...(options.afterTurnTimeoutMs !== undefined && { afterTurnTimeoutMs: options.afterTurnTimeoutMs }),
-    ...(options.afterTurnAttempts !== undefined && { afterTurnAttempts: options.afterTurnAttempts }),
-    ...(options.onStateChanged && { onStateChanged: options.onStateChanged }),
-    ...(options.onStateChangedTimeoutMs !== undefined && { onStateChangedTimeoutMs: options.onStateChangedTimeoutMs }),
-    ...(options.onStateChangedAttempts !== undefined && { onStateChangedAttempts: options.onStateChangedAttempts }),
-    ...(options.onModelChosen && { onModelChosen: options.onModelChosen }),
-    ...(options.modelMenu && { modelMenu: options.modelMenu }),
-    ...(options.privateStateKeys && { privateStateKeys: options.privateStateKeys }),
-    ...(options.replyChecks && { replyChecks: options.replyChecks }),
-    ...(options.now && { now: options.now }),
   });
   /** Ключи состояния, которые не уходят вкладке (служба уже проверила имена). */
   const hiddenStateKey = hiddenStateKeyOf(options.privateStateKeys);

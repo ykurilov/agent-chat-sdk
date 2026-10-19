@@ -29,6 +29,7 @@ const ALL_ALLOWED: ChatCapabilities = {
   modelDetails: true,
   // Подробности сбоя открываются только явно.
   errorDetails: false,
+  appNotices: false,
 };
 
 const CLOSURE = { code: "form_completed", message: "Заявка отправлена. Чат только для чтения." };

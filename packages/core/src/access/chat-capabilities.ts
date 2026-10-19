@@ -11,7 +11,10 @@ import type { Chat } from "../conversation/types";
  * запрет выключает и `modelChoice`: выбирать невидимую модель нельзя. `errorDetails` — подробности сбоя провайдера
  * (провайдер, модель, код, причина, когда снимут предел) в истории и потоке; единственное право, выключенное по
  * умолчанию: подробности видны любому через инструменты разработчика, открывать их — только админу. При
- * `modelDetails: false` выключено и оно.
+ * `modelDetails: false` выключено и оно. `appNotices` — служебные пометки приложения (`kind: "app"`: касание после
+ * молчания, срок шага сценария) на экране — без текста для модели, только те, у кого есть проекция для экрана
+ * (`appNoticeViews` службы), и только её данные; тоже выключено по умолчанию: клиент в боевом чате их не видит,
+ * включают в проверке и тестовом чате. При `modelDetails: false` выключено и оно.
  */
 export type ChatCapability =
   | "edit"
@@ -28,19 +31,21 @@ export type ChatCapability =
   | "toolDetails"
   | "steer"
   | "modelDetails"
-  | "errorDetails";
+  | "errorDetails"
+  | "appNotices";
 
 /**
- * Права, как их отдаёт `resolveChatCapabilities`. `modelDetails` (нет — `true`) и `errorDetails` (нет — `false`) в типе
+ * Права, как их отдаёт `resolveChatCapabilities`. `modelDetails` (нет — `true`), `errorDetails` и `appNotices` (нет — `false`) в типе
  * необязательны: свой литерал прав, собранный до этих прав, остаётся верным. Ядро и история заполняют их всегда.
  */
-export type ChatCapabilities = Record<Exclude<ChatCapability, "modelDetails" | "errorDetails">, boolean> & {
+export type ChatCapabilities = Record<Exclude<ChatCapability, "modelDetails" | "errorDetails" | "appNotices">, boolean> & {
   modelDetails?: boolean;
   errorDetails?: boolean;
+  appNotices?: boolean;
 };
 
 /**
- * Права в чате от приложения: частичный список, пропущенное — `true` (`errorDetails` — `false`). Тот же вход, что у `beforeTurn` (чат с данными
+ * Права в чате от приложения: частичный список, пропущенное — `true` (`errorDetails` и `appNotices` — `false`). Тот же вход, что у `beforeTurn` (чат с данными
  * объекта). Не булево значение, неизвестное право или исключение — ошибка приложения.
  */
 export type ChatCapabilitiesHandler = (input: {
@@ -64,14 +69,15 @@ export const CHAT_CAPABILITIES: readonly ChatCapability[] = [
   "steer",
   "modelDetails",
   "errorDetails",
+  "appNotices",
 ];
 
 /** Права, выключенные, пока приложение их не дало. */
-const OFF_BY_DEFAULT: ReadonlySet<ChatCapability> = new Set(["errorDetails"]);
+const OFF_BY_DEFAULT: ReadonlySet<ChatCapability> = new Set(["errorDetails", "appNotices"]);
 
 /**
- * Все права, кроме `errorDetails`, разрешены и дополнены ответом приложения; `modelDetails: false` выключает и
- * `modelChoice`, и `errorDetails`. Не булево значение или неизвестное право — `TypeError`.
+ * Все права, кроме `errorDetails` и `appNotices`, разрешены и дополнены ответом приложения; `modelDetails: false` выключает и
+ * `modelChoice`, `errorDetails` и `appNotices`. Не булево значение или неизвестное право — `TypeError`.
  */
 export function resolveChatCapabilities(given: Partial<ChatCapabilities> | void | null): Required<ChatCapabilities> {
   const resolved = Object.fromEntries(CHAT_CAPABILITIES.map((capability) => [capability, !OFF_BY_DEFAULT.has(capability)])) as Required<ChatCapabilities>;
@@ -89,6 +95,7 @@ export function resolveChatCapabilities(given: Partial<ChatCapabilities> | void 
   if (!resolved.modelDetails) {
     resolved.modelChoice = false;
     resolved.errorDetails = false;
+    resolved.appNotices = false;
   }
   return resolved;
 }

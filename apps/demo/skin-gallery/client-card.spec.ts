@@ -1,14 +1,15 @@
 import { mkdirSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
+import { screenshotFolder } from "../e2e/support/screen";
 
 /*
  * Этап 8 плана 058: экран карточки клиента в скине Тандем рядом с экраном памяти. Один сквозной сценарий (стереть поле,
  * «Стереть всё» с подтверждением), светлая и тёмная тема снимками, телефон — узкая вёрстка и касание.
- * Снимки лежат в /tmp/client-card-shots для просмотра глазами (эталонных снимков нет).
+ * Снимки лежат в screenshotFolder("agent-chat-client-card") для просмотра глазами (эталонных снимков нет).
  */
 
-const screenshotDir = "/tmp/client-card-shots";
+const screenshotDir = screenshotFolder("agent-chat-client-card");
 mkdirSync(screenshotDir, { recursive: true });
 
 async function open(page: Page, theme: string, state = "ready") {

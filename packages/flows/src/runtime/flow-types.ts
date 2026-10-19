@@ -2,6 +2,7 @@ import type {
   AfterTurnHandler,
   AgentNotice,
   AgentSettings,
+  AppNoticeViews,
   AgentToolsModel,
   AskModel,
   BeforeTurnHandler,
@@ -512,6 +513,8 @@ export interface FlowChatOptions {
    * (`flowKnownTexts`) к `knownTexts`: ссылка из первого сообщения или прощания не считается выдуманной. Нет — не трогается.
    */
   replyChecks?: ReplyChecksSetting;
+  /** Свои проекции пометок приложения для экрана (`createChatService({ appNoticeViews })`): `withChat` добавляет к ним сценарные. */
+  appNoticeViews?: AppNoticeViews;
 }
 
 export interface AgentFlowOptions {

@@ -1,13 +1,14 @@
 import { mkdirSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
+import { screenshotFolder } from "../e2e/support/screen";
 
 /*
  * Этап 10 плана 061: поля формата v2 на доске — «Дни и время», «Длится» и касания ноды, условие «да/нет», попутные
  * задачи с полем из словаря приложения, своя проверка приложения. Один сквозной проход; тёмная тема и телефон — снимками.
  */
 
-const shots = process.env.FLOW_DAYS_SHOTS ?? "/tmp/061-s10-shots";
+const shots = process.env.FLOW_DAYS_SHOTS ?? screenshotFolder("agent-chat-flow-days");
 mkdirSync(shots, { recursive: true });
 
 async function open(page: Page, theme: string) {

@@ -67,3 +67,45 @@ describe("deliverNotices с готовым ответом", () => {
     expect(text).toBe("Привет снова");
   });
 });
+
+describe("100 право appNotices: пометки приложения на экране", () => {
+  const secretSignal: AgentNotice = { kind: "app", name: "flow_event", title: "Событие приложения «paid»", data: { name: "paid", data: { card: "4111 1111 1111 1111" } } };
+  const appNoticeViews = { flow_timer: (data: unknown) => ({ node: (data as { node: string }).node, shown: true }) };
+
+  it("по умолчанию выключено: пометок в истории нет", async () => {
+    const hidden = noticeService(scriptedModel(), { appNoticeViews });
+    const chat = await askInNewChat(hidden.service);
+    await hidden.service.deliverNotices({ ownerId: "anna", chatId: chat.id, notices: [appNotice], wakeAgent: false, deliveryKey: "h" });
+    const before = (await hidden.service.getHistory("anna", chat.id))!;
+    expect(before.capabilities.appNotices).toBe(false);
+    expect(before.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+  });
+
+  it("включено: только пометки с проекцией для экрана и только её данные; без проекции (сигнал с секретом) — не уходит", async () => {
+    const shown = noticeService(scriptedModel(), { chatCapabilities: () => ({ appNotices: true }), appNoticeViews });
+    const open = await askInNewChat(shown.service);
+    await shown.service.deliverNotices({
+      ownerId: "anna",
+      chatId: open.id,
+      notices: [doneNotice("Отчёт", "готово"), appNotice, secretSignal],
+      wakeAgent: false,
+      deliveryKey: "s",
+    });
+    await shown.service.deliverNotices({ ownerId: "anna", chatId: open.id, notices: [secretSignal], wakeAgent: false, deliveryKey: "x" });
+    const history = (await shown.service.getHistory("anna", open.id))!;
+    expect(history.capabilities.appNotices).toBe(true);
+    expect(history.messages.at(-1)!.parts).toEqual([
+      {
+        type: AGENT_NOTICE_PART_TYPE,
+        data: expect.objectContaining({ notices: [doneNotice("Отчёт", "готово"), { kind: "app", name: "flow_timer", data: { node: "n1", shown: true } }] }),
+      },
+    ]);
+    expect(JSON.stringify(history)).not.toContain("4111");
+  });
+
+  it("modelDetails: false гасит appNotices", async () => {
+    const { service } = noticeService(scriptedModel(), { chatCapabilities: () => ({ appNotices: true, modelDetails: false }), appNoticeViews });
+    const chat = await askInNewChat(service);
+    expect((await service.getHistory("anna", chat.id))!.capabilities.appNotices).toBe(false);
+  });
+});

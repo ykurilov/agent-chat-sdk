@@ -1,6 +1,6 @@
 import { serve } from "@hono/node-server";
 import { MockLanguageModelV4 } from "ai/test";
-import { extendCatalog, standardCatalog, createInMemoryChatStorage } from "@ykurilov/agent-chat-core";
+import { extendCatalog, standardCatalog, createInMemoryChatStorage, type ChatCapabilitiesHandler } from "@ykurilov/agent-chat-core";
 import { createAgentFlow, FlowTestClockError, flowTestChatData, memoryFlowStore, testChatOffset } from "@ykurilov/agent-chat-flows";
 import { createChatServer } from "@ykurilov/agent-chat-server";
 import { mountChat } from "@ykurilov/agent-chat-server/hono";
@@ -71,6 +71,8 @@ const { handler, service } = createChatServer(
     defaultChoice: choice,
     env: { FLOW_TEST_KEY: "stand" },
     agent: { instructions: "Ты помощник стенда.", timeZone: "Europe/Moscow" },
+    // Пометки «агент написал первым» видны только автору в тестовом чате; клиент в боевом чате их не видит.
+    chatCapabilities: (({ chat }) => ({ appNotices: testChatOffset(chat.data) !== null })) satisfies ChatCapabilitiesHandler,
   }),
 );
 flow.attach(service);

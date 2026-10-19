@@ -5,6 +5,7 @@ import { parseDuration } from "../../format/parse-duration";
 import { russianFlowTestChatLabels, type FlowTestChatLabels } from "../../labels/test-chat";
 import { FlowEditor, type FlowEditorProps } from "../editor/flow-editor";
 import { useFlowLabels } from "../flow-labels";
+import { flowNoticeLines } from "../notice-lines";
 import type { FlowEditorFrameProps, FlowEditorSkin, FlowHeaderProps, FlowStateNodeProps } from "../flow-editor-skin";
 import { useFlowTestChat, type FlowTestChatConnection, type FlowTestChatController } from "./use-flow-test-chat";
 
@@ -92,7 +93,8 @@ function withTestChat(skin: FlowEditorSkin): FlowEditorSkin {
  * чата, чтобы проверить таймеры без ожидания. Сервер и экран чата даёт приложение (`testChat`).
  */
 export function FlowTestChat({ testChat, advanceSteps = DEFAULT_ADVANCE_STEPS, skin, ...editor }: FlowTestChatProps) {
-  const labels = useFlowLabels().testChat;
+  const { testChat: labels, notices } = useFlowLabels();
+  const noticeLines = useMemo(() => flowNoticeLines(notices), [notices]);
   const controller = useFlowTestChat(testChat, editor.value);
   const testSkin = useMemo(() => withTestChat(skin), [skin]);
 
@@ -116,7 +118,7 @@ export function FlowTestChat({ testChat, advanceSteps = DEFAULT_ADVANCE_STEPS, s
       onReset={controller.reset}
       onClose={controller.close}
     >
-      {controller.chatId === null ? null : testChat.renderChat(controller.chatId)}
+      {controller.chatId === null ? null : testChat.renderChat(controller.chatId, { noticeLines })}
     </skin.FlowTestChatFrame>
   ) : null;
 

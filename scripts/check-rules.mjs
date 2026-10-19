@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Проверки правил репозитория, пять разделов:
+// Проверки правил репозитория:
 // 1. Слой поведения и скин: в `skins/tandem/src`,
 //    `packages/react/src` (кроме словаря `labels.tsx`) и экранах пакетов нет кириллицы в коде — ни в строках, ни в
 //    тексте JSX; все надписи берутся из словаря. Комментарии на русском разрешены.
@@ -14,6 +14,9 @@
 //    на них в журнале быть не должно, только полные (на GitHub).
 // 7. Вход `./format` пакета сценариев (формат, движок, проверка) идёт и в браузер: из чужого он берёт только `zod`,
 //    без базы, сервера, ядра и `node:`.
+// 8. В пакетах, скинах и приложениях нет локальных путей машины автора (папка картинок чата в /tmp, внешний диск, домашняя папка):
+//    снимки и временные файлы — в `screenshotFolder()` из `apps/demo/e2e/support/screen.ts`.
+import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -266,6 +269,36 @@ for (const folder of packageFolders) {
     .forEach((line, lineIndex) => {
       if (/\]\(\.{1,2}\//.test(line)) problems.push(`${folder}/CHANGELOG.md:${lineIndex + 1}: относительная ссылка не работает у читателя из node_modules, дайте полную (GitHub)`);
     });
+}
+
+// Локальные пути машины автора (папка картинок для чата, внешний диск, домашняя папка) в коде и текстах пакетов.
+// Публичная выгрузка их не пропустит, но ловит только при выпуске — здесь ловится на каждом push.
+// Образцы собраны из частей: иначе сама проверка попала бы под запретный список открытой выгрузки.
+const localPath = new RegExp(["/tmp/" + "pa" + "seo" + "-images", "/Vol" + "umes/", "/Us" + "ers/(?!somebody\\b)", "/home/" + "ykur" + "ilov"].map((part) => part.replaceAll("/", "\\/")).join("|"));
+const binaryFile = /\.(png|jpe?g|webp|gif|ico|woff2?|ttf|mp3|mp4|wav|webm|sqlite|db|zip|gz)$/i;
+const generatedFolders = new Set(["node_modules", "dist", ".next", ".turbo", "coverage", "test-results", "playwright-report"]);
+/** Файлы под git; копия без `.git` (прогон на другой машине) — обход папок без зависимостей и сборок. */
+function repositoryFiles(folders) {
+  try {
+    return execFileSync("git", ["ls-files", "--", ...folders], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).split("\n");
+  } catch {
+    const walk = (folder) =>
+      readdirSync(join(root, folder), { withFileTypes: true }).flatMap((entry) => {
+        if (entry.isDirectory()) return generatedFolders.has(entry.name) ? [] : walk(`${folder}/${entry.name}`);
+        return entry.isFile() ? [`${folder}/${entry.name}`] : [];
+      });
+    return folders.flatMap(walk);
+  }
+}
+const trackedFiles = repositoryFiles(["packages", "skins", "apps"]).filter(
+  (file) => file && !binaryFile.test(file) && existsSync(join(root, file)),
+);
+for (const file of trackedFiles) {
+  readFileSync(join(root, file), "utf8").split("\n").forEach((line, lineIndex) => {
+    if (localPath.test(line)) {
+      problems.push(`${file}:${lineIndex + 1}: локальный путь «${line.match(localPath)[0]}» — снимки и временные файлы кладите в screenshotFolder() из apps/demo/e2e/support/screen.ts`);
+    }
+  });
 }
 
 const found = [...new Set(problems)];

@@ -41,6 +41,33 @@ describe("runAgentTurn: настройки инструментов хода", (
     ]);
   });
 
+  it("repairToolInput приложения доходит до хода: своя починка выполняет вызов, в журнале — правка приложения", async () => {
+    const logged: string[] = [];
+    const execute = vi.fn(async (_input: { facts: string[] }) => "ok");
+    const remember = tool({ description: "Запомнить.", inputSchema: z.object({ facts: z.array(z.string()) }), execute });
+    await runTurn(callingModel("remember", '{"facts": ["тайный факт"'), {
+      tools: { remember },
+      repairToolInput: ({ text }) => text + "]}",
+      logError: (line) => logged.push(line),
+    });
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(logged).toHaveLength(1);
+    expect(logged[0]).toContain("дописаны скобки ×2");
+  });
+
+  it("repairToolInput: встроенная не справилась, своя — да → «правка приложения»", async () => {
+    const logged: string[] = [];
+    const execute = vi.fn(async (_input: { facts: string[] }) => "ok");
+    const remember = tool({ description: "Запомнить.", inputSchema: z.object({ facts: z.array(z.string()) }), execute });
+    await runTurn(callingModel("remember", '{"facts": ["тайный факт'), {
+      tools: { remember },
+      repairToolInput: ({ text }) => text + '"]}',
+      logError: (line) => logged.push(line),
+    });
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(logged[0]).toContain("правка приложения");
+  });
+
   it("приложение подняло предел для своего инструмента — результат не режется (US4 сц. 2)", async () => {
     const logged: string[] = [];
     const model = callingModel("list_tasks", "{}");

@@ -39,6 +39,7 @@ import { createToolQueue, resolveSequentialTools } from "./agent-run/sequential-
 import type { SequentialToolsSetting, ToolQueue } from "./agent-run/sequential-tools";
 import { resolveToolTimeout } from "./agent-run/tool-timeout";
 import type { ToolTimeoutSetting } from "./agent-run/tool-timeout";
+import type { RepairToolInput } from "./agent-run/repair-tool-call";
 import { resolveTurnLimits } from "./agent-run/turn-limits";
 import type { MaxOutputTokensSetting, TurnTimeoutSetting } from "./agent-run/turn-limits";
 import { resolveModelSilence, resolveTimeoutMs } from "./provider-errors/model-silence";
@@ -68,6 +69,7 @@ import type { BranchState } from "./app-state/branch-state";
 import { createStateChanged } from "./app-state/state-changed";
 import type { StateChangeReason, StateChangedHandler } from "./app-state/state-changed";
 import { CLOSED_STATE_KEY, closureOfState, hiddenStateKeyOf, isStateMessage, publicMessages, stateMessage } from "./app-state/state-messages";
+import type { AppNoticeViews } from "./app-state/state-messages";
 import type { BranchFork } from "./conversation/branches";
 import { toAgentChatMessage } from "./conversation/to-agent-chat-message";
 import { newStoredMessage, subjectOfChat } from "./conversation/types";
@@ -288,6 +290,13 @@ export interface AgentSettings {
    * по `browserToolTimeoutMs`.
    */
   toolTimeoutMs?: ToolTimeoutSetting;
+  /**
+   * Своя починка кривых аргументов инструмента. Зовётся, когда встроенная (лишние и забытые скобки, строки, типы, JSON
+   * внутри строки) не справилась: `({ toolName, text, error }) => починенный JSON-текст | undefined`. Результат тоже
+   * проверяется схемой инструмента. Упала или вернула `undefined` — модель получает короткую ошибку в 1–2 строки.
+   * Встроенную можно взять за основу: `repairToolArguments(text)`.
+   */
+  repairToolInput?: RepairToolInput;
   /**
    * Серверные инструменты с последствиями («спиши деньги», «забронируй слот»), которые не должны идти одновременно:
    * `true` — все, список — только названные. Такой вызов ждёт всех начатых раньше вызовов хода, а начатые после ждут
@@ -595,6 +604,12 @@ export interface ChatServiceOptions {
    * @throws TypeError (при создании службы) неверное имя.
    */
   privateStateKeys?: readonly string[];
+  /**
+   * Проекции пометок приложения (`kind: "app"`) для экрана при праве `appNotices`: имя пометки → безопасные данные
+   * (`(data) => ({ silentMs })`). Пометка без проекции в браузер не уходит, даже с правом. Сценарии (`flow.withChat`)
+   * добавляют свои сами.
+   */
+  appNoticeViews?: AppNoticeViews;
 }
 
 /** Ход, для которого берётся инструкция чата; у сжатия его нет. */
@@ -1378,6 +1393,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     providerFallback,
     cacheMissLog,
     toolTimeoutMs: toolTimeoutSetting,
+    repairToolInput,
     sequentialTools: sequentialToolsSetting,
     timeZone: timeZoneSetting,
     modelSilenceTimeout,
@@ -1717,11 +1733,19 @@ export function createChatService(input: ChatServiceOptions): ChatService {
 
   let warnedErrorDetailsWithoutModel = false;
 
-  /** `errorDetails: true` при `modelDetails: false` молча выключено — одна строка в журнал на службу, чтобы админ не гадал. */
+  let warnedAppNoticesWithoutModel = false;
+
+  /** `errorDetails: true` или `appNotices: true` при `modelDetails: false` молча выключено — одна строка в журнал на службу, чтобы админ не гадал. */
   function warnErrorDetailsWithoutModel(given: Partial<ChatCapabilities> | undefined | void): void {
-    if (warnedErrorDetailsWithoutModel || given?.errorDetails !== true || given.modelDetails !== false) return;
-    warnedErrorDetailsWithoutModel = true;
-    logError("chatCapabilities: errorDetails: true при modelDetails: false выключено — подробности сбоя называют модель и провайдера.");
+    if (given?.modelDetails !== false) return;
+    if (!warnedErrorDetailsWithoutModel && given.errorDetails === true) {
+      warnedErrorDetailsWithoutModel = true;
+      logError("chatCapabilities: errorDetails: true при modelDetails: false выключено — подробности сбоя называют модель и провайдера.");
+    }
+    if (!warnedAppNoticesWithoutModel && given.appNotices === true) {
+      warnedAppNoticesWithoutModel = true;
+      logError("chatCapabilities: appNotices: true при modelDetails: false выключено — служебные пометки показывают работу сценария.");
+    }
   }
 
   async function askCapabilities(userId: string, chat: Chat): Promise<ChatCapabilities> {
@@ -2013,6 +2037,8 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     const capabilities = await capabilitiesOf(userId, withClosure(stored, closed), scope);
     // Мысли, служебные инструменты и модель — по правам зрителя (`reasoning`, `toolDetails`, `modelDetails`); хранилище их держит.
     const visibility = clientVisibilityOf(capabilities, isScreenTool);
+    // Пометки приложения — только с правом и только проекции для экрана: сырые `data` (сигналы приложения) не уходят.
+    const screenNotices = capabilities.appNotices && options.appNoticeViews ? { appNoticeViews: options.appNoticeViews } : {};
     // Недоставленные ответы — с пометкой: экран подпишет «не доставлено».
     const undelivered = undeliveredIdsOf(branch);
     const markedUndelivered = (message: AgentChatMessage): AgentChatMessage =>
@@ -2029,9 +2055,12 @@ export function createChatService(input: ChatServiceOptions): ChatService {
             .filter((message) => message.id !== runningAnswerId || resumeBases.get(chatId)?.id === runningAnswerId)
             .map((message) => (message.id === runningAnswerId ? resumeBases.get(chatId)! : markedUndelivered(toAgentChatMessage(message)))),
           hiddenStateKey,
+          screenNotices,
         ),
       ),
-      ...(pending.length > 0 && { pendingMessages: visible(publicMessages(pending.map(toAgentChatMessage), hiddenStateKey)) }),
+      ...(pending.length > 0 && {
+        pendingMessages: visible(publicMessages(pending.map(toAgentChatMessage), hiddenStateKey, screenNotices)),
+      }),
       // Ход передаётся новому ответу на поправки: он вот-вот пойдёт, поток подождёт его.
       running: runningId !== null || handOffs.has(chatId),
       detachedAnswer: isDetachedAnswer(answerBeforeCorrections(branch), runningId),
@@ -2400,6 +2429,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
           ...(staff && { staff }),
           toolResultLimit,
           toolTimeout,
+          ...(repairToolInput && { repairToolInput }),
           sequentialTools,
           toolQueue,
           stepContextTimeoutMs,
@@ -4048,6 +4078,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
           usageSource: "background",
           toolResultLimit,
           toolTimeout,
+          ...(repairToolInput && { repairToolInput }),
           sequentialTools,
           modelSilence,
           logError,

@@ -8,6 +8,7 @@ import { TandemChatList } from "./chat-list";
 import { TandemChatNotFound } from "./chat-not-found";
 import { TandemChatWorkspace } from "./chat-workspace";
 import { TandemCompactionDivider } from "./compaction-divider";
+import { TandemServiceLine } from "./service-line";
 import { TandemDiagram, tandemDiagramColors } from "./diagram";
 import { TandemLiveDemo, tandemDemoColors } from "./live-demo";
 import { TandemComposer } from "./composer";
@@ -52,6 +53,7 @@ export const tandemSkin: ChatSkin & ChatListSkin & AgentPanelSkin = {
   ChatClosedNotice: TandemChatClosedNotice,
   ErrorNotice: TandemErrorNotice,
   CompactionDivider: TandemCompactionDivider,
+  ServiceLine: TandemServiceLine,
   ChatNotFound: TandemChatNotFound,
   Composer: TandemComposer,
   ChatWorkspace: TandemChatWorkspace,
@@ -93,6 +95,7 @@ export {
   TandemChatNotFound,
   TandemChatWorkspace,
   TandemCompactionDivider,
+  TandemServiceLine,
   TandemComposer,
   TandemConnectionNotice,
   TandemDiagram,

@@ -73,6 +73,7 @@ import type { SeenTexts, TurnReplyChecks } from "./reply-checks";
 import { erasableStepStart, STEP_RESET_PART_TYPE, STEPS_MAY_RESET_PART_TYPE } from "./step-reset";
 import type { NextAttempt, ProviderFallbackSetting } from "./next-attempt";
 import { createRepairToolCall, describeToolInputRepair } from "./repair-tool-call";
+import type { RepairToolInput } from "./repair-tool-call";
 import { createToolQueue, withSequentialTools } from "./sequential-tools";
 import type { ResolvedSequentialTools, ToolQueue } from "./sequential-tools";
 import { trackToolErrors } from "./tool-errors";
@@ -365,6 +366,8 @@ export interface AgentTurnInput {
   providerOutages?: ProviderOutages;
   /** Сроки ответа серверных инструментов по имени, уже проверенные. Нет — 120 с всем. */
   toolTimeout?: ResolvedToolTimeout;
+  /** Своя починка кривых аргументов инструмента (`agent.repairToolInput`). */
+  repairToolInput?: RepairToolInput;
   /** Серверные инструменты, которые идут по одному (FR-049), уже проверенные. Нет — все вместе. */
   sequentialTools?: ResolvedSequentialTools;
   /**
@@ -1429,6 +1432,7 @@ async function openAttempt(
     memory: _memory,
     resume: _resume,
     toolTimeout: _toolTimeout,
+    repairToolInput: _repairToolInput,
     sequentialTools: _sequentialTools,
     now: _now,
     usageSource: _usageSource,
@@ -1569,6 +1573,7 @@ async function openAttempt(
     abortSignal: attemptSignal,
     // Кривые аргументы чинятся по схеме без обращения к модели; каждая починка — строкой в журнал.
     repairToolCall: createRepairToolCall({
+      ...(input.repairToolInput && { repairToolInput: input.repairToolInput }),
       onRepaired: (repair) => logError(describeToolInputRepair(repair, { chatId: input.chatId, modelId: found.profile.id, providerId })),
     }),
     // Размер контекста после ответа — по последнему шагу: у прежних шагов тот же префикс, сумма считала бы его много раз.
@@ -1775,6 +1780,7 @@ function helperRunContext(input: AgentTurnInput, toolQueue: ToolQueue, logError:
     logError,
     ...(input.toolResultLimit && { toolResultLimit: input.toolResultLimit }),
     ...(input.toolTimeout && { toolTimeout: input.toolTimeout }),
+    ...(input.repairToolInput && { repairToolInput: input.repairToolInput }),
     ...(input.sequentialTools && { sequentialTools: input.sequentialTools }),
     ...(input.providerFallback !== undefined && { providerFallback: input.providerFallback }),
     ...(input.providerOutages && { providerOutages: input.providerOutages }),
