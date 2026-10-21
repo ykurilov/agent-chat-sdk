@@ -106,6 +106,15 @@ OPENROUTER_API_KEY=…
 | Gemini 3.8 Flash (`gemini-3.8-flash`) | | | | да |
 | Claude Haiku 5.5 (`claude-haiku-5.5`) | | | | да (кэш на час) |
 
+Профиль `deepseek-4.1-flash` с версии 0.70.1 использует **V4.1 Flash 1017**. Имя в меню остаётся
+«DeepSeek 4.1 Flash». Прямой DeepSeek обслуживает 1017 через `deepseek-flash`; OpenRouter - через
+`deepseek/deepseek-v4.1-flash-1017`, Together - `deepseek-ai/DeepSeek-V4.1-Flash-1017`, Fireworks -
+`accounts/fireworks/models/deepseek-v4p1-flash-1017`. Контекст профиля - 1 миллион токенов.
+Базовые цены OpenRouter за миллион: $0,15 вход, $0,60 выход, $0,003 чтение кэша; по будням 01-04 и 06-10 UTC
+вдвое выше. Отдельная запись кэша не тарифицируется, часовая оценка записи равна цене входа.
+Together и Fireworks: $0,30 / $1,20 / $0,006. Проверка каталогов и живые результаты -
+отчёт 1017. Собственные переопределения id и цен обновляются в приложении.
+
 | `providerId` | Переменная с ключом | Особенности |
 |---|---|---|
 | `deepseek` | `DEEPSEEK_API_KEY` | кэш ведёт сам поставщик |

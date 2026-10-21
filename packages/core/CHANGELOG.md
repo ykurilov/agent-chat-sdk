@@ -1,5 +1,11 @@
 # @ykurilov/agent-chat-core
 
+## 0.70.1
+
+### Patch Changes
+
+- ba86a4a: Стандартный DeepSeek 4.1 Flash обновлён до 1017 у OpenRouter, Together и Fireworks. У OpenRouter обновлены цены и расписание пикового тарифа; id профиля сохранён.
+
 ## 0.70.0
 
 ### Minor Changes

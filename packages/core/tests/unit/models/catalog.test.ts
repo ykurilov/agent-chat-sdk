@@ -73,8 +73,8 @@ describe("resolveLanguageModel", () => {
   });
 
   it.each([
-    ["fireworks", "FIREWORKS_API_KEY", "accounts/fireworks/models/deepseek-v4p1-flash"],
-    ["together", "TOGETHER_API_KEY", "deepseek-ai/DeepSeek-V4.1-Flash"],
+    ["fireworks", "FIREWORKS_API_KEY", "accounts/fireworks/models/deepseek-v4p1-flash-1017"],
+    ["together", "TOGETHER_API_KEY", "deepseek-ai/DeepSeek-V4.1-Flash-1017"],
   ])("собирает модель провайдера %s с id из профиля", (providerId, variable, providerModelId) => {
     const model = resolve(standardCatalog, "deepseek-4.1-flash", providerId, { [variable]: "test-key" });
     expect(typeof model).toBe("object");

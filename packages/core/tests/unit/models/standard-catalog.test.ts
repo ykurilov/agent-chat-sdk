@@ -10,9 +10,9 @@ const expected = {
     encrypted: false,
     providers: {
       deepseek: "deepseek-flash",
-      fireworks: "accounts/fireworks/models/deepseek-v4p1-flash",
-      together: "deepseek-ai/DeepSeek-V4.1-Flash",
-      openrouter: "deepseek/deepseek-v4.1-flash",
+      fireworks: "accounts/fireworks/models/deepseek-v4p1-flash-1017",
+      together: "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+      openrouter: "deepseek/deepseek-v4.1-flash-1017",
     },
   },
   "glm-5.3-flash": {
@@ -131,5 +131,21 @@ describe("Claude Haiku 5.5", () => {
       tiers: [{ inputTokensAbove: 99_999, inputPerMillion: 0.5, outputPerMillion: 2.5, cachedInputPerMillion: 0.05, cacheWritePerMillion: 0.625, cacheWrite1hPerMillion: 1 }],
       cacheWriteTtl: "1h",
     });
+  });
+});
+
+describe("DeepSeek 4.1 Flash 1017", () => {
+  const model = standardCatalog.models.find((candidate) => candidate.id === "deepseek-4.1-flash")!;
+
+  it("сохраняет контекст 1M и цены Together/Fireworks; OpenRouter использует новый тариф", () => {
+    expect(model.contextWindowTokens).toBe(1_000_000);
+    for (const provider of ["together", "fireworks"]) {
+      expect(model.pricing?.[provider]).toEqual({ inputPerMillion: 0.3, outputPerMillion: 1.2, cachedInputPerMillion: 0.006 });
+    }
+    expect(model.pricing?.openrouter).toEqual({
+      inputPerMillion: 0.15, outputPerMillion: 0.6, cachedInputPerMillion: 0.003, cacheWrite1hPerMillion: 0.15,
+      peakHours: model.pricing?.deepseek?.peakHours,
+    });
+    expect(model.pricing?.openrouter?.cacheWritePerMillion).toBeUndefined();
   });
 });
