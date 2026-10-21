@@ -3,6 +3,7 @@ import { MissingProviderKeyError } from "../models/model-catalog";
 import type { ProviderDescription } from "../models/model-catalog";
 import { errorStatusCode, errorText, underlyingError } from "./error-fields";
 import { isContextOverflow, isNotRetryable, looksTransient } from "./error-signs";
+import { isNetworkFailure } from "./network-failure";
 import { isProviderSilence } from "./transient-retry-middleware";
 
 /** 403 с явными словами о ключе: ключ не принят. */
@@ -53,8 +54,9 @@ export function classifyProviderError(
   // Провайдер не начал отвечать или замолчал посреди ответа — для собеседника это та же перегрузка.
   if (isProviderSilence(cause)) return "overloaded";
   if (status !== undefined) return status >= 500 ? "overloaded" : "other";
-  // Кода нет — решает текст.
+  // Кода ответа нет — текстовые признаки и ошибка транспорта.
   if (RATE_LIMIT_SIGNS.test(text)) return "rate_limited";
+  if (isNetworkFailure(cause)) return "overloaded";
   return looksTransient(text) ? "overloaded" : "other";
 }
 

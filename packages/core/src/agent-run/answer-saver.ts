@@ -39,6 +39,8 @@ export function createAnswerSaver(
   onTakenOver: () => void,
   /** Продолжение: сообщение, к которому дописываются куски. */
   existing?: AgentChatMessage,
+  /** Правка частей перед каждой записью (заголовки раздумий); сборка из кусков её не видит. */
+  decorateParts: (parts: AgentChatMessage["parts"]) => AgentChatMessage["parts"] = (parts) => parts,
 ) {
   let feed!: ReadableStreamDefaultController<UIMessageChunk>;
   let latest: AgentChatMessage["parts"] = existing?.parts ?? [];
@@ -83,7 +85,7 @@ export function createAnswerSaver(
     const writtenChanges = changes;
     lastWriteAt = Date.now();
     lastSignAt = lastWriteAt;
-    const parts = latest;
+    const parts = decorateParts(latest);
     try {
       await storage.updateStreamingMessage(messageId, {
         parts,

@@ -34,6 +34,7 @@ export interface TimerChatSetup {
   defaultTimeZone?: string;
   timers?: AgentFlowOptions["timers"];
   onTransition?: AgentFlowOptions["onTransition"];
+  onReopen?: AgentFlowOptions["onReopen"];
 }
 
 export function timerChat(setup: TimerChatSetup = {}) {
@@ -55,6 +56,7 @@ export function timerChat(setup: TimerChatSetup = {}) {
       ...(setup.defaultTimeZone && { defaultTimeZone: setup.defaultTimeZone }),
       ...(setup.timers && { timers: setup.timers }),
       ...(setup.onTransition && { onTransition: setup.onTransition }),
+      ...(setup.onReopen && { onReopen: setup.onReopen }),
     },
     { judge, clientCard: emptyClientCard() },
   );

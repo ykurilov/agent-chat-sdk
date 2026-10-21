@@ -8,12 +8,12 @@ import type {
 import { APICallError } from "ai";
 import { errorHeaders, errorName, errorStatusCode, errorText, requestedRetryMs } from "./error-fields";
 import { isContextOverflow, isNotRetryable, looksTransient } from "./error-signs";
+import { isNetworkFailure } from "./network-failure";
 import { DEFAULT_MODEL_SILENCE } from "./model-silence";
 import type { ModelSilenceLimits } from "./model-silence";
 
 /** Паузы между тихими повторами: вместе около 10 с (FR-016a). */
 const RETRY_DELAYS_MS = [1_000, 3_000, 6_000];
-const RETRY_BUDGET_MS = RETRY_DELAYS_MS.reduce((sum, delay) => sum + delay, 0);
 /** Случайная добавка к паузе — до 25%: много чатов после общего сбоя не повторяют разом (FR-019). */
 const RETRY_JITTER = 0.25;
 /**
@@ -64,6 +64,7 @@ function isTransient(error: unknown): boolean {
   if (isNotRetryable(text, status) || isContextOverflow(text, status)) return false;
   if (status !== undefined) return RETRYABLE_STATUS_CODES.has(status) || status >= 500;
   if (APICallError.isInstance(error) && error.isRetryable) return true;
+  if (isNetworkFailure(error)) return true;
   return looksTransient(text);
 }
 
@@ -88,6 +89,8 @@ export interface TransientRetryContext {
    * каждом молчании: переходить ли есть куда, ход знает только в этот момент.
    */
   repeatSilence?: boolean | (() => boolean);
+  /** Паузы повторов, пока есть запасной; undefined — прежние 1/3/6 с. Молчание сохраняет свою политику. */
+  retryDelaysMs?: () => readonly number[] | undefined;
 }
 
 /**
@@ -103,6 +106,8 @@ export function createTransientRetryMiddleware(context: TransientRetryContext = 
   const silence = context.silence ?? DEFAULT_MODEL_SILENCE;
   const repeatSilence = context.repeatSilence ?? true;
   const silenceAttempts = () => ((typeof repeatSilence === "function" ? repeatSilence() : repeatSilence) ? MAX_SILENCE_ATTEMPTS : 1);
+  // Одна обёртка на попытку хода, несколько шагов: после начала ответа быстрый переход больше недоступен.
+  let answerStarted = false;
   /** Строка `[молчание модели]`, когда срок сработал: до первого куска или между кусками. */
   const onSilence = (waited: "первый-кусок" | "следующий-кусок", timeoutMs: number) =>
     context.logError?.(
@@ -116,10 +121,11 @@ export function createTransientRetryMiddleware(context: TransientRetryContext = 
       try {
         return await attemptOnce();
       } catch (error) {
-        const delay = RETRY_DELAYS_MS[attempt];
+        const delays = !answerStarted && !isTimeoutError(error) ? context.retryDelaysMs?.() ?? RETRY_DELAYS_MS : RETRY_DELAYS_MS;
+        const delay = delays[attempt];
         if (isTimeoutError(error)) silences++;
         if (abortSignal?.aborted || delay === undefined || !isTransient(error) || silences >= silenceAttempts()) throw error;
-        const remainingMs = RETRY_BUDGET_MS - waitedMs;
+        const remainingMs = Math.max(0, delays.reduce((sum, value) => sum + value, 0) - waitedMs);
         const pauseMs = requestedPauseMs(error, remainingMs, now()) ?? Math.round(Math.min(delay * (1 + random() * RETRY_JITTER), remainingMs));
         context.logError?.(retryLine(context, attempt + 2, error, pauseMs));
         await pause(pauseMs, abortSignal);
@@ -130,7 +136,11 @@ export function createTransientRetryMiddleware(context: TransientRetryContext = 
 
   return {
     specificationVersion: "v4",
-    wrapStream: ({ model, params }) => withRetries(() => streamUntilFirstChunk(model, params, silence, onSilence), params.abortSignal),
+    wrapStream: async ({ model, params }) => {
+      const result = await withRetries(() => streamUntilFirstChunk(model, params, silence, onSilence), params.abortSignal);
+      answerStarted = true;
+      return result;
+    },
     wrapGenerate: ({ doGenerate, params }) => withRetries(doGenerate, params.abortSignal),
   };
 }

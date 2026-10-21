@@ -62,6 +62,7 @@ const stepPhrases: StepPhrases = {
 | `@ykurilov/agent-chat-memory/labels` | `memoryStepPhrases` | `englishMemoryStepPhrases` |
 | `@ykurilov/agent-chat-history-search/labels` | `historySearchStepPhrases` | `englishHistorySearchStepPhrases` |
 | `@ykurilov/agent-chat-background/labels` | `backgroundStepPhrases` | `englishBackgroundStepPhrases` |
+| `@ykurilov/agent-chat-skills/labels` | `skillsStepPhrases` | `englishSkillsStepPhrases` |
 
 Помощники (`HelperCallRow`) в простом виде — тоже шаг. Без своей фразы — по названию помощника (`title`, иначе
 внутреннее имя): «Помощник «researcher» работает» / «закончил». Внутреннее имя человеку ничего не скажет — дайте помощнику
@@ -72,6 +73,34 @@ const stepPhrases: StepPhrases = {
   helper_researcher: { running: "Ищу статьи по теме", done: "Нашёл статьи по теме" },
 };
 ```
+
+## Значки шагов (с 0.69, скин 28)
+
+В строке «Сделано N шагов» — ряд маленьких значков, по одному на шаг (больше 8 — «+N»). В раскрытом списке каждый шаг —
+«значок + фраза», раздумья тоже: заголовок раздумья или «Думал N сек». В живой строке — значок текущего шага.
+
+Значок — вид шага строкой (`StepIcon`): `thinking`, `read`, `edit`, `search`, `web`, `skill`, `mcp`, `image`, `video`,
+`check`, `snapshot`, `run`, `memory`, `helper`, `task`, `tool`. Своему инструменту задайте его рядом с фразами:
+
+```ts
+const stepPhrases: StepPhrases = {
+  edit_file: ({ input }) => ({ running: `Правлю ${pathOf(input)}`, done: `Правил ${pathOf(input)}`, icon: "edit" }),
+  take_screenshot: { running: "Смотрю экран", done: "Посмотрел экран", icon: "snapshot" },
+};
+```
+
+Нет `icon` — значок угадывается (`guessStepIcon`): инструменты пакетов SDK, MCP (`<префикс>__<имя>`), помощники
+(`helper_*`), слова имени (`edit_file` — правка, `read_file` — чтение, `run_tests` — проверка), иначе общий (`tool`).
+
+## Заголовки раздумий (с 0.69)
+
+Вместо «Думал 3 сек» — короткий заголовок: «Продумываю правила игры». Включается на сервере:
+`createChatService({ thoughtTitles })` (раздел «Значки шагов и заголовки раздумий» в
+[getting-started.md](./getting-started.md)). Экран берёт заголовок сам — из метаданных ответа (`thoughtTitles`), в
+простом виде (список и живая строка) и в подробном (`Reasoning.title`). Пока заголовка нет — «Думаю…»; не вышло —
+прежняя подпись. Заголовок виден и без права `reasoning` (если не выключено `showWithoutReasoning: false`): сервер шлёт
+пустое место раздумья — только у раздумья с заголовком — и заголовок, без текста; такое место в простом виде — шаг с
+заголовком, в подробном не показывается.
 
 ## Подписи
 
@@ -85,6 +114,8 @@ const stepPhrases: StepPhrases = {
 | `stepUnfinished(running)` / `stepUnfinishedUnknown` | «Пишу файл — не закончил» / «Шаг не закончен» |
 | `stepRepeated(phrase, count)` | «Поискал в интернете ×5» |
 | `thinking` | «Думаю» |
+| `thought(durationMs)` | раздумье без заголовка в списке: «Думал 4 сек», без времени — «Подумал» (0.69) |
+| `moreSteps(count)` | скрытые значки ряда: «+3» (0.69) |
 | `live(phrase)` | фраза с многоточием |
 | `stepsDone(count)` | «Сделан 1 шаг», «Сделано 3 шага» |
 | `helperRunning(name)` / `helperDone(name)` | «Помощник «X» работает» / «закончил» |
@@ -128,3 +159,7 @@ const stepPhrases: StepPhrases = {
 В Тандеме (`TandemWorkSteps`) живая строка — тихий текст с пульсирующей точкой (`data-work-live`), законченная —
 как «Думал N сек»: кнопка со стрелкой и список (`data-work-step`, `data-failed`).
 
+
+Версия 28 (необязательное, [skin-v28.md](./skin-v28.md)): `live.icon`, `done.items` (вызовы и раздумья со значками),
+`done.icons` и `done.moreIcons` (ряд значков), `Reasoning.title`. В Тандеме значок живой строки заменяет точку, ряд
+значков стоит рядом с «Сделано N шагов» (`data-step-icons`), у строк списка — свой значок (`data-step-icon`).

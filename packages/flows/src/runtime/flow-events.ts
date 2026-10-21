@@ -3,7 +3,7 @@ import type { AgentFlow, FlowExit } from "../format/flow-format";
 import { FLOW_CHAIN_LIMIT, FLOW_STATE_KEY, type FlowRun, type Transition } from "../engine/flow-run";
 import { stateById } from "../engine/flow-graph";
 import { describeCondition, nextTransition, type FlowEvent } from "../engine/next-transition";
-import { applyTransition, startRun } from "../engine/run-updates";
+import { applyTransition, reopenRun, startRun } from "../engine/run-updates";
 import { dayInProgress } from "../engine/flow-days";
 import { overdueOnEntry } from "../engine/timers";
 import { stateCard } from "../prompt/state-card";
@@ -66,6 +66,16 @@ export async function reportTransition(
 /** `FlowRun` из состояния чата; нет или не то — `null`. */
 export function storedRun(value: unknown): ChatFlowRun | null {
   return value && typeof value === "object" && typeof (value as FlowRun).state === "string" ? (value as ChatFlowRun) : null;
+}
+
+/**
+ * Разговор открыт заново (`flow.reopen`), а место в состоянии чата ещё «до»: оно догоняет отметку записи — конец снят,
+ * ряд касаний с первого шага от открытия. Уже догнало, не открывали или снова закончен — как есть.
+ */
+export function withReopen<T extends FlowRun>(flow: AgentFlow, run: T, record: Partial<Pick<FlowChatRecord, "reopenedAt" | "endedAt">> | null | undefined): T {
+  if (!record?.reopenedAt || record.endedAt) return run;
+  const at = Date.parse(record.reopenedAt);
+  return run.reopenedAt === at ? run : reopenRun(flow, run, at);
 }
 
 /** Где чат сейчас: из состояния ветки, а на пустой ветке — старт сценария. */
@@ -136,12 +146,12 @@ export function recordPlacement(record: Pick<FlowChatRecord, "stateId" | "placem
 export function chatRun(
   flow: AgentFlow,
   values: Record<string, unknown> | undefined,
-  record: Pick<FlowChatRecord, "stateId" | "placement"> | null | undefined,
+  record: (Pick<FlowChatRecord, "stateId" | "placement"> & Partial<Pick<FlowChatRecord, "reopenedAt" | "endedAt">>) | null | undefined,
   now: number,
   timeZone?: string,
 ): ChatFlowRun {
   const stored = storedRun(values?.[FLOW_STATE_KEY]);
-  if (stored) return stored;
+  if (stored) return withReopen(flow, stored, record);
   const placement = record ? recordPlacement(record) : null;
   return placement ? placedRun(flow, placement, now, timeZone) : startRun(flow, now);
 }
@@ -164,9 +174,9 @@ export async function runOutsideTurn(
   now: number,
   record?: FlowChatRecord | null,
 ): Promise<ChatFlowRun> {
-  const stored = storedRun(values?.[FLOW_STATE_KEY]);
-  if (stored) return stored;
   const found = record === undefined ? await runtime.store.getChat(chat.chatId) : record;
+  const stored = storedRun(values?.[FLOW_STATE_KEY]);
+  if (stored) return withReopen(flow, stored, found);
   if (!found?.placement) return startRun(flow, now);
   const timeZone = runtime.timeZones ? await runtime.timeZones.of(chat.ownerId, chat.chatId) : found.timeZone || undefined;
   return chatRun(flow, values, found, now, timeZone);

@@ -6,12 +6,17 @@ import { useId } from "react";
 import type { ComponentProps } from "react";
 import { TandemThinkingLabel } from "./thinking-label";
 
-/** Рассуждения модели: пока идут — живая надпись с временем, потом тихая строка «Думал N сек»; текст — по нажатию. */
-export function TandemReasoning({ text, streaming, durationMs, open, onOpenChange }: ComponentProps<ChatSkin["Reasoning"]>) {
+/**
+ * Рассуждения модели: пока идут — живая надпись с временем, потом тихая строка — заголовок раздумья (договор 28) или
+ * «Думал N сек»; текст — по нажатию.
+ */
+export function TandemReasoning({ text, streaming, durationMs, title: thoughtTitle, open, onOpenChange }: ComponentProps<ChatSkin["Reasoning"]>) {
   const labels = useChatLabels();
   const contentId = useId();
   const title = streaming ? (
     <TandemThinkingLabel />
+  ) : thoughtTitle ? (
+    thoughtTitle
   ) : durationMs === null ? (
     labels.reasoningRunning
   ) : (

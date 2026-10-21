@@ -19,8 +19,8 @@ export interface TransitionReason {
 /** Почему разговор закончился: конечная нода, срок вышел, человек пропал, канал заблокирован, своя причина приложения (`flow.end`). */
 export type FlowEndReason = "final" | "deadline" | "abandoned" | "blocked" | (string & {});
 
-/** Как чат попал в состояние: старт сценария, переход или перевод на новую версию. */
-export type FlowPathCause = TransitionDecider | "start" | "migrate";
+/** Как чат попал в состояние: старт сценария, переход, перевод на новую версию или открытие заново (`flow.reopen`, с 0.68). */
+export type FlowPathCause = TransitionDecider | "start" | "migrate" | "reopen";
 
 export interface FlowPathEntry {
   state: string;
@@ -85,6 +85,8 @@ export interface FlowRun {
   /** Когда разговор закончился. После конца таймеров и касаний нет. */
   endedAt?: number;
   endReason?: FlowEndReason;
+  /** Разговор открыт заново (`flow.reopen`): тишина, утреннее и «не завершил» считаются не раньше этого момента. С 0.68. */
+  reopenedAt?: number;
 }
 
 /** Ход «пишет первым» и что было до него. Ответ хода помечен «не доставлено» — счёт возвращается к этому. */

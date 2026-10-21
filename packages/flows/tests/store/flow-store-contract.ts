@@ -72,6 +72,7 @@ export function describeFlowStoreContract(open: () => Promise<SharedFlowStores>)
             updatedAt: at(1, 7),
             endedAt: null,
             endReason: null,
+            reopenedAt: null,
             pausedUntil: null,
             windowClosed: false,
             dayClosedOn: null,
@@ -536,6 +537,31 @@ export function describeFlowStoreContract(open: () => Promise<SharedFlowStores>)
           });
           expect(await first.endChat(input.chatId, { reason: "final", at: at(6) })).toMatchObject({ endedAt: at(5, 3), endReason: "deadline" });
           expect(await first.endChat("нет-такого", { reason: "final", at: at(6) })).toBeNull();
+        }));
+
+      it("105 открыть заново: только тот конец, что прочитан; снимает конец, ставит отметку; второй раз и другая копия — null", () =>
+        withStores(async ({ first, second }) => {
+          const input = chatInput();
+          await first.pinChat(input);
+          expect(await first.reopenChat(input.chatId, { endedAt: at(5), at: at(9) })).toBeNull();
+          await first.endChat(input.chatId, { reason: "abandoned", at: at(5, 3) });
+          expect(await second.reopenChat(input.chatId, { endedAt: at(4), at: at(9) })).toBeNull();
+          expect(await second.reopenChat(input.chatId, { endedAt: at(5, 3), at: at(9, 7) })).toMatchObject({ endedAt: null, endReason: null, reopenedAt: at(9, 7) });
+          expect(await first.reopenChat(input.chatId, { endedAt: at(5, 3), at: at(10) })).toBeNull();
+          expect(await first.getChat(input.chatId)).toMatchObject({ endedAt: null, endReason: null, reopenedAt: at(9, 7) });
+          expect(await first.reopenChat("нет-такого", { endedAt: at(5, 3), at: at(10) })).toBeNull();
+          // Открытый заново снова кончается и снова открывается.
+          await first.endChat(input.chatId, { reason: "abandoned", at: at(20) });
+          expect(await first.reopenChat(input.chatId, { endedAt: at(20), at: at(30) })).toMatchObject({ endedAt: null, reopenedAt: at(30) });
+        }));
+
+      it("105 гонка двух копий: открывает одна", () =>
+        withStores(async ({ first, second }) => {
+          const input = chatInput();
+          await first.pinChat(input);
+          await first.endChat(input.chatId, { reason: "abandoned", at: at(5) });
+          const results = await Promise.all([first.reopenChat(input.chatId, { endedAt: at(5), at: at(9) }), second.reopenChat(input.chatId, { endedAt: at(5), at: at(9) })]);
+          expect(results.filter((result) => result !== null)).toHaveLength(1);
         }));
 
       it("законченный чат таймер не берёт, даже если срок записали после конца", () =>

@@ -141,7 +141,7 @@ export function createFlowFinish(input: { runtime: FlowRuntime; onFinish?: (even
       const record = await runtime.store.getChat(chatId);
       const chat = record ? { dayClosedOn: record.dayClosedOn, pausedUntil: record.pausedUntil, windowClosed: record.windowClosed } : undefined;
       const allowed = firstMessages
-        ? await firstMessages.check({ ownerId, chatId, at, timeZone, schedule, ...(chat && { chat }) })
+        ? await firstMessages.check({ ownerId, chatId, at, timeZone, schedule, programDay: flowDay(run, at, timeZone, schedule).day, ...(chat && { chat }) })
         : { allowed: true as const };
       // Нельзя писать сейчас — прощания нет: разговор уже закрыт, таймеров после конца нет.
       if (!allowed.allowed) return;

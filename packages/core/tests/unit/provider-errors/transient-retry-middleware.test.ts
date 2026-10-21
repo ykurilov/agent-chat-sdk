@@ -118,6 +118,31 @@ describe("transientRetryMiddleware", () => {
     if (!settled.ok) expect(APICallError.isInstance(settled.error) && settled.error.statusCode).toBe(503);
   });
 
+  it("следующий шаг после начавшегося ответа — прежние повторы, даже когда callback ещё предлагает быстрый переход", async () => {
+    const { model, calls } = modelWith([answer, fail(503)], { random: () => 0, retryDelaysMs: () => [] });
+    const first = await start(model);
+    expect(first.ok).toBe(true);
+    if (first.ok) await readAll(first.value.stream);
+    const next = start(model);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(calls).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect((await next).ok).toBe(false);
+    expect(calls).toHaveLength(5);
+  });
+
+  it("retryDelaysMs: [] не выключает повтор молчания до первого куска", async () => {
+    const { model, calls } = modelWith([silentStream], {
+      random: () => 0, retryDelaysMs: () => [], silence: { firstChunkMs: 100, betweenChunksMs: 100 },
+    });
+    const result = start(model);
+    await vi.advanceTimersByTimeAsync(1_200);
+    const settled = await result;
+    expect(calls).toHaveLength(2);
+    expect(settled.ok).toBe(false);
+    if (!settled.ok) expect(settled.error).toBeInstanceOf(FirstChunkTimeoutError);
+  });
+
   it("ошибка сети без статуса — тоже временная", async () => {
     const { model, calls } = modelWith([fail(undefined), answer]);
     const result = start(model);

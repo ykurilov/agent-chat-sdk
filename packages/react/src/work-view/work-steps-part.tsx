@@ -7,7 +7,7 @@ import type { WorkLayoutItem } from "./work-layout";
 const keepClosed = () => {};
 
 /**
- * Живая строка или свёрнутые шаги простого вида. Раскрытие — в хранилище чата под своим ключом (`…:work`), отдельно от
+ * Живая строка или свёрнутые шаги простого вида; скин 28 получает значки и список со раздумьями. Раскрытие — в хранилище чата под своим ключом (`…:work`), отдельно от
  * раскрытия мыслей и строк подробного вида. Скин без `WorkSteps` (до версии 23) получает строку `ToolCallRow`: фраза
  * в `title`, входа нет, а результат — список понятных фраз текстом, по строке на шаг. Ни кода, ни путей.
  */
@@ -24,9 +24,18 @@ export function WorkStepsPart({
   const [open, setOpen] = usePartOpen(expanded, `${item.key}:work`);
   if (skin.WorkSteps) {
     return item.kind === "live" ? (
-      <skin.WorkSteps state="live" phrase={item.phrase} />
+      <skin.WorkSteps state="live" phrase={item.phrase} icon={item.icon} />
     ) : (
-      <skin.WorkSteps state="done" steps={item.steps} count={item.count} open={open} onOpenChange={setOpen} />
+      <skin.WorkSteps
+        state="done"
+        steps={item.steps}
+        count={item.count}
+        items={item.items}
+        icons={item.icons}
+        moreIcons={item.moreIcons}
+        open={open}
+        onOpenChange={setOpen}
+      />
     );
   }
   if (item.kind === "live") return <skin.ToolCallRow toolName={item.phrase} title={item.phrase} state="running" open={false} onOpenChange={keepClosed} />;

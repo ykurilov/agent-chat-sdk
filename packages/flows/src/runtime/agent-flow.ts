@@ -36,6 +36,8 @@ import type {
   FlowAdoptInput,
   FlowAttachment,
   FlowEndInput,
+  FlowReopenInput,
+  FlowReopenResult,
   FlowChatOptions,
   FlowJudge,
   FlowJudgeEntry,
@@ -71,6 +73,7 @@ import {
   runOutsideTurn,
   storedRun,
   withPending,
+  withReopen,
   type ChatFlowRun,
   type FlowRuntime,
   type PinnedFlow,
@@ -707,6 +710,61 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
     return result;
   }
 
+  // ---------- Открыть заново ----------
+
+  /** Концы, после которых разговор не открывается: дошёл до конца, срок вышел, канал заблокирован. */
+  const CLOSED_FOR_GOOD = new Set(["final", "deadline", "blocked"]);
+
+  async function reopen({ ownerId, chatId, reason, endedAfter }: FlowReopenInput): Promise<FlowReopenResult> {
+    const pinned = await chatFlow(ownerId, chatId);
+    const record = await store.getChat(chatId);
+    if (!pinned || !record || record.ownerId !== ownerId) return { reopened: false, reason: "not_flow" };
+    if (record.endedAt === null) return { reopened: false, reason: "not_ended" };
+    const endReason = record.endReason ?? "final";
+    if (CLOSED_FOR_GOOD.has(endReason)) return { reopened: false, reason: endReason as "final" | "deadline" | "blocked" };
+    const { values } = await (await portOf({ ownerId, chatId })).getChatState(ownerId, chatId);
+    const run = await runOutsideTurn(runtime, { ownerId, chatId }, pinned.flow, values, now(), record);
+    const at = chatTime(run, now());
+    // Конец записан по часам чата; `endedAfter` — по часам сервера.
+    if (endedAfter && Date.parse(record.endedAt) - (run.timeOffset ?? 0) < endedAfter.getTime()) return { reopened: false, reason: "ended_too_long_ago" };
+    const timeZone = await timeZones.of(ownerId, chatId);
+    const schedule = pinned.flow.schedule;
+    // Срок программы уже вышел: открытый разговор тут же закончился бы сроком — не открываем.
+    const deadline = schedule ? deadlineAt(withDayAnchor(run, timeZone, schedule), timeZone, schedule) : null;
+    if (deadline !== null && deadline <= at) return { reopened: false, reason: "deadline_passed" };
+    const reopened = await store.reopenChat(chatId, { endedAt: record.endedAt, at: new Date(at).toISOString() });
+    if (!reopened) return { reopened: false, reason: "not_ended" };
+    const { ended: _ended, ...live } = pinned;
+    remember(chatId, live);
+    const next = withReopen(pinned.flow, run, reopened);
+    await reschedule(ownerId, chatId, next, next.answerId ?? null);
+    const { answerId: _answerId, firstReasons: _firstReasons, ...plain } = next;
+    const day = schedule ? flowDay(withDayAnchor(plain, timeZone, schedule), at, timeZone, schedule).day : null;
+    const { onReopen } = options;
+    if (onReopen) {
+      const event = {
+        ownerId,
+        chatId,
+        flowId: pinned.flowId,
+        versionId: pinned.versionId,
+        endReason,
+        endedAt: new Date(Date.parse(record.endedAt)),
+        ...(reason !== undefined && { reason }),
+        day,
+        state: next.state,
+        tags: stateById(pinned.flow, next.state)?.tags ?? [],
+        run: plain,
+        at: new Date(at),
+      };
+      track(
+        Promise.resolve()
+          .then(() => onReopen(event))
+          .catch((error) => logError(`[сценарий] чат=${chatId} onReopen упал: ${errorText(error)}`)),
+      );
+    }
+    return { reopened: true };
+  }
+
   // ---------- Перенос чата ----------
 
   /** Контекст первого хода перенесённого чата: в его состоянии уже заданное место, а не старт сценария. */
@@ -874,6 +932,7 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
     },
     adopt,
     end,
+    reopen,
     admit: (input) => admit()(input),
     pause: (input) => pauses().pause(input),
     resume: (input) => pauses().resume(input),

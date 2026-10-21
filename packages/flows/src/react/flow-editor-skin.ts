@@ -215,6 +215,9 @@ export interface FlowStateTimingProps {
   /** Свои касания действуют столько дней, считая день входа; `null` — всё время в ноде. С 0.55. */
   nudgesDays: number | null;
   onNudgesDaysChange(days: number | null): void;
+  /** Свои касания действуют до этого дня программы включительно; `null` — без такого предела. С 0.67. */
+  nudgesUntilProgramDay: number | null;
+  onNudgesUntilProgramDayChange(day: number | null): void;
 }
 
 /** Цель перехода в списке «Куда»: состояние или «назад». */

@@ -988,6 +988,7 @@ const AgentAnswer = memo(function AgentAnswer({
 }) {
   const labels = useChatLabels();
   const durations = message.metadata?.reasoningDurationsMs ?? {};
+  const thoughtTitles = message.metadata?.thoughtTitles ?? {};
   let reasoningIndex = 0;
   // Простой вид: размышления и вызовы — шаги работы, их раскладывает `workLayoutOf`; подробный — всё как есть.
   const simple = extensions.workView === "simple";
@@ -1013,10 +1014,14 @@ const AgentAnswer = memo(function AgentAnswer({
     if (part.type === "reasoning") {
       const ordinal = String(reasoningIndex++);
       const streaming = part.state === "streaming";
-      if (!streaming && part.text.trim().length === 0) return;
+      const durationMs = streaming ? null : (durations[ordinal] ?? null);
+      // Заголовок раздумья от сервера (`thoughtTitles`); пока его нет — прежняя подпись.
+      const title = streaming ? undefined : thoughtTitles[ordinal];
+      // Пустое раздумье — пропуск; без права `reasoning` сервер шлёт пустое место с заголовком — шаг простого вида.
+      if (!streaming && part.text.trim().length === 0 && (title === undefined || !simple)) return;
       step(
         index,
-        { kind: "thinking" },
+        { kind: "thinking", durationMs, ...(title !== undefined && { title }) },
         <ExpandablePart
           key={key}
           Component={skin.Reasoning}
@@ -1024,7 +1029,8 @@ const AgentAnswer = memo(function AgentAnswer({
           partId={partKey(message.id, index)}
           text={part.text}
           streaming={streaming}
-          durationMs={streaming ? null : (durations[ordinal] ?? null)}
+          durationMs={durationMs}
+          {...(title !== undefined && { title })}
         />,
       );
     } else if (part.type === "text") {
@@ -1134,7 +1140,7 @@ const AgentAnswer = memo(function AgentAnswer({
     }
   });
   const parts = simple
-    ? workLayoutOf(entries, { streaming: status === "streaming", phrases: extensions.stepPhrases, labels: labels.workView }).map((item) =>
+    ? workLayoutOf(entries, { streaming: status === "streaming", phrases: extensions.stepPhrases, labels: labels.workView, thoughts: Object.keys(thoughtTitles).length > 0 }).map((item) =>
         item.kind === "shown" ? item.node : <WorkStepsPart key={`${item.key}:work`} skin={skin} expanded={expanded} item={item} />,
       )
     : entries.map((entry) => (entry.kind === "shown" ? entry.node : null));

@@ -11,7 +11,8 @@ import "../src/styles.css";
 /*
  * Витрина частей фона и мессенджеров скина Тандем (T023 плана 027) для снимков тем: строка помощника во всех состояниях,
  * карточка фоновой задачи во всех статусах, плашки служебных сообщений, реплика сотрудника (0.53), панель подключения
- * мессенджеров, служебная строка пометки приложения (0.65, «Агент написал первым»). Без сервера.
+ * мессенджеров, служебная строка пометки приложения (0.65, «Агент написал первым»), ряд значков шагов в узких колонках
+ * (0.69.1). Без сервера.
  *   theme=light|dark
  */
 
@@ -19,7 +20,9 @@ const params = new URLSearchParams(location.search);
 document.documentElement.classList.toggle("dark", params.get("theme") === "dark");
 
 const noop = () => undefined;
-const { HelperCallRow, TaskCard, AgentNoticeView } = tandemWorkParts;
+const { HelperCallRow, TaskCard, AgentNoticeView, WorkSteps } = tandemWorkParts;
+/** Ряд значков шагов: 8 видов и ещё 13 шагов — длинный ряд для узкой колонки. */
+const stepIcons = ["thinking", "read", "edit", "skill", "mcp", "image", "check", "snapshot"];
 const { MessengerConnectPanel } = tandemMessengersSkin;
 
 const steps: HelperCallView["steps"] = [
@@ -155,6 +158,19 @@ createRoot(document.getElementById("root")!).render(
             <tandemSkin.AgentMessage status="complete" empty={false} onCopy={noop}>
               <tandemSkin.AgentText markdown="Доброе утро! Сегодня — первое практическое задание." streaming={false} />
             </tandemSkin.AgentMessage>
+          </div>
+        </Section>
+        <Section title="Ряд значков шагов в узкой колонке (0.69.1)">
+          <div data-gallery="step-icons" className="flex flex-wrap items-start gap-4">
+            {[240, 360, 420].map((width) => (
+              <div key={width} data-column={width} style={{ width, maxWidth: "100%" }} className="min-w-0 rounded-lg border border-[var(--border)] p-2">
+                <tandemSkin.AgentMessage status="complete" empty={false} onCopy={noop}>
+                  <WorkSteps state="done" steps={[]} count={21} icons={stepIcons} moreIcons={13} open={false} onOpenChange={noop} />
+                  {/* Короткий ответ — узкий пузырь (как у конструктора приложений: ряду 136 px), обычный — пузырь во всю колонку. */}
+                  <tandemSkin.AgentText markdown={width === 240 ? "Игра готова." : "Игра готова: поле 3×3, ходят по очереди, побеждает тот, кто первым соберёт три в ряд."} streaming={false} />
+                </tandemSkin.AgentMessage>
+              </div>
+            ))}
           </div>
         </Section>
         <Section title="Мессенджеры">

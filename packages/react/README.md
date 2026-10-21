@@ -66,6 +66,10 @@ import { AgentChat, ChatLabelsProvider, russianLabels } from "@ykurilov/agent-ch
   поправку. Скину — `ChatSkin.steering`, `Composer.canSteer` и `UserMessage.pending` (договор v21, [docs/skin-v21.md](../../docs/skin-v21.md)).
 - `liveDemos` — живые демонстрации: блок ` ```html-demo ` в ответе запускается в изолированной рамке во всю ширину ответа (на сервере —
   `agent.liveDemos: true`). Скину — `AgentText.renderDemo` и `ChatSkin.demoColors` (договор v22, [docs/live-demos.md](../../docs/live-demos.md)).
+- Значки шагов и заголовки раздумий (с 0.69, договор скина v28, [docs/skin-v28.md](../../docs/skin-v28.md)): в простом виде
+  ряд значков у «Сделано N шагов» и список «значок + фраза»; значок своему инструменту — `icon` рядом с фразами
+  `stepPhrases` (`StepIcon`), без него — `guessStepIcon` по имени. Заголовки раздумий приходят с сервера
+  (`thoughtTitles`) и показываются сами — в простом и подробном виде ([docs/work-view.md](../../docs/work-view.md)).
 - Английский интерфейс: `<ChatLabelsProvider labels={englishLabels}>` — полный словарь (см. docs/getting-started.md, «Надписи»).
 - `onTurnFinished({ chatId, messageId, status })` — ход закончен на экране: один раз на ход, когда ответ получил итог, включая остановку
   и ошибку. Ответ, закрытый ради поправки на лету, получает своё событие перед ответом на поправку. Открытие чата с готовой историей события не даёт. На сервере то же — `onTurnFinished` у `createChatHandler`.

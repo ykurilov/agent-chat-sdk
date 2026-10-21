@@ -1,5 +1,56 @@
 # @ykurilov/agent-chat-flows
 
+## 0.70.0
+
+### Patch Changes
+
+- Updated dependencies [7e54665]
+  - @ykurilov/agent-chat-core@0.70.0
+  - @ykurilov/agent-chat-react@0.70.0
+
+## 0.69.1
+
+### Patch Changes
+
+- Updated dependencies [857777b]
+  - @ykurilov/agent-chat-core@0.69.1
+  - @ykurilov/agent-chat-react@0.69.1
+
+## 0.69.0
+
+### Patch Changes
+
+- Updated dependencies [e6c03dc]
+  - @ykurilov/agent-chat-core@0.69.0
+  - @ykurilov/agent-chat-react@0.69.0
+
+## 0.68.0
+
+### Minor Changes
+
+- d7fc4e6: flow.reopen: брошенный разговор (`abandoned`) или законченный своей причиной приложения открывается заново в той же ноде с памятью; касания с первого шага, дни программы от исходного старта; событие onReopen; поле reopened_at (миграции SQLite и PostgreSQL).
+
+### Patch Changes
+
+- @ykurilov/agent-chat-core@0.68.0
+  - @ykurilov/agent-chat-react@0.68.0
+
+## 0.67.0
+
+### Minor Changes
+
+- 12c0dd8: Потолок «пишет первым» по дням программы: `schedule.firstMessages.maxPerDayByDay` (`[3, 2]` — день 1 три, со дня 2 по
+  два; главнее `maxPerDay`; ответ человека счёт не обнуляет). Свои касания ноды до N-го дня программы:
+  `nudges.untilProgramDay` (дошёл до ноды позже — сразу общий ряд). `checkFlow`: `nudges_until_day_invalid`,
+  `nudges_until_day_after_end`, `max_per_day_by_day_after_end`. Доска: поле «по дням программы» и режим «до дня программы»
+  (ru/en); `FlowStateTimingProps` + `nudgesUntilProgramDay`, `onNudgesUntilProgramDayChange`; выгружены `parseCapsByDay`,
+  `capsByDayText`.
+
+### Patch Changes
+
+- @ykurilov/agent-chat-core@0.67.0
+  - @ykurilov/agent-chat-react@0.67.0
+
 ## 0.66.0
 
 ### Patch Changes

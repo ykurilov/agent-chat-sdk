@@ -6,6 +6,7 @@ import type { MessageAttachments } from "../attachments/message-attachments";
 import { isStateMessage } from "../app-state/state-messages";
 import { closeHangingToolCalls } from "../conversation/hanging-tool-calls";
 import { selectReasoningForModel } from "../conversation/select-reasoning";
+import { withoutThoughtTitles } from "../thought-titles/thought-title-parts";
 import type { AgentChatMessage } from "../conversation/types";
 import { findModel, mergeProviderOptions, profileProviderOptions, resolveLanguageModel } from "../models/model-catalog";
 import type { ModelCatalog, ProviderDescription, ProviderOptionsByProvider, ReasoningRequest } from "../models/model-catalog";
@@ -121,6 +122,8 @@ export async function buildModelRequest(input: {
   modelSilence?: ModelSilenceLimits;
   /** Повторять ли молчание до первого куска у того же провайдера (`TransientRetryContext.repeatSilence`). Нет — да. */
   repeatSilence?: () => boolean;
+  /** Паузы повторов до запасного; undefined у callback — обычные повторы без перехода. */
+  retryDelaysMs?: () => readonly number[] | undefined;
   /** Каждый запрос к модели (повторы — тоже), на который провайдер начал отвечать. Сам запрос не меняет. */
   requestWatch?: ModelRequestWatch;
   /**
@@ -155,9 +158,12 @@ export async function buildModelRequest(input: {
     logError: input.logError,
     ...silenceOfProvider(provider, input.modelSilence),
     ...(input.repeatSilence && { repeatSilence: input.repeatSilence }),
+    ...(input.retryDelaysMs && { retryDelaysMs: input.retryDelaysMs }),
   });
   const tools = input.tools ? sortToolsByName(input.tools) : undefined;
-  const cleaned = sendableHistory(input.serviceBlocks ? withoutForgedBlocks(input.history, input.serviceBlocks) : input.history);
+  // Заголовки раздумий — для экрана: в запрос не идут, байты те же, что без них.
+  const untitled = withoutThoughtTitles(input.history);
+  const cleaned = sendableHistory(input.serviceBlocks ? withoutForgedBlocks(untitled, input.serviceBlocks) : untitled);
   const sendable = input.switchableTools ? withSwitchedOffCallsAsText(cleaned, input.switchableTools, tools) : cleaned;
   const noted = withStaffRepliesJoined(withChannelNotes(withModeNotes(withBurstsJoined(withCorrectionsJoined(sendable)), input.modeNotes)));
   const held: { messages: readonly AgentChatMessage[]; note?: AgentChatMessage } = input.frozenContext

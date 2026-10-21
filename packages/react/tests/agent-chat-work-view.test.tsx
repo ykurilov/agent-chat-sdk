@@ -232,3 +232,103 @@ describe("AgentChat: простой и подробный вид работы а
     expect(row.getAttribute("data-output")).toBe(JSON.stringify("Сделал календарь\nПроверил на телефоне"));
   });
 });
+
+describe("AgentChat: значки шагов и заголовки раздумий (договор 28)", () => {
+  const titledTurn: HistoryMessage[] = [
+    finishedTurn[0]!,
+    { ...finishedTurn[1]!, metadata: { status: "complete", reasoningDurationsMs: { "0": 4000, "1": 2000 }, thoughtTitles: { "0": "Продумываю календарь" } } },
+  ];
+  const iconSkin: ChatSkin = {
+    ...simpleSkin,
+    Reasoning: ({ title, durationMs }) => <p data-kind="reasoning">{title ?? `Думал ${durationMs}`}</p>,
+    WorkSteps: function StubIconSteps(view) {
+      if (view.state === "live") return <p data-kind="work-live" data-icon={view.icon}>{view.phrase}</p>;
+      return (
+        <div data-kind="work-done" data-icons={(view.icons ?? []).join(",")} data-more={String(view.moreIcons)}>
+          {(view.items ?? []).map((item, index) => (
+            <span key={index} data-kind="work-item" data-icon={item.icon}>
+              {item.phrase}
+            </span>
+          ))}
+        </div>
+      );
+    },
+  };
+
+  it("простой вид: ряд значков и список «значок + фраза», раздумье — заголовком или «Думал N сек»", async () => {
+    renderAgentChat(fakeChatServer({ history: titledTurn }), { skin: iconSkin, workView: "simple", stepPhrases: { ...phrases, write_file: () => ({ running: "Делаю календарь", done: "Сделал календарь", icon: "edit" }) } });
+    const feed = await screen.findByTestId("feed");
+    const done = await waitFor(() => feed.querySelector('[data-kind="work-done"]')!);
+    expect(done.getAttribute("data-icons")).toBe("thinking,edit,thinking,read");
+    expect(done.getAttribute("data-more")).toBe("0");
+    expect([...done.querySelectorAll('[data-kind="work-item"]')].map((item) => `${item.getAttribute("data-icon")}:${item.textContent}`)).toEqual([
+      "thinking:Продумываю календарь",
+      "edit:Сделал календарь",
+      "thinking:Думал 2 сек",
+      "read:Проверил на телефоне",
+    ]);
+  });
+
+  it("подробный вид: заголовок у раздумья, у которого он есть", async () => {
+    renderAgentChat(fakeChatServer({ history: titledTurn }), { skin: iconSkin, stepPhrases: phrases });
+    const feed = await screen.findByTestId("feed");
+    await waitFor(() => expect([...feed.querySelectorAll('[data-kind="reasoning"]')].map((node) => node.textContent)).toEqual(["Продумываю календарь", "Думал 2000"]));
+  });
+
+  it("заголовок приходит куском метаданных посреди хода — живая строка и список обновляются", async () => {
+    const server = fakeChatServer();
+    renderAgentChat(server, { skin: iconSkin, workView: "simple", stepPhrases: phrases });
+    const stream = await sendQuestion(server, "Сделай календарь");
+    stream.push({ type: "start", messageId: "a1" });
+    stream.push({ type: "start-step" });
+    stream.push({ type: "reasoning-start", id: "r1" });
+    stream.push({ type: "reasoning-delta", id: "r1", delta: "думаю" });
+    await waitFor(() => expect(screen.getByText("Думаю…").getAttribute("data-icon")).toBe("thinking"));
+    stream.push({ type: "reasoning-end", id: "r1" });
+    stream.push({ type: "message-metadata", messageMetadata: { thoughtTitles: { "0": "Выбираю вид календаря" } } });
+    await waitFor(() => expect(screen.getByText("Выбираю вид календаря…").getAttribute("data-kind")).toBe("work-live"));
+    stream.push({ type: "text-start", id: "t1" });
+    stream.push({ type: "text-delta", id: "t1", delta: "Готово" });
+    stream.push({ type: "text-end", id: "t1" });
+    stream.push({ type: "finish" });
+    stream.end();
+    await waitFor(() => expect(screen.getByText("Готово")).toBeTruthy());
+  });
+});
+
+describe("AgentChat: заголовки без права reasoning (место раздумья без текста)", () => {
+  const hiddenTurn: HistoryMessage[] = [
+    finishedTurn[0]!,
+    {
+      ...finishedTurn[1]!,
+      parts: finishedTurn[1]!.parts.map((part) => (part.type === "reasoning" ? { type: "reasoning", text: "", state: "done" } : part)),
+      metadata: { status: "complete", thoughtTitles: { "0": "Продумываю календарь" } },
+    },
+  ];
+  const skin: ChatSkin = {
+    ...simpleSkin,
+    Reasoning: ({ title }) => <p data-kind="reasoning">{title}</p>,
+    WorkSteps: (view) =>
+      view.state === "live" ? null : (
+        <div data-kind="work-done">
+          {(view.items ?? []).map((item, index) => (
+            <span key={index} data-kind="work-item">
+              {item.phrase}
+            </span>
+          ))}
+        </div>
+      ),
+  };
+
+  it("простой вид: заголовок на своём месте, раздумье без заголовка не видно", async () => {
+    renderAgentChat(fakeChatServer({ history: hiddenTurn }), { skin, workView: "simple", stepPhrases: phrases });
+    const feed = await screen.findByTestId("feed");
+    await waitFor(() => expect([...feed.querySelectorAll('[data-kind="work-item"]')].map((item) => item.textContent)).toEqual(["Продумываю календарь", "Сделал календарь", "Проверил на телефоне"]));
+  });
+
+  it("подробный вид: пустых раздумий нет, как раньше", async () => {
+    renderAgentChat(fakeChatServer({ history: hiddenTurn }), { skin, stepPhrases: phrases });
+    const feed = await screen.findByTestId("feed");
+    await waitFor(() => expect(kinds(feed)).toEqual(["user", "agent", "tool", "tool", "text"]));
+  });
+});

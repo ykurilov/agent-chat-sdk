@@ -12,8 +12,12 @@ import {
   setDuration,
   setScheduleOn,
   setStateNudges,
+  capsByDayText,
+  parseCapsByDay,
   setStateNudgesDays,
+  setStateNudgesUntilProgramDay,
   stateNudgesDays,
+  stateNudgesUntilProgramDay,
   stateTimingText,
   updateSchedule,
   updateStateNudges,
@@ -136,6 +140,29 @@ describe("касания ноды", () => {
     flow = setStateNudgesDays(flow, "intro", null);
     expect(state(flow, "intro").nudges).toEqual({ afterSilence: [{ amount: 15, unit: "min" }] });
     expect(checkFlow(setStateNudgesDays(setStateNudges(flow, "intro", "own"), "intro", 3), catalog).filter((issue) => issue.code === "nudges_days_invalid")).toEqual([]);
+  });
+
+  it("104 свои касания до дня программы: сохраняются при правке ряда, снимаются, подпись на карточке", () => {
+    let flow = setStateNudges(setScheduleOn(fixtureFlow("sales-review"), true), "intro", "own");
+    expect(stateNudgesUntilProgramDay(state(flow, "intro"))).toBeNull();
+    flow = setStateNudgesUntilProgramDay(flow, "intro", 1);
+    flow = updateStateNudges(flow, "intro", { afterSilence: [{ amount: 15, unit: "min" }] });
+    expect(roundTrip(flow).states.find((candidate) => candidate.id === "intro")!.nudges).toEqual({ afterSilence: [{ amount: 15, unit: "min" }], untilProgramDay: 1 });
+    expect(stateTimingText(flow, state(flow, "intro"), labels)).toBe("касания 15 мин до дня 1 программы");
+    flow = setStateNudgesUntilProgramDay(flow, "intro", null);
+    expect(state(flow, "intro").nudges).toEqual({ afterSilence: [{ amount: 15, unit: "min" }] });
+  });
+
+  it("104 потолок по дням программы: «3, 2» ⇄ [3, 2], пусто — без потолка по дням, не числа — null; переживает сохранение", () => {
+    expect(parseCapsByDay("3, 2")).toEqual([3, 2]);
+    expect(parseCapsByDay(" 3 2 ")).toEqual([3, 2]);
+    expect(parseCapsByDay("")).toBeUndefined();
+    expect(parseCapsByDay("3, x")).toBeNull();
+    expect(parseCapsByDay("1.5")).toBeNull();
+    expect(capsByDayText([3, 2])).toBe("3, 2");
+    expect(capsByDayText(undefined)).toBe("");
+    const flow = updateSchedule(setScheduleOn(fixtureFlow("sales-review"), true), { firstMessages: { maxPerDayByDay: [3, 2] } });
+    expect(roundTrip(flow).schedule?.firstMessages?.maxPerDayByDay).toEqual([3, 2]);
   });
 
   it("свои касания берут за образец общие, если они есть", () => {

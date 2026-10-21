@@ -133,6 +133,11 @@ export interface ChatMessageMetadata {
   providerId?: string;
   usage?: TokenUsage;
   reasoningDurationsMs?: Record<string, number>;
+  /**
+   * Заголовки раздумий по порядковому номеру части рассуждения («0», «1»…), как `reasoningDurationsMs`
+   * (`createChatService({ thoughtTitles })`). Хранятся в самих частях рассуждения; нет — заголовков нет.
+   */
+  thoughtTitles?: Record<string, string>;
   status?: AnswerStatus;
   error?: ChatError;
   /** Есть, если озвучку ответа оборвало перебивание. */
@@ -248,6 +253,7 @@ export interface StoredBranchSelection {
  * `modelId` — модель распознавания. `voice_polish` — чистка надиктованного текста моделью.
  * `mcp_tool` — вызов инструмента сервера MCP (`@ykurilov/agent-chat-mcp`), если сервер сообщил стоимость: `modelId` —
  * имя инструмента `<префикс>__<имя>`, `providerId` — `mcp`, токенов нет.
+ * `thought_title` — заголовок раздумья моделью заголовков (`createChatService({ thoughtTitles })`), с id ответа.
  */
 export const BUILT_IN_USAGE_SOURCES = [
   "answer",
@@ -265,6 +271,7 @@ export const BUILT_IN_USAGE_SOURCES = [
   "voice_input",
   "voice_polish",
   "mcp_tool",
+  "thought_title",
 ] as const;
 
 /** Штатные виды расхода SDK. */

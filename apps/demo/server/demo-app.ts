@@ -326,6 +326,8 @@ export async function createDemoApp(options: DemoAppOptions) {
     beforeTurn: demoBeforeTurn,
     defaultChoice: demoDefaultChoice,
     catalog,
+    // Заголовки раздумий вместо «Думал N сек» — у Бориса: пересказ DeepSeek 4.1 Flash без раздумий (в `mock` — заглушка).
+    thoughtTitles: { model: { ...demoDefaultChoice, reasoning: "off" }, enabled: ({ ownerId }) => ownerId === "boris" },
     ...(spending && { limits: spending.limits }),
     attachments,
     ...(memory && { memory }),

@@ -31,6 +31,7 @@ function toRecord(row: ChatRow): FlowChatRecord {
     updatedAt: toIso(row.updatedAt),
     endedAt: row.endedAt === null ? null : toIso(row.endedAt),
     endReason: row.endReason,
+    reopenedAt: row.reopenedAt === null ? null : toIso(row.reopenedAt),
     pausedUntil: row.pausedUntil === null ? null : toIso(row.pausedUntil),
     windowClosed: row.windowClosed,
     dayClosedOn: row.dayClosedOn,
@@ -283,6 +284,15 @@ export function createSqliteFlowStore(filePath: string, migrationsFolder: string
         .where(and(eq(flowChats.chatId, chatId), isNull(flowChats.endedAt)))
         .run();
       const row = getChat(chatId);
+      return row ? toRecord(row) : null;
+    },
+    async reopenChat(chatId, { endedAt, at }) {
+      const row = db
+        .update(flowChats)
+        .set({ endedAt: null, endReason: null, reopenedAt: toMs(at) })
+        .where(and(eq(flowChats.chatId, chatId), eq(flowChats.endedAt, toMs(endedAt))))
+        .returning()
+        .get();
       return row ? toRecord(row) : null;
     },
     async setPause(chatId, until) {

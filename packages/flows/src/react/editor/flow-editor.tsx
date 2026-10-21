@@ -44,7 +44,9 @@ import {
   setScheduleOn,
   setStateNudges,
   setStateNudgesDays,
+  setStateNudgesUntilProgramDay,
   stateNudgesDays,
+  stateNudgesUntilProgramDay,
   updateSchedule,
   updateScheduleNudges,
   updateStateNudges,
@@ -411,6 +413,8 @@ function StateTiming({ editor, skin, labels, state }: { editor: FlowEditorContro
       onNudgesModeChange={(next) => editor.edit((current) => setStateNudges(current, state.id, next))}
       nudgesDays={stateNudgesDays(state)}
       onNudgesDaysChange={(days) => editor.edit((current) => setStateNudgesDays(current, state.id, days))}
+      nudgesUntilProgramDay={stateNudgesUntilProgramDay(state)}
+      onNudgesUntilProgramDayChange={(day) => editor.edit((current) => setStateNudgesUntilProgramDay(current, state.id, day))}
       nudges={
         own && (
           <NudgesEditor

@@ -67,6 +67,7 @@ describe("102 createChatServer передаёт службе все её опц�
       logError: base.logError,
       now: () => new Date(0),
       replyChecks: sentinel("replyChecks"),
+      thoughtTitles: sentinel("thoughtTitles"),
       turnObserver: sentinel("turnObserver"),
       chatInstructions: async () => null,
       staffOfChat: () => undefined,

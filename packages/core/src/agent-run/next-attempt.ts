@@ -16,6 +16,12 @@ export type ProviderFallbackSetting =
   | {
       byModel?: Record<string, string[] | false>;
       /**
+       * Паузы (мс) тихих повторов временного сбоя до перехода к запасному: по умолчанию [250], [] — сразу к нему.
+       * Длина — число повторов. Только пока ответ не начался и есть доступный запасной; иначе прежние 1/3/6 с.
+       * Сроки молчания модели и onSilence задаются отдельно.
+       */
+      retryDelaysMs?: readonly number[];
+      /**
        * Модель молчит дольше срока `modelSilenceTimeout` — до первого куска шага или между кусками.
        * `"restart-step-on-next"` — шаг обрывается, показанное в нём стирается, шаг начинается заново у следующего
        * провайдера списка; тихого повтора у того же нет. `"continue"` (по умолчанию) — как раньше: повтор у того же,
@@ -52,6 +58,9 @@ export function nextSilenceProvider(input: { currentProviderId: string; primaryP
  * запасного. Выключить для всех по умолчанию — заменить `{}` на `false`.
  */
 export const PROVIDER_FALLBACK_BY_DEFAULT: ProviderFallbackSetting = {};
+
+/** Быстрый повтор, когда следующий провайдер действительно доступен. */
+export const FALLBACK_RETRY_DELAYS_MS: readonly number[] = [250];
 
 /**
  * Что делать после попытки хода. `compact-and-continue` — ход упёрся в окно модели: сжать и продолжить тот же ответ;
@@ -168,7 +177,10 @@ export function checkProviderFallback(setting: ProviderFallbackSetting | undefin
   if (typeof setting !== "object" || setting === null || Array.isArray(setting)) {
     throw new TypeError("providerFallback: ждём false или объект { byModel }");
   }
-  const { byModel, onSilence, scope, maxSwitches } = setting;
+  const { byModel, onSilence, scope, maxSwitches, retryDelaysMs } = setting;
+  if (retryDelaysMs !== undefined && (!Array.isArray(retryDelaysMs) || retryDelaysMs.some((delay) => typeof delay !== "number" || !Number.isFinite(delay) || delay < 0))) {
+    throw new TypeError("providerFallback.retryDelaysMs: ждём массив конечных чисел от нуля (мс), [] — без повторов");
+  }
   if (onSilence !== undefined && onSilence !== "continue" && onSilence !== "restart-step-on-next") {
     throw new TypeError(`providerFallback.onSilence: ждём "continue" или "restart-step-on-next", пришло ${JSON.stringify(onSilence)}`);
   }

@@ -2,7 +2,7 @@ import type { AgentNotice, PrepareTurn, TurnAction } from "@ykurilov/agent-chat-
 import { FLOW_STATE_KEY, type FlowTouch, type Transition } from "../engine/flow-run";
 import { migrateRun } from "../engine/migrate-run";
 import { noteAgentAnswer, noteHumanMessage, withNudgeStep, withoutUndeliveredTouch } from "../engine/run-updates";
-import { advance, chainLimitMessage, currentRun, pendingEvent, transitionNotice, type ChatFlowRun, type FlowRuntime } from "./flow-events";
+import { advance, chainLimitMessage, currentRun, pendingEvent, transitionNotice, withReopen, type ChatFlowRun, type FlowRuntime } from "./flow-events";
 import type { PendingFlowChange } from "../store/flow-store";
 import { pageTimeZone } from "./first-message-rules";
 import { testChatOffset } from "./test-clock";
@@ -66,7 +66,8 @@ export function flowPrepareTurn(runtime: FlowRuntime, appTimeZone: () => string 
     const known = page ?? (runtime.timeZones ? await runtime.timeZones.known(ctx.ownerId, ctx.chatId) : record?.timeZone || null);
     const timeZone = known ?? runtime.defaultTimeZone ?? ctx.timeZone;
 
-    let run = currentRun(pinned.flow, ctx.state, now);
+    // Открыт заново вне хода (`flow.reopen`): место догоняет запись.
+    let run = withReopen(pinned.flow, currentRun(pinned.flow, ctx.state, now), record);
     const previousAnswer = run.answerId;
     const pending: PendingFlowChange[] = await runtime.store.takePending(ctx.chatId);
     const appliedInTime = new Set(

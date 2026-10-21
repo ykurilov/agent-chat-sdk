@@ -36,7 +36,8 @@ export function timerDueAt(condition: TimerCondition, run: FlowRun, timeZone: st
     case "silence":
       if (run.lastAgentAt === null) return null;
       if (run.lastHumanAt !== null && run.lastHumanAt > run.lastAgentAt) return null;
-      return run.lastAgentAt + condition.amount * UNIT_MS[condition.unit];
+      // После открытия заново тишина считается от открытия.
+      return Math.max(run.lastAgentAt, run.reopenedAt ?? 0) + condition.amount * UNIT_MS[condition.unit];
     case "time_of_day": {
       const minutes = parseClock(condition.at);
       return minutes === null ? null : nextClockTime(actualEntry(run), minutes, timeZone);

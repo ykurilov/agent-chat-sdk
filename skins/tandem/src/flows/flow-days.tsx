@@ -8,9 +8,9 @@ import type {
   FlowStateTimingProps,
   NudgesMode,
 } from "@ykurilov/agent-chat-flows/react";
-import { DEFAULT_NUDGES, useFlowLabels } from "@ykurilov/agent-chat-flows/react";
+import { capsByDayText, DEFAULT_NUDGES, parseCapsByDay, useFlowLabels } from "@ykurilov/agent-chat-flows/react";
 import { ChevronDown, Clock, Plus, Trash2, X } from "lucide-react";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { IssueList } from "./flow-panels";
 import { IconButton, Labeled, SectionTitle, Select } from "./flow-parts";
 
@@ -238,6 +238,12 @@ export function TandemFlowScheduleSection(props: FlowScheduleSectionProps) {
                   onChange={(event) => onChange({ firstMessages: { ...schedule.firstMessages, maxPerDay: numberOrNone(event.target.value) } })}
                 />
               </Labeled>
+              <Labeled label={text.maxPerDayByDay} hint={text.maxPerDayByDayHint}>
+                <CapsByDayInput
+                  caps={schedule.firstMessages?.maxPerDayByDay}
+                  onChange={(maxPerDayByDay) => onChange({ firstMessages: { ...schedule.firstMessages, maxPerDayByDay } })}
+                />
+              </Labeled>
               <SwitchRow
                 label={text.morning}
                 checked={schedule.firstMessages?.morning ?? schedule.lengthDays !== undefined}
@@ -452,36 +458,81 @@ export function TandemFlowStateTiming(props: FlowStateTimingProps) {
         </div>
         <span className="text-xs text-[var(--foreground-muted)]">{labels.nudgesHint}</span>
         {props.nudges}
-        {props.nudgesMode === "own" && <NudgesDays days={props.nudgesDays} onChange={props.onNudgesDaysChange} />}
+        {props.nudgesMode === "own" && (
+          <NudgesDays
+            days={props.nudgesDays}
+            untilProgramDay={props.nudgesUntilProgramDay}
+            onDaysChange={props.onNudgesDaysChange}
+            onUntilProgramDayChange={props.onNudgesUntilProgramDayChange}
+          />
+        )}
       </div>
     </section>
   );
 }
 
-/** «Свои касания действуют»: всё время в ноде или N дней, считая день входа. */
-function NudgesDays({ days, onChange }: { days: number | null; onChange(days: number | null): void }) {
+/** «Свои касания действуют»: всё время в ноде, N дней, считая день входа, или до дня программы N включительно. */
+function NudgesDays(props: {
+  days: number | null;
+  untilProgramDay: number | null;
+  onDaysChange(days: number | null): void;
+  onUntilProgramDayChange(day: number | null): void;
+}) {
   const labels = useFlowLabels().editor.statePanel;
+  const mode = props.untilProgramDay !== null ? "untilProgramDay" : props.days !== null ? "days" : "always";
+  const value = mode === "untilProgramDay" ? props.untilProgramDay : props.days;
+  const setValue = mode === "untilProgramDay" ? props.onUntilProgramDayChange : props.onDaysChange;
+  const setMode = (next: string) => {
+    props.onDaysChange(next === "days" ? 1 : null);
+    props.onUntilProgramDayChange(next === "untilProgramDay" ? 1 : null);
+  };
   return (
     <div data-flow-nudges-days="" className="flex flex-col gap-1.5">
       <span className="text-sm font-medium text-[var(--foreground)]">{labels.nudgesDays}</span>
       <div className="flex items-center gap-1.5">
-        {days !== null && (
+        {value !== null && mode !== "always" && (
           <Input
-            aria-label={`${labels.nudgesDays}: ${labels.nudgesDaysModes.days}`}
+            aria-label={`${labels.nudgesDays}: ${labels.nudgesDaysModes[mode]}`}
             type="number"
             min={1}
             inputMode="numeric"
             className="w-20"
-            value={days}
-            onChange={(event) => Number(event.target.value) > 0 && onChange(Number(event.target.value))}
+            value={value}
+            onChange={(event) => Number(event.target.value) > 0 && setValue(Number(event.target.value))}
           />
         )}
-        <Select aria-label={labels.nudgesDays} value={days === null ? "always" : "days"} onChange={(event) => onChange(event.target.value === "days" ? 1 : null)}>
+        <Select aria-label={labels.nudgesDays} value={mode} onChange={(event) => setMode(event.target.value)}>
           <option value="always">{labels.nudgesDaysModes.always}</option>
           <option value="days">{labels.nudgesDaysModes.days}</option>
+          <option value="untilProgramDay">{labels.nudgesDaysModes.untilProgramDay}</option>
         </Select>
       </div>
-      {days !== null && <span className="text-xs text-[var(--foreground-muted)]">{labels.nudgesDaysHint}</span>}
+      {mode === "days" && <span className="text-xs text-[var(--foreground-muted)]">{labels.nudgesDaysHint}</span>}
+      {mode === "untilProgramDay" && (
+        <span className="text-xs text-[var(--foreground-muted)]">
+          {labels.nudgesUntilProgramDayHint} {labels.nudgesDaysHint}
+        </span>
+      )}
     </div>
+  );
+}
+
+/** Потолок по дням программы: «3, 2». Черновик поля живёт, пока он не число списком; пустое — без потолка по дням. */
+function CapsByDayInput({ caps, onChange }: { caps: number[] | undefined; onChange(caps: number[] | undefined): void }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const shown = draft ?? capsByDayText(caps);
+  return (
+    <Input
+      inputMode="numeric"
+      placeholder="3, 2"
+      value={shown}
+      aria-invalid={draft !== null && parseCapsByDay(draft) === null}
+      onChange={(event) => {
+        setDraft(event.target.value);
+        const parsed = parseCapsByDay(event.target.value);
+        if (parsed !== null) onChange(parsed);
+      }}
+      onBlur={() => setDraft(null)}
+    />
   );
 }

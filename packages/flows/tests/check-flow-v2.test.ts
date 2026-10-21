@@ -65,6 +65,26 @@ describe("проверка графа v2: «Дни и время»", () => {
     expect(ownFor(1.5)).toContainEqual({ level: "error", code: "nudges_days_invalid", place: { stateId: "block" } });
   });
 
+  it("104 свои касания «до дня программы»: целое число с 1; дальше конца программы — предупреждение", () => {
+    const untilFor = (untilProgramDay: number) =>
+      check((json) => {
+        json.schedule = { dayStart: "09:00", lengthDays: 5, nudges: { afterSilence: [{ amount: 3, unit: "h" }] } };
+        stateOf(json, "block").nudges = { afterSilence: [{ amount: 15, unit: "min" }], untilProgramDay };
+      });
+    expect(untilFor(1)).toEqual([]);
+    expect(untilFor(0)).toContainEqual({ level: "error", code: "nudges_until_day_invalid", place: { stateId: "block" } });
+    expect(untilFor(1.5)).toContainEqual({ level: "error", code: "nudges_until_day_invalid", place: { stateId: "block" } });
+    expect(untilFor(6)).toContainEqual({ level: "warning", code: "nudges_until_day_after_end", place: { stateId: "block" } });
+  });
+
+  it("104 потолок по дням программы: длиннее программы — предупреждение; не целые и пустой список — ошибка формата", () => {
+    const capsFor = (maxPerDayByDay: unknown) => check((json) => (json.schedule = { dayStart: "09:00", lengthDays: 2, firstMessages: { maxPerDayByDay } }));
+    expect(capsFor([3, 2])).toEqual([]);
+    expect(capsFor([3, 2, 1])).toContainEqual({ level: "warning", code: "max_per_day_by_day_after_end", place: {} });
+    expect(() => fixtureFlow("sales-review", (json) => (json.schedule = { dayStart: "09:00", firstMessages: { maxPerDayByDay: [] } }))).toThrow();
+    expect(() => fixtureFlow("sales-review", (json) => (json.schedule = { dayStart: "09:00", firstMessages: { maxPerDayByDay: [1.5] } }))).toThrow();
+  });
+
   it("ночь начинается не позже начала дня", () => {
     expect(check((json) => (json.schedule = { dayStart: "09:00", nightFrom: "08:00" }))).toContainEqual({
       level: "error",

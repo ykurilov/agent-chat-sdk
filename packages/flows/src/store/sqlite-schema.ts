@@ -24,6 +24,7 @@ export const flowChats = sqliteTable(
     updatedAt: integer("updated_at").notNull(),
     endedAt: integer("ended_at"),
     endReason: text("end_reason").$type<FlowEndReason>(),
+    reopenedAt: integer("reopened_at"),
     pausedUntil: integer("paused_until"),
     windowClosed: integer("window_closed", { mode: "boolean" }).notNull().default(false),
     dayClosedOn: text("day_closed_on"),

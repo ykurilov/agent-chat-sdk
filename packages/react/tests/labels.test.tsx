@@ -305,7 +305,7 @@ describe("словарь надписей", () => {
   });
 
   it("простой вид работы агента: русские надписи по умолчанию", () => {
-    const { live, stepFailed, stepUnfinished, stepRepeated, stepsDone, helperRunning, helperDone, ...texts } = russianLabels.workView;
+    const { live, stepFailed, stepUnfinished, stepRepeated, stepsDone, helperRunning, helperDone, thought, moreSteps, ...texts } = russianLabels.workView;
     expect({
       ...texts,
       live: live("Рисую календарь"),
@@ -315,6 +315,8 @@ describe("словарь надписей", () => {
       stepsDone: [1, 3, 6, 11, 21].map(stepsDone),
       helperRunning: helperRunning("researcher"),
       helperDone: helperDone("researcher"),
+      thought: [thought(4_000), thought(null)],
+      moreSteps: moreSteps(3),
     }).toEqual({
       stepRunning: "Работаю",
       stepDone: "Сделал шаг",
@@ -328,6 +330,8 @@ describe("словарь надписей", () => {
       stepsDone: ["Сделан 1 шаг", "Сделано 3 шага", "Сделано 6 шагов", "Сделано 11 шагов", "Сделан 21 шаг"],
       helperRunning: "Помощник «researcher» работает",
       helperDone: "Помощник «researcher» закончил",
+      thought: ["Думал 4 сек", "Подумал"],
+      moreSteps: "+3",
     });
   });
 

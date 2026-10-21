@@ -109,6 +109,11 @@ function withoutReasoningDetails<T extends object>(carrier: T): T {
 export function clientVisibilityOf(
   capabilities: Pick<ChatCapabilities, "reasoning" | "toolDetails" | "modelDetails" | "errorDetails">,
   sdkScreenTool: (toolName: string) => boolean,
+  /**
+   * Служба делает заголовки раздумий (`thoughtTitles`): без права `reasoning` вместо раздумья уходит пустое место (часть без
+   * текста и метаданных — по нему экран ставит заголовок на своё место), а заголовки — в метаданных. Текст — никогда.
+   */
+  { thoughtTitles = false }: { thoughtTitles?: boolean } = {},
 ): ClientVisibility {
   const hidesReasoning = !capabilities.reasoning;
   const hidesTools = !capabilities.toolDetails;
@@ -118,7 +123,8 @@ export function clientVisibilityOf(
   if (!hidesReasoning && !hidesTools && !hidesModel && !hidesErrorDetails) return SHOWS_EVERYTHING;
   const hidesCall = (toolName: string, call: { toolMetadata?: unknown }) => hidesTools && !sdkScreenTool(toolName) && !markedForScreen(call);
 
-  const hiddenMetadataKeys = [...(hidesReasoning ? ["reasoningDurationsMs"] : []), ...(hidesModel ? MODEL_METADATA_KEYS : [])];
+  const placesThoughts = hidesReasoning && thoughtTitles;
+  const hiddenMetadataKeys = [...(hidesReasoning ? ["reasoningDurationsMs", ...(placesThoughts ? [] : ["thoughtTitles"])] : []), ...(hidesModel ? MODEL_METADATA_KEYS : [])];
   const visibleMetadata = (metadata: unknown): unknown => {
     if (typeof metadata !== "object" || metadata === null) return metadata;
     const shown = without(metadata, hiddenMetadataKeys);
@@ -137,13 +143,23 @@ export function clientVisibilityOf(
     visibleCompactions: (markers) => (hidesModel ? markers.map((marker) => ({ ...marker, summary: "", summaryTokens: 0 })) : markers),
 
     visibleMessage(message) {
-      const kept = message.parts.filter((part) => {
-        if (part.type === "reasoning" || part.type === "reasoning-file") return !hidesReasoning;
+      // Без права reasoning место раздумья — только у части с заголовком; номера заголовков — по местам, что видит экран.
+      const serverTitles = placesThoughts ? ((message.metadata as { thoughtTitles?: Record<string, string> } | undefined)?.thoughtTitles ?? {}) : {};
+      const shownTitles: Record<string, string> = {};
+      let serverOrdinal = 0;
+      const kept = message.parts.flatMap((part): typeof message.parts => {
+        if (part.type === "reasoning" && placesThoughts) {
+          const title = serverTitles[String(serverOrdinal++)];
+          if (title === undefined) return [];
+          shownTitles[String(Object.keys(shownTitles).length)] = title;
+          return [{ type: "reasoning", text: "", state: "done" } as (typeof message.parts)[number]];
+        }
+        if (part.type === "reasoning" || part.type === "reasoning-file") return hidesReasoning ? [] : [part];
         const toolName = toolNameOfPart(part as { type: string; toolName?: unknown });
-        return toolName === null || !hidesCall(toolName, part as { toolMetadata?: unknown }) || asksApproval(part);
+        return toolName === null || !hidesCall(toolName, part as { toolMetadata?: unknown }) || asksApproval(part) ? [part] : [];
       });
       const parts = kept.map(withoutProviderData);
-      const metadata = visibleMetadata(message.metadata);
+      const metadata = placesThoughts ? withShownTitles(visibleMetadata(message.metadata), shownTitles) : visibleMetadata(message.metadata);
       return { ...message, parts, ...(message.metadata !== undefined && { metadata }) };
     },
 
@@ -163,6 +179,11 @@ export function clientVisibilityOf(
             }
             if (REASONING_CHUNKS.has(chunk.type)) {
               if (!hidesReasoning) controller.enqueue(chunk);
+              // Место раздумья: начало и конец без текста — разом, когда раздумье кончилось.
+              else if (placesThoughts && chunk.type === "reasoning-end") {
+                controller.enqueue({ type: "reasoning-start", id: chunk.id });
+                controller.enqueue({ type: "reasoning-end", id: chunk.id });
+              }
               return;
             }
             if ("toolCallId" in chunk && typeof chunk.toolCallId === "string") {
@@ -189,4 +210,11 @@ export function clientVisibilityOf(
       );
     },
   };
+}
+
+/** Метаданные с заголовками по местам экрана; заголовков нет — без ключа. */
+function withShownTitles(metadata: unknown, titles: Record<string, string>): unknown {
+  if (typeof metadata !== "object" || metadata === null) return metadata;
+  const { thoughtTitles: _server, ...rest } = metadata as Record<string, unknown>;
+  return Object.keys(titles).length > 0 ? { ...rest, thoughtTitles: titles } : rest;
 }

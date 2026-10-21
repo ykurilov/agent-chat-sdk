@@ -4,14 +4,14 @@ import type { AgentFlow } from "../format/flow-format";
 import type { FlowRun, Transition } from "../engine/flow-run";
 import { FLOW_STATE_KEY } from "../engine/flow-run";
 import { noteAgentAnswer, withNudgeStep, withoutUndeliveredTouch } from "../engine/run-updates";
-import { deadlineAt, nextDayStartAfter } from "../engine/flow-days";
+import { deadlineAt, flowDay, nextDayStartAfter } from "../engine/flow-days";
 import { stateById } from "../engine/flow-graph";
 import type { FirstWakeContext, FlowFirstReason } from "../engine/nudges";
 import { dayStartHoldUntil } from "../engine/nudges";
 import { deferredWake, dueReasons, endingWake, FLOW_FIRST_EXIT, nextFirstMessageAfter, nextWake, type FlowDue } from "../engine/timers";
 import type { FlowChatRecord, FlowStore } from "../store/flow-store";
 import type { FirstMessageRules, FlowPort, FlowTestClockReason, FlowTimers, FlowTimerSettings } from "./flow-types";
-import { advance, chainLimitMessage, chatRun, exactFirstText, storedRun, withPending, type ChatFlowRun } from "./flow-events";
+import { advance, chainLimitMessage, chatRun, exactFirstText, storedRun, withPending, withReopen, type ChatFlowRun } from "./flow-events";
 import { chatWriteBlock } from "./first-message-rules";
 import { FIRST_MESSAGE_RETRY_MS } from "./first-message-retry";
 import { firstReasonsNotice, silentMsOf } from "./first-reasons-notice";
@@ -161,9 +161,10 @@ export function createFlowTimers(input: {
 
   /** Переходы, применённые в срок без хода, — уже место чата: таймеры идут от новой ноды. */
   async function withApplied<R extends ChatFlowRun>(record: FlowChatRecord, flow: AgentFlow, run: R, at: number, timeZone: string): Promise<R> {
+    const live = withReopen(flow, run, record);
     const applied = record.pending.filter((change) => change.kind === "transition" && change.appliedAt !== undefined);
-    if (applied.length === 0) return run;
-    return withPending(flow, run, applied, { now: at, timeZone, card: await input.cardValues(record.ownerId), out: [], onChainLimit: () => {} }) as R;
+    if (applied.length === 0) return live;
+    return withPending(flow, live, applied, { now: at, timeZone, card: await input.cardValues(record.ownerId), out: [], onChainLimit: () => {} }) as R;
   }
 
   /**
@@ -322,7 +323,7 @@ export function createFlowTimers(input: {
     const chat = { dayClosedOn: record.dayClosedOn, pausedUntil: record.pausedUntil, windowClosed: record.windowClosed };
     const block = firstMessages ? null : chatWriteBlock(chat, at, timeZone, flow.schedule);
     const allowed = firstMessages
-      ? await firstMessages.check({ ownerId, chatId, at, timeZone, chat, ...(flow.schedule && { schedule: flow.schedule }) })
+      ? await firstMessages.check({ ownerId, chatId, at, timeZone, chat, ...(flow.schedule && { schedule: flow.schedule, programDay: flowDay(next, at, timeZone, flow.schedule).day }) })
       : block
         ? { allowed: false as const, retryAt: block.retryAt }
         : { allowed: true as const };

@@ -60,6 +60,7 @@ export interface FlowEditorLabels {
     noNudges: string;
     /** Срок своих касаний на карточке: «в день входа», «первые 2 дн.». */
     nudgesDays: (days: number) => string;
+    nudgesUntilProgramDay: (day: number) => string;
     /** Кнопки места на доске: легенда, мини-карта, панель «Сценарий», полный экран. */
     space: {
       legend: string;
@@ -108,6 +109,8 @@ export interface FlowEditorLabels {
     firstMessages: string;
     maxPerDay: string;
     maxPerDayHint: string;
+    maxPerDayByDay: string;
+    maxPerDayByDayHint: string;
     morning: string;
     skipMorning: string;
     nudges: string;
@@ -174,8 +177,9 @@ export interface FlowEditorLabels {
     nudgesHint: string;
     /** Сколько действуют свои касания: всё время в ноде или N дней с дня входа. */
     nudgesDays: string;
-    nudgesDaysModes: Record<"always" | "days", string>;
+    nudgesDaysModes: Record<"always" | "days" | "untilProgramDay", string>;
     nudgesDaysHint: string;
+    nudgesUntilProgramDayHint: string;
   };
   exitCard: {
     when: string;
@@ -324,6 +328,7 @@ export const russianFlowEditorLabels: FlowEditorLabels = {
     nudges: "касания",
     noNudges: "без касаний",
     nudgesDays: (days) => (days === 1 ? "в день входа" : `первые ${days} дн.`),
+    nudgesUntilProgramDay: (day) => `до дня ${day} программы`,
     space: {
       legend: "Легенда",
       showMinimap: "Показать мини-карту",
@@ -372,6 +377,8 @@ export const russianFlowEditorLabels: FlowEditorLabels = {
     firstMessages: "Сообщения первым",
     maxPerDay: "Не больше в день",
     maxPerDayHint: "Пусто — как в настройках приложения.",
+    maxPerDayByDay: "Не больше в день по дням программы",
+    maxPerDayByDayHint: "Через запятую: «3, 2» — в день 1 три, со дня 2 по два. Главнее поля выше. Ответ человека счёт не обнуляет.",
     morning: "Утреннее сообщение",
     skipMorning: "Не писать утром, если человек писал за, мин",
     nudges: "Касания по умолчанию",
@@ -436,8 +443,9 @@ export const russianFlowEditorLabels: FlowEditorLabels = {
     nudgesModes: { inherit: "Как у сценария", own: "Свои", off: "Выкл" },
     nudgesHint: "Агент пишет здесь сам, когда человек молчит.",
     nudgesDays: "Свои касания действуют",
-    nudgesDaysModes: { always: "всё время в ноде", days: "дн., считая день входа" },
+    nudgesDaysModes: { always: "всё время в ноде", days: "дн., считая день входа", untilProgramDay: "до дня программы включительно" },
     nudgesDaysHint: "Потом — касания сценария: утреннее и общий ряд с начала.",
+    nudgesUntilProgramDayHint: "Пришёл в ноду позже — своих касаний нет, сразу касания сценария.",
   },
   exitCard: {
     when: "Когда",
@@ -573,6 +581,7 @@ export const englishFlowEditorLabels: FlowEditorLabels = {
     nudges: "nudges",
     noNudges: "no nudges",
     nudgesDays: (days) => (days === 1 ? "on the entry day" : `for the first ${days} days`),
+    nudgesUntilProgramDay: (day) => `until program day ${day}`,
     space: {
       legend: "Legend",
       showMinimap: "Show the minimap",
@@ -621,6 +630,8 @@ export const englishFlowEditorLabels: FlowEditorLabels = {
     firstMessages: "Writing first",
     maxPerDay: "At most per day",
     maxPerDayHint: "Empty — as in the app settings.",
+    maxPerDayByDay: "At most per day, by program day",
+    maxPerDayByDayHint: "Comma-separated: “3, 2” — three on day 1, two from day 2 on. Overrides the field above. A reply doesn't reset the count.",
     morning: "Morning message",
     skipMorning: "Skip the morning if the person wrote within, min",
     nudges: "Default nudges",
@@ -685,8 +696,9 @@ export const englishFlowEditorLabels: FlowEditorLabels = {
     nudgesModes: { inherit: "As in the flow", own: "Own", off: "Off" },
     nudgesHint: "The agent writes here by itself while the person is silent.",
     nudgesDays: "Own nudges apply",
-    nudgesDaysModes: { always: "the whole time in the state", days: "days, counting the entry day" },
+    nudgesDaysModes: { always: "the whole time in the state", days: "days, counting the entry day", untilProgramDay: "until program day, inclusive" },
     nudgesDaysHint: "Then the flow's nudges: the morning message and the common series from the start.",
+    nudgesUntilProgramDayHint: "Reached the state later — no own nudges, the flow's nudges right away.",
   },
   exitCard: {
     when: "When",

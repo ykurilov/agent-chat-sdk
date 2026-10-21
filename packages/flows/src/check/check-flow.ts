@@ -148,6 +148,14 @@ function checkState(flow: AgentFlow, catalog: FlowCatalog, issues: Issues, state
   if (days !== undefined && (!Number.isInteger(days) || days < 1)) {
     issues.error("nudges_days_invalid", `${stateName(state)}: свои касания действуют целое число дней, с 1`, { stateId: state.id });
   }
+  const untilDay = state.nudges && state.nudges !== "off" ? state.nudges.untilProgramDay : undefined;
+  if (untilDay !== undefined && (!Number.isInteger(untilDay) || untilDay < 1)) {
+    issues.error("nudges_until_day_invalid", `${stateName(state)}: свои касания «до дня программы» — целое число с 1`, { stateId: state.id });
+  } else if (untilDay !== undefined && flow.schedule?.lengthDays !== undefined && untilDay > flow.schedule.lengthDays) {
+    issues.warning("nudges_until_day_after_end", `${stateName(state)}: свои касания до дня ${untilDay}, а программа длится ${flow.schedule.lengthDays} дн. — они действуют всю программу`, {
+      stateId: state.id,
+    });
+  }
 }
 
 const nudgesEmpty = (nudges: FlowNudges) => nudges.afterSilence.length === 0 && !nudges.dailyAt?.length;
@@ -168,6 +176,13 @@ function checkSchedule(flow: AgentFlow, issues: Issues) {
   const frame = schedule.dayFrame;
   if (frame?.softFrom !== undefined && frame.hardAt !== undefined && frame.softFrom >= frame.hardAt) {
     issues.error("day_frame_soft_after_hard", `«Дни и время»: мягкая рамка (${frame.softFrom}) должна быть раньше жёсткой (${frame.hardAt})`);
+  }
+  const byDay = schedule.firstMessages?.maxPerDayByDay;
+  if (byDay && schedule.lengthDays !== undefined && byDay.length > schedule.lengthDays) {
+    issues.warning(
+      "max_per_day_by_day_after_end",
+      `«Дни и время»: потолок задан на ${byDay.length} дн., а программа длится ${schedule.lengthDays} дн. — лишние значения не действуют`,
+    );
   }
   if (schedule.nudges && nudgesEmpty(schedule.nudges)) {
     issues.warning("empty_nudges", "«Дни и время»: в касаниях нет ни одного срока — агент не напишет первым");

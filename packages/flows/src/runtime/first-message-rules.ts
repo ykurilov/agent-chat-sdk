@@ -23,12 +23,18 @@ export function chatWriteBlock(chat: FlowChatWriteState, at: number, timeZone: s
 }
 
 /** Итоговые правила: ночь и потолок сценария главнее настроек приложения, те — значений SDK. */
-function scenarioRules(rules: FirstMessagesRules, schedule: FlowSchedule | undefined): Omit<FirstMessagesRules, "canWriteNow"> {
+function scenarioRules(rules: FirstMessagesRules, schedule: FlowSchedule | undefined, programDay: number | undefined): Omit<FirstMessagesRules, "canWriteNow"> {
   if (!schedule) return rules;
   return {
     quietHours: { from: schedule.nightFrom ?? rules.quietHours.from, to: schedule.dayStart },
-    maxPerDay: schedule.firstMessages?.maxPerDay ?? rules.maxPerDay,
+    maxPerDay: capOfProgramDay(schedule.firstMessages?.maxPerDayByDay, programDay) ?? schedule.firstMessages?.maxPerDay ?? rules.maxPerDay,
   };
+}
+
+/** Потолок дня программы из `maxPerDayByDay`: вечер до первого дня — как день 1, после списка — его последнее значение. */
+export function capOfProgramDay(byDay: number[] | undefined, programDay: number | undefined): number | undefined {
+  if (!byDay?.length) return undefined;
+  return byDay[Math.min(Math.max(programDay ?? 1, 1), byDay.length) - 1];
 }
 
 /** Правила «писать первым» на хранилище счётчиков; `false` в настройках — `null`, агент пишет первым без ограничений. */
@@ -36,11 +42,11 @@ export function createFirstMessageRules(setting: FirstMessagesSetting | undefine
   const rules = resolveFirstMessages(setting);
   if (!rules) return null;
   return {
-    async check({ ownerId, chatId, at, timeZone, schedule, chat }) {
+    async check({ ownerId, chatId, at, timeZone, schedule, programDay, chat }) {
       const blocked = chat ? chatWriteBlock(chat, at, timeZone, schedule) : null;
       if (blocked) return { allowed: false, retryAt: blocked.retryAt };
       const sentToday = await store.countFirstMessages(ownerId, localDay(at, timeZone));
-      const slot = firstMessageSlot(scenarioRules(rules, schedule), { at, timeZone, sentToday });
+      const slot = firstMessageSlot(scenarioRules(rules, schedule, programDay), { at, timeZone, sentToday });
       if (!slot.allowed) return slot;
       // Приложение спрашивается только тогда, когда остальные правила уже разрешили.
       const answer = rules.canWriteNow ? await rules.canWriteNow({ ownerId, chatId, at: new Date(at) }) : true;

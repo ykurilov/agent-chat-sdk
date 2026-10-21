@@ -25,7 +25,7 @@ export type FlowFirstReason =
 export interface NudgeDue {
   at: number;
   reason: FlowFirstReason | { kind: "give_up" };
-  /** Касание своего ряда ноды на N дней (`nudges.days`): его шаг не идёт в счёт общего ряда. */
+  /** Касание своего ряда ноды, ограниченного днями (`nudges.days`, `nudges.untilProgramDay`): его шаг не идёт в счёт общего ряда. */
   own?: boolean;
 }
 
@@ -52,10 +52,13 @@ function nudgeRings(flow: AgentFlow, run: FlowRun, timeZone: string): NudgeRings
   if (own === "off") return null;
   const common = flow.schedule?.nudges ?? flow.nudges ?? null;
   if (!own) return common && { ring: common };
-  if (own.days === undefined) return { ring: own };
+  if (own.days === undefined && own.untilProgramDay === undefined) return { ring: own };
   const schedule = flow.schedule ?? CALENDAR_DAYS;
-  const entryDay = flowDay(run, run.enteredAt, timeZone, schedule).day;
-  return { ring: own, until: programDayDue(run, entryDay + own.days, timeZone, schedule), after: common };
+  const ends: number[] = [];
+  if (own.days !== undefined) ends.push(programDayDue(run, flowDay(run, run.enteredAt, timeZone, schedule).day + own.days, timeZone, schedule));
+  // До N-го дня программы: человек дошёл до ноды позже — конец уже прошёл, сразу общий ряд.
+  if (own.untilProgramDay !== undefined) ends.push(programDayDue(run, own.untilProgramDay + 1, timeZone, schedule));
+  return { ring: own, until: Math.min(...ends), after: common };
 }
 
 const UNIT_MS = { min: 60_000, h: 3_600_000, d: 86_400_000 } as const;
@@ -83,7 +86,7 @@ export function nextNudge(flow: AgentFlow, run: FlowRun, now: number, timeZone: 
   const rings = nudgesRunning(flow, run, timeZone, context);
   if (!rings || run.lastAgentAt === null) return null;
   // Ответ сотрудника — слова агента (FR-507): тишина идёт от конца паузы.
-  const base = Math.max(run.lastAgentAt, context.pausedUntil ?? 0, context.undeliveredAt ?? 0);
+  const base = Math.max(run.lastAgentAt, context.pausedUntil ?? 0, context.undeliveredAt ?? 0, run.reopenedAt ?? 0);
   const step = run.nudgeStep ?? 0;
   let nudge: NudgeDue | null = null;
   if (rings.until === undefined) nudge = ringNudge(rings.ring, base, step, timeZone);
@@ -130,7 +133,8 @@ export function giveUpAt(flow: AgentFlow, run: FlowRun, timeZone: string, contex
   // Свой ряд на N дней без своего «не завершил» — общий: тишина человека считается всё время в ноде.
   const giveUpAfter = rings && (rings.ring.giveUpAfter ?? (rings.until !== undefined ? rings.after?.giveUpAfter : undefined));
   // Слова сотрудника на паузе — тоже разговор (FR-507): тишина человека считается и от конца паузы.
-  return giveUpAfter ? Math.max(run.lastHumanAt ?? run.startedAt, context.pausedUntil ?? 0) + durationMs(giveUpAfter) : null;
+  // Открыт заново — тишина человека считается от открытия.
+  return giveUpAfter ? Math.max(run.lastHumanAt ?? run.startedAt, context.pausedUntil ?? 0, run.reopenedAt ?? 0) + durationMs(giveUpAfter) : null;
 }
 
 /** Пишет ли сценарий утреннее: так задано, а нет — если у программы есть срок. */
@@ -145,7 +149,7 @@ export function nextMorning(flow: AgentFlow, run: FlowRun, timeZone: string, con
   if (!schedule || !morningOn(schedule) || run.endedAt !== undefined) return null;
   const skipMs = (schedule.firstMessages?.skipMorningIfHumanWithinMin ?? DEFAULT_SKIP_MORNING_MIN) * 60_000;
   // Утреннее не дошло — следующее утро, а не то же сразу.
-  const since = Math.max(run.lastAgentAt ?? run.startedAt, context.undeliveredAt ?? 0);
+  const since = Math.max(run.lastAgentAt ?? run.startedAt, context.undeliveredAt ?? 0, run.reopenedAt ?? 0);
   let morning = flowDay(run, since, timeZone, schedule).nextDayStartAt;
   for (let day = 0; day < 3; day += 1) {
     const humanJustWrote = run.lastHumanAt !== null && run.lastHumanAt < morning && morning - run.lastHumanAt < skipMs;

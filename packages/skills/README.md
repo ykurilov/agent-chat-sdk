@@ -42,6 +42,8 @@ mountChat(app, createSkillsHandler({ skills, resolveUser })); // адреса э
 Настройки `createSkills`: `maxBodyChars` (по умолчанию 50 000), `modelTexts` (`englishSkillsModelTexts` для
 англоязычного агента), `log` и `logError` (по умолчанию `console`).
 
+Фраза шага в простом виде (`skillsStepPhrases` из `./labels`) — с именем навыка и значком: «Открыл навык game-dev».
+
 ## Экран
 
 ```tsx

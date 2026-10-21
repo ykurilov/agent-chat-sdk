@@ -193,6 +193,10 @@ export type {
 } from "./turn-hooks/turn-hooks";
 export { DEFAULT_REPLY_CHECKS_WEB, resolveReplyChecks } from "./agent-run/reply-check-types";
 export type { KnownTexts, KnownTextsContext, ReplyCheck, ReplyCheckInput, ReplyCheckResult, ReplyChecksSetting, ReplyChecksWebMode } from "./agent-run/reply-check-types";
+export type { ThoughtTitlesSetting, ThoughtTitleLanguageInput } from "./thought-titles/thought-titles-setting";
+export { THOUGHT_TITLE_USAGE_SOURCE, THOUGHT_TITLE_INSTRUCTIONS, thoughtTitlePrompt } from "./thought-titles/thought-title-model";
+export { THOUGHT_TITLE_METADATA_KEY, thoughtTitlesOfParts } from "./thought-titles/thought-title-parts";
+export { cleanThoughtTitle, providerHeadingOf } from "./thought-titles/thought-title-text";
 export { accessRefusedResponse, allowedUser } from "./access/resolved-user";
 export type { AccessRefusal, ResolvedUser } from "./access/resolved-user";
 export { ActionForbiddenError, CHAT_CAPABILITIES, resolveChatCapabilities } from "./access/chat-capabilities";

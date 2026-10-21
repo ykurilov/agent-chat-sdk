@@ -27,6 +27,7 @@ export const flowChats = agentChatSchema.table(
     updatedAt: moment("updated_at").notNull(),
     endedAt: moment("ended_at"),
     endReason: text("end_reason").$type<FlowEndReason>(),
+    reopenedAt: moment("reopened_at"),
     pausedUntil: moment("paused_until"),
     windowClosed: boolean("window_closed").notNull().default(false),
     dayClosedOn: text("day_closed_on"),

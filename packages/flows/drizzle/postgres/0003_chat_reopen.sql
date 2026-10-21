@@ -1,0 +1,1 @@
+ALTER TABLE "agent_chat"."flow_chats" ADD COLUMN "reopened_at" timestamp (3) with time zone;

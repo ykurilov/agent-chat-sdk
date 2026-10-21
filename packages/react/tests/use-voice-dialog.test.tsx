@@ -336,7 +336,7 @@ describe("мост: текст и конец ответа", () => {
   it("остановленный ответ кончается со статусом «остановлен»", async () => {
     const server = fakeChatServer();
     const { bridge } = await openDialog(server);
-    const { ends } = listen(bridge());
+    const { deltas, ends } = listen(bridge());
     act(() => bridge().send("Вопрос"));
     await waitFor(() => expect(server.streams).toHaveLength(1));
     act(() => {
@@ -344,6 +344,8 @@ describe("мост: текст и конец ответа", () => {
       server.streams[0]!.push({ type: "text-start", id: "t" });
       server.streams[0]!.push({ type: "text-delta", id: "t", delta: "Начало" });
     });
+    // Чат читает поток не мгновенно: «стоп» жмём, когда начало ответа уже дошло до движка, а не раньше.
+    await waitFor(() => expect(deltas.map((delta) => delta.text).join("")).toBe("Начало"));
 
     await act(async () => {
       await bridge().stop();

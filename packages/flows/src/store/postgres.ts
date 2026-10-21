@@ -31,6 +31,7 @@ function toRecord(row: ChatRow): FlowChatRecord {
     updatedAt: toIso(row.updatedAt),
     endedAt: row.endedAt === null ? null : toIso(row.endedAt),
     endReason: row.endReason,
+    reopenedAt: row.reopenedAt === null ? null : toIso(row.reopenedAt),
     pausedUntil: row.pausedUntil === null ? null : toIso(row.pausedUntil),
     windowClosed: row.windowClosed,
     dayClosedOn: row.dayClosedOn,
@@ -350,6 +351,15 @@ export function createPostgresFlowStore(pool: Pool, migrationsFolder: string): P
         .set({ endedAt: new Date(at), endReason: reason, dueAt: null, dueExitId: null, dueBranchHead: null, leaseUntil: null, leaseOwner: null })
         .where(and(eq(flowChats.chatId, chatId), isNull(flowChats.endedAt)));
       const row = await getChat(chatId);
+      return row ? toRecord(row) : null;
+    },
+    async reopenChat(chatId, { endedAt, at }) {
+      await ready;
+      const [row] = await db
+        .update(flowChats)
+        .set({ endedAt: null, endReason: null, reopenedAt: new Date(at) })
+        .where(and(eq(flowChats.chatId, chatId), eq(flowChats.endedAt, new Date(endedAt))))
+        .returning();
       return row ? toRecord(row) : null;
     },
     async setPause(chatId, until) {

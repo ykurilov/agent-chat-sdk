@@ -53,7 +53,7 @@ describe("runAgentTurn: запасной провайдер той же моде
 
     const { answer, chunks, logged } = await turnWithBackup(primary, backup);
 
-    expect(primary.doStreamCalls).toHaveLength(4);
+    expect(primary.doStreamCalls).toHaveLength(2);
     expect(backup.doStreamCalls).toHaveLength(1);
     expect(answer.status).toBe("complete");
     expect(answer.providerId).toBe("mock-backup");
@@ -175,7 +175,7 @@ describe("runAgentTurn: запасной провайдер той же моде
 
     const { answer, chunks, logged } = await turnWithBackup(primary, backup);
 
-    expect(primary.doStreamCalls).toHaveLength(4);
+    expect(primary.doStreamCalls).toHaveLength(2);
     expect(backup.doStreamCalls).toHaveLength(4);
     expect(answer.status).toBe("error");
     expect(answer.error?.kind).toBe("overloaded");

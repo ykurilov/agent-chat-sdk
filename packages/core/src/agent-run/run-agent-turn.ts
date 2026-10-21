@@ -62,8 +62,11 @@ import type { TurnSpendingRules } from "../spending/spending-limits";
 import { LENGTH_CUT_PART_TYPE } from "./length-cut";
 import { createDataChangeNotifier } from "./data-changes";
 import type { ModeNotes } from "./mode-notes";
+import { createTurnThoughtTitles, THOUGHT_TITLES_SETTLE_MS } from "../thought-titles/turn-thought-titles";
+import type { ThoughtTitles, TurnThoughtTitlesSource } from "../thought-titles/turn-thought-titles";
+import { askedThoughtTitlesOfParts, thoughtTitlesOfParts, withThoughtTitles } from "../thought-titles/thought-title-parts";
 import { createReasoningTimer } from "./reasoning-timer";
-import { decideNextAttempt, errorKindForPerson, fallbackProviders, nextSilenceProvider, resolveSilenceSwitch } from "./next-attempt";
+import { decideNextAttempt, errorKindForPerson, fallbackProviders, FALLBACK_RETRY_DELAYS_MS, nextSilenceProvider, resolveSilenceSwitch } from "./next-attempt";
 import { chunksForParts } from "./parts-to-chunks";
 import { cutGarbledTail, createGarbledTailGuard, findGarbledTail } from "./garbled-tail";
 import { CORE_SERVICE_BLOCKS, createForgedBlockGuard, lastQuestionOf } from "./forged-blocks";
@@ -258,6 +261,11 @@ export interface AgentTurnInput {
   reply?: string;
   /** Метка расхода хода в журнале. Нет — `answer`; агент пишет первым — `first_message` (`deliverNotices`). */
   usageSource?: UsageSource;
+  /**
+   * Заголовки раздумий (`createChatService({ thoughtTitles })`): язык и пределы хода, пересказ уже привязан к владельцу,
+   * чату и ответу. Нет — заголовков нет, поток и запрос побайтно прежние.
+   */
+  thoughtTitles?: TurnThoughtTitlesSource;
   /**
    * Проверки законченного ответа перед записью (`createChatService({ replyChecks })`): правят последнюю текстовую часть.
    * Готовый ответ (`reply`) не проверяется. Веб-чат печатает как обычно и заменяет шаг исправленным (`replace`) или
@@ -522,7 +530,37 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
     const pendingSteps = turnUsage.pendingSteps();
     return usage && pendingSteps.length > 0 ? { ...usage, pendingSteps } : usage;
   };
-  const saver = createAnswerSaver(storage, messageId, timer.durations, streamingUsage, () => takeover.abort(), resume?.message);
+  // Заголовки раздумий: готовый уходит клиенту и в запись куском метаданных, в части — перед каждой записью.
+  let emitTitles: (titles: ThoughtTitles) => void = () => {};
+  const thoughtTitles =
+    input.thoughtTitles &&
+    createTurnThoughtTitles({
+      ...input.thoughtTitles,
+      ...(resume && {
+        existing: {
+          count: resume.message.parts.filter((part) => part.type === "reasoning").length,
+          titles: thoughtTitlesOfParts(resume.message.parts),
+          asked: askedThoughtTitlesOfParts(resume.message.parts),
+        },
+      }),
+      signal: input.abortSignal,
+      onChange: (titles) => emitTitles(titles),
+      logError,
+    });
+  const saver = createAnswerSaver(
+    storage,
+    messageId,
+    timer.durations,
+    streamingUsage,
+    () => takeover.abort(),
+    resume?.message,
+    thoughtTitles && ((parts) => withThoughtTitles(parts, thoughtTitles.titles(), new Set(thoughtTitles.askedKeys()))),
+  );
+  emitTitles = (titles) => {
+    const metadata: ChatMessageMetadata = { thoughtTitles: titles };
+    saver.observe({ type: "message-metadata", messageMetadata: metadata });
+    emitToClient({ type: "message-metadata", messageMetadata: metadata });
+  };
   input.flushers?.add(saver.flush);
   try {
     // Лимит шагов — на весь ход: каждая попытка получает остаток.
@@ -547,6 +585,7 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
       openParts.observe(chunk);
       saver.observe(chunk);
       emitToClient(chunk);
+      thoughtTitles?.observe(chunk);
       if (timer.observe(chunk)) {
         const metadata: ChatMessageMetadata = { reasoningDurationsMs: timer.durations() };
         saver.observe({ type: "message-metadata", messageMetadata: metadata });
@@ -694,6 +733,7 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
         mainLoopWaits = true;
       }
       let fallbackUsed = false;
+      const remainingFallbacks = () => providerId === input.providerId ? fallbackProviderIds : fallbackProviderIds.slice(fallbackProviderIds.indexOf(providerId) + 1);
       let historyCompacted = false;
       let answerStepsCompacted = false;
       let autoContinues = 0;
@@ -752,6 +792,10 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
             forgedBlocks,
             // Есть куда перейти при молчании — у того же провайдера оно не повторяется.
             repeatSilence: () => silenceTarget() === undefined,
+            retryDelaysMs: () =>
+              !contentSeen && !fallbackUsed && remainingFallbacks().length > 0 && stepsDone < maxSteps
+                ? (input.providerFallback || {}).retryDelaysMs ?? FALLBACK_RETRY_DELAYS_MS
+                : undefined,
             ...(silenceSwitch.scope === "step" &&
               switchedBySilence && {
                 backToPrimary: () => {
@@ -763,6 +807,7 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
               lastFinishReason = finishReason;
             },
             callSaved: saver.whenCallSaved,
+            ...(thoughtTitles && { onTools: (names: readonly string[]) => thoughtTitles.addToolNames(names) }),
             ...(seenTexts && { seenTexts }),
           });
         } catch (error) {
@@ -812,7 +857,7 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
         const nextState = () => ({
           fallbackUsed,
           // С запасного — только провайдеры после него: перегрузка у запасного не ведёт обратно к нему же.
-          fallbackProviderIds: providerId === input.providerId ? fallbackProviderIds : fallbackProviderIds.slice(fallbackProviderIds.indexOf(providerId) + 1),
+          fallbackProviderIds: remainingFallbacks(),
           overflowCompaction: overflowCompaction(),
           autoContinue: { done: autoContinues, approvalRequested: pendingHumanInput(parts, input.waitingWidgets).length > 0 },
           silenceSwitch: { done: silenceSwitches, max: silenceSwitch.maxSwitches, nextProviderId: silenceTarget() },
@@ -873,6 +918,7 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
             emitToClient({ type: STEP_RESET_PART_TYPE, data: { providerId: next.providerId } });
             const kept = await saver.rewind(eraseFrom);
             timer.rewind(kept.filter((part) => part.type === "reasoning").length);
+            thoughtTitles?.rewind(kept.filter((part) => part.type === "reasoning").length);
             // Стёртое — не ответ: перегрузка у следующего до первого куска ведёт к запасному, а не к автопродолжению.
             contentSeen = hasAnswerContent(kept);
             answer.update(kept, metadata);
@@ -1007,6 +1053,11 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
     browser?.close();
 
     input.flushers?.delete(saver.flush);
+    // Недоделанные заголовки ждём недолго и только у живого хода: «Стоп» и сбой не ждут.
+    if (thoughtTitles) {
+      if (!input.abortSignal.aborted && errors.length === 0) await thoughtTitles.settle(input.thoughtTitles!.settleMs ?? THOUGHT_TITLES_SETTLE_MS);
+      thoughtTitles.close();
+    }
     const savedParts = await saver.finish();
     const reasoningDurationsMs = timer.finalize();
     const failed = input.abortSignal.aborted || errors.length > 0;
@@ -1014,9 +1065,10 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
     const closing = !failed && pendingHumanInput(savedParts, input.waitingWidgets).length > 0 && (closure !== undefined || (await chatClosedNow()));
     // Остановка, сбой и закрытие чата не дожидаются ответа человека: незакрытые запросы становятся отказами, а вызовы
     // без результата — ошибками с постоянным текстом, чтобы вызов не остался без результата.
+    const titledParts = thoughtTitles ? withThoughtTitles(savedParts, thoughtTitles.titles(), new Set(thoughtTitles.askedKeys())) : savedParts;
     let parts = failed || closing
-      ? closeHangingToolCalls(denyPendingApprovals(savedParts, INTERRUPTED_REASON, RESULT_UNKNOWN_REASON), { notStarted: toolQueue.notStarted })
-      : savedParts;
+      ? closeHangingToolCalls(denyPendingApprovals(titledParts, INTERRUPTED_REASON, RESULT_UNKNOWN_REASON), { notStarted: toolQueue.notStarted })
+      : titledParts;
     // Ответ сорвался в кашу: текст с места срыва отрезан, выполненные вызовы остаются, вызовы после срыва не запускались —
     // ответ законченный, экран показывает то же, что запись. Без хвоста ответ остался бы пустым — не режется.
     const garbled = cutGarbledTail(garbledTail.forCut(parts));
@@ -1150,7 +1202,7 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
 
     emitToClient({
       type: "message-metadata",
-      messageMetadata: { status, reasoningDurationsMs, ...answeredByBackup, ...(usage && { usage }), ...(error && { error }) },
+      messageMetadata: { status, reasoningDurationsMs, ...titlesMetadata(parts), ...answeredByBackup, ...(usage && { usage }), ...(error && { error }) },
     });
     if (status === "error") for (const chunk of errors) emitToClient(chunk);
     if (terminal.length === 0) terminal.push(status === "stopped" ? { type: "abort" } : { type: "finish" });
@@ -1218,6 +1270,7 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
   } finally {
     // Исключение в любом месте хода не оставляет таймеров записи и знака жизни.
     saver.stop();
+    thoughtTitles?.close();
     input.flushers?.delete(saver.flush);
   }
 }
@@ -1227,8 +1280,14 @@ function replayCopiedParts(message: AgentChatMessage, emitToClient: (chunk: UIMe
   for (const chunk of chunksForParts(message.parts)) emitToClient(chunk);
   const reasoningDurationsMs = message.metadata?.reasoningDurationsMs;
   if (reasoningDurationsMs && Object.keys(reasoningDurationsMs).length > 0) {
-    emitToClient({ type: "message-metadata", messageMetadata: { reasoningDurationsMs } });
+    emitToClient({ type: "message-metadata", messageMetadata: { reasoningDurationsMs, ...titlesMetadata(message.parts) } });
   }
+}
+
+/** Заголовки раздумий из частей — для куска метаданных; нет заголовков — пусто. */
+function titlesMetadata(parts: AgentChatMessage["parts"]): Pick<ChatMessageMetadata, "thoughtTitles"> {
+  const thoughtTitles = thoughtTitlesOfParts(parts);
+  return Object.keys(thoughtTitles).length > 0 ? { thoughtTitles } : {};
 }
 
 /**
@@ -1270,12 +1329,15 @@ async function runAnswerAttempt(
     forgedBlocks: ReturnType<typeof createForgedBlockGuard>;
     /** Повторять ли молчание до первого куска у того же провайдера. */
     repeatSilence: () => boolean;
+    retryDelaysMs: () => readonly number[] | undefined;
     /** Есть — попытка у запасного: после шага, за которым ход пошёл бы дальше, она кончается и зовёт это. */
     backToPrimary?: () => void;
     /** Каждый завершённый шаг попытки: причина конца. */
     onStep: (finishReason: string) => void;
     /** Ждёт, пока начатый вызов инструмента попадёт в хранилище. */
     callSaved: (toolCallId: string) => Promise<void>;
+    /** Набор инструментов попытки собран: имена всех (заголовки раздумий их не называют). */
+    onTools?: (toolNames: readonly string[]) => void;
     /** Есть — ход с проверками ответа: сюда идёт всё, что модель видит в запросах. */
     seenTexts?: SeenTexts;
   },
@@ -1368,11 +1430,14 @@ async function openAttempt(
     garbledTail: ReturnType<typeof createGarbledTailGuard>;
     forgedBlocks: ReturnType<typeof createForgedBlockGuard>;
     repeatSilence: () => boolean;
+    retryDelaysMs: () => readonly number[] | undefined;
     backToPrimary?: () => void;
     /** Каждый завершённый шаг попытки: причина конца. */
     onStep: (finishReason: string) => void;
     /** Ждёт, пока начатый вызов инструмента попадёт в хранилище. */
     callSaved: (toolCallId: string) => Promise<void>;
+    /** Набор инструментов попытки собран: имена всех (заголовки раздумий их не называют). */
+    onTools?: (toolNames: readonly string[]) => void;
     /** Есть — ход с проверками ответа: сюда идёт всё, что модель видит в запросах. */
     seenTexts?: SeenTexts;
   },
@@ -1406,6 +1471,7 @@ async function openAttempt(
     callSaved: attempt.callSaved,
     kindsFrom: { ...appTools, ...helpers },
   });
+  attempt.onTools?.(Object.keys(tools ?? {}));
   const toolErrors = trackToolErrors(tools, {
     limit,
     secrets: environmentSecrets(input.env, input.catalog),
@@ -1457,6 +1523,7 @@ async function openAttempt(
     ...(attempt.tailMessages && { tailMessages: attempt.tailMessages }),
     logError,
     repeatSilence: attempt.repeatSilence,
+    retryDelaysMs: attempt.retryDelaysMs,
     ...(turnObserver && { observe: { observer: turnObserver, ownerId: input.ownerId ?? "", messageId: input.messageId, purpose: "answer" as const } }),
     ...(tools && { tools: approval.tools }),
     // Каждый запрос, на который провайдер начал отвечать, — в расход хода с номером генерации (FR-051, FR-058).

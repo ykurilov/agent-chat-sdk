@@ -1,6 +1,7 @@
 import type { LanguageModelV4StreamPart } from "@ai-sdk/provider";
 import { APICallError, simulateReadableStream } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
+import { THOUGHT_TITLE_INSTRUCTIONS } from "@ykurilov/agent-chat-core";
 import { fakeSearchResult, researchTaskPrefix, researchTaskTopic } from "./demo-background";
 import { demoPageUrl, demoSearchQuery } from "./demo-web-services";
 
@@ -566,6 +567,18 @@ function workStep(question: string, toolResults: number, toolsText: string, tool
   return undefined;
 }
 
+const gameRulesThought =
+  "**Продумываю правила игры**\n\nПоле три на три, ходят по очереди крестик и нолик. Нужно запомнить, когда началась партия, чтобы показать её длительность.";
+const gameBoardThought =
+  "Теперь соберу поле: девять клеток, после каждого хода проверяю строки, столбцы и диагонали. Если все клетки заняты и тройки нет — ничья. Счёт партий храню отдельно, чтобы не терялся.";
+
+/** Заглушка модели заголовков раздумий: короткий заголовок по смыслу раздумья. */
+function thoughtTitleAnswer(prompt: unknown): string | undefined {
+  const messages = prompt as Array<{ role: string; content: unknown }>;
+  if (messages[0]?.role !== "system" || messages[0].content !== THOUGHT_TITLE_INSTRUCTIONS) return undefined;
+  return /девять клеток/.test(JSON.stringify(messages.at(-1)?.content)) ? "Собираю поле и ходы" : "Обдумываю ответ";
+}
+
 function nextStep(
   question: string,
   toolResults: number,
@@ -578,6 +591,11 @@ function nextStep(
   // Голосовой режим: пометка приложения говорит, что человек смеялся, и заглушка отвечает на смех.
   if (/были слышны его звуки:[^.]*смех/i.test(question)) return answerStep("Человек засмеялся.", "Ха, рад, что смешно!");
   if (/^поправка/i.test(question.trim())) return answerStep("Человек поправил задачу на ходу.", `Учёл поправку: ${question.trim().replace(/\s*\n+\s*/g, " ")}`);
+  // Заголовки раздумий (у Бориса): первое раздумье — с заголовком провайдера, второе — длинное, его пересказывает модель заголовков.
+  if (/крестики-нолики/i.test(question) && toolNames.has("current_time")) {
+    if (toolResults === 0) return toolCallStep(gameRulesThought, "current_time", { timeZone: "Europe/Moscow" }, "call-game-time");
+    return answerStep(gameBoardThought, "Игра готова: поле 3×3, ходят по очереди, побеждает тот, кто первым соберёт три в ряд.");
+  }
   if (/долг\S* проверк/i.test(question) && toolNames.has("slow_check")) {
     if (toolResults === 0) return toolCallStep("Запущу долгую проверку.", "slow_check", { subject: "кнопка" }, `call-slow-${crypto.randomUUID()}`);
     return answerStep("Проверка закончилась.", "Проверка закончена.");
@@ -736,12 +754,12 @@ export function createDemoMockModel(target: DemoMockTarget): MockLanguageModelV4
   return new MockLanguageModelV4({
     provider: "demo-mock",
     modelId: "demo-mock",
-    // Запросов без потока два: проверка дублей памяти и задание сжатия истории.
+    // Запросов без потока три: проверка дублей памяти, задание сжатия истории и заголовок раздумья.
     doGenerate: async ({ prompt, tools }) => {
       const helperStep = helperTaskStep(prompt, tools);
       if (helperStep) return helperStep;
       const notes = optimizerNotes(prompt);
-      const text = notes ? JSON.stringify(mergeProposal(notes)) : compactionSummary;
+      const text = thoughtTitleAnswer(prompt) ?? (notes ? JSON.stringify(mergeProposal(notes)) : compactionSummary);
       const measured = measuredUsage(JSON.stringify(prompt).length, text.length, 0);
       return {
         content: [{ type: "text", text }],

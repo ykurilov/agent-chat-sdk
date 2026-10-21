@@ -3,6 +3,7 @@ import type { ComposerAttachments, MessageAttachmentsView } from "./attachments-
 import type { AnswerStatus, ApprovalDecision, ErrorNoticeKind } from "./chat-types";
 import type { MediaViewerItem } from "./media-viewer/media-viewer-types";
 import type { VoiceDialogView } from "./voice-dialog";
+import type { StepIcon } from "./work-view/step-icons";
 
 /** Состояние вызова инструмента в ленте (FR-010). */
 export type ToolCallState = "running" | "done" | "error";
@@ -319,8 +320,28 @@ export interface MessageActionView {
  * отметить тихо). Фразы — только текст, без разметки, не длиннее 120 знаков, но слово может быть длинным — переносить.
  */
 export type WorkStepsView =
-  | { state: "live"; phrase: string }
-  | { state: "done"; steps: Array<{ phrase: string; failed: boolean }>; count: number; open: boolean; onOpenChange: (open: boolean) => void };
+  | {
+      state: "live";
+      phrase: string;
+      /** Версия 28: значок текущего шага (`StepIcon`). Нет — скин до 28 рисует строку без значка. */
+      icon?: StepIcon;
+    }
+  | {
+      state: "done";
+      steps: Array<{ phrase: string; failed: boolean }>;
+      count: number;
+      open: boolean;
+      onOpenChange: (open: boolean) => void;
+      /**
+       * Версия 28: все шаги группы со значками — вызовы и раздумья (заголовок раздумья или «Думал N сек»), одинаковые
+       * подряд схлопнуты. Скин 28 рисует раскрытый список по ним, `steps` (только вызовы) — для скинов 23–27.
+       */
+      items?: Array<{ icon: StepIcon; phrase: string; failed: boolean }>;
+      /** Версия 28: ряд значков свёрнутой строки, по значку на шаг, не больше 8. */
+      icons?: StepIcon[];
+      /** Версия 28: сколько значков не влезло в ряд — подпись `labels.workView.moreSteps(n)` («+3»); 0 — все видны. */
+      moreIcons?: number;
+    };
 
 /** Реплика живого сотрудника человеку (версия 25, `ChatService.appendStaffMessage`): сказано от имени компании, не агентом. */
 export interface StaffMessageView {
@@ -331,7 +352,10 @@ export interface StaffMessageView {
 }
 
 /**
- * Договор скина, версия 27 (в версии 27 добавилось только необязательное `ServiceLine` — служебная строка пометки
+ * Договор скина, версия 28 (в версии 28 добавились только необязательные значки шагов и заголовки раздумий:
+ * `WorkStepsView.live.icon`, `WorkStepsView.done.items`, `icons`, `moreIcons` и `Reasoning.title`, docs/skin-v28.md;
+ * скин версии 27 работает без правок: шаги без значков, раздумья — «Думал N сек»).
+ * Версия 27 (в версии 27 добавилось только необязательное `ServiceLine` — служебная строка пометки
  * приложения, право чата `appNotices` и `noticeLines`, docs/skin-v27.md; скин версии 26 работает без правок: пометок
  * не видно).
  * Версия 26 (в версии 26 добавились только необязательные `GeneratedImagesView.wide` и `caption` у готовой
@@ -478,6 +502,11 @@ export interface ChatSkin {
     streaming: boolean;
     /** `null`, пока рассуждение идёт. */
     durationMs: number | null;
+    /**
+     * Версия 28: заголовок раздумья («Продумываю правила игры», `createChatService({ thoughtTitles })`) — показать
+     * вместо «Думал N сек». Нет — прежняя подпись.
+     */
+    title?: string;
     open: boolean;
     onOpenChange: (open: boolean) => void;
   }>;

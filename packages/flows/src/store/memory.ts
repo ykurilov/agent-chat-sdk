@@ -53,6 +53,7 @@ export function memoryFlowStore(): FlowStore {
         updatedAt: normalizeTime(input.at),
         endedAt: null,
         endReason: null,
+        reopenedAt: null,
         pausedUntil: null,
         windowClosed: false,
         dayClosedOn: null,
@@ -196,6 +197,12 @@ export function memoryFlowStore(): FlowStore {
         if (row.endedAt !== null) return;
         Object.assign(row, { endedAt: normalizeTime(at), endReason: reason, dueAt: null, dueExitId: null, dueBranchHead: null, leaseUntil: null, leaseOwner: null });
       });
+    },
+    async reopenChat(chatId, { endedAt, at }) {
+      const row = chats.get(chatId);
+      if (!row || row.endedAt === null || row.endedAt !== normalizeTime(endedAt)) return null;
+      Object.assign(row, { endedAt: null, endReason: null, reopenedAt: normalizeTime(at) });
+      return toRecord(row);
     },
     async setPause(chatId, until) {
       return withChat(chatId, (row) => (row.pausedUntil = until === null ? null : normalizeTime(until)));

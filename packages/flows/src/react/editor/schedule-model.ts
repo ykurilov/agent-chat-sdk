@@ -134,14 +134,21 @@ export function setStateNudges(flow: AgentFlow, stateId: string, mode: NudgesMod
   };
 }
 
-/** Своё расписание касаний ноды: пустые части убираются, срок в днях остаётся. */
+/** Своё расписание касаний ноды: пустые части убираются, сроки в днях остаются. */
 export function updateStateNudges(flow: AgentFlow, stateId: string, nudges: FlowNudges): AgentFlow {
   return {
     ...flow,
     states: flow.states.map((state) => {
       if (state.id !== stateId) return state;
-      const days = state.nudges && state.nudges !== "off" ? state.nudges.days : undefined;
-      return { ...state, nudges: { ...cleanNudges(nudges), ...(days !== undefined && { days }) } };
+      const own = state.nudges && state.nudges !== "off" ? state.nudges : undefined;
+      return {
+        ...state,
+        nudges: {
+          ...cleanNudges(nudges),
+          ...(own?.days !== undefined && { days: own.days }),
+          ...(own?.untilProgramDay !== undefined && { untilProgramDay: own.untilProgramDay }),
+        },
+      };
     }),
   };
 }
@@ -161,6 +168,36 @@ export function setStateNudgesDays(flow: AgentFlow, stateId: string, days: numbe
 /** Срок своих касаний ноды в днях; всё время в ноде или касания не свои — `null`. */
 export function stateNudgesDays(state: FlowState): number | null {
   return state.nudges && state.nudges !== "off" ? (state.nudges.days ?? null) : null;
+}
+
+/** Свои касания ноды действуют до этого дня программы включительно; `null` — без такого предела. С 0.67. */
+export function setStateNudgesUntilProgramDay(flow: AgentFlow, stateId: string, day: number | null): AgentFlow {
+  return {
+    ...flow,
+    states: flow.states.map((state) => {
+      if (state.id !== stateId || !state.nudges || state.nudges === "off") return state;
+      const { untilProgramDay: _until, ...rest } = state.nudges;
+      return { ...state, nudges: day === null ? rest : { ...rest, untilProgramDay: Math.max(1, Math.round(day) || 1) } };
+    }),
+  };
+}
+
+/** До какого дня программы действуют свои касания ноды; предела нет или касания не свои — `null`. */
+export function stateNudgesUntilProgramDay(state: FlowState): number | null {
+  return state.nudges && state.nudges !== "off" ? (state.nudges.untilProgramDay ?? null) : null;
+}
+
+/** Потолок «пишет первым» по дням программы текстом: `[3, 2]` → «3, 2». */
+export function capsByDayText(caps: number[] | undefined): string {
+  return caps?.join(", ") ?? "";
+}
+
+/** «3, 2» → `[3, 2]`; пусто — `undefined` (потолок без дней); не числа — `null`. */
+export function parseCapsByDay(text: string): number[] | undefined | null {
+  const parts = text.split(/[,;\s]+/).filter(Boolean);
+  if (parts.length === 0) return undefined;
+  const caps = parts.map(Number);
+  return caps.every((cap) => Number.isInteger(cap) && cap >= 0) ? caps : null;
 }
 
 /** Касания по умолчанию в «Днях и времени»; `null` — без общих касаний. */
@@ -194,7 +231,8 @@ export function stateTimingText(flow: AgentFlow, state: FlowState, labels: FlowE
     const steps = state.nudges.afterSilence.map((step) => durationText(step, labels));
     const daily = state.nudges.dailyAt ?? [];
     const days = state.nudges.days === undefined ? "" : ` ${labels.board.nudgesDays(state.nudges.days)}`;
-    if (steps.length + daily.length > 0) parts.push(`${labels.board.nudges} ${[...steps, ...daily].join(" · ")}${days}`);
+    const until = state.nudges.untilProgramDay === undefined ? "" : ` ${labels.board.nudgesUntilProgramDay(state.nudges.untilProgramDay)}`;
+    if (steps.length + daily.length > 0) parts.push(`${labels.board.nudges} ${[...steps, ...daily].join(" · ")}${days}${until}`);
   }
   return parts.join(" · ");
 }

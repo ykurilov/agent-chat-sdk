@@ -40,6 +40,7 @@ import type {
   ModelChosenHandler,
   RecoverInterruptedAnswersOptions,
   ReplyChecksSetting,
+  ThoughtTitlesSetting,
   StateChangedHandler,
   AgentSettings,
   BackgroundTasks,
@@ -286,6 +287,8 @@ export interface ChatHandlerOptions extends ServiceOptionsOfServer {
   privateStateKeys?: readonly string[];
   /** Проверки готового ответа перед записью. Как у `ChatServiceOptions.replyChecks`. */
   replyChecks?: ReplyChecksSetting;
+  /** Заголовки раздумий вместо «Думал 3 сек». Как у `ChatServiceOptions.thoughtTitles`. */
+  thoughtTitles?: ThoughtTitlesSetting;
   /** Часы службы: тесты и песочница подменяют время целиком. Как у `ChatServiceOptions.now`. */
   now?: () => Date;
 }

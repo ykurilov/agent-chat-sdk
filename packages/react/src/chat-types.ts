@@ -88,6 +88,8 @@ export interface ChatMessageMetadata {
   usage?: TokenUsage;
   /** Длительность рассуждений по порядковому номеру части рассуждения в сообщении. */
   reasoningDurationsMs?: Record<string, number>;
+  /** Заголовки раздумий по тому же номеру («Продумываю правила игры»): есть, если сервер включил `thoughtTitles`. */
+  thoughtTitles?: Record<string, string>;
   status?: AnswerStatus;
   error?: ChatError;
   /** Есть, если озвучку ответа оборвало перебивание. */

@@ -1,0 +1,1 @@
+ALTER TABLE `flow_chats` ADD `reopened_at` integer;

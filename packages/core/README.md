@@ -92,6 +92,18 @@ import type { ChatStorage } from "@ykurilov/agent-chat-core";
 - `staffOfChat` и `model.staff` — для песочницы: при `model.staff` инструменты не пишут в данные `ownerId`.
 - Своё хранилище: `findChatBySubject`, `importChat`, `setAfterTurnState`, `listPendingAfterTurn` — только для включённых возможностей; общие тесты с флагами `subjectChats`, `importChat`, `afterTurnState`.
 
+## Заголовки раздумий
+
+С 0.69. `thoughtTitles` у `createChatService` — короткий заголовок раздумья вместо «Думал 3 сек» («Продумываю правила
+игры»). Заголовок провайдера (сводка GPT через OpenRouter) берётся как есть, если он на языке человека; иначе — пересказ
+дешёвой моделью `model` в фоне, ход не ждёт. Хранится в части рассуждения (`providerMetadata.agentChat.thoughtTitle`),
+экран получает его в `metadata.thoughtTitles` (и без права `reasoning`: на месте раздумья — пустая часть, текста нет);
+в запрос основной модели не идёт. Расход — `thought_title`. Настройки:
+`enabled` (в том числе функция по чату), `showWithoutReasoning` (по умолчанию да: заголовок виден и без права
+`reasoning` — приложение разрешает показывать суть раздумий; текст раздумья уходит модели заголовков), `hiddenNames`,
+`maxLength`, `maxPerTurn` (на ответ целиком), `minChars`, `timeoutMs`, `language`. Подробно —
+docs/getting-started.md, «Значки шагов и заголовки раздумий».
+
 ## Проверка ответа, часы, «не доставлено»
 
 С 0.49. Всё по желанию; без этих настроек ход побайтно прежний.

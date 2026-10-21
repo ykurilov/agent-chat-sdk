@@ -1,5 +1,6 @@
 import type { WorkViewLabels } from "../labels";
 import type { ToolCallState } from "../skin-contract";
+import type { StepIcon } from "./step-icons";
 
 /**
  * Вид работы агента в ленте. `detailed` — мысли и строки инструментов с входом и выходом, как до 0.45.
@@ -15,11 +16,15 @@ export interface StepCall {
   output?: unknown;
 }
 
-/** Фразы шага: пока идёт («Делаю календарь»), готово («Сделал календарь»), не вышло (необязательно). */
+/**
+ * Фразы шага: пока идёт («Делаю календарь»), готово («Сделал календарь»), не вышло (необязательно). `icon` — значок
+ * шага (договор скина 28, `StepIcon`); нет — угадывается по имени инструмента.
+ */
 export interface StepPhraseText {
   running: string;
   done: string;
   failed?: string;
+  icon?: StepIcon;
 }
 
 /** Фразы шага готовые или по вызову. Нет ответа (`undefined`) — общая фраза. */

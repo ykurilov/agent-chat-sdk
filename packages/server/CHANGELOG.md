@@ -1,5 +1,42 @@
 # @ykurilov/agent-chat-server
 
+## 0.70.0
+
+### Patch Changes
+
+- Updated dependencies [7e54665]
+  - @ykurilov/agent-chat-core@0.70.0
+
+## 0.69.1
+
+### Patch Changes
+
+- Updated dependencies [857777b]
+  - @ykurilov/agent-chat-core@0.69.1
+
+## 0.69.0
+
+### Minor Changes
+
+- e6c03dc: Значки шагов и заголовки раздумий (106): в простом виде — ряд значков у «Сделано N шагов» и список «значок + фраза» (`StepIcon`, `icon` в `stepPhrases`, `guessStepIcon`); `thoughtTitles` у службы чата — заголовок раздумья от провайдера или пересказ дешёвой моделью в фоне, хранится в части раздумья, в запрос основной модели не идёт, расход `thought_title`; договор скина 28 (`WorkStepsView.live.icon`, `done.items`, `icons`, `moreIcons`, `Reasoning.title`); фраза навыка с именем.
+
+### Patch Changes
+
+- Updated dependencies [e6c03dc]
+  - @ykurilov/agent-chat-core@0.69.0
+
+## 0.68.0
+
+### Patch Changes
+
+- @ykurilov/agent-chat-core@0.68.0
+
+## 0.67.0
+
+### Patch Changes
+
+- @ykurilov/agent-chat-core@0.67.0
+
 ## 0.66.0
 
 ### Patch Changes

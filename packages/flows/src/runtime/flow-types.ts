@@ -80,6 +80,46 @@ export interface FlowEndInput {
   outcome?: string;
 }
 
+/** Открыть законченный разговор заново (`flow.reopen`). С 0.68. */
+export interface FlowReopenInput {
+  ownerId: string;
+  chatId: string;
+  /** Почему открыт, словами приложения: придёт в `onReopen.reason`. */
+  reason?: string;
+  /** Открыть, только если разговор закончился не раньше этого момента; раньше — `ended_too_long_ago`. Политика давности — приложения. */
+  endedAfter?: Date;
+}
+
+/**
+ * Почему разговор не открыт: не по сценарию (`not_flow`), не закончен или уже открыт другим вызовом (`not_ended`), конец,
+ * который не открывается (`final`, `deadline`, `blocked`), срок программы уже вышел (`deadline_passed`), закончился раньше
+ * `endedAfter` (`ended_too_long_ago`).
+ */
+export type FlowReopenRefusal = "not_flow" | "not_ended" | "final" | "deadline" | "blocked" | "deadline_passed" | "ended_too_long_ago";
+
+export type FlowReopenResult = { reopened: true } | { reopened: false; reason: FlowReopenRefusal };
+
+/** Разговор открыт заново: приложение возвращает статус «идёт». */
+export interface FlowReopen {
+  ownerId: string;
+  chatId: string;
+  flowId: string;
+  versionId: string;
+  /** Чем разговор кончился: `abandoned` или своя причина приложения. */
+  endReason: FlowEndReason;
+  endedAt: Date;
+  /** Причина открытия из `flow.reopen`. */
+  reason?: string;
+  /** День программы сейчас, от исходного старта; без «Дней и времени» — `null`. */
+  day: number | null;
+  /** Нода, где разговор продолжается: та, где кончился. */
+  state: string;
+  tags: string[];
+  /** Место после открытия: путь с записью «открыт заново», заметки, счётчики. */
+  run: FlowRun;
+  at: Date;
+}
+
 /** Перенести идущий чат сразу, без хода: сценарий и место — как у `loadFlow`. */
 export type FlowAdoptInput = LoadedFlow & { ownerId: string; chatId: string };
 
@@ -224,6 +264,8 @@ export interface FirstMessageRules {
     timeZone: string;
     /** «Дни и время» сценария: его ночь и потолок главнее настроек приложения, закрытый день — до следующего. */
     schedule?: FlowSchedule;
+    /** День программы этого чата (как `flowDay`): по нему потолок `maxPerDayByDay`. */
+    programDay?: number;
     /** Запись чата: окно канала, пауза сотрудника, закрытый день — запрет до правил приложения. */
     chat?: Pick<FlowChatRecord, "dayClosedOn" | "pausedUntil" | "windowClosed">;
   }): Promise<{ allowed: true } | { allowed: false; retryAt: number | null }>;
@@ -528,6 +570,8 @@ export interface AgentFlowOptions {
   onTransition?: (event: FlowTransitionEvent) => void | Promise<void>;
   /** Разговор закончился (`final`, `deadline`, `abandoned`, `blocked`). Ошибка приложения не ломает сценарий. */
   onFinish?: (event: FlowFinish) => void | Promise<void>;
+  /** Разговор открыт заново (`flow.reopen`). Ошибка приложения не ломает сценарий. С 0.68. */
+  onReopen?: (event: FlowReopen) => void | Promise<void>;
   /** Карточка клиента в хранилище приложения. Нет — таблица модуля. */
   clientCard?: ClientCardStore;
   /**
@@ -579,6 +623,13 @@ export interface AgentFlowHandle {
    * остаётся в своей ноде; дальше — как настроено `afterEnd`. Уже законченный или чат не по сценарию — `ended: false`.
    */
   end(input: FlowEndInput): Promise<{ ended: boolean }>;
+  /**
+   * Открыть законченный разговор заново: «не завершил» (`abandoned`) или своя причина приложения (`flow.end`). Нода,
+   * история, память и `chatId` те же; ряд касаний — с первого шага от открытия; дни и срок программы — от исходного
+   * старта. Событие `onReopen`, запись «reopen» в пути, сроки поставлены. Не открывается — `reopened: false` и причина,
+   * ничего не меняется. Повтор и гонка копий безопасны: открывает один вызов. С 0.68.
+   */
+  reopen(input: FlowReopenInput): Promise<FlowReopenResult>;
   /** Сообщение человека в канале приложения: отвечать, ответить готовой фразой, промолчать. Звать до хода. */
   admit(input: FlowAdmitInput): Promise<FlowAdmitDecision>;
   /** Отвечает живой сотрудник: агент молчит, таймеры и касания стоят. */

@@ -27,6 +27,10 @@ import { chatHasExternalContent } from "./external-content/external-content";
 import type { ChatEvent, ChatEvents, ChatTurnTrigger } from "./chat-events/chat-events";
 import type { BackgroundPort, BackgroundTasks } from "./background/background-tasks";
 import { helperToolsModel, runHelper } from "./helpers/run-helper";
+import { createThoughtTitleModel } from "./thought-titles/thought-title-model";
+import { resolveThoughtTitles, thoughtTitleHiddenNames, thoughtTitleLanguage, thoughtTitlesEnabled } from "./thought-titles/thought-titles-setting";
+import type { ThoughtTitlesSetting } from "./thought-titles/thought-titles-setting";
+import type { TurnThoughtTitlesSource } from "./thought-titles/turn-thought-titles";
 import type { AppendStaffMessageInput, DeliverNoticesInput, DeliverNoticesResult } from "./notices/agent-notice";
 import { deliveryKeyOf, MAX_SERVER_TURNS_IN_ROW, noticeMessageParts, serverTurnsInRow } from "./notices/deliver-notices";
 import { noticesOfPart } from "./notices/notices-for-model";
@@ -520,6 +524,12 @@ export interface ChatServiceOptions {
    * `"hold"` — не печатать до проверки; мессенджеры получают только проверенный текст. Нет — ход побайтно прежний.
    */
   replyChecks?: ReplyChecksSetting;
+  /**
+   * Заголовки раздумий вместо «Думал 3 сек»: заголовки провайдера (сводка рассуждений GPT через OpenRouter) или пересказ
+   * дешёвой моделью `model`. Делаются в фоне, ход не ждут; лежат в частях рассуждения, в запрос основной модели не идут.
+   * Расход — видом `thought_title`. Нет — ход и запрос побайтно прежние. См. `ThoughtTitlesSetting`.
+   */
+  thoughtTitles?: ThoughtTitlesSetting;
   /**
    * Наблюдатель хода (песочница): каждое обращение к модели (ответ, сжатие, память, повторы) и каждый вызов серверного
    * инструмента — событием. Вызывается синхронно и не ждётся; бросок уходит в `logError`. Нет — запрос побайтно прежний.
@@ -1319,6 +1329,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
   const logError = input.logError ?? ((message: string) => console.error(message));
   const now = input.now ?? (() => new Date());
   const replyChecks = checkedReplyChecks(input.replyChecks);
+  const thoughtTitles = resolveThoughtTitles(input.thoughtTitles, input.catalog);
   // Служебные форматы: ядро, пакеты и приложение — один список; ошибка в формате — `TypeError` при создании службы.
   const serviceBlocks: readonly ServiceBlockFormat[] = [
     ...CORE_SERVICE_BLOCKS,
@@ -1679,6 +1690,31 @@ export function createChatService(input: ChatServiceOptions): ChatService {
   }
 
   const oneOffCalls = { storage, catalog: options.catalog, env, logError, assertWithinLimit: assertWithinSpendingLimit, afterSpending };
+  // Без права reasoning заголовки раздумий всё равно видны: на месте раздумья — пустая часть, текста нет.
+  /** Заголовки без права reasoning — если служба их делает для этого чата и приложение их не запретило. */
+  const visibilityOptionsOf = (chat: Pick<Chat, "id" | "ownerId">) => ({
+    thoughtTitles: thoughtTitles !== null && thoughtTitles.showWithoutReasoning && thoughtTitlesEnabled(thoughtTitles, { ownerId: chat.ownerId, chatId: chat.id }, logError),
+  });
+  const thoughtTitleModel = thoughtTitles?.model && createThoughtTitleModel(oneOffCalls, thoughtTitles.model, thoughtTitles.timeoutMs);
+
+  /** Заголовки раздумий хода: язык — по настройке или последнему сообщению человека, пересказ — от имени владельца чата. */
+  async function thoughtTitlesForTurn(ownerId: string, chatId: string, messageId: string, branch: StoredMessage[]): Promise<TurnThoughtTitlesSource | undefined> {
+    if (!thoughtTitles || !thoughtTitlesEnabled(thoughtTitles, { ownerId, chatId }, logError)) return undefined;
+    // Имена инструментов хода добавит сам ход; здесь — свои слова приложения (имена навыков).
+    const toolNames = await thoughtTitleHiddenNames(thoughtTitles, { ownerId, chatId }, logError);
+    const lastUserText = (branch.findLast((message) => message.role === "user")?.parts ?? []).flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n");
+    const language = thoughtTitleLanguage(thoughtTitles, { ownerId, chatId, lastUserText }, logError);
+    return {
+      language,
+      maxLength: thoughtTitles.maxLength,
+      maxPerTurn: thoughtTitles.maxPerTurn,
+      minChars: thoughtTitles.minChars,
+      toolNames,
+      ...(thoughtTitleModel && {
+        summarize: (text: string, signal?: AbortSignal) => thoughtTitleModel({ ownerId, chatId, messageId, text, language, ...(signal && { signal }) }),
+      }),
+    };
+  }
 
   /**
    * Сообщение человека (отправка, правка) берёт место в окнах сообщений до записи — после проверки хода, денег и занятости
@@ -1765,8 +1801,8 @@ export function createChatService(input: ChatServiceOptions): ChatService {
    * Без `chatCapabilities` видно всё и приложение не спрашивается.
    */
   async function visibilityFor(userId: string, chat: Chat, scope?: RequestScope): Promise<ClientVisibility> {
-    if (!options.chatCapabilities) return clientVisibilityOf(resolveChatCapabilities(undefined), isScreenTool);
-    return clientVisibilityOf(await capabilitiesOf(userId, withClosure(chat, await closureOf(chat)), scope), isScreenTool);
+    if (!options.chatCapabilities) return clientVisibilityOf(resolveChatCapabilities(undefined), isScreenTool, visibilityOptionsOf(chat));
+    return clientVisibilityOf(await capabilitiesOf(userId, withClosure(chat, await closureOf(chat)), scope), isScreenTool, visibilityOptionsOf(chat));
   }
 
   /** Поток хода для зрителя: права считаются до запуска хода, скрытое не уходит ни в живые куски, ни в повтор. */
@@ -2036,7 +2072,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     const pending = runningAt < 0 ? [] : branch.slice(runningAt + 1);
     const capabilities = await capabilitiesOf(userId, withClosure(stored, closed), scope);
     // Мысли, служебные инструменты и модель — по правам зрителя (`reasoning`, `toolDetails`, `modelDetails`); хранилище их держит.
-    const visibility = clientVisibilityOf(capabilities, isScreenTool);
+    const visibility = clientVisibilityOf(capabilities, isScreenTool, visibilityOptionsOf(stored));
     // Пометки приложения — только с правом и только проекции для экрана: сырые `data` (сигналы приложения) не уходят.
     const screenNotices = capabilities.appNotices && options.appNoticeViews ? { appNoticeViews: options.appNoticeViews } : {};
     // Недоставленные ответы — с пометкой: экран подпишет «не доставлено».
@@ -2403,6 +2439,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     if (resumeMessage && !launch.replay) resumeBases.set(chatId, resumeMessage);
     const toolQueue = chatToolQueues.get(chatId) ?? createToolQueue();
     chatToolQueues.set(chatId, toolQueue);
+    const turnThoughtTitles = await thoughtTitlesForTurn(chat.ownerId, chatId, answerId, branch);
     const limits = turnLimits.forModel(model.modelId);
     const liveTurn = liveTurns.begin(limits.timeoutMs);
     let started: { finished: Promise<void> };
@@ -2476,6 +2513,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
           }),
           ...(launch.reply !== undefined && { reply: launch.reply }),
           ...(launch.usageSource && { usageSource: launch.usageSource }),
+          ...(turnThoughtTitles && { thoughtTitles: turnThoughtTitles }),
           ...(replyChecks.checks.length > 0 && { replyChecks }),
           ...(channel !== "web" && { channel }),
           ...(group && { group }),

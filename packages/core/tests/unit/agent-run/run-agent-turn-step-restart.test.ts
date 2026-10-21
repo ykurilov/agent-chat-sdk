@@ -362,7 +362,7 @@ describe("runAgentTurn: модель молчит — шаг заново у с�
 
       expect(saved.status, onSilence).toBe("complete");
       expect(textOf(saved.parts), onSilence).toBe("Итог запасного");
-      expect(primary.doStreamCalls, onSilence).toHaveLength(4);
+      expect(primary.doStreamCalls, onSilence).toHaveLength(2);
       expect(backup.doStreamCalls, onSilence).toHaveLength(2);
     }
   });
@@ -394,7 +394,7 @@ describe("runAgentTurn: модель молчит — шаг заново у с�
     });
 
     expect(resets(chunks)).toHaveLength(1);
-    expect(backup.doStreamCalls).toHaveLength(4);
+    expect(backup.doStreamCalls).toHaveLength(2);
     expect(third.doStreamCalls).toHaveLength(1);
     expect(saved.status).toBe("complete");
     expect(textOf(saved.parts)).toBe("Ответ третьего");

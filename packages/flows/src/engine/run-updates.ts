@@ -68,6 +68,25 @@ export function applyTransition(flow: AgentFlow, run: FlowRun, transition: Trans
 }
 
 /**
+ * Разговор открыт заново в `at` (`flow.reopen`): конца нет, нода та же, ряд касаний — с первого шага от `at`, счёт ходов
+ * сервера и переходов подряд — заново; в пути — запись «открыт заново». Дни программы — от исходного старта.
+ */
+export function reopenRun<T extends FlowRun>(flow: AgentFlow, run: T, at: number): T {
+  const { endedAt: _endedAt, endReason: _endReason, nudgeStepOwn: _nudgeStepOwn, touch: _touch, ...live } = run;
+  const tags = stateById(flow, run.state)?.tags ?? [];
+  return {
+    ...live,
+    reopenedAt: at,
+    // Часы ноды — от открытия, как будто человек только что вошёл; дни программы — от исходного старта.
+    enteredAt: at,
+    nudgeStep: 0,
+    serverTurns: 0,
+    chain: 0,
+    path: appendPath(run.path, { state: run.state, at, tags, from: run.state, exitId: null, decidedBy: "reopen" }),
+  } as T;
+}
+
+/**
  * Пришло сообщение человека: тишина прервана, счёт переходов подряд — заново, ряд касаний — с первого шага.
  * `dayKey` — местная дата дня сценария («ГГГГ-ММ-ДД»), только у сценариев с днями: по нему считаются рамки дня.
  */

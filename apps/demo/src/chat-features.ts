@@ -29,10 +29,11 @@ export const demoStepPhrases: StepPhrases = {
   current_time: ({ input }) => {
     const zone = (input as { timeZone?: unknown } | undefined)?.timeZone;
     const city = typeof zone === "string" ? cities[zone] : undefined;
-    return city ? { running: `Узнаю время в ${city}`, done: `Узнал время в ${city}` } : { running: "Узнаю время", done: "Узнал время" };
+    // Свой значок шага (договор скина 28): часы.
+    return city ? { running: `Узнаю время в ${city}`, done: `Узнал время в ${city}`, icon: "task" } : { running: "Узнаю время", done: "Узнал время", icon: "task" };
   },
   // Длинная фраза: на узком экране список шагов переносит её, а не растягивает пузырь.
-  slow_check: { running: "Проверяю макет", done: "Проверил макет: кнопки, отступы, шрифты, тёмную тему, узкий экран и подписи на двух языках" },
+  slow_check: { icon: "check", running: "Проверяю макет", done: "Проверил макет: кнопки, отступы, шрифты, тёмную тему, узкий экран и подписи на двух языках" },
   broken_lookup: { running: "Ищу справку", done: "Нашёл справку", failed: "Справочная не ответила" },
 };
 

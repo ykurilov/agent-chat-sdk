@@ -62,6 +62,8 @@ export type {
   WorkViewLabels,
 } from "./labels";
 export type { StepCall, StepPhrase, StepPhrases, StepPhraseText, WorkView } from "./work-view/step-phrases";
+export { guessStepIcon, stepIconOf } from "./work-view/step-icons";
+export type { StepIcon } from "./work-view/step-icons";
 export type { SpendingInfo, SpendingPeriod, SpendingRefusalReason, SpendingScope, SpendingView, SpendingWindowInfo } from "./spending-status";
 export type {
   AgentNoticeViewKind,

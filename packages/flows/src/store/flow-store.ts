@@ -41,6 +41,8 @@ export interface FlowChatRecord {
   /** Разговор закончился: таймеров и касаний больше нет. */
   endedAt: string | null;
   endReason: FlowEndReason | null;
+  /** Разговор открыт заново (`flow.reopen`) в этот момент, по часам чата; место догоняет отметку на ближайшем чтении. С 0.68. */
+  reopenedAt: string | null;
   /** Пауза «отвечает живой сотрудник» до этого момента; таймеры не берутся. */
   pausedUntil: string | null;
   /** Канал приложения закрыл окно: первым не писать до сообщения человека. */
@@ -246,6 +248,11 @@ export interface FlowStore {
 
   /** Разговор закончен: ставит время и причину, снимает таймер. Уже закончен — ничего не меняет. */
   endChat(chatId: string, input: { reason: FlowEndReason; at: string }): Promise<FlowChatRecord | null>;
+  /**
+   * Открыть законченный разговор заново: только если он всё ещё закончен в `endedAt` (что прочитал вызывающий). Снимает
+   * конец, ставит `reopenedAt`. Не тот конец, не закончен или чата нет — `null`: из двух копий открывает одна. С 0.68.
+   */
+  reopenChat(chatId: string, input: { endedAt: string; at: string }): Promise<FlowChatRecord | null>;
   /** `null` — снять паузу. */
   setPause(chatId: string, until: string | null): Promise<FlowChatRecord | null>;
   setWindowClosed(chatId: string, closed: boolean): Promise<void>;

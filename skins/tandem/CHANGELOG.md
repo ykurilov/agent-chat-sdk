@@ -1,5 +1,77 @@
 # @ykurilov/agent-chat-skin-tandem
 
+## 0.70.0
+
+### Patch Changes
+
+- @ykurilov/agent-chat-flows@0.70.0
+  - @ykurilov/agent-chat-mcp@0.70.0
+  - @ykurilov/agent-chat-messengers@0.70.0
+  - @ykurilov/agent-chat-sandbox@0.70.0
+  - @ykurilov/agent-chat-skills@0.70.0
+  - @ykurilov/agent-chat-react@0.70.0
+
+## 0.69.1
+
+### Patch Changes
+
+- 857777b: Ряд значков шагов в Тандеме — по настоящей ширине строки, «+N» всегда помещается, не вылезает за край узкой колонки; модели заголовков раздумий уходит не больше 1200 знаков раздумья (начало и конец) — длинный заголовок вдвое дешевле.
+- @ykurilov/agent-chat-flows@0.69.1
+  - @ykurilov/agent-chat-mcp@0.69.1
+  - @ykurilov/agent-chat-messengers@0.69.1
+  - @ykurilov/agent-chat-sandbox@0.69.1
+  - @ykurilov/agent-chat-skills@0.69.1
+  - @ykurilov/agent-chat-react@0.69.1
+
+## 0.69.0
+
+### Minor Changes
+
+- e6c03dc: Значки шагов и заголовки раздумий (106): в простом виде — ряд значков у «Сделано N шагов» и список «значок + фраза» (`StepIcon`, `icon` в `stepPhrases`, `guessStepIcon`); `thoughtTitles` у службы чата — заголовок раздумья от провайдера или пересказ дешёвой моделью в фоне, хранится в части раздумья, в запрос основной модели не идёт, расход `thought_title`; договор скина 28 (`WorkStepsView.live.icon`, `done.items`, `icons`, `moreIcons`, `Reasoning.title`); фраза навыка с именем.
+
+### Patch Changes
+
+- Updated dependencies [e6c03dc]
+  - @ykurilov/agent-chat-react@0.69.0
+  - @ykurilov/agent-chat-skills@0.69.0
+  - @ykurilov/agent-chat-flows@0.69.0
+  - @ykurilov/agent-chat-mcp@0.69.0
+  - @ykurilov/agent-chat-messengers@0.69.0
+  - @ykurilov/agent-chat-sandbox@0.69.0
+
+## 0.68.0
+
+### Patch Changes
+
+- Updated dependencies [d7fc4e6]
+  - @ykurilov/agent-chat-flows@0.68.0
+  - @ykurilov/agent-chat-mcp@0.68.0
+  - @ykurilov/agent-chat-messengers@0.68.0
+  - @ykurilov/agent-chat-react@0.68.0
+  - @ykurilov/agent-chat-sandbox@0.68.0
+  - @ykurilov/agent-chat-skills@0.68.0
+
+## 0.67.0
+
+### Minor Changes
+
+- 12c0dd8: Потолок «пишет первым» по дням программы: `schedule.firstMessages.maxPerDayByDay` (`[3, 2]` — день 1 три, со дня 2 по
+  два; главнее `maxPerDay`; ответ человека счёт не обнуляет). Свои касания ноды до N-го дня программы:
+  `nudges.untilProgramDay` (дошёл до ноды позже — сразу общий ряд). `checkFlow`: `nudges_until_day_invalid`,
+  `nudges_until_day_after_end`, `max_per_day_by_day_after_end`. Доска: поле «по дням программы» и режим «до дня программы»
+  (ru/en); `FlowStateTimingProps` + `nudgesUntilProgramDay`, `onNudgesUntilProgramDayChange`; выгружены `parseCapsByDay`,
+  `capsByDayText`.
+
+### Patch Changes
+
+- Updated dependencies [12c0dd8]
+  - @ykurilov/agent-chat-flows@0.67.0
+  - @ykurilov/agent-chat-mcp@0.67.0
+  - @ykurilov/agent-chat-messengers@0.67.0
+  - @ykurilov/agent-chat-react@0.67.0
+  - @ykurilov/agent-chat-sandbox@0.67.0
+  - @ykurilov/agent-chat-skills@0.67.0
+
 ## 0.66.0
 
 ### Patch Changes

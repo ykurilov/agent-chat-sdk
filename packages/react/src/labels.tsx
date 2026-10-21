@@ -175,6 +175,10 @@ export interface WorkViewLabels {
   stepRepeated: (phrase: string, count: number) => string;
   /** Модель думает: «Думаю». */
   thinking: string;
+  /** Раздумье без заголовка в списке шагов (договор 28): «Думал 4 сек»; времени нет — «Подумал». */
+  thought: (durationMs: number | null) => string;
+  /** Скрытые значки длинного ряда (договор 28): «+3». */
+  moreSteps: (count: number) => string;
   /** Живая строка: «Рисую календарь…». */
   live: (phrase: string) => string;
   /** Свёрнутые шаги: «Сделано 3 шага»; `count` — число вызовов, вместе с повторами. */
@@ -600,6 +604,8 @@ const russianWorkView: WorkViewLabels = {
   stepUnfinishedUnknown: "Шаг не закончен",
   stepRepeated: (phrase, count) => `${phrase} ×${count}`,
   thinking: "Думаю",
+  thought: (durationMs) => (durationMs === null ? "Подумал" : `Думал ${Math.max(1, Math.round(durationMs / 1000))} сек`),
+  moreSteps: (count) => `+${count}`,
   live: withEllipsis,
   stepsDone: (count) => `${russianPlural.select(count) === "one" ? "Сделан" : "Сделано"} ${russianCount(count, { one: "шаг", few: "шага", many: "шагов" })}`,
   helperRunning: (name) => `Помощник «${name}» работает`,
@@ -616,6 +622,8 @@ export const englishWorkViewLabels: WorkViewLabels = {
   stepUnfinishedUnknown: "A step wasn’t finished",
   stepRepeated: (phrase, count) => `${phrase} ×${count}`,
   thinking: "Thinking",
+  thought: (durationMs) => (durationMs === null ? "Thought" : `Thought for ${Math.max(1, Math.round(durationMs / 1000))} s`),
+  moreSteps: (count) => `+${count}`,
   live: withEllipsis,
   stepsDone: (count) => `${count} ${count === 1 ? "step" : "steps"} done`,
   helperRunning: (name) => `Helper “${name}” is working`,

@@ -34,7 +34,7 @@ const iphone = { ...devices["iPhone 15"], browserName: "chromium" as const, defa
 const clipboard = ["clipboard-read", "clipboard-write"];
 
 // Всё, что не относится к телефону и замерам, идёт на компьютере: новый файл с проверкой попадёт сюда сам.
-const notOnDesktop = ["phone.spec.ts", "model-picker-phone.spec.ts", "branches-phone.spec.ts", "chat-list-phone.spec.ts", "tool-approval-phone.spec.ts", "widgets-phone.spec.ts", "diagrams-phone.spec.ts", "live-demos-phone.spec.ts", "images-phone.spec.ts", "videos-phone.spec.ts", "memory-phone.spec.ts", "agent-panel-phone.spec.ts", "sandbox-phone.spec.ts", "composer-actions-phone.spec.ts", "steering-phone.spec.ts", "simple-work-view-phone.spec.ts", "feed.spec.ts", "voice-dialog-phone.spec.ts", "voice-dialog-webkit.spec.ts", "perf-*.spec.ts", "timing.spec.ts"];
+const notOnDesktop = ["phone.spec.ts", "model-picker-phone.spec.ts", "branches-phone.spec.ts", "chat-list-phone.spec.ts", "tool-approval-phone.spec.ts", "widgets-phone.spec.ts", "diagrams-phone.spec.ts", "live-demos-phone.spec.ts", "images-phone.spec.ts", "videos-phone.spec.ts", "memory-phone.spec.ts", "agent-panel-phone.spec.ts", "sandbox-phone.spec.ts", "composer-actions-phone.spec.ts", "steering-phone.spec.ts", "simple-work-view-phone.spec.ts", "thought-titles-phone.spec.ts", "feed.spec.ts", "voice-dialog-phone.spec.ts", "voice-dialog-webkit.spec.ts", "perf-*.spec.ts", "timing.spec.ts"];
 
 export default defineConfig({
   testDir: "./e2e",
@@ -76,7 +76,7 @@ export default defineConfig({
     {
       name: "iphone-light",
       fullyParallel: true,
-      testMatch: ["phone.spec.ts", "model-picker-phone.spec.ts", "branches-phone.spec.ts", "chat-list-phone.spec.ts", "tool-approval-phone.spec.ts", "widgets-phone.spec.ts", "diagrams-phone.spec.ts", "live-demos-phone.spec.ts", "images-phone.spec.ts", "videos-phone.spec.ts", "memory-phone.spec.ts", "agent-panel-phone.spec.ts", "sandbox-phone.spec.ts", "composer-actions-phone.spec.ts", "steering-phone.spec.ts", "simple-work-view-phone.spec.ts", "feed.spec.ts", "liveness-screen.spec.ts", "voice-dialog-phone.spec.ts"],
+      testMatch: ["phone.spec.ts", "model-picker-phone.spec.ts", "branches-phone.spec.ts", "chat-list-phone.spec.ts", "tool-approval-phone.spec.ts", "widgets-phone.spec.ts", "diagrams-phone.spec.ts", "live-demos-phone.spec.ts", "images-phone.spec.ts", "videos-phone.spec.ts", "memory-phone.spec.ts", "agent-panel-phone.spec.ts", "sandbox-phone.spec.ts", "composer-actions-phone.spec.ts", "steering-phone.spec.ts", "simple-work-view-phone.spec.ts", "thought-titles-phone.spec.ts", "feed.spec.ts", "liveness-screen.spec.ts", "voice-dialog-phone.spec.ts"],
       use: { ...iphone, colorScheme: "light", permissions: clipboard },
     },
     // Замеры скорости: не входят в обычный прогон, включаются `DEMO_E2E_PERF=1` (`pnpm test:e2e:perf`).

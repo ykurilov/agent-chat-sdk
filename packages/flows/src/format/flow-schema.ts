@@ -90,6 +90,7 @@ const schedule = z.strictObject({
   firstMessages: z
     .strictObject({
       maxPerDay: z.int().min(0).optional(),
+      maxPerDayByDay: z.array(z.int().min(0)).min(1).optional(),
       morning: z.boolean().optional(),
       skipMorningIfHumanWithinMin: z.int().min(0).optional(),
     })
@@ -125,7 +126,7 @@ const flowState = z.strictObject({
   tools: names,
   tags: names,
   exits,
-  nudges: z.union([nudges.extend({ days: z.number().optional() }), z.literal("off")]).optional(),
+  nudges: z.union([nudges.extend({ days: z.number().optional(), untilProgramDay: z.number().optional() }), z.literal("off")]).optional(),
 });
 
 export const DEFAULT_SIDE_QUESTION_EVERY_MESSAGES = 5;

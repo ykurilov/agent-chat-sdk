@@ -102,3 +102,13 @@ describe("блок рассуждений, пока модель думает", 
     expect(vi.getTimerCount()).toBe(0);
   });
 });
+
+describe("заголовок раздумья в подробном виде (договор 28)", () => {
+  it("есть заголовок — он вместо «Думал N сек»; пока думает — живая надпись", () => {
+    const props = { text: "мысль", open: false, onOpenChange: vi.fn() };
+    const { rerender } = render(<TandemReasoning {...props} streaming={false} durationMs={3_000} title="Продумываю правила игры" />);
+    expect(screen.getByRole("button").textContent).toBe("Продумываю правила игры");
+    rerender(<TandemReasoning {...props} streaming durationMs={null} title="Продумываю правила игры" />);
+    expect(screen.getByRole("button", { name: russianLabels.reasoningRunning })).toBeTruthy();
+  });
+});
