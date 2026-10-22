@@ -25,24 +25,28 @@ export function endTurnNoteForModel(part: { type: string }): TextPart | undefine
 export interface EndTurnOptions {
   /** Готовый текст ответа: идёт в поток и в запись обычной текстовой частью, модель его не пишет. Пустой — без текста. */
   text?: string;
+  /** End only when the active answer has user-facing text, or explicit text supplies it. Otherwise return ordinary output. */
+  requireText?: boolean;
 }
 
 interface EndTurnMark {
   [END_TURN]: true;
   output: unknown;
   text: string | undefined;
+  requireText: boolean;
 }
 
 /**
  * Результат инструмента, после которого ход кончается: модель следующего шага не делает. SDK снимает пометку — модель,
  * запись, наблюдатель и следующий ход видят `output` как обычный результат. Готовый `text` ложится в ответ после
  * результата. Для типов возвращает тот же `output`: на деле — обёртка, её понимает только инструмент основного агента.
- * @throws TypeError `text` не строка.
+ * @throws TypeError for invalid text or requireText options.
  */
 export function endTurn<T>(output: T, options?: EndTurnOptions): T {
   const text = options?.text;
   if (text !== undefined && typeof text !== "string") throw new TypeError("endTurn: text — строка");
-  const mark: EndTurnMark = { [END_TURN]: true, output, text: text !== undefined && text.trim().length > 0 ? text : undefined };
+  if (options?.requireText !== undefined && typeof options.requireText !== "boolean") throw new TypeError("endTurn: requireText must be a boolean");
+  const mark: EndTurnMark = { [END_TURN]: true, output, requireText: options?.requireText === true, text: text !== undefined && text.trim().length > 0 ? text : undefined };
   return mark as unknown as T;
 }
 
@@ -72,12 +76,21 @@ export interface EndTurnRequests {
   nextAttempt(parts: ReadonlyArray<{ type: string }>): void;
 }
 
-export function createEndTurnRequests(): EndTurnRequests {
+/** Text intended for the user, without judging Markdown/HTML meaning or delivery acknowledgements. */
+function hasUserFacingText(parts: ReadonlyArray<{ type: string; text?: unknown }>): boolean {
+  return parts.some((part) => part.type === "text" && typeof part.text === "string" && hasText(part.text));
+}
+
+function hasText(text: string): boolean {
+  return text.replace(/[\s\p{Cf}\p{Default_Ignorable_Code_Point}]/gu, "").length > 0;
+}
+
+export function createEndTurnRequests(snapshot: () => Promise<ReadonlyArray<{ type: string }>> = async () => []): EndTurnRequests {
   let calls = 0;
   let attempt = 0;
   let silent = false;
   // Вызов → номер по порядку начала и готовый текст.
-  const ended = new Map<string, { order: number; text: string | undefined }>();
+  const ended = new Map<string, { order: number; text: string | undefined; requireText: boolean }>();
   const texts = () =>
     [...ended.values()]
       .sort((left, right) => left.order - right.order)
@@ -87,8 +100,11 @@ export function createEndTurnRequests(): EndTurnRequests {
       const own = attempt;
       return withEndTurn(tools, (toolCallId) => {
         const order = calls++;
-        return (text) => {
-          if (own === attempt) ended.set(toolCallId, { order, text });
+        return (text, requireText) => {
+          const remember = () => { if (own === attempt) ended.set(toolCallId, { order, text, requireText }); };
+          // Explicit user-supplied text keeps its existing precedence; no SDK acknowledgement is invented.
+          if (!requireText || (text !== undefined && hasText(text))) return remember();
+          return snapshot().then((parts) => { if (hasUserFacingText(parts)) remember(); });
         };
       });
     },
@@ -109,7 +125,9 @@ export function createEndTurnRequests(): EndTurnRequests {
       attempt += 1;
       silent = false;
       const answered = new Set(parts.flatMap((part) => (isAnsweredToolPart(part) ? [part.toolCallId] : [])));
-      for (const toolCallId of ended.keys()) if (!answered.has(toolCallId)) ended.delete(toolCallId);
+      for (const [toolCallId, request] of ended) {
+        if (!answered.has(toolCallId) || (request.requireText && !(request.text !== undefined && hasText(request.text)) && !hasUserFacingText(parts))) ended.delete(toolCallId);
+      }
     },
   };
 }
@@ -125,7 +143,7 @@ export function withoutEndTurn(tools: ToolSet | undefined): ToolSet | undefined 
 }
 
 /** `startCall` — на начало вызова; отдаёт, что сделать с просьбой этого вызова. */
-function withEndTurn(tools: ToolSet | undefined, startCall: (toolCallId: string) => (text: string | undefined) => void): ToolSet | undefined {
+function withEndTurn(tools: ToolSet | undefined, startCall: (toolCallId: string) => (text: string | undefined, requireText: boolean) => void | Promise<void>): ToolSet | undefined {
   if (!tools) return tools;
   const wrapped: ToolSet = {};
   for (const [name, original] of Object.entries(tools)) {
@@ -137,8 +155,8 @@ function withEndTurn(tools: ToolSet | undefined, startCall: (toolCallId: string)
             const onEnd = startCall(options.toolCallId);
             const unwrap = (value: unknown) => {
               if (!isEndTurnMark(value)) return value;
-              onEnd(value.text);
-              return value.output;
+              const accepted = onEnd(value.text, value.requireText === true);
+              return accepted ? accepted.then(() => value.output) : value.output;
             };
             const result = execute(input, options);
             if (isAsyncIterable(result)) return unwrapEach(result, unwrap);

@@ -613,7 +613,7 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
     // Очередь серверных инструментов «по одному» — на чат или хотя бы на весь ход: попытки хода её делят.
     const toolQueue = input.toolQueue ?? createToolQueue();
     // Инструмент попросил закончить ход (`endTurn`): просьба живёт на весь ход — новая попытка сразу её исполняет.
-    const endTurns = createEndTurnRequests();
+    const endTurns = createEndTurnRequests(() => saver.snapshot());
     // Чем кончился последний шаг: «length» — ответ оборван пределом длины (FR-054).
     let lastFinishReason: string | undefined;
     const browser = input.browserTools && createTurnBrowserTools({ ...input.browserTools, tabId: input.browserTools.tabId, chatId: input.chatId, emit: emitToClient, signal: input.abortSignal });
