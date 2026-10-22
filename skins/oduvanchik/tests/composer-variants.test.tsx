@@ -15,6 +15,16 @@ const choice = (onChange = vi.fn()): ModelChoiceView => ({
 const base = () => ({ value: "Текст", onValueChange: vi.fn(), onSubmit: vi.fn(), canSubmit: true, busy: false, onStop: vi.fn() });
 
 describe("три вида поля Одуванчик", () => {
+  it("поле, смонтированное в закрытой панели, сохраняет строку и растёт при фокусе после открытия", () => {
+    const props = base();
+    const { rerender } = render(<div hidden><OduvanchikComposer {...props} value="Первая\nВторая" /></div>);
+    const field = screen.getByRole("textbox", { hidden: true }) as HTMLTextAreaElement;
+    expect(field.style.height).toBe("auto");
+    Object.defineProperty(field, "scrollHeight", { configurable: true, get: () => 96 });
+    rerender(<div><OduvanchikComposer {...props} value="Первая\nВторая" /></div>);
+    fireEvent.focus(field);
+    expect(field.style.height).toBe("96px");
+  });
   it("сжатое: текст и отправка без фишек, файлов и микрофона", () => {
     const props = base();
     const { container } = render(<OduvanchikComposer {...props} options={{ variant: "compact" }} modelChoice={choice()} voice={{ state: "idle", onToggle: vi.fn() }} />);

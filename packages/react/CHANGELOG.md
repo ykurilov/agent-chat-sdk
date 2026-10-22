@@ -1,5 +1,9 @@
 # @ykurilov/agent-chat-react
 
+## 0.72.0
+
+No changes in this release.
+
 ## 0.71.1
 
 ### Patch Changes

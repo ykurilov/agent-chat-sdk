@@ -1,8 +1,10 @@
+import { ChatWorkspace } from "@ykurilov/agent-chat-skin-oduvanchik/chat";
+import { oduvanchikSkin } from "@ykurilov/agent-chat-skin-oduvanchik";
 import { Button } from "@tandem/ui";
 import { attachmentsClient } from "@ykurilov/agent-chat-attachments/react";
 import { diagramsClient } from "@ykurilov/agent-chat-diagrams";
 import { videosClient } from "@ykurilov/agent-chat-videos/react";
-import { ChatLabelsProvider, ChatWorkspace } from "@ykurilov/agent-chat-react";
+import { ChatLabelsProvider } from "@ykurilov/agent-chat-react";
 import type { ChatListSkin, ChatSkin } from "@ykurilov/agent-chat-react";
 import { tandemSkin } from "@ykurilov/agent-chat-skin-tandem";
 import { createVoiceInput } from "@ykurilov/agent-chat-voice";
@@ -112,8 +114,12 @@ export function App() {
                 ? "mcp"
                 : "chat";
   // Замена одного компонента скина: остальные остаются теми же, поведение чата не трогается.
-  const skin = useMemo<ChatSkin & ChatListSkin>(
-    () => (customToolRow ? { ...tandemSkin, ToolCallRow: CustomToolCallRow } : tandemSkin),
+  const skin = useMemo<(ChatSkin & ChatListSkin) | undefined>(
+    () => {
+      const explicitTandem = new URLSearchParams(location.search).get("skin") === "tandem";
+      const base = explicitTandem ? tandemSkin : oduvanchikSkin;
+      return customToolRow ? { ...base, ToolCallRow: CustomToolCallRow } : explicitTandem ? tandemSkin : undefined;
+    },
     [customToolRow],
   );
 

@@ -4,7 +4,7 @@
 
 ## Подключение
 
-После публикации пакета:
+Стандартный вход SDK с оформлением Одуванчик:
 
 ```sh
 pnpm add @ykurilov/agent-chat-react @ykurilov/agent-chat-skin-oduvanchik
@@ -22,14 +22,27 @@ pnpm add @ykurilov/agent-chat-react @ykurilov/agent-chat-skin-oduvanchik
 `@tandem/ui` - опубликованная зависимость скина (npm-алиас `@ykurilov/tandem-ui`). При строгой структуре pnpm добавьте её напрямую, чтобы Tailwind видел её классы: `pnpm add @tandem/ui@npm:@ykurilov/tandem-ui@^0.7.0`. Пути `@source` указаны от CSS-файла: поправьте их под приложение.
 
 ```tsx
-import { AgentChat } from "@ykurilov/agent-chat-react";
-import { oduvanchikSkin } from "@ykurilov/agent-chat-skin-oduvanchik";
+import { AgentChat } from "@ykurilov/agent-chat-skin-oduvanchik/chat";
 
-<div className="oduvanchik-chat" style={{ height: "100dvh" }}>
-  <AgentChat api="/api/chat" chatId="chat-id" skin={oduvanchikSkin}
+<div style={{ height: "100dvh" }}>
+  <AgentChat api="/api/chat" chatId="chat-id"
     composerOptions={{ variant: "standard" }} />
 </div>
 ```
+
+`AgentChat`, `ChatWorkspace`, `AgentPanel` и их типы свойств экспортируются из `/chat`. Все свойства исходных компонентов сохраняются; `skin` необязателен и по умолчанию равен `oduvanchikSkin`. Провайдер панели и хуки берутся из `@ykurilov/agent-chat-react/panel`. CSS подключается явно один раз, JavaScript его не импортирует.
+
+Явный скин всегда имеет приоритет:
+
+```tsx
+import { AgentChat } from "@ykurilov/agent-chat-skin-oduvanchik/chat";
+import { tandemSkin } from "@ykurilov/agent-chat-skin-tandem";
+<AgentChat api="/api/chat" chatId="chat-id" skin={tandemSkin} />;
+```
+
+Для Тандема вместо CSS Одуванчика используйте `@import "@tandem/ui/styles.css";` и `@source` на `agent-chat-skin-tandem/dist` и `@tandem/ui/dist`. Свой скин передаётся так же. Не смешивайте две глобальные палитры на одной странице.
+
+Низкоуровневый `@ykurilov/agent-chat-react` по-прежнему требует `skin`: существующие импорты и экспорты не меняются. Зависимость направлена из скина в React, обратной зависимости и глобальной регистрации нет.
 
 Тема задаётся на корневом элементе: `document.documentElement.dataset.theme = "dark"` или `"light"`. Если атрибута нет, действует системная тема. Класс `dark` для «Одуванчика» не требуется. CSS задаёт общую палитру страницы; разные скины с разными темами на одной странице одновременно не поддерживаются.
 
@@ -50,6 +63,9 @@ import { oduvanchikSkin } from "@ykurilov/agent-chat-skin-oduvanchik";
 Все значки внутри официального скина, включая копирование кода, уведомления, выбранный голос, стрелки меню и закрытие диалогов, - Phosphor regular. Внутренние `primitives` адаптированы из `@ykurilov/tandem-ui@0.7.0` (MIT, [лицензия](TANDEM_NOTICES.md)): Markdown сохраняет `react-markdown`/`remark-gfm`, меню и диалоги - Radix, клавиатуру, фокус и порталы. Свойств подмены значков в исходных компонентах нет. Адаптеры поддерживаются здесь; сторонний пакет Тандема не изменяется. Транзитивная зависимость `lucide-react` остаётся у `@tandem/ui`, но компоненты Одуванчика её значки не рисуют. Приложение не импортирует эти внутренние компоненты и не подменяет значки CSS-правилами.
 
 ### Как обновить приложение
+
+С 0.72.0 стандартный путь - `import { AgentChat, ChatWorkspace, AgentPanel } from "@ykurilov/agent-chat-skin-oduvanchik/chat"`. Для перехода заменить импорт компонентов экрана на `/chat`, убрать явный `skin={tandemSkin}` и заменить CSS Тандема на CSS Одуванчика из примера выше. Обновить все пакеты SDK одной версией. Одно обновление зависимостей не перекрасит приложение с прежним импортом и явно выбранным Тандемом. Сохранённые данные и сервер не меняются; у Одуванчика во время ответа доступен «Стоп», отправки поправок во время ответа пока нет.
+
 
 После выпуска обновить `@ykurilov/agent-chat-*` одной версией и пересобрать приложение с прежними `oduvanchikSkin` и CSS. Дополнительных зависимостей и настроек от приложения не требуется: Markdown и Radix устанавливаются зависимостями скина. Удалить временные переопределения значков в приложении, если они были добавлены. Договор скина и данные не меняются. Проверочная витрина `/oduvanchik-icons.html` показывает реальные компоненты скина с Markdown, уведомлениями, голосовым меню и подтверждением удаления памяти.
 
@@ -82,7 +98,7 @@ const composerOptions: ComposerOptions = {
     onChange: (enabled: boolean) => saveToolSetting(tool.id, enabled),
   })),
 };
-<AgentChat api="/api/chat" chatId="chat-id" skin={oduvanchikSkin}
+<AgentChat api="/api/chat" chatId="chat-id"
   composerOptions={composerOptions} />;
 ```
 

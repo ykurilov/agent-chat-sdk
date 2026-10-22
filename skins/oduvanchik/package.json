@@ -1,6 +1,6 @@
 {
   "name": "@ykurilov/agent-chat-skin-oduvanchik",
-  "version": "0.71.1",
+  "version": "0.72.0",
   "license": "MIT",
   "type": "module",
   "sideEffects": [
@@ -22,6 +22,11 @@
     "./styles.css": {
       "@ykurilov/agent-chat-source": "./src/styles.css",
       "default": "./dist/styles.css"
+    },
+    "./chat": {
+      "@ykurilov/agent-chat-source": "./src/chat.tsx",
+      "types": "./dist/types/chat.d.ts",
+      "import": "./dist/chat.js"
     }
   },
   "engines": {

@@ -1,4 +1,5 @@
-import { AgentPanel, AgentPanelProvider } from "@ykurilov/agent-chat-react/panel";
+import { AgentPanel } from "@ykurilov/agent-chat-skin-oduvanchik/chat";
+import { AgentPanelProvider } from "@ykurilov/agent-chat-react/panel";
 import type { BrowserToolImplementations } from "@ykurilov/agent-chat-react/panel";
 import { tandemSkin } from "@ykurilov/agent-chat-skin-tandem";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -50,7 +51,7 @@ export function PanelAppRoot({ api, userKey }: { api: string; userKey: string })
       ) : (
         <TaskListPage mode={mode} onModeChange={setMode} navigate={navigate} />
       )}
-      <AgentPanel skin={tandemSkin} spendingLimits />
+      <AgentPanel skin={new URLSearchParams(location.search).get("skin") === "tandem" ? tandemSkin : undefined} spendingLimits />
     </AgentPanelProvider>
   );
 }

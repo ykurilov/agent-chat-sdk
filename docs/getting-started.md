@@ -16,6 +16,7 @@
 | `@ykurilov/agent-chat-storage-sqlite` | сервер | хранилище на SQLite |
 | `@ykurilov/agent-chat-storage-postgres` | сервер | хранилище на PostgreSQL |
 | `@ykurilov/agent-chat-react` | браузер | поведение чата без внешнего вида: `AgentChat`, словарь надписей |
+| `@ykurilov/agent-chat-skin-oduvanchik` | браузер | стандартный UI `/chat`: Одуванчик по умолчанию, явный скин имеет приоритет |
 | `@ykurilov/agent-chat-skin-tandem` | браузер | внешний вид в дизайн-системе Тандем (её пакет `@ykurilov/tandem-ui` ставится вместе со скином) |
 | `@ykurilov/agent-chat-web-tools` | сервер (подпуть `/labels` — браузер) | по желанию: инструменты агента «поиск в интернете», «чтение страницы», «скриншот» на Firecrawl |
 | `@ykurilov/agent-chat-history-search` | сервер (подпуть `/labels` — браузер) | по желанию: инструмент агента «поиск по старой переписке» (нужен, когда история сжимается) |
@@ -35,8 +36,7 @@
 | `@ykurilov/agent-chat-image-library` | сервер; подпуть `/react` — браузер | по желанию: готовые картинки от агента — инструменты `find_images` и `show_image` поверх каталога приложения, картинка по ширине ответа с подписью; [подключение](image-library.md) |
 
 Все пакеты выходят вместе и с одной версией (SDK 0.4.0 = каждый пакет 0.4.0). Дизайн-система Тандем — отдельный
-продукт со своей нумерацией (`@ykurilov/tandem-ui`, сейчас 0.7.x): её версия не равна версии SDK, и «SDK 0.4.0, Тандем
-0.6.x» — нормально. Какой Тандем нужен скину, написано в его `dependencies` (шаг 5). Пакеты импортируются только по этим
+продукт со своей нумерацией (`@ykurilov/tandem-ui`): её версия не равна версии SDK. Какой Тандем нужен скину, написано в его `dependencies` (шаг 5). Пакеты импортируются только по этим
 адресам. Внутренние файлы закрыты полем `exports`: импорт вида `@ykurilov/agent-chat-react/src/…` не соберётся.
 
 ## 1. Что понадобится
@@ -58,11 +58,10 @@ pnpm add -D tsx typescript @types/node @types/react @types/react-dom \
 ```
 
 Первая команда — то, что нужно приложению в работе, вторая — сборка клиента (Vite, React, Tailwind), запуск серверного
-TypeScript (`tsx`) и типы. Если Vite, Tailwind и TypeScript в вашем приложении уже есть, вторую команду пропустите. Скин
-Тандема ставится на шаге 5. Ещё два пакета нужны не всем:
+TypeScript (`tsx`) и типы. Если Vite, Tailwind и TypeScript в вашем приложении уже есть, вторую команду пропустите. Стандартный скин
+Одуванчик ставится на шаге 5. Ещё два пакета нужны не всем:
 
-- `lucide-react` — если в своих компонентах вы берёте иконки. Ставьте ту же версию, что у скина
-  (`1.33.0`, см. `dependencies` скина), иначе в сборку попадут две копии.
+- `@phosphor-icons/react` — если в своих компонентах вы берёте иконки Одуванчика. Согласуйте версию с зависимостью скина.
 - `@ai-sdk/provider` (в dev-зависимости, `4.0.19`, как у `ai@7.0.122`) — только для проверки сбоев модели на шаге 10.
 
 Зависимости-«соседи» (peer): `react` и `react-dom` 19 (для `react`-пакета и скина), `hono` 4 (для
@@ -182,7 +181,7 @@ const handler = createChatHandler({ /* … */ catalog, limits });
 хранилищ (память, SQLite, PostgreSQL), у своего хранилища — если в нём есть `getUserModelChoice` и
 `saveUserModelChoice`; без них всё как раньше. Модель можно сменить посреди чата: рассуждения прежней модели в запрос новой не уходят, но
 в базе и на экране остаются. Чат, у которого сохранённой модели больше нет в каталоге, открывается на выборе по
-умолчанию, сообщения не меняются. Ничего подключать не нужно: меню приходит с `AgentChat` и скином Тандема.
+умолчанию, сообщения не меняются. Ничего подключать не нужно: меню приходит с `AgentChat` и стандартным скином.
 
 ## 4. Сервер
 
@@ -647,45 +646,37 @@ export const runtime = "nodejs"; // хранилища работают толь
 [contracts/http-api.md](contracts/basic-agent-dialog/http-api.md); пинги в потоках —
 в [дополнении к нему](contracts/fast-feed-and-liveness/http-api.md).
 
-## 5. Скин Тандема
+## 5. Стандартный вид - Одуванчик
 
-Скин — обычный пакет. Вместе с ним ставится дизайн-система Тандем (`@ykurilov/tandem-ui`); приложению её нужно
-поставить и самому, под именем `@tandem/ui`: из CSS-файла приложения пакет скина не виден.
+Для нового приложения используется `@ykurilov/agent-chat-skin-oduvanchik/chat`. `AgentChat`, `ChatWorkspace` и `AgentPanel` из этого входа выбирают Одуванчик без свойства `skin`; явно переданный скин имеет приоритет.
 
 ```bash
-pnpm add @ykurilov/agent-chat-skin-tandem "@tandem/ui@npm:@ykurilov/tandem-ui@^0.7.0"
+pnpm add @ykurilov/agent-chat-skin-oduvanchik "@tandem/ui@npm:@ykurilov/tandem-ui@^0.7.0"
 ```
 
-(имя `@tandem/ui` — псевдоним: пакет тот же `@ykurilov/tandem-ui`, скин использует то же имя, поэтому он один на приложение.)
-Tailwind должен видеть классы скина и Тандема. В главном CSS-файле (пути даны от файла `src/styles.css` до
-корня проекта, поправьте под своё место):
+DS-токены, компоненты и Phosphor устанавливаются зависимостями скина. Алиас Тандема нужен для нейтральных базовых компонентов и прямого сканирования Tailwind при строгом pnpm. В главном CSS один импорт оформления (пути `@source` даны от `src/styles.css`):
 
 ```css
 @import "tailwindcss";
-@import "@tandem/ui/styles.css";
+@import "@ykurilov/agent-chat-skin-oduvanchik/styles.css";
 @source "../node_modules/@tandem/ui/dist";
-@source "../node_modules/@ykurilov/agent-chat-skin-tandem/dist";
+@source "../node_modules/@ykurilov/agent-chat-skin-oduvanchik/dist";
 ```
 
-`@import "@tandem/ui/styles.css"` подключает стили и шрифты Тандема; без него чат будет без цветов и шрифтов.
-Компоненты Тандема и скина лежат в `dist`: с `@source` на другие папки пакета классы не попадут в CSS, и чат останется
-без пузырей и кнопок.
+Тема: `document.documentElement.dataset.theme = "dark"` или `"light"`; без атрибута действует системная. Палитра страницы - переменные `--yk-*`; базовые компоненты также используют `--canvas`, `--surface`, `--foreground`, `--border`.
 
-**Цвета вокруг чата.** Свои элементы страницы красьте переменными Тандема: `--canvas` (фон страницы), `--surface`,
-`--foreground`, `--border`. Переменной `--background` в Тандеме нет: `var(--background)` не даст цвета, и фон окажется
-прозрачным. Тёмная тема включается классом `dark` на корневом элементе (`<html class="dark">`).
+**Другой скин.** Передайте `skin={tandemSkin}` или собственный объект. Для Тандема установите `@ykurilov/agent-chat-skin-tandem`, используйте `@import "@tandem/ui/styles.css";` вместо CSS Одуванчика и `@source` на его `dist` вместо `agent-chat-skin-oduvanchik/dist`. Две глобальные палитры одновременно не подключаются. Класс `dark` включает тему Тандема.
 
-Если скин нужно поправить целиком, скопируйте исходники из репозитория `skins/tandem/src` в свой проект и
-подключайте вместо пакета (тогда `@source` укажите на свою папку). Чаще достаточно заменить отдельный компонент:
-`{ ...tandemSkin, ToolCallRow: MyToolCallRow }` (шаг 7).
+**Переход со старого API.** Импорты экранов из `@ykurilov/agent-chat-react` и `/panel` остаются API с обязательным `skin`. Обновление пакетов само не перекрасит приложение с явным Тандемом. Для стандартного вида замените импорт экрана на `@ykurilov/agent-chat-skin-oduvanchik/chat`, уберите явный Тандем и замените CSS. Провайдеры, хуки и типы договора остаются в React. Данные и сервер не меняются.
+
+**Ограничения.** Во время ответа Одуванчик показывает «Стоп»; отправка поправок в идущий ответ пока доступна только в Тандеме. Административные расширения `sandbox`, `flows`, `messengers`, `skills`, `mcp`, `client-card` сохраняют отдельные скины Тандема. Это не полная замена всех административных экранов. [Состав и ограничения](../skins/oduvanchik/README.md).
 
 ## 6. Клиент
 
 ```tsx
 // src/chat-page.tsx
-import { AgentChat } from "@ykurilov/agent-chat-react";
+import { AgentChat } from "@ykurilov/agent-chat-skin-oduvanchik/chat";
 import { useEffect, useState } from "react";
-import { tandemSkin } from "@ykurilov/agent-chat-skin-tandem";
 
 export function ChatPage() {
   const [chatId, setChatId] = useState<string | null>(null);
@@ -700,7 +691,7 @@ export function ChatPage() {
   if (!chatId) return null;
   return (
     <div style={{ height: "100dvh" }}>
-      <AgentChat api="/api/chat" chatId={chatId} skin={tandemSkin} />
+      <AgentChat api="/api/chat" chatId={chatId} />
     </div>
   );
 }
@@ -778,7 +769,8 @@ const MyToolCallRow: ChatSkin["ToolCallRow"] = ({ toolName, state, output, error
   );
 };
 
-const skin = { ...tandemSkin, ToolCallRow: MyToolCallRow };
+import { oduvanchikSkin } from "@ykurilov/agent-chat-skin-oduvanchik";
+const skin = { ...oduvanchikSkin, ToolCallRow: MyToolCallRow };
 <AgentChat api="/api/chat" chatId={chatId} skin={skin} />;
 ```
 
@@ -828,7 +820,6 @@ const skin = { ...tandemSkin, ToolCallRow: MyToolCallRow };
 <AgentChat
   api="/api/chat"
   chatId={chatId}
-  skin={tandemSkin}
   liveness={{ silenceTimeoutMs: 30_000, reconnectDelaysMs: [0, 2000, 5000], requestTimeoutMs: 10_000 }}
 />
 ```
@@ -855,7 +846,7 @@ const skin = { ...tandemSkin, ToolCallRow: MyToolCallRow };
 import { ChatLabelsProvider, russianLabels } from "@ykurilov/agent-chat-react";
 
 <ChatLabelsProvider labels={{ ...russianLabels, retry: "Ещё раз", composerPlaceholder: "Спросите что-нибудь" }}>
-  <AgentChat api="/api/chat" chatId={chatId} skin={tandemSkin} />
+  <AgentChat api="/api/chat" chatId={chatId} />
 </ChatLabelsProvider>;
 ```
 
@@ -893,7 +884,7 @@ import { englishWebToolTitles, withWebToolTitles } from "@ykurilov/agent-chat-we
 const attachments = createAttachmentsClient(englishAttachmentsLabels);
 
 <ChatLabelsProvider labels={withWebToolTitles(englishLabels, englishWebToolTitles)}>
-  <AgentChat api="/api/chat" chatId={chatId} skin={tandemSkin} attachments={attachments} />
+  <AgentChat api="/api/chat" chatId={chatId} attachments={attachments} />
 </ChatLabelsProvider>;
 ```
 
@@ -971,7 +962,7 @@ createChatHandler({
 
   ```tsx
   <ChatLabelsProvider labels={withWebToolTitles(russianLabels)}>
-    <AgentChat api="/api/chat" chatId={chatId} skin={tandemSkin} />
+    <AgentChat api="/api/chat" chatId={chatId} />
   </ChatLabelsProvider>
   ```
 
@@ -1145,7 +1136,7 @@ injectWebSocket(serve({ fetch: app.fetch, port: 8787 }));
 import { createVoiceInput } from "@ykurilov/agent-chat-voice";
 
 const voice = createVoiceInput({ api: "/api/voice", mode: "relay" });
-<AgentChat api="/api/chat" chatId={chatId} skin={tandemSkin} voice={voice} />;
+<AgentChat api="/api/chat" chatId={chatId} voice={voice} />;
 ```
 
 Если между браузером и сервером стоит прокси (Vite, Nginx), он должен пропускать WebSocket по пути `/api/voice/stream`
@@ -1192,7 +1183,7 @@ createChatHandler({ …, attachments, agent: { instructions: appInstructions } }
 ```tsx
 // браузер
 import { attachmentsClient } from "@ykurilov/agent-chat-attachments/react";
-<AgentChat api="/api/chat" chatId={chatId} skin={tandemSkin} attachments={attachmentsClient} />;
+<AgentChat api="/api/chat" chatId={chatId} attachments={attachmentsClient} />;
 ```
 
 - Картинки уходят только моделям, которые их видят у выбранного провайдера (`acceptsImagesByProvider` профиля, иначе `acceptsImages`;
@@ -1267,8 +1258,8 @@ createChatHandler({ …, chatList: true });
 
 ```tsx
 // браузер: вместо AgentChat, свойства те же, кроме chatId
-import { ChatWorkspace } from "@ykurilov/agent-chat-react";
-<ChatWorkspace api="/api/chat" skin={tandemSkin} />;
+import { ChatWorkspace } from "@ykurilov/agent-chat-skin-oduvanchik/chat";
+<ChatWorkspace api="/api/chat" />;
 ```
 
 - Что открыть первым: чат из `initialChatId` (например, из адреса страницы), иначе тот, что был открыт в прошлый раз, иначе самый недавний, иначе новый.
@@ -1317,7 +1308,9 @@ import { ChatWorkspace } from "@ykurilov/agent-chat-react";
 
 ## Поправка на лету
 
-Работает само, отдельной настройки нет. Агент долго делает задачу, человек видит, что тот свернул не туда, и пишет поправку,
+Этот раздел относится к явному скину Тандема: в стандартном Одуванчике во время ответа доступен «Стоп».
+
+С Тандемом работает само, отдельной настройки нет. Агент долго делает задачу, человек видит, что тот свернул не туда, и пишет поправку,
 не останавливая его. Поле ввода во время ответа свободно, «Стоп» стоит рядом с «Отправить».
 
 - **Что видит человек.** Поправка сразу встаёт в ленту под ответом с пометкой «Агент учтёт на следующем шаге». Агент берёт её
@@ -1681,13 +1674,13 @@ import { browserTools } from "./shared/browser-tools";
 
 ```tsx
 // корневой макет, выше страниц
-import { AgentPanel, AgentPanelProvider } from "@ykurilov/agent-chat-react/panel";
-import { tandemSkin } from "@ykurilov/agent-chat-skin-tandem";
+import { AgentPanelProvider } from "@ykurilov/agent-chat-react/panel";
+import { AgentPanel } from "@ykurilov/agent-chat-skin-oduvanchik/chat";
 import { useNavigate } from "react-router";
 const navigate = useNavigate();
 <AgentPanelProvider api="/api/chat" userKey={user.id} browserTools={{ open_task: ({ taskId }) => navigate(`/tasks/${taskId}`) }}>
   <Routes />
-  <AgentPanel skin={tandemSkin} />
+  <AgentPanel />
 </AgentPanelProvider>;
 
 // страница карточки и страница списка
@@ -2028,6 +2021,6 @@ pnpm update "@ykurilov/agent-chat-*" --latest
 
 ## Скин Одуванчик
 
-Вместо `tandemSkin` подключается `oduvanchikSkin` из `@ykurilov/agent-chat-skin-oduvanchik`; CSS - `@ykurilov/agent-chat-skin-oduvanchik/styles.css`. Поддерживаются светлая, тёмная и системная темы, телефон, список чатов и панель справа. [Подключение и текущие ограничения](../skins/oduvanchik/README.md).
+Стандартный вход `@ykurilov/agent-chat-skin-oduvanchik/chat` использует Одуванчик без `skin`; старый явный `oduvanchikSkin` также поддерживается. CSS - `@ykurilov/agent-chat-skin-oduvanchik/styles.css`. Поддерживаются светлая, тёмная и системная темы, телефон, список чатов и панель справа. [Подключение и текущие ограничения](../skins/oduvanchik/README.md).
 
 В скине «Одуванчик» `composerOptions={{ variant: "extended" }}` выбирает расширенное поле; `compact` - сжатое, `standard` - обычное (по умолчанию). DS-пакеты устанавливаются зависимостями скина. [Настройки контекста, проектов и инструментов](../skins/oduvanchik/README.md#три-вида-поля).

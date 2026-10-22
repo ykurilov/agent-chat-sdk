@@ -30,12 +30,14 @@ export function ComposerField(props: Props) {
   const attachments = props.attachments;
   const hasContent = props.value.trim().length > 0 || (attachments?.items.length ?? 0) > 0 || (options.contextAttachments?.length ?? 0) > 0;
   const canSend = !disabled && !props.busy && props.canSubmit && hasContent;
-  useLayoutEffect(() => {
+  function resizeField() {
     const element = field.current;
     if (!element) return;
     element.style.height = "auto";
-    element.style.height = `${Math.min(180, element.scrollHeight)}px`;
-  }, [props.value, variant]);
+    // A panel keeps its chat mounted while hidden: zero is not a usable measurement.
+    if (element.scrollHeight > 0) element.style.height = `${Math.min(180, element.scrollHeight)}px`;
+  }
+  useLayoutEffect(resizeField, [props.value, variant]);
   const submit = () => { if (canSend) props.onSubmit(); };
   const pickFile = (accept: string) => { if (controlsDisabled) return; if (files.current) files.current.accept = accept; files.current?.click(); setAddMenu(false); };
   const send = <button type="button" className={`oduvanchik-field-send ${props.busy ? "oduvanchik-field-stop" : ""}`} aria-label={props.busy ? labels.stop : labels.send}
@@ -51,7 +53,7 @@ export function ComposerField(props: Props) {
       </li>)}
       {options.contextAttachments?.map((item) => <li key={item.id}><FolderIcon size={18} aria-hidden /><span>{item.label}</span>{item.onRemove && <button type="button" disabled={controlsDisabled} aria-label={fileLabels.removeAttachment(item.label)} onClick={item.onRemove}><XIcon size={16} aria-hidden /></button>}</li>)}
     </ul>}
-    <textarea ref={field} rows={1} value={props.value} disabled={disabled} aria-describedby={props.sendingBlockedReasonId} aria-label={labels.composerLabel} placeholder={labels.composerPlaceholder}
+    <textarea ref={field} onFocus={resizeField} rows={1} value={props.value} disabled={disabled} aria-describedby={props.sendingBlockedReasonId} aria-label={labels.composerLabel} placeholder={labels.composerPlaceholder}
       onChange={(event) => props.onValueChange(event.target.value)}
       onPaste={(event) => { if (!compact && attachments && !controlsDisabled && event.clipboardData.files.length) { event.preventDefault(); attachments.onAddFiles(Array.from(event.clipboardData.files)); } }}
       onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229) { event.preventDefault(); submit(); } }} />

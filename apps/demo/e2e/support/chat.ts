@@ -9,13 +9,15 @@ const demoUserCookie = { Анна: "anna", Борис: "boris" } as const;
  * Входит пользователем и открывает его новый пустой чат. Чат создаётся заранее и открывается по адресу: без адреса
  * список чатов открыл бы самый недавний чат пользователя, а на общем сервере он мог бы оказаться чатом соседнего теста.
  */
-export async function signIn(page: Page, name: "Анна" | "Борис" = "Анна", path = "/") {
+export async function signIn(page: Page, name: "Анна" | "Борис" = "Анна", path = "/", skin: "tandem" | "default" = "tandem") {
   await page.context().addCookies([{ name: "demo-user", value: demoUserCookie[name], domain: "localhost", path: "/" }]);
   const created = await page.request.post("/api/chat");
   expect(created.status()).toBe(201);
   const { id } = (await created.json()) as { id: string };
   const url = new URL(path, "http://localhost");
   url.searchParams.set("chat", id);
+  // Existing compatibility scenarios retain explicit Tandem; default UI has its own scenario.
+  if (skin === "tandem") url.searchParams.set("skin", "tandem");
   await page.goto(`${url.pathname}${url.search}`);
   await expect(page.getByRole("textbox", { name: "Сообщение" })).toBeVisible();
 }

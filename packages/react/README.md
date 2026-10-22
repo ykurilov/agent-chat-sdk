@@ -1,7 +1,9 @@
 # @ykurilov/agent-chat-react
 
 Поведение чата с агентом для React 19, без внешнего вида. Всё видимое рисует скин —
-объект из десяти компонентов. Готовый скин Тандема — пакет `@ykurilov/agent-chat-skin-tandem`.
+объект компонентов. Это низкоуровневый API: `skin` обязателен.
+
+Стандартный экран SDK - `AgentChat`, `ChatWorkspace`, `AgentPanel` из `@ykurilov/agent-chat-skin-oduvanchik/chat`: без `skin` используется Одуванчик, явный скин имеет приоритет. [Подключение CSS и переход](../../skins/oduvanchik/README.md). Существующий импорт из React сам не меняет оформление приложения.
 
 ```tsx
 import { AgentChat, ChatLabelsProvider, russianLabels } from "@ykurilov/agent-chat-react";

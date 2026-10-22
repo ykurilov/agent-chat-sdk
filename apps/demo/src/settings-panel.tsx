@@ -74,7 +74,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
           className="max-sm:size-8"
           aria-label="Свой ToolCallRow"
           aria-pressed={props.customToolRow}
-          title={props.customToolRow ? "Строка вызова из приложения" : "Строка вызова из скина Тандема"}
+          title={props.customToolRow ? "Строка вызова из приложения" : "Строка вызова из выбранного скина"}
           onClick={() => props.onCustomToolRowChange(!props.customToolRow)}
         >
           <Puzzle />

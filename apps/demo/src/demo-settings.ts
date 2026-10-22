@@ -37,6 +37,7 @@ export function currentTheme(): DemoTheme {
 export function applyTheme(theme: DemoTheme): void {
   localStorage.setItem("demo-theme", theme);
   document.documentElement.classList.toggle("dark", theme === "dark");
+  document.documentElement.dataset.theme = theme;
 }
 
 const customToolRowKey = "demo-custom-tool-row";

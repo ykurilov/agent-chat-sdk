@@ -1,5 +1,13 @@
 # @ykurilov/agent-chat-sandbox
 
+## 0.72.0
+
+### Patch Changes
+
+- @ykurilov/agent-chat-core@0.72.0
+  - @ykurilov/agent-chat-react@0.72.0
+  - @ykurilov/agent-chat-server@0.72.0
+
 ## 0.71.1
 
 ### Patch Changes

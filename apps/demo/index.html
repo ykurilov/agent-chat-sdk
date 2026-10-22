@@ -9,6 +9,7 @@
       const saved = localStorage.getItem("demo-theme");
       const dark = saved ? saved === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
       document.documentElement.classList.toggle("dark", dark);
+      document.documentElement.dataset.theme = dark ? "dark" : "light";
     </script>
   </head>
   <body>

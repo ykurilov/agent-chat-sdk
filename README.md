@@ -17,9 +17,9 @@
   расходов, картинки и схемы в ответах, фоновые задачи, чат в Telegram, VK и MAX.
 - Сценарии: разговор идёт по карте шагов (знакомство → разбор → напоминание), а не по одной длинной инструкции.
 - Проверка ответа перед отправкой: ловит чужие слова на другом языке и выдуманные ссылки.
-- Внешний вид отделён от поведения. Готовый вид — скин «Тандем», любой компонент можно заменить своим.
+- Внешний вид отделён от поведения. Стандартный вид - Одуванчик через `/chat`; явный Тандем или свой скин сохраняют приоритет.
 
-Версия 0.71.1.
+Версия 0.72.0.
 
 ## Установка
 
@@ -36,7 +36,7 @@
 mkdir my-chat && cd my-chat
 pnpm init && pnpm pkg set type=module
 pnpm add @ykurilov/agent-chat-core @ykurilov/agent-chat-server @ykurilov/agent-chat-storage-sqlite \
-  @ykurilov/agent-chat-react @ykurilov/agent-chat-skin-tandem "@tandem/ui@npm:@ykurilov/tandem-ui@^0.7.0" \
+  @ykurilov/agent-chat-react @ykurilov/agent-chat-skin-oduvanchik "@tandem/ui@npm:@ykurilov/tandem-ui@^0.7.0" \
   hono @hono/node-server react react-dom
 pnpm add -D tsx typescript @types/node @types/react @types/react-dom vite @vitejs/plugin-react tailwindcss @tailwindcss/vite
 ```
@@ -103,8 +103,7 @@ console.log("Сервер чата: http://localhost:3000");
 
 ```tsx
 // src/main.tsx
-import { AgentChat } from "@ykurilov/agent-chat-react";
-import { tandemSkin } from "@ykurilov/agent-chat-skin-tandem";
+import { AgentChat } from "@ykurilov/agent-chat-skin-oduvanchik/chat";
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
@@ -122,7 +121,7 @@ function App() {
   if (!chatId) return null;
   return (
     <div style={{ height: "100dvh" }}>
-      <AgentChat api="/api/chat" chatId={chatId} skin={tandemSkin} />
+      <AgentChat api="/api/chat" chatId={chatId} />
     </div>
   );
 }
@@ -133,9 +132,9 @@ createRoot(document.getElementById("root")!).render(<App />);
 ```css
 /* src/styles.css */
 @import "tailwindcss";
-@import "@tandem/ui/styles.css";
+@import "@ykurilov/agent-chat-skin-oduvanchik/styles.css";
 @source "../node_modules/@tandem/ui/dist";
-@source "../node_modules/@ykurilov/agent-chat-skin-tandem/dist";
+@source "../node_modules/@ykurilov/agent-chat-skin-oduvanchik/dist";
 ```
 
 ```ts
@@ -149,6 +148,8 @@ export default defineConfig({
   server: { proxy: { "/api": "http://localhost:3000" } }, // запросы чата — на сервер из шага 3
 });
 ```
+
+Стандартный экран использует Одуванчик без `skin`. `ChatWorkspace` и `AgentPanel` доступны из того же `/chat`; провайдер панели и хуки остаются в `@ykurilov/agent-chat-react/panel`. [Другой скин и переход со старого импорта](skins/oduvanchik/README.md). Административные расширения пока используют отдельные скины Тандема.
 
 **5. Запуск.** В двух окнах терминала:
 
@@ -204,7 +205,7 @@ pnpm vite                  # страница: откройте http://localhost
 | [`@ykurilov/agent-chat-voice`](packages/voice) | голосовой ввод (диктовка) |
 | [`@ykurilov/agent-chat-voice-dialog`](packages/voice-dialog) | голосовой разговор с агентом |
 | [`@ykurilov/agent-chat-web-tools`](packages/web-tools) | поиск и чтение сайтов для агента |
-| [`@ykurilov/agent-chat-skin-oduvanchik`](skins/oduvanchik) | готовый вид Одуванчик |
+| [`@ykurilov/agent-chat-skin-oduvanchik`](skins/oduvanchik) | стандартный UI /chat: Одуванчик по умолчанию |
 | [`@ykurilov/agent-chat-skin-tandem`](skins/tandem) | готовый вид «Тандем» |
 
 ## Демо из этого репозитория
