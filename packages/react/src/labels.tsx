@@ -216,7 +216,15 @@ export interface VoiceSpeechLabels {
  * `viewer`, `voice`) и версии 14 (`videos`) необязательные: словарь приложения, написанный раньше, работает, недостающее берётся из `russianLabels`;
  * внутри группы можно перекрыть любой один ключ.
  */
+export interface ComposerSettingsLabels {
+  levels: Record<string, string>;
+  model: string; reasoning: string; tools: string; settings: string; done: string; via: string;
+  search: string; showReasoning: string; project: string; file: string; image: string;
+  textModels: string; imageModels: string; models: string; noResults: string; price: string; input: string; output: string;
+}
+
 export interface ChatLabels {
+  composerSettings?: Partial<ComposerSettingsLabels>;
   /**
    * Язык словаря (BCP 47): `ru` у `russianLabels`, `en` у `englishLabels`. Скин по нему выбирает свои надписи — например,
    * Тандем ставит словарь дизайн-системы на том же языке. Нет — скин решает сам (Тандем: русский или словарь приложения).
@@ -468,13 +476,14 @@ const resetPhrase = (info: SpendingInfo) => (info.resetsAt ? `, обновитс
 const mergeDate = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
 
 /** Словарь, в котором есть и необязательные надписи: их подставляет `ChatLabelsProvider`. */
-export type ResolvedChatLabels = Omit<ChatLabels, "widgets" | "diagram" | "demo" | "images" | "videos" | "viewer" | "voice" | "helpers" | "tasks" | "notices" | "messengerStatus" | "workView"> &
+export type ResolvedChatLabels = Omit<ChatLabels, "widgets" | "diagram" | "demo" | "images" | "videos" | "viewer" | "voice" | "helpers" | "tasks" | "notices" | "messengerStatus" | "workView" | "composerSettings"> &
   Required<
     Pick<
       ChatLabels,
       "externalImageLink" | "answerCutByLength" | "answerEdited" | "answerUndelivered" | "toolOutputEdited" | "editAnswer" | "steeringPending" | "thinkingPhrases" | "thinkingElapsed" | "spendingMessagesLeft" | "spendingMessagesExhausted" | "editMessageLimit"
     >
   > & {
+    composerSettings: ComposerSettingsLabels;
     widgets: WidgetLabels;
     diagram: DiagramLabels;
     demo: LiveDemoLabels;
@@ -680,6 +689,7 @@ export const russianLabels: ResolvedChatLabels = {
   notices: russianNotices,
   messengerStatus: russianMessengerStatus,
   workView: russianWorkView,
+  composerSettings: { levels: { off: "Выкл", on: "Вкл", minimal: "Минимум", low: "Низко", medium: "Средне", high: "Высоко", max: "Максимум" }, model: "Модель", reasoning: "Рассуждения", tools: "Инструменты", settings: "Настройки ответа", done: "Готово", via: "Через", search: "Найти модель", showReasoning: "Показывать ход мысли", project: "Проект", file: "Файл", image: "Картинка", textModels: "Текстовые задачи", imageModels: "Текст и изображения", models: "Модели", noResults: "Ничего не найдено", price: "USD за миллион токенов", input: "вход", output: "выход" },
   composerPlaceholder: "Напишите сообщение",
   composerLabel: "Сообщение",
   send: "Отправить",
@@ -1002,6 +1012,7 @@ export const englishLabels: ResolvedChatLabels = {
   locale: "en",
   ...englishWorkLabels,
   workView: englishWorkViewLabels,
+  composerSettings: { levels: { off: "Off", on: "On", minimal: "Minimal", low: "Low", medium: "Medium", high: "High", max: "Max" }, model: "Model", reasoning: "Reasoning", tools: "Tools", settings: "Response settings", done: "Done", via: "Via", search: "Find model", showReasoning: "Show reasoning", project: "Project", file: "File", image: "Image", textModels: "Text tasks", imageModels: "Text and images", models: "Models", noResults: "No results", price: "USD per million tokens", input: "input", output: "output" },
   composerPlaceholder: "Write a message",
   composerLabel: "Message",
   send: "Send",
@@ -1292,6 +1303,7 @@ export function ChatLabelsProvider({ labels, children }: { labels: ChatLabels; c
   const resolved = useMemo(
     () => ({
       ...labels,
+      composerSettings: { ...(labels.locale?.startsWith("en") ? englishLabels : russianLabels).composerSettings, ...labels.composerSettings },
       externalImageLink: labels.externalImageLink ?? russianLabels.externalImageLink,
       answerCutByLength: labels.answerCutByLength ?? russianLabels.answerCutByLength,
       answerEdited: labels.answerEdited ?? russianLabels.answerEdited,

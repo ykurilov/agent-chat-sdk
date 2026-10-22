@@ -2025,3 +2025,9 @@ pnpm update "@ykurilov/agent-chat-*" --latest
 | Next.js: ответ на `POST …/messages` приходит целиком в конце | в файле маршрута нет `dynamic = "force-dynamic"`, либо перед приложением стоит прокси, буферизующий ответ (для nginx — `proxy_buffering off`) |
 | Next.js: `404` на всех адресах чата | путь файла маршрута не совпадает с `basePath` (в том числе с `basePath` из `next.config`) |
 | Next.js: после правки кода в `next dev` идущий ответ пропал | обработчик создаётся заново при перезагрузке модуля: держите его в `globalThis` |
+
+## Скин Одуванчик
+
+Вместо `tandemSkin` подключается `oduvanchikSkin` из `@ykurilov/agent-chat-skin-oduvanchik`; CSS - `@ykurilov/agent-chat-skin-oduvanchik/styles.css`. Поддерживаются светлая, тёмная и системная темы, телефон, список чатов и панель справа. [Подключение и текущие ограничения](../skins/oduvanchik/README.md).
+
+В скине «Одуванчик» `composerOptions={{ variant: "extended" }}` выбирает расширенное поле; `compact` - сжатое, `standard` - обычное (по умолчанию). DS-пакеты устанавливаются зависимостями скина. [Настройки контекста, проектов и инструментов](../skins/oduvanchik/README.md#три-вида-поля).

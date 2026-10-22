@@ -35,7 +35,7 @@ export const STEP_ICON_ROW_MAX = 8;
 /** Раскладка ответа в простом виде: видимые части, живая строка последней группы, свёрнутые группы. */
 export type WorkLayoutItem<Node> =
   | { kind: "shown"; node: Node }
-  | { kind: "live"; key: string; phrase: string; icon: StepIcon }
+  | { kind: "live"; key: string; phrase: string; icon: StepIcon; completed?: WorkStepItem[] }
   | { kind: "done"; key: string; steps: WorkStepLine[]; count: number; items: WorkStepItem[]; icons: StepIcon[]; moreIcons: number };
 
 interface LayoutOptions {
@@ -81,7 +81,8 @@ export function workLayoutOf<Node>(entries: AnswerEntry<Node>[], { streaming, ph
     }
     if (streaming && lastStep > lastShown) {
       const live = liveStepOf(group, phrases, labels);
-      layout.push({ kind: "live", key, phrase: labels.live(live.phrase), icon: live.icon });
+      const completed = doneLinesOf((thoughts ? group : group.filter((step) => step.kind === "tool")).filter((step) => step.kind === "tool" && step.call.state !== "running"), phrases, labels, false).items;
+      layout.push({ kind: "live", key, phrase: labels.live(live.phrase), icon: live.icon, ...(completed.length > 0 && { completed }) });
     } else {
       const done = doneLinesOf(thoughts ? group : group.filter((step) => step.kind === "tool"), phrases, labels, !streaming);
       if (done.count > 0) layout.push({ kind: "done", key, ...done });

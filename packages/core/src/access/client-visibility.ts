@@ -1,3 +1,4 @@
+import { ANSWER_REASONING_PART } from "../conversation/answer-reasoning";
 import type { UIMessageChunk } from "ai";
 import { STEP_RESET_PART_TYPE } from "../agent-run/step-reset";
 import { PROVIDER_METADATA_KEYS } from "../conversation/select-reasoning";
@@ -35,7 +36,7 @@ const SHOWS_EVERYTHING: ClientVisibility = {
 };
 
 /** Поля сообщения о модели: кто ответил и сколько это стоило. */
-const MODEL_METADATA_KEYS = ["modelId", "providerId", "usage"] as const;
+const MODEL_METADATA_KEYS = ["modelId", "providerId", "reasoningLevel", "usage"] as const;
 
 /** Поля чата о модели и владельце. */
 const MODEL_CHAT_KEYS = ["ownerId", "modelId", "providerId", "reasoning"] as const;
@@ -148,6 +149,7 @@ export function clientVisibilityOf(
       const shownTitles: Record<string, string> = {};
       let serverOrdinal = 0;
       const kept = message.parts.flatMap((part): typeof message.parts => {
+        if (part.type === ANSWER_REASONING_PART) return [];
         if (part.type === "reasoning" && placesThoughts) {
           const title = serverTitles[String(serverOrdinal++)];
           if (title === undefined) return [];

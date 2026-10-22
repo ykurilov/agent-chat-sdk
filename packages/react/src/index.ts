@@ -1,3 +1,4 @@
+export type { ComposerOptions } from "./composer-options";
 export { AgentChat } from "./agent-chat";
 export { STEP_RESET_PART_TYPE, withoutResetSteps } from "./step-reset";
 export type {

@@ -39,6 +39,7 @@ beforeEach(() => {
     join(project, "scripts/export-public.mjs"),
     `import { appendFileSync } from "node:fs";
 appendFileSync(process.env.FAKE_LOG, "export-public " + process.argv.slice(2).join(" ") + "\\n");
+if (process.env.FAKE_PUBLIC_PUSH_FAIL && process.argv.includes("--push")) process.exit(1);
 if (process.env.FAKE_EXPORT_FAIL) { console.error("запретный список: 2 мест"); process.exit(1); }
 `,
   );
@@ -145,6 +146,18 @@ describe("release.mjs: ветки выпуска", () => {
     expect(result.calls.indexOf("pnpm exec changeset publish")).toBeLessThan(result.calls.indexOf("git push --atomic origin HEAD:refs/heads/main refs/tags/v1.2.3"));
   });
 
+  it("сбой публичного push после npm: честный итог и команда повтора без новой публикации", () => {
+    addToken();
+    const summary = join(project, "summary.md");
+    const result = release([], { FAKE_PUBLIC_PUSH_FAIL: "1", GITHUB_STEP_SUMMARY: summary });
+    expect(result.status).toBe(1);
+    expect(result.calls).toContain("export-public v1.2.3 --push");
+    expect(result.calls).toContain("git push --atomic origin HEAD:refs/heads/main refs/tags/v1.2.3");
+    expect(result.output).toContain("Пакеты 1.2.3 уже в npm");
+    expect(result.output).not.toContain("ничего не опубликовано");
+    expect(readFileSync(summary, "utf8")).toContain("node scripts/export-public.mjs v1.2.3 --push");
+  });
+
   it("подготовлен, но не опубликован, сухой прогон: ничего не публикуется", () => {
     addToken();
     const result = release(["--dry-run"]);
@@ -165,7 +178,7 @@ describe("release.mjs: ветки выпуска", () => {
     addChangeset();
     const result = release(["--full"]);
     expect(result.status).toBe(0);
-    const order = ["export-public HEAD --check-only", "pnpm test", "pnpm typecheck", "pnpm build", "pnpm exec changeset version", "git commit", "pnpm exec changeset publish", "git fetch origin main", "git tag -f -a", "git push --atomic"];
+    const order = ["export-public HEAD --check-only", "pnpm test", "pnpm typecheck", "pnpm build", "pnpm exec changeset version", "git commit", "pnpm exec changeset publish", "git fetch origin main", "git tag -f -a", "git push --atomic", "export-public v1.2.3 --push"];
     const positions = order.map((prefix) => result.calls.findIndex((call) => call.startsWith(prefix)));
     expect(positions.every((position) => position >= 0)).toBe(true);
     expect([...positions].sort((a, b) => a - b)).toEqual(positions);

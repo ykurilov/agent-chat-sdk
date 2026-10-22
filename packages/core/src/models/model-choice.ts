@@ -18,6 +18,10 @@ export interface ModelMenu {
     models: Array<{
       id: string;
       displayName: string;
+      group?: string;
+      description?: string;
+      tags?: string[];
+      price?: { inputPerMillion: number; outputPerMillion: number };
       /** Видит ли модель картинки у этого провайдера: от этого зависит, дойдёт ли прикреплённая картинка. */
       acceptsImages: boolean;
       reasoning: { levels: ReasoningLevelId[]; defaultLevel: ReasoningLevelId | null };
@@ -149,6 +153,10 @@ export function buildModelMenu(catalog: ModelCatalog, env: Env, defaultChoice: M
         .map((model) => ({
           id: model.id,
           displayName: model.displayName,
+          ...(model.menu?.group !== undefined && { group: model.menu.group }),
+          ...(model.menu?.description !== undefined && { description: model.menu.description }),
+          ...(model.menu?.tags !== undefined && { tags: [...model.menu.tags] }),
+          ...(model.pricing?.[provider.id] && { price: { inputPerMillion: model.pricing[provider.id]!.inputPerMillion, outputPerMillion: model.pricing[provider.id]!.outputPerMillion } }),
           acceptsImages: modelAcceptsImages(model, provider.id),
           reasoning: {
             levels: [...(model.reasoning.levels ?? [])],

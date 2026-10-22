@@ -1,3 +1,4 @@
+import { answerReasoningOf, withoutAnswerReasoning } from "./answer-reasoning";
 import { thoughtTitlesOfParts } from "../thought-titles/thought-title-parts";
 import type { AgentChatMessage, StoredMessage, TokenUsage } from "./types";
 
@@ -7,13 +8,15 @@ export function toAgentChatMessage(message: StoredMessage): AgentChatMessage {
   // Шаги идущего хода с провайдерами нужны только восстановлению на сервере, экрану — нет.
   const { pendingSteps: _steps, ...usage } = message.usage ?? {};
   // Заголовки раздумий лежат в частях рассуждения: экран читает их из метаданных, как длительности.
+  const reasoningLevel = answerReasoningOf(message.parts);
   const thoughtTitles = thoughtTitlesOfParts(message.parts);
   return {
     id: message.id,
     role: "assistant",
-    parts: message.parts,
+    parts: withoutAnswerReasoning(message.parts),
     metadata: {
       status: message.status,
+      ...(reasoningLevel !== undefined && { reasoningLevel }),
       reasoningDurationsMs: message.reasoningDurationsMs,
       ...(Object.keys(thoughtTitles).length > 0 && { thoughtTitles }),
       ...(message.modelId && { modelId: message.modelId }),

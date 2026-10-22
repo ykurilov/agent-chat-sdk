@@ -1,0 +1,65 @@
+{
+  "name": "@ykurilov/agent-chat-skin-oduvanchik",
+  "version": "0.71.0",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": {
+      "@ykurilov/agent-chat-source": "./src/index.ts",
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./styles.css": {
+      "@ykurilov/agent-chat-source": "./src/styles.css",
+      "default": "./dist/styles.css"
+    }
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ykurilov/agent-chat-sdk.git",
+    "directory": "skins/oduvanchik"
+  },
+  "scripts": {
+    "build": "node ../../scripts/build-package.mjs && cp src/styles.css dist/",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@tandem/ui": "npm:@ykurilov/tandem-ui@^0.7.0",
+    "@ykurilov/agent-chat-react": "workspace:*",
+    "mdast-util-from-markdown": "^2.0.3",
+    "mdast-util-gfm": "^3.1.0",
+    "micromark-extension-gfm": "^3.0.0",
+    "@phosphor-icons/react": "^2.1.10",
+    "@ykurilov/ds-react": "^0.1.0",
+    "@ykurilov/ds-tokens": "^0.1.0"
+  },
+  "peerDependencies": {
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.3",
+    "@types/react": "^19.3.0",
+    "@ykurilov/agent-chat-attachments": "workspace:*",
+    "@ykurilov/agent-chat-web-tools": "workspace:*",
+    "jsdom": "^30.1.1",
+    "react": "^19.3.0"
+  },
+  "peerDependenciesMeta": {}
+}

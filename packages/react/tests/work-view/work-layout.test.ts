@@ -203,3 +203,8 @@ describe("workLayoutOf: прежний список для скинов 23–27"
     expect((done as { steps: unknown }).steps).toEqual([{ phrase: labels.stepRepeated("Сделал календарь", 2), failed: false }]);
   });
 });
+
+it("живая карточка получает завершённые шаги, текущий шаг остаётся отдельной фразой", () => {
+  const layout = workLayoutOf([tool("first", "write_file"), tool("second", "check_app", "running")], { streaming: true, labels, phrases });
+  expect(layout).toMatchObject([{ kind: "live", phrase: "Проверяю приложение…", completed: [{ phrase: "Сделал календарь", failed: false }] }]);
+});

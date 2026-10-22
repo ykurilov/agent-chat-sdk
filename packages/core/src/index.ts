@@ -336,3 +336,5 @@ export { liveDemosInstructions } from "./widgets/live-demos-instructions";
 export { EXTERNAL_CONTENT_KEY, EXTERNAL_CONTENT_PART_TYPE, WEB_TOOL_NAMES, chatHasExternalContent, isExternalContentTool } from "./external-content/external-content";
 export { endTurn } from "./agent-run/end-turn";
 export type { EndTurnOptions } from "./agent-run/end-turn";
+
+export { buildModelMenu } from "./models/model-choice";

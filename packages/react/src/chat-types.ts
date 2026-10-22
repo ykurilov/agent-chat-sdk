@@ -83,6 +83,7 @@ export interface VoiceCut {
 }
 
 export interface ChatMessageMetadata {
+  reasoningLevel?: string;
   modelId?: string;
   providerId?: string;
   usage?: TokenUsage;

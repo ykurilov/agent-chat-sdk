@@ -159,3 +159,12 @@ describe("меню моделей и картинки", () => {
     ]);
   });
 });
+
+it("публичное меню: группа, описание, метки и базовые цены из каталога, без внутренних настроек", () => {
+  const profile = { ...model("priced", ["alpha"]), menu: { group: "Для текста", description: "Работа с документами", tags: ["текст"], internal: "не публиковать" }, pricing: { alpha: { inputPerMillion: 0.2, outputPerMillion: 0.8, cachedInputPerMillion: 0.02 } } };
+  const priced = createModelCatalog({ models: [profile], providers: [provider("alpha")] });
+  const item = buildModelMenu(priced, env, { modelId: "priced", providerId: "alpha" }).providers[0]!.models[0]!;
+  expect(item).toMatchObject({ group: "Для текста", description: "Работа с документами", tags: ["текст"], price: { inputPerMillion: 0.2, outputPerMillion: 0.8 } });
+  expect(item).not.toHaveProperty("internal");
+  expect(item.price).not.toHaveProperty("cachedInputPerMillion");
+});

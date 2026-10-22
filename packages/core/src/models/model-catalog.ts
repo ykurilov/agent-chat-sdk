@@ -100,6 +100,7 @@ export interface ModelPrice extends ModelPriceRates {
 }
 
 export interface ModelProfile {
+  menu?: { group?: string; description?: string; tags?: string[] };
   id: string;
   displayName: string;
   contextWindowTokens: number;

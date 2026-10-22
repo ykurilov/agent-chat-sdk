@@ -5,12 +5,22 @@
 [voice-dialog](packages/voice-dialog/CHANGELOG.md), [attachments](packages/attachments/CHANGELOG.md), [limits](packages/limits/CHANGELOG.md),
 [history-search](packages/history-search/CHANGELOG.md), [web-tools](packages/web-tools/CHANGELOG.md), [memory](packages/memory/CHANGELOG.md),
 [storage-sqlite](packages/storage-sqlite/CHANGELOG.md), [storage-postgres](packages/storage-postgres/CHANGELOG.md),
-[skin-tandem](skins/tandem/CHANGELOG.md), [diagrams](packages/diagrams/CHANGELOG.md), [images](packages/images/CHANGELOG.md),
+[skin-tandem](skins/tandem/CHANGELOG.md), [skin-oduvanchik](skins/oduvanchik/CHANGELOG.md), [diagrams](packages/diagrams/CHANGELOG.md), [images](packages/images/CHANGELOG.md),
 [videos](packages/videos/CHANGELOG.md), [sandbox](packages/sandbox/CHANGELOG.md), [background](packages/background/CHANGELOG.md),
 [messengers](packages/messengers/CHANGELOG.md), [flows](packages/flows/CHANGELOG.md), [skills](packages/skills/CHANGELOG.md),
 [mcp](packages/mcp/CHANGELOG.md), [image-library](packages/image-library/CHANGELOG.md).
 
 Эту сводку обновляют при каждом выпуске (см. [RELEASING.md](RELEASING.md)).
+
+## 0.71.0 (готовится)
+
+### Одуванчик: скин и три вида поля ввода
+
+Новый пакет `@ykurilov/agent-chat-skin-oduvanchik`: нейтральный интерфейс, Phosphor и сфера агента из опубликованного `@ykurilov/ds-react@0.1.0`, переменные из `@ykurilov/ds-tokens@0.1.0`. Светлая, тёмная и системная темы; телефон, список чатов и панель агента. Временные копии сферы и переменных удалены.
+
+Поле выбирает приложение: сжатое (текст и отправка), обычное (вложения, контекст, микрофон) или расширенное (модель, провайдер, рассуждения и инструменты). На телефоне настройки открываются общей шторкой. Во время ответа отправка становится «Стоп», настройки заблокированы. Цена и доступные модели берутся из каталога SDK. Под ответом - его собственные модель, провайдер и известный уровень; мысли раскрываются отдельно, живые шаги показывают сделанное и текущий шаг со сферой.
+
+**Как обновить приложение.** После выпуска установить `@ykurilov/agent-chat-skin-oduvanchik`, передать `skin={oduvanchikSkin}` и подключить его CSS. `composerOptions={{ variant: "extended" }}` выбирает расширенный вид; также доступны `compact` и `standard`, обычный используется по умолчанию. Вариант задаётся также у `ChatWorkspace`/`AgentPanel`. DS-пакеты приходят как зависимости скина; приложение предоставляет React/React DOM. Новые поля договора 29 необязательные, старые скины продолжают работать. Миграций базы нет. Проекты и переключатели инструментов приложение связывает со своим контекстом и серверными настройками через callbacks. [Подключение и ограничения](skins/oduvanchik/README.md), [договор скина](docs/skin-v29.md).
 
 ## 0.70.1 (22.10.2026)
 

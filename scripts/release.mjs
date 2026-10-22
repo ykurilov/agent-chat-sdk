@@ -2,7 +2,7 @@
 // Один выпуск SDK: `pnpm release`.
 // С Мака команда сама не выпускает, а запускает этот же скрипт на GitHub Actions (release-in-actions.mjs) и ждёт итога.
 // Сам выпуск по шагам ниже идёт на машине GitHub Actions (GITHUB_ACTIONS=true) или на Маке с флагом `--local` — запасной путь.
-//   проверка открытой выгрузки → проверки (юнит-тесты, типы, сборка) → changeset version → коммит → публикация →\n//   коммит выпуска поверх свежего origin/main → теги → атомарный push main и тегов.
+//   проверка открытой выгрузки → проверки (юнит-тесты, типы, сборка) → changeset version → коммит → публикация →\n//   коммит выпуска поверх свежего origin/main → теги → атомарный push main и тегов → открытая выгрузка.
 // Проверки пропускаются, если `pnpm verify` уже прогнал их на этом же коде (отметка в node_modules/.cache);
 // `--full` проверяет заново принудительно.
 // `--dry-run` показывает, что выпуск сделал бы, и останавливается до changeset version: ничего не меняет и не запускает.
@@ -16,7 +16,7 @@
 // npm показывает новую версию не сразу (бывает, через 10+ минут), поэтому тег и push — только когда
 // у каждого публичного пакета latest стал новой версией.
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync, appendFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -264,5 +264,14 @@ if (hasOwnCommit && !isAncestor("origin/main", "HEAD")) {
 for (const name of releaseTags) run("git", ["tag", "-f", "-a", name, "-m", tagMessage(name)], { quiet: true, failure: `пакеты ${version} уже в npm, теги не поставлены` });
 const pushed = tryGit(["push", "--atomic", "origin", ...(hasOwnCommit ? ["HEAD:refs/heads/main"] : []), ...releaseTags.map((name) => `refs/tags/${name}`)]);
 if (!pushed.ok) notPushed(`GitHub не принял push (атомарный: не ушло ничего):\n${pushed.output}`, `запустите pnpm release снова — опубликованное в npm он пропустит; или вручную: ${manualFix}`);
+
+step(`Выгрузка ${tag} в открытое хранилище (проверки очищенного дерева и push)`);
+const exported = spawnSync("node", ["scripts/export-public.mjs", tag, "--push"], { cwd: root, stdio: "inherit" });
+if (exported.status !== 0) {
+  const message = `Пакеты ${version} уже в npm, main и теги отправлены в закрытое хранилище. Открытое хранилище (включая CHANGES.md) не обновлено. Отката нет. Повторите только выгрузку: node scripts/export-public.mjs ${tag} --push`;
+  if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${message}\n`);
+  stop(message);
+}
+if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `SDK ${version}: npm, main и теги, открытое хранилище (включая CHANGES.md) обновлены.\n`);
 
 console.log(`\n✅ Agent Chat SDK ${version} выпущен. Тег ${tag} отправлен. Журнал: packages/*/CHANGELOG.md`);

@@ -1,3 +1,4 @@
+import type { ComposerOptions } from "./composer-options";
 import { getToolName, isToolUIPart } from "ai";
 import type { DynamicToolUIPart, ToolUIPart } from "ai";
 import { Fragment, memo, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
@@ -70,7 +71,13 @@ import { workLayoutOf } from "./work-view/work-layout";
 import type { AnswerEntry, WorkStep } from "./work-view/work-layout";
 import { WorkStepsPart } from "./work-view/work-steps-part";
 
+interface FeedExtensions extends AgentChatExtensions {
+  reasoningVisible?: boolean;
+  modelNames?: ModelChoiceView["providers"];
+}
+
 export interface AgentChatProps extends AgentChatExtensions {
+  composerOptions?: ComposerOptions;
   /** Адрес обработчика чата, например `/api/chat`. */
   api: string;
   /** Какой чат открыть. Нужен ровно один из `chatId` и `subject`: оба сразу или ни одного — ошибка разработчика (исключение). */
@@ -173,7 +180,7 @@ function SubjectAgentChat(props: AgentChatProps & { subject: string }) {
   return <SubjectChatLoading skin={props.skin} />;
 }
 
-function AgentChatBody({ api, chatId, skin, liveness, voice, voiceDialog, attachments: attachmentsPlugin, spendingLimits, onBusyChange, appBridge, initialDraft, answerEditing, onFeedChange, messageActions, onTurnFinished, onTurnRefused, composerActions, onAppEvent, onChatAccessChange, onStateChange, onModelChosen, onChatUnavailable, reloadKey, steering, widgets, diagrams, liveDemos, images, videos, appEvents, workView, stepPhrases, noticeLines }: AgentChatProps & { chatId: string }) {
+function AgentChatBody({ composerOptions, api, chatId, skin, liveness, voice, voiceDialog, attachments: attachmentsPlugin, spendingLimits, onBusyChange, appBridge, initialDraft, answerEditing, onFeedChange, messageActions, onTurnFinished, onTurnRefused, composerActions, onAppEvent, onChatAccessChange, onStateChange, onModelChosen, onChatUnavailable, reloadKey, steering, widgets, diagrams, liveDemos, images, videos, appEvents, workView, stepPhrases, noticeLines, answerDetails }: AgentChatProps & { chatId: string }) {
   const spendingNoticeId = useId();
   const closedNoticeId = useId();
   const chat = useAgentChat({
@@ -212,9 +219,19 @@ function AgentChatBody({ api, chatId, skin, liveness, voice, voiceDialog, attach
   const attachments = attachmentsPlugin?.useController({ api, chatId, modelSeesImages: chatModelSeesImages });
   const describeFiles = attachments?.describe;
   const imageClients = useSameList(imageClientsOf(images));
+  const [localReasoningVisible, setLocalReasoningVisible] = useState(true);
+  const showReasoning = composerOptions?.reasoningVisibility?.value ?? localReasoningVisible;
+  const effectiveComposerOptions = useMemo(() => ({ ...composerOptions, reasoningVisibility: composerOptions?.reasoningVisibility ?? { value: showReasoning, onChange: setLocalReasoningVisible } }), [composerOptions, showReasoning]);
+  const showAnswerDetails = answerDetails ?? composerOptions?.variant === "extended";
+  // Only catalog names affect past answers; changing the current model/effort keeps this reference stable.
+  const answerNamesKey = showAnswerDetails ? JSON.stringify(modelChoice.providers.map(({ id, name, models }) => ({ id, name, models: models.map(({ id, name }) => ({ id, name })) }))) : "";
+  const answerModelNames = useMemo<ModelChoiceView["providers"] | undefined>(() => answerNamesKey ? JSON.parse(answerNamesKey) as ModelChoiceView["providers"] : undefined, [answerNamesKey]);
   // Свойства страницы несутся вниз одним стабильным объектом: ввод в поле ответы в ленте не перерисовывает.
-  const extensions = useMemo<AgentChatExtensions>(
+  const extensions = useMemo<FeedExtensions>(
     () => ({
+      reasoningVisible: showReasoning,
+      answerDetails: showAnswerDetails,
+      ...(answerModelNames && { modelNames: answerModelNames }),
       ...(widgets && { widgets }),
       ...(diagrams && { diagrams }),
       ...(liveDemos && { liveDemos }),
@@ -225,7 +242,7 @@ function AgentChatBody({ api, chatId, skin, liveness, voice, voiceDialog, attach
       ...(stepPhrases && { stepPhrases }),
       ...(noticeLines && { noticeLines }),
     }),
-    [widgets, diagrams, liveDemos, imageClients, videos, appEvents, workView, stepPhrases, noticeLines],
+    [widgets, diagrams, liveDemos, imageClients, videos, appEvents, workView, stepPhrases, noticeLines, showReasoning, showAnswerDetails, answerModelNames],
   );
   const scrollRef = useRef<HTMLDivElement>(null);
   const feedRef = useRef<MessageFeedHandle>(null);
@@ -682,6 +699,7 @@ function AgentChatBody({ api, chatId, skin, liveness, voice, voiceDialog, attach
       announcement={announced}
       composer={
         <skin.Composer
+          options={effectiveComposerOptions}
           value={chat.value}
           onValueChange={chat.setValue}
           onSubmit={submitComposer}
@@ -941,7 +959,7 @@ const AgentAnswer = memo(function AgentAnswer({
 }: {
   skin: ChatSkin;
   /** Свои виджеты, схемы и картинки страницы. */
-  extensions: AgentChatExtensions;
+  extensions: FeedExtensions;
   /** Схемы подключены: блоки ```mermaid рисуются (без этого — обычный код). */
   diagrams?: DiagramSetup;
   /** Живые демонстрации подключены: блоки ```html-demo запускаются в этих цветах (без этого — обычный код). */
@@ -1012,6 +1030,7 @@ const AgentAnswer = memo(function AgentAnswer({
     const imagesView = isToolUIPart(part) ? describeImages?.(part) : undefined;
     const videoView = isToolUIPart(part) && extensions.videos && getToolName(part) === extensions.videos.toolName ? extensions.videos.describe(part) : undefined;
     if (part.type === "reasoning") {
+      if (extensions.reasoningVisible === false) return;
       const ordinal = String(reasoningIndex++);
       const streaming = part.state === "streaming";
       const durationMs = streaming ? null : (durations[ordinal] ?? null);
@@ -1157,9 +1176,12 @@ const AgentAnswer = memo(function AgentAnswer({
     status === "error" ? (
       <skin.ErrorNotice kind={message.metadata?.error?.kind ?? "other"} {...(errorText !== undefined && { text: errorText })} {...(onRetry && { onRetry })} />
     ) : undefined;
+  const answerProvider = extensions.modelNames?.find((provider) => provider.id === message.metadata?.providerId);
+  const answerModel = answerProvider?.models.find((model) => model.id === message.metadata?.modelId);
   return (
     <ThinkingClockProvider id={message.id} waiting={status === "streaming"}>
       <skin.AgentMessage
+        {...(extensions.answerDetails && message.metadata?.modelId && message.metadata?.providerId && { modelDetails: { modelId: message.metadata.modelId, providerId: message.metadata.providerId, ...(answerProvider && { providerName: answerProvider.name }), ...(answerModel && { modelName: answerModel.name }), ...(message.metadata.reasoningLevel !== undefined && { reasoning: message.metadata.reasoningLevel }) } })}
         status={status}
         empty={!steered && status !== "streaming" && status !== "awaiting_approval" && text.trim().length === 0}
         onCopy={() => void navigator.clipboard?.writeText(text)}

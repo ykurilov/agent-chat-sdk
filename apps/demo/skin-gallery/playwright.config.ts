@@ -11,7 +11,7 @@ export default defineConfig({
   use: { baseURL: `http://localhost:${port}` },
   projects: [{ name: "skin-gallery", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
-    command: "pnpm exec vite --config skin-gallery/vite.config.ts",
+    command: "pnpm --filter @ykurilov/agent-chat-react build && pnpm --filter @ykurilov/agent-chat-skin-oduvanchik build && pnpm exec vite --config skin-gallery/vite.config.ts",
     url: `http://localhost:${port}`,
     env: { SKIN_GALLERY_PORT: String(port) },
     reuseExistingServer: false,

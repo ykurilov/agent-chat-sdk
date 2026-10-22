@@ -8,7 +8,7 @@ interface ModelMenu {
   providers: Array<{
     id: string;
     displayName: string;
-    models: Array<{ id: string; displayName: string; acceptsImages?: boolean; reasoning: { levels: string[]; defaultLevel: string | null } }>;
+    models: Array<{ id: string; displayName: string; acceptsImages?: boolean; group?: string; description?: string; tags?: string[]; price?: { inputPerMillion: number; outputPerMillion: number }; reasoning: { levels: string[]; defaultLevel: string | null } }>;
   }>;
   defaultChoice: {
     modelId: string;
@@ -177,6 +177,10 @@ export function useModelChoice({ api, chatId, savedChoice, savedChoicePending = 
           models: provider.models.map((model) => ({
             id: model.id,
             name: model.displayName,
+            ...(model.group !== undefined && { group: model.group }),
+            ...(model.description !== undefined && { description: model.description }),
+            ...(model.tags !== undefined && { tags: model.tags }),
+            ...(model.price !== undefined && { price: model.price }),
             ...(typeof model.acceptsImages === "boolean" && { acceptsImages: model.acceptsImages }),
           })),
         })),

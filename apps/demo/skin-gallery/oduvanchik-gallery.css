@@ -1,0 +1,22 @@
+@import "tailwindcss";
+@import "@ykurilov/agent-chat-skin-oduvanchik/styles.css";
+@source "../../../skins/oduvanchik/src";
+@source "../node_modules/@tandem/ui/dist";
+html, body, #root { height: 100%; margin: 0; }
+body { font-family: var(--yk-font-sans); }
+.gallery-app { min-height: 100dvh; background: var(--yk-sidebar); padding: 28px 530px 40px 32px; }
+.gallery-app header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.gallery-app button { border: 1px solid var(--yk-border); border-radius: 10px; padding: 8px 14px; background: var(--yk-surface); color: var(--yk-text); }
+.gallery-app h1 { margin-top: 48px; font-size: 30px; letter-spacing: -.025em; }
+.gallery-doc { margin-top: 28px; background: var(--yk-surface); border: 1px solid var(--yk-border); border-radius: 12px; padding: 24px; max-width: 680px; }
+.gallery-doc p { line-height: 1.65; color: var(--yk-muted); }
+.gallery-file { display: flex; align-items: center; gap: 10px; padding: 12px; border: 1px solid var(--yk-border); border-radius: 12px; margin: 12px 0; }
+.gallery-file b { font-size: 14px; font-weight: 500; }
+.gallery-file > div { flex: 1; }
+.gallery-file p { margin: 2px 0 0; }
+.gallery-status { padding: 10px 16px; display: flex; align-items: center; gap: 7px; border-bottom: 1px solid var(--yk-border); }
+.gallery-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--yk-accent); }
+.gallery-controls { display: flex; gap: 8px; align-items: center; }
+@media(max-width: 640px) { .gallery-app { display: none; } }
+
+.gallery-next { padding: 8px 12px; border: 1px solid var(--yk-border); border-radius: 10px; background: var(--yk-surface-2); color: var(--yk-text); font: inherit; }

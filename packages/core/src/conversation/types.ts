@@ -129,6 +129,7 @@ export interface VoiceCut {
 
 /** Что сообщение несёт в `UIMessage.metadata` по дороге в браузер. */
 export interface ChatMessageMetadata {
+  reasoningLevel?: string;
   modelId?: string;
   providerId?: string;
   usage?: TokenUsage;

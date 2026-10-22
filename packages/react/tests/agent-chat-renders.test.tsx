@@ -70,6 +70,19 @@ describe("лишние перерисовки чата", () => {
     expect(feedRenders.count).toBe(before);
   });
 
+  it("расширенный вид: смена текущего уровня не перерисовывает старые ответы с прежними настройками", async () => {
+    const server = fakeChatServer({ history });
+    renderAgentChat(server, { composerOptions: { variant: "extended" } });
+    await waitFor(() => expect(document.querySelector('[data-kind="agent"]')).not.toBeNull());
+    const model = await screen.findByLabelText("модель");
+    await settle();
+    const before = feedRenders.count;
+    fireEvent.change(model, { target: { value: "fireworks/glm-5.3-flash" } });
+    await waitFor(() => expect(server.requestsTo("model")).toHaveLength(1));
+    await settle();
+    expect(feedRenders.count).toBe(before);
+  });
+
   it("когда ответ закончился, кадра «ответ кончился, а итога для диктора ещё нет» не бывает", async () => {
     const frames: Array<{ busy: boolean; announcement: string }> = [];
     const Layout: ChatSkin["Layout"] = (props) => {

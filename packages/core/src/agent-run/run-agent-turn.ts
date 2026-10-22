@@ -1,3 +1,4 @@
+import { withAnswerReasoning } from "../conversation/answer-reasoning";
 import { stepCountIs, streamText } from "ai";
 import type { ModelMessage, StopCondition, ToolSet, UIMessageChunk } from "ai";
 import type { MessageAttachments } from "../attachments/message-attachments";
@@ -694,7 +695,7 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
       }
       // Ответ открывается сразу: пока идут тихие повторы и переход к запасному, человек видит обычное ожидание.
       // `start` попыток (они его придерживают) дальше не идёт.
-      emit({ type: "start", messageId, messageMetadata: { modelId, providerId: input.providerId } });
+      emit({ type: "start", messageId, messageMetadata: { modelId, providerId: input.providerId, ...(input.reasoning !== undefined && { reasoningLevel: input.reasoning }) } });
       // Чужой текст уже в чате (файл в новом сообщении, прошлые ходы, другие ветки — как в истории): клиент узнаёт об этом
       // до первого слова ответа.
       if (input.liveDemos && chatHasExternalContent(await storage.listMessages(input.chatId)) && externalContent.announce()) emitRaw(externalContentChunk());
@@ -1028,7 +1029,7 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
     // Ход кончился, пока начало продолжения придержано швом: оно не теряется.
     for (const chunk of seam.flush()) emitNow(chunk);
     // История не прочиталась: поток всё равно открывается куском start с id ответа.
-    if (!started) emit({ type: "start", messageId, messageMetadata: { modelId, providerId: input.providerId } });
+    if (!started) emit({ type: "start", messageId, messageMetadata: { modelId, providerId: input.providerId, ...(input.reasoning !== undefined && { reasoningLevel: input.reasoning }) } });
     // В шаге ждёт один виджет: лишние ждущие вызовы закрываются ошибкой — клиент и запись видят одно и то же (FR-003).
     if (input.waitingWidgets && !input.abortSignal.aborted && errors.length === 0) {
       for (const toolCallId of extraWidgetCallIds(await saver.snapshot(), input.waitingWidgets)) {
@@ -1133,7 +1134,7 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
         finished = await finishWithRetries(
           storage,
           messageId,
-          { status, parts, usage, reasoningDurationsMs, error, ...answeredByBackup, ...(input.afterTurn && { afterTurn: "pending" as const }) },
+          { status, parts: withAnswerReasoning(parts, input.reasoning), usage, reasoningDurationsMs, error, ...answeredByBackup, ...(input.afterTurn && { afterTurn: "pending" as const }) },
           logError,
         );
       } catch (failure) {
@@ -1202,7 +1203,7 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
 
     emitToClient({
       type: "message-metadata",
-      messageMetadata: { status, reasoningDurationsMs, ...titlesMetadata(parts), ...answeredByBackup, ...(usage && { usage }), ...(error && { error }) },
+      messageMetadata: { status, reasoningDurationsMs, ...(input.reasoning !== undefined && { reasoningLevel: input.reasoning }), ...titlesMetadata(parts), ...answeredByBackup, ...(usage && { usage }), ...(error && { error }) },
     });
     if (status === "error") for (const chunk of errors) emitToClient(chunk);
     if (terminal.length === 0) terminal.push(status === "stopped" ? { type: "abort" } : { type: "finish" });
@@ -1381,7 +1382,7 @@ function readAnswerAttempt(
           ...(originalMessage && { originalMessages: [originalMessage] }),
           sendReasoning: true,
           messageMetadata: ({ part }): ChatMessageMetadata | undefined =>
-            part.type === "start" ? { modelId: input.modelId, providerId: found.provider.id } : undefined,
+            part.type === "start" ? { modelId: input.modelId, providerId: found.provider.id, ...(input.reasoning !== undefined && { reasoningLevel: input.reasoning }) } : undefined,
           onError,
         })
         // Начала шагов и написанное — в оценку шага, который оборвётся.

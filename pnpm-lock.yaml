@@ -32,6 +32,9 @@ importers:
       '@hono/node-ws':
         specifier: ^1.3.1
         version: 1.3.1(@hono/node-server@2.1.1(hono@4.13.10))(hono@4.13.10)
+      '@phosphor-icons/react':
+        specifier: ^2.1.10
+        version: 2.1.10(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@tandem/ui':
         specifier: npm:@ykurilov/tandem-ui@^0.7.0
         version: '@ykurilov/tandem-ui@0.7.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)'
@@ -83,6 +86,9 @@ importers:
       '@ykurilov/agent-chat-skills':
         specifier: workspace:*
         version: link:../../packages/skills
+      '@ykurilov/agent-chat-skin-oduvanchik':
+        specifier: workspace:*
+        version: link:../../skins/oduvanchik
       '@ykurilov/agent-chat-skin-tandem':
         specifier: workspace:*
         version: link:../../skins/tandem
@@ -925,6 +931,55 @@ importers:
       zod:
         specifier: ^4.6.5
         version: 4.6.5
+
+  skins/oduvanchik:
+    dependencies:
+      '@phosphor-icons/react':
+        specifier: ^2.1.10
+        version: 2.1.10(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      '@tandem/ui':
+        specifier: npm:@ykurilov/tandem-ui@^0.7.0
+        version: '@ykurilov/tandem-ui@0.7.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)'
+      '@ykurilov/agent-chat-react':
+        specifier: workspace:*
+        version: link:../../packages/react
+      '@ykurilov/ds-react':
+        specifier: ^0.1.0
+        version: 0.1.0(@phosphor-icons/react@2.1.10(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(@ykurilov/ds-tokens@0.1.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      '@ykurilov/ds-tokens':
+        specifier: ^0.1.0
+        version: 0.1.0
+      mdast-util-from-markdown:
+        specifier: ^2.0.3
+        version: 2.0.3
+      mdast-util-gfm:
+        specifier: ^3.1.0
+        version: 3.1.0
+      micromark-extension-gfm:
+        specifier: ^3.0.0
+        version: 3.0.0
+      react-dom:
+        specifier: ^19.3.0
+        version: 19.3.0(react@19.3.0)
+    devDependencies:
+      '@testing-library/react':
+        specifier: ^16.3.3
+        version: 16.3.3(@testing-library/dom@10.4.2)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      '@types/react':
+        specifier: ^19.3.0
+        version: 19.3.0
+      '@ykurilov/agent-chat-attachments':
+        specifier: workspace:*
+        version: link:../../packages/attachments
+      '@ykurilov/agent-chat-web-tools':
+        specifier: workspace:*
+        version: link:../../packages/web-tools
+      jsdom:
+        specifier: ^30.1.1
+        version: 30.1.1
+      react:
+        specifier: ^19.3.0
+        version: 19.3.0
 
   skins/tandem:
     dependencies:
@@ -2159,6 +2214,13 @@ packages:
   '@oxc-project/types@0.151.0':
     resolution: {integrity: sha512-J1yXrIlNDZVzE3ada310xeAw7nH8yCAyLPuUIsjKatFPmfn5bS1oW+cM+QsGOtVWd5nhSpbwZWx/rue+r5Z+PA==}
 
+  '@phosphor-icons/react@2.1.10':
+    resolution: {integrity: sha512-vt8Tvq8GLjheAZZYa+YG/pW7HDbov8El/MANW8pOAz4eGxrwhnbfrQZq0Cp4q8zBEu8NIhHdnr+r8thnfRSNYA==}
+    engines: {node: '>=10'}
+    peerDependencies:
+      react: '>= 16.8'
+      react-dom: '>= 16.8'
+
   '@playwright/test@1.63.0':
     resolution: {integrity: sha512-oxMK4vllB9RK5NQ2l1pq1IfOf2AvnEuj/vYGDj0H2nMtmtZpKtCwt/l00GEO6xjGfpBNAvjovvYdCm50dRQkpQ==}
     engines: {node: '>=20'}
@@ -3172,6 +3234,17 @@ packages:
 
   '@xyflow/system@0.0.83':
     resolution: {integrity: sha512-a//eDjez3WZF47aaPTfVUDD0OINOq+WVwBZCRTqG+m0a5euX8EwlJ4jMY1Wxz0Ocj4xOeekJ70V22Pq0ll8RJw==}
+
+  '@ykurilov/ds-react@0.1.0':
+    resolution: {integrity: sha512-5Oy36+K/q+lT7zQ2/zcmXIH+jBSb9zJWMHtFQVD5IWhKWTT5FPg3fER2zalrr4aUUfqhdCN7pjNBmYaE9/ziJw==}
+    peerDependencies:
+      '@phosphor-icons/react': ^2.1.0
+      '@ykurilov/ds-tokens': ^0.1.0
+      react: ^18.2.0 || ^19.0.0
+      react-dom: ^18.2.0 || ^19.0.0
+
+  '@ykurilov/ds-tokens@0.1.0':
+    resolution: {integrity: sha512-Fw3vrQutxq5aDNPhyP1OtbZye6s9qiE/zGftnZYFGcedm81Kfvd9GBr8EoB7BxVS2Zvc9h9P/26mbBCkAP6iow==}
 
   '@ykurilov/tandem-ui@0.7.0':
     resolution: {integrity: sha512-lxNq9BIxvL64F4Oz5qmIlra9+zhcwpGYVQeG2nEZvnaY+NZvoJ1iCv9Pseh+angi4pTPYTI6i3mTEOXNYdeDtw==}
@@ -5744,6 +5817,11 @@ snapshots:
 
   '@oxc-project/types@0.151.0': {}
 
+  '@phosphor-icons/react@2.1.10(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
+    dependencies:
+      react: 19.3.0
+      react-dom: 19.3.0(react@19.3.0)
+
   '@playwright/test@1.63.0':
     dependencies:
       playwright: 1.63.0
@@ -6576,6 +6654,15 @@ snapshots:
       d3-interpolate: 3.0.1
       d3-selection: 3.0.0
       d3-zoom: 3.0.0
+
+  '@ykurilov/ds-react@0.1.0(@phosphor-icons/react@2.1.10(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(@ykurilov/ds-tokens@0.1.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
+    dependencies:
+      '@phosphor-icons/react': 2.1.10(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      '@ykurilov/ds-tokens': 0.1.0
+      react: 19.3.0
+      react-dom: 19.3.0(react@19.3.0)
+
+  '@ykurilov/ds-tokens@0.1.0': {}
 
   '@ykurilov/tandem-ui@0.7.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
     dependencies:

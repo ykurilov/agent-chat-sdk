@@ -24,7 +24,7 @@ export function WorkStepsPart({
   const [open, setOpen] = usePartOpen(expanded, `${item.key}:work`);
   if (skin.WorkSteps) {
     return item.kind === "live" ? (
-      <skin.WorkSteps state="live" phrase={item.phrase} icon={item.icon} />
+      <skin.WorkSteps state="live" phrase={item.phrase} icon={item.icon} {...(item.completed && { completed: item.completed })} />
     ) : (
       <skin.WorkSteps
         state="done"

@@ -19,7 +19,7 @@
 - Проверка ответа перед отправкой: ловит чужие слова на другом языке и выдуманные ссылки.
 - Внешний вид отделён от поведения. Готовый вид — скин «Тандем», любой компонент можно заменить своим.
 
-Версия 0.70.1.
+Версия 0.71.0.
 
 ## Установка
 
@@ -204,6 +204,7 @@ pnpm vite                  # страница: откройте http://localhost
 | [`@ykurilov/agent-chat-voice`](packages/voice) | голосовой ввод (диктовка) |
 | [`@ykurilov/agent-chat-voice-dialog`](packages/voice-dialog) | голосовой разговор с агентом |
 | [`@ykurilov/agent-chat-web-tools`](packages/web-tools) | поиск и чтение сайтов для агента |
+| [`@ykurilov/agent-chat-skin-oduvanchik`](skins/oduvanchik) | готовый вид Одуванчик |
 | [`@ykurilov/agent-chat-skin-tandem`](skins/tandem) | готовый вид «Тандем» |
 
 ## Демо из этого репозитория

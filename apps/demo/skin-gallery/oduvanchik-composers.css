@@ -1,0 +1,33 @@
+@import "tailwindcss";
+@import "@ykurilov/agent-chat-skin-oduvanchik/styles.css";
+@source "../../../skins/oduvanchik/src";
+@source "../node_modules/@tandem/ui/dist";
+html, body, #root { min-height: 100%; margin: 0; }
+.oduvanchik-composers-gallery { min-height: 100dvh; padding: 28px 32px 32px; background: var(--yk-surface-2); }
+.oduvanchik-composers-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; gap: 12px; }
+.oduvanchik-composers-head p { margin: 0 0 6px; }
+.oduvanchik-composers-head h1 { font-size: 22px; font-weight: 600; margin: 0; letter-spacing: -.02em; }
+.oduvanchik-composers-head > button { padding: 8px 14px; background: var(--yk-ink); color: var(--yk-on-ink); border: 0; border-radius: 10px; font-size: 13px; }
+.oduvanchik-composers-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 20px; }
+.oduvanchik-composer-demo { display: flex; flex-direction: column; gap: 12px; background: var(--yk-bg); border-radius: 18px; padding: 18px; height: min(780px, calc(100dvh - 125px)); min-height: 520px; min-width: 0; }
+.oduvanchik-composer-demo > header h2 { margin: 0; font-size: 15px; font-weight: 600; }
+.oduvanchik-composer-demo > header p { margin: 4px 0 0; font-size: 13px; color: var(--yk-muted); }
+.oduvanchik-composer-thread { min-height: 0; flex: 1; overflow-y: auto; padding: 4px 2px; }
+.oduvanchik-composer-empty { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; font-size: 14px; color: var(--yk-muted); }
+.oduvanchik-composer-empty p { margin: 0; }
+.oduvanchik-composers-tabs { display: none; }
+@media(max-width:640px) {
+  html, body, #root { height: 100%; }
+  .oduvanchik-composers-gallery { padding: 12px; height: 100dvh; min-height: 0; display: flex; flex-direction: column; }
+  .oduvanchik-composers-head { margin-bottom: 12px; }
+  .oduvanchik-composers-head h1 { font-size: 17px; }
+  .oduvanchik-composers-head > button { padding: 6px 8px; font-size: 10px; }
+  .oduvanchik-composers-tabs { display: flex; gap: 4px; margin-bottom: 12px; }
+  .oduvanchik-composers-tabs button { flex: 1; min-width: 0; border: 0; border-radius: 8px; background: var(--yk-bg); color: var(--yk-muted); padding: 8px 6px; font-size: 12px; }
+  .oduvanchik-composers-tabs button[aria-pressed="true"] { color: var(--yk-accent-text); }
+  .oduvanchik-composers-grid { display: flex; flex: 1; min-height: 0; }
+  .oduvanchik-composer-demo { height: 100%; min-height: 0; width: 100%; padding: 14px 10px 10px; border-radius: 12px; }
+  .oduvanchik-composers-gallery[data-active="compact"] .oduvanchik-composer-demo:not([data-variant="compact"]),
+  .oduvanchik-composers-gallery[data-active="standard"] .oduvanchik-composer-demo:not([data-variant="standard"]),
+  .oduvanchik-composers-gallery[data-active="extended"] .oduvanchik-composer-demo:not([data-variant="extended"]) { display: none; }
+}

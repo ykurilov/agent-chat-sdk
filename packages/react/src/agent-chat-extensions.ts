@@ -52,6 +52,8 @@ export type CustomWidgets = Record<string, ComponentType<CustomWidgetProps<any, 
  * и которые слой поведения несёт вниз до частей ответа. Без них отрисовка и запросы, как в 0.15.
  */
 export interface AgentChatExtensions {
+  /** Ask compatible skins to show actual response model settings. */
+  answerDetails?: boolean;
   /** Свои виджеты: `{ pick_slot: PickSlotWidget }`. Базовые виджеты свойства не требуют. */
   widgets?: CustomWidgets;
   /** Схемы из блоков ```mermaid: `diagramsClient`. */

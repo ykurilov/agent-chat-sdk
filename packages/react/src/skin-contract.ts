@@ -1,3 +1,4 @@
+import type { ComposerOptions } from "./composer-options";
 import type { ComponentType, ReactElement, ReactNode, RefObject } from "react";
 import type { ComposerAttachments, MessageAttachmentsView } from "./attachments-contract";
 import type { AnswerStatus, ApprovalDecision, ErrorNoticeKind } from "./chat-types";
@@ -98,7 +99,7 @@ export type ChatOriginView = "telegram" | "vk" | "max";
 
 /** Выбор модели и уровня рассуждений в поле ввода (договор скина, версия 3). */
 export interface ModelChoiceView {
-  providers: Array<{ id: string; name: string; models: Array<{ id: string; name: string; acceptsImages?: boolean }> }>;
+  providers: Array<{ id: string; name: string; models: Array<{ id: string; name: string; acceptsImages?: boolean; group?: string; description?: string; tags?: string[]; price?: { inputPerMillion: number; outputPerMillion: number } }> }>;
   /** Текущий выбор: провайдер и модель. */
   current: { providerId: string; modelId: string };
   onChange: (next: { providerId: string; modelId: string }) => void;
@@ -322,6 +323,7 @@ export interface MessageActionView {
 export type WorkStepsView =
   | {
       state: "live";
+      completed?: Array<{ phrase: string; failed: boolean; icon?: StepIcon }>;
       phrase: string;
       /** Версия 28: значок текущего шага (`StepIcon`). Нет — скин до 28 рисует строку без значка. */
       icon?: StepIcon;
@@ -352,9 +354,10 @@ export interface StaffMessageView {
 }
 
 /**
- * Договор скина, версия 28 (в версии 28 добавились только необязательные значки шагов и заголовки раздумий:
+ * Договор скина, версия 29: необязательные Composer.options, AgentMessage.modelDetails и WorkSteps.live.completed.
+ * Скины 28 работают без правок. В версии 28 добавились только необязательные значки шагов и заголовки раздумий:
  * `WorkStepsView.live.icon`, `WorkStepsView.done.items`, `icons`, `moreIcons` и `Reasoning.title`, docs/skin-v28.md;
- * скин версии 27 работает без правок: шаги без значков, раздумья — «Думал N сек»).
+ * скин версии 27 работает без правок: шаги без значков, раздумья — «Думал N сек».
  * Версия 27 (в версии 27 добавилось только необязательное `ServiceLine` — служебная строка пометки
  * приложения, право чата `appNotices` и `noticeLines`, docs/skin-v27.md; скин версии 26 работает без правок: пометок
  * не видно).
@@ -450,6 +453,8 @@ export interface ChatSkin {
     attachments?: MessageAttachmentsView;
   }>;
   AgentMessage: ComponentType<{
+    /** Actual answer settings, not the current composer selection. */
+    modelDetails?: { modelId: string; providerId: string; modelName?: string; providerName?: string; reasoning?: string };
     status: AnswerStatus;
     /** Части ответа в порядке прихода. */
     children: ReactNode;
@@ -568,6 +573,8 @@ export interface ChatSkin {
   /** Вместо всего чата, если он чужой или его нет: без ленты, поля ввода и «повторить». */
   ChatNotFound: ComponentType;
   Composer: ComponentType<{
+    /** Optional composer presentation and application-owned controls. */
+    options?: ComposerOptions;
     value: string;
     onValueChange: (value: string) => void;
     onSubmit: () => void;

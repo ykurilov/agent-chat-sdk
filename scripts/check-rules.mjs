@@ -28,6 +28,7 @@ const importSpecifier = /(?:from\s+|import\s*\(\s*|import\s+)["']([^"']+)["']/g;
 
 const labelFolders = [
   "skins/tandem/src",
+  "skins/oduvanchik/src",
   "packages/react/src",
   "packages/sandbox/src/react",
   "packages/messengers/src/react",
@@ -48,6 +49,7 @@ const consumers = [
   { folder: "apps/demo", sources: ["src", "server", "e2e", "vite.config.ts", "playwright.config.ts"] },
   { folder: "apps/next-example", sources: ["app", "lib", "scripts", "next.config.ts"] },
   { folder: "skins/tandem", sources: ["src"] },
+  { folder: "skins/oduvanchik", sources: ["src"] },
 ];
 
 const problems = [];
@@ -154,7 +156,7 @@ for (const file of labelFolders.flatMap(sourceFiles)) {
 }
 
 // Цвета: в Тандеме фон страницы — `--canvas`; переменной `--background` там нет, и фон выходит прозрачным.
-for (const file of [...sourceFiles("skins/tandem/src"), ...sourceFiles("apps/demo/src")]) {
+for (const file of [...sourceFiles("skins/tandem/src"), ...sourceFiles("skins/oduvanchik/src"), ...sourceFiles("apps/demo/src")]) {
   codeOf(file).split("\n").forEach((line, lineIndex) => {
     if (line.includes("var(--background)")) problems.push(`${file}:${lineIndex + 1}: «--background» нет в Тандеме, фон страницы — «--canvas»`);
   });
@@ -174,7 +176,7 @@ for (const file of behaviourFolders.flatMap(sourceFiles)) {
 
 /** Публичные адреса пакетов модуля: `@ykurilov/agent-chat-react`, `@ykurilov/agent-chat-server/hono`… */
 const publicSpecifiers = new Set();
-const packageFolders = [...readdirSync(join(root, "packages")).map((name) => `packages/${name}`), "skins/tandem"].filter(
+const packageFolders = [...readdirSync(join(root, "packages")).map((name) => `packages/${name}`), "skins/tandem", "skins/oduvanchik"].filter(
   (folder) => existsSync(join(root, folder, "package.json")),
 );
 

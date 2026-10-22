@@ -27,7 +27,8 @@
       "@ykurilov/agent-chat-flows",
       "@ykurilov/agent-chat-reply-check",
       "@ykurilov/agent-chat-skills",
-      "@ykurilov/agent-chat-mcp"
+      "@ykurilov/agent-chat-mcp",
+      "@ykurilov/agent-chat-skin-oduvanchik"
     ]
   ],
   "linked": [],

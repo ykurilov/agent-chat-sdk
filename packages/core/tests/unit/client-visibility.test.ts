@@ -146,3 +146,9 @@ describe("видимость: подробности сбоя (errorDetails)", (
     });
   });
 });
+
+it("modelDetails=false скрывает уровень выбранных рассуждений вместе с моделью", () => {
+  const visibility = clientVisibilityOf({ modelDetails: false, reasoning: true, toolDetails: true }, () => false);
+  const visible = visibility.visibleMessage({ role: "assistant", parts: [{ type: "text", text: "Ответ" }], metadata: { modelId: "m", providerId: "p", reasoningLevel: "high" } });
+  expect(visible.metadata).toEqual({});
+});

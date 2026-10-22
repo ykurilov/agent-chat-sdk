@@ -21,8 +21,9 @@ const published = ["packages", "skins"].flatMap((group) =>
 );
 
 describe("публикуемые пакеты", () => {
-  it("найдены все двадцать четыре пакета", () => {
-    expect(published).toHaveLength(24);
+  it("найдены все двадцать пять пакетов", () => {
+    expect(published).toHaveLength(25);
+    expect(published.map(({ name }) => name)).toContain("@ykurilov/agent-chat-skin-oduvanchik");
   });
 
   it.each(published.map((manifest) => [manifest.name, manifest] as const))("%s требует Node 22 и новее: встроенный WebSocket есть только там", (_name, manifest) => {
