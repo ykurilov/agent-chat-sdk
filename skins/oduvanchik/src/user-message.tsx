@@ -1,4 +1,5 @@
-import { AgentMessage, Button, Tooltip } from "@tandem/ui";
+import { Button, Tooltip } from "@tandem/ui";
+import { UserMessageShell } from "./primitives/user-message";
 import type { ChatSkin } from "@ykurilov/agent-chat-react";
 import { useChatLabels } from "@ykurilov/agent-chat-react";
 import { Pencil } from "./icons";
@@ -18,9 +19,9 @@ export function OduvanchikUserMessage({ text, attachments, branchSwitcher, onEdi
         {attachments && <OduvanchikMessageAttachments attachments={attachments} />}
         {(!attachments || text.trim().length > 0) && (
           <div data-user-text="" className="flex w-full flex-col items-end">
-            <AgentMessage side="user" className="whitespace-pre-line">
+            <UserMessageShell className="whitespace-pre-line">
               {text}
-            </AgentMessage>
+            </UserMessageShell>
           </div>
         )}
       </div>

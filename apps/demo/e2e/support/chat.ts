@@ -56,20 +56,32 @@ export async function startLongAnswer(page: Page, { question = "Дай длин�
   return answer;
 }
 
+/** Один снимок текста: ожидание и последующие проверки используют одинаковые номера, даже если Markdown перемонтировался. */
+async function paragraphSnapshot(answer: Locator, containing?: number): Promise<number[]> {
+  let snapshot: number[] = [];
+  await expect.poll(async () => {
+    snapshot = await paragraphNumbers(answer);
+    return containing === undefined ? snapshot.length > 0 : snapshot.includes(containing);
+  }).toBe(true);
+  return snapshot;
+}
+
 /**
  * «Остановить», затем обновление страницы: ответ остановлен и сохранён так, как был на экране. Абзацы идут подряд;
  * сервер мог дописать кусок, пока шёл запрос «стоп», но не больше. Возвращает ответ после обновления.
  */
 export async function stopAndExpectKeptAfterReload(page: Page, answer: Locator) {
+  const seenBeforeStop = Math.max(...await paragraphSnapshot(answer));
   await page.getByRole("button", { name: "Остановить" }).click();
   await expect(answer.getByText("Остановлено")).toBeVisible();
-  expectConsecutiveFromOne(await paragraphNumbers(answer));
-  const shown = await lastParagraph(answer);
+  const stopped = await paragraphSnapshot(answer, seenBeforeStop);
+  expectConsecutiveFromOne(stopped);
+  const shown = Math.max(...stopped);
 
   await page.reload();
   const restored = lastAnswer(page);
   await expect(restored.getByText("Остановлено")).toBeVisible();
-  const kept = await paragraphNumbers(restored);
+  const kept = await paragraphSnapshot(restored, shown);
   expectConsecutiveFromOne(kept);
   expect(Math.max(...kept)).toBeGreaterThanOrEqual(shown);
   expect(Math.max(...kept)).toBeLessThanOrEqual(shown + 1);

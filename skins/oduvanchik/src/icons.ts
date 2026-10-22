@@ -52,4 +52,4 @@ export {
   WrenchIcon as Wrench,
   XIcon as X,
 } from "@phosphor-icons/react";
-export type { Icon as LucideIcon } from "@phosphor-icons/react";
+export type { Icon as SkinIcon } from "@phosphor-icons/react";

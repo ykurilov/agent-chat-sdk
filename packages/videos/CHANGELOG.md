@@ -1,5 +1,12 @@
 # @ykurilov/agent-chat-videos
 
+## 0.71.1
+
+### Patch Changes
+
+- Updated dependencies [519914e]
+  - @ykurilov/agent-chat-react@0.71.1
+
 ## 0.71.0
 
 ### Patch Changes

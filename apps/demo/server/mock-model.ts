@@ -143,6 +143,29 @@ function largeChunks(text: string): string[] {
 /** Когда модель отдала первый кусок текста ответа, по тексту вопроса: для замера задержки (SC-001). */
 const firstTextAtByQuestion = new Map<string, number>();
 
+// Заглушка может держать первый вызов после передачи его аргументов, пока e2e
+// не увидит строку «выполняется». Уникальная метка из вопроса разделяет тесты.
+const toolCallBarriers = new Map<string, () => void>();
+
+export function releaseMockToolCall(id: string): boolean {
+  const release = toolCallBarriers.get(id);
+  release?.();
+  return release !== undefined;
+}
+
+function holdMockToolCall(id: string, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    const release = () => {
+      toolCallBarriers.delete(id);
+      signal?.removeEventListener("abort", release);
+      resolve();
+    };
+    toolCallBarriers.set(id, release);
+    if (signal?.aborted) release();
+    else signal?.addEventListener("abort", release, { once: true });
+  });
+}
+
 export function firstTextAt(question: string): number | null {
   return firstTextAtByQuestion.get(question) ?? null;
 }
@@ -768,10 +791,14 @@ export function createDemoMockModel(target: DemoMockTarget): MockLanguageModelV4
         warnings: [],
       };
     },
-    doStream: async ({ prompt, reasoning, providerOptions, tools }) => {
+    doStream: async ({ prompt, reasoning, providerOptions, tools, abortSignal }) => {
       // В запросе автопродолжения последнее сообщение человека — пометка о сбое, вопрос стоит перед ней.
       const continuing = autoContinueNotePattern.test(lastUserText(prompt));
       const question = continuing ? (userTexts(prompt).at(-2) ?? "") : withoutAppBlocks(lastUserText(prompt));
+      const barrierId = /\[tool-call-barrier:([\w-]+)\]/.exec(question)?.[1];
+      const toolCallBarrier = barrierId && toolResultsThisTurn(prompt) === 0
+        ? holdMockToolCall(barrierId, abortSignal)
+        : undefined;
       const withAttachments = attachmentAnswer(prompt);
       const place = placeInRequest(prompt);
       const long = /длинн|бесконечн/i.test(question);
@@ -798,7 +825,8 @@ export function createDemoMockModel(target: DemoMockTarget): MockLanguageModelV4
       return {
         stream: stream.pipeThrough(
           new TransformStream<LanguageModelV4StreamPart, LanguageModelV4StreamPart>({
-            transform(part, controller) {
+            async transform(part, controller) {
+              if (part.type === "tool-call") await toolCallBarrier;
               if (part.type === "text-delta" && !firstTextAtByQuestion.has(question)) {
                 firstTextAtByQuestion.set(question, Date.now());
               }

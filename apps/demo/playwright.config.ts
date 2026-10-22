@@ -47,6 +47,7 @@ export default defineConfig({
   use: {
     baseURL: `http://localhost:${webPort}`,
     trace: "retain-on-failure",
+    reducedMotion: "reduce",
   },
   projects: [
     {
@@ -57,9 +58,19 @@ export default defineConfig({
     },
     {
       name: "iphone-webkit",
-      fullyParallel: true,
+      // Linux software-renderer делит CPU и между разными файлами (звук/iframe).
+      // Длинный проход проверяется на отдельной странице, в прежние 180 с.
+      workers: 1,
+      // Три прохода по 500 сообщениям делят CPU software-renderer Linux WebKit и
+      // превращают проверку ленты в замер соседних вкладок. Внутри файла — по одному.
+      fullyParallel: false,
       testMatch: ["feed.spec.ts", "voice-dialog-webkit.spec.ts", "live-demos-escape.spec.ts"],
-      use: { ...devices["iPhone 15"], browserName: "webkit", colorScheme: "light" },
+      use: {
+        ...devices["iPhone 15"], browserName: "webkit", colorScheme: "light",
+        // Linux WebKit тратит сотни мс на кадр screencast (1179×1977): проход сотен экранов
+        // становится замером записи trace. DOM-снимки и сетевые события остаются в trace.
+        trace: { mode: "retain-on-failure", screenshots: false },
+      },
     },
     {
       name: "desktop-light",

@@ -1,14 +1,24 @@
 import { expect, test } from "@playwright/test";
+import { randomUUID } from "node:crypto";
 import { lastAnswer, send, signIn } from "./support/chat";
 
 /* Первая фича, User Story 2 (FR-010, FR-011): строки вызовов инструментов, падающий инструмент. */
 
 test("два вызова «текущего времени»: «выполняется» → «готово», затем ответ", async ({ page }) => {
   await signIn(page);
-  await send(page, "Сколько времени в Токио и в Москве и какая разница?");
+  const barrierId = randomUUID();
+  await send(page, `Сколько времени в Токио и в Москве и какая разница? [tool-call-barrier:${barrierId}]`);
   const answer = lastAnswer(page);
 
-  await expect(answer.getByRole("button", { name: "current_time: выполняется" }).first()).toBeVisible();
+  try {
+    await expect(answer.getByRole("button", { name: "current_time: выполняется" }).first()).toBeVisible();
+  } finally {
+    // Завершение разрешаем только после проверки промежуточного состояния;
+    // finally освобождает сервер и при падении assertion.
+    const released = await page.request.post(`/api/demo/tool-call/${barrierId}/release`);
+    expect(released.ok()).toBe(true);
+    expect(await released.json()).toEqual({ released: true });
+  }
   const done = answer.getByRole("button", { name: "current_time: готово" });
   await expect(done).toHaveCount(2);
   await expect(answer.getByRole("button", { name: /выполняется/ })).toHaveCount(0);

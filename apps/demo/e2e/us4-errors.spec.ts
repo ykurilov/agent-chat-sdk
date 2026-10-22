@@ -23,8 +23,8 @@ import { test as withOwnServer } from "./support/own-server";
 
 const errorNotice = (scope: Page | Locator) => scope.locator("[data-error-kind]");
 
-// Перегружены все провайдеры: ~10 с тихих повторов у выбранного, переход к запасному и ещё ~10 с у него.
-test("перегрузка у всех: обычное ожидание, через ~20 с — понятная ошибка; после выключения «повторить» даёт ответ", async ({ page }) => {
+// Перегружены оба: быстрый повтор (250 мс) у выбранного, затем 1/3/6 с у последнего запасного.
+test("перегрузка у всех: обычное ожидание, через ~10 с — ошибка; после выключения «повторить» даёт ответ", async ({ page }) => {
   test.setTimeout(90_000);
   await signIn(page);
   // Модель с несколькими провайдерами: запомненный выбор человека мог остаться от другого теста.
@@ -40,8 +40,9 @@ test("перегрузка у всех: обычное ожидание, чер�
   await expect(answer.getByText("Модель перегружена, попробуйте ещё раз")).toBeVisible({ timeout: 40_000 });
   // Ошибка не появлялась раньше срока: наблюдатель записал её первое появление.
   const waitedMs = (await appearedAt(page, "error", 1_000)) - sentAt;
-  expect(waitedMs).toBeGreaterThan(19_000);
-  expect(waitedMs).toBeLessThan(35_000);
+  expect(waitedMs).toBeGreaterThan(10_000);
+  // Запас на нагруженный CI, но прежние ~20 с у обоих провайдеров сюда не проходят.
+  expect(waitedMs).toBeLessThan(18_000);
   await expect(answer).toHaveAttribute("data-status", "error");
   await expect(errorNotice(answer)).toHaveAttribute("data-error-kind", "overloaded");
   // Сырого текста провайдера нет.

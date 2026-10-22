@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactElement, Ref, RefObject } from "react";
 import { Virtualizer } from "virtua";
-import type { CustomItemComponentProps, VirtualizerHandle } from "virtua";
+import type { CustomContainerComponentProps, CustomItemComponentProps, VirtualizerHandle } from "virtua";
 import type { AgentChatMessage } from "./chat-types";
 
 /**
@@ -67,11 +67,19 @@ export interface MessageFeedProps {
 
 /** Обёртка сообщения: за неё зацепляются замеры окна ленты и проверки. */
 function FeedItem({ style, children, ref }: CustomItemComponentProps) {
+  // Координаты окна меняются атомарно с компенсацией прокрутки. Даже переход
+  // в 0.01 мс (глобальный reduced-motion CSS) оставляет WebKit на старом top
+  // до следующего кадра и разрывает ленту между старыми и новыми строками.
   return (
-    <div ref={ref} style={style} data-feed-item="">
+    <div ref={ref} style={{ ...style, transitionProperty: "none" }} data-feed-item="">
       {children}
     </div>
   );
+}
+
+/** Высота служебного контейнера тоже меняется без перехода, вместе с позициями строк. */
+function FeedWindow({ style, children, ref }: CustomContainerComponentProps) {
+  return <div ref={ref} style={{ ...style, transitionProperty: "none" }}>{children}</div>;
 }
 
 /** Поле ввода или элемент внутри редактируемого блока: нажатия в нём ленту не листают. */
@@ -100,6 +108,9 @@ function MessageFeedView({ scrollRef, messages, renderMessage, keepLastMounted, 
   // надо мерить и по новой высоте, и по прежней, иначе рост сам «отодвигает» читателя от низа.
   const lastHeight = useRef(0);
   const lastTop = useRef(0);
+  // Рост может прийти до отложенного native scroll: перед доводкой низа
+  // обрабатываем уже изменившуюся позицию тем же правилом, что и в scroll.
+  const syncScrollState = useRef<(() => void) | null>(null);
   // На сколько px список сжимался с прошлого события прокрутки: сообщения, добавленные с оценкой высоты, измерены ниже.
   const shrunkSinceScroll = useRef(0);
   const openedAtBottom = useRef(false);
@@ -146,6 +157,23 @@ function MessageFeedView({ scrollRef, messages, renderMessage, keepLastMounted, 
     if (!scrollerReady || !scroller) return;
     lastHeight.current = scroller.scrollHeight;
     lastTop.current = scroller.scrollTop;
+    // Координата того же сообщения внутри содержимого отличает компенсацию
+    // замеров от прокрутки: при компенсации сообщение остаётся на месте экрана,
+    // даже если общая высота списка в этот момент выросла.
+    let anchor: { element: HTMLElement; offset: number } | undefined;
+    const rememberAnchor = () => {
+      const view = scroller.getBoundingClientRect();
+      for (const element of rootRef.current?.querySelectorAll<HTMLElement>("[data-feed-item]") ?? []) {
+        if (element.style.visibility === "hidden") continue;
+        const box = element.getBoundingClientRect();
+        if (box.bottom > view.top && box.top < view.bottom) {
+          anchor = { element, offset: box.top - view.top + scroller.scrollTop };
+          return;
+        }
+      }
+      anchor = undefined;
+    };
+    rememberAnchor();
     const onScroll = () => {
       const height = scroller.scrollHeight;
       const top = scroller.scrollTop;
@@ -162,9 +190,16 @@ function MessageFeedView({ scrollRef, messages, renderMessage, keepLastMounted, 
       // Если перед шагом был ввод читателя, вёрстка ни при чём: иначе читатель боролся бы с лентой.
       const now = performance.now();
       const readerActed = now < readerInputUntil.current || now < userJumpUntil.current;
-      const movedByLayout = step < 0 && -step <= 2 * shrunk && !readerActed;
+      const anchorShift = anchor && scroller.contains(anchor.element)
+        ? anchor.element.getBoundingClientRect().top - scroller.getBoundingClientRect().top + top - anchor.offset
+        : 0;
+      const compensated = anchorShift < 0 && Math.abs(step - anchorShift) <= 1;
+      const movedByLayout = step < 0 && (-step <= 2 * shrunk || compensated) && !readerActed;
       lastTop.current = top;
       lastHeight.current = height;
+      // Снимок обновляется после сравнения, а не по MutationObserver: мутация
+      // координат приходит раньше соответствующего события прокрутки.
+      rememberAnchor();
       if (movedByLayout) {
         if (stuck.current) scroller.scrollTop = height;
         return;
@@ -206,6 +241,7 @@ function MessageFeedView({ scrollRef, messages, renderMessage, keepLastMounted, 
     const onPointerUp = () => {
       if (userJumpUntil.current > performance.now() + POINTER_JUMP_WINDOW_MS) userJumpUntil.current = performance.now() + POINTER_JUMP_WINDOW_MS;
     };
+    syncScrollState.current = onScroll;
     scroller.addEventListener("scroll", onScroll, { passive: true });
     document.addEventListener("keydown", onKeyDown);
     scroller.addEventListener("pointerdown", onPointerDown);
@@ -215,6 +251,7 @@ function MessageFeedView({ scrollRef, messages, renderMessage, keepLastMounted, 
     window.addEventListener("pointerup", onPointerUp);
     window.addEventListener("pointercancel", onPointerUp);
     return () => {
+      syncScrollState.current = null;
       scroller.removeEventListener("scroll", onScroll);
       document.removeEventListener("keydown", onKeyDown);
       scroller.removeEventListener("pointerdown", onPointerDown);
@@ -232,6 +269,9 @@ function MessageFeedView({ scrollRef, messages, renderMessage, keepLastMounted, 
     const root = rootRef.current;
     if (!scrollerReady || !scroller || !root) return;
     const settleAtBottom = () => {
+      // scrollTop меняется сразу, а событие может задержаться до следующего
+      // цикла. Нельзя затереть ещё не обработанный уход читателя ростом ответа.
+      if (scroller.scrollTop < lastTop.current) syncScrollState.current?.();
       const height = scroller.scrollHeight;
       const clientHeight = scroller.clientHeight;
       shrunkSinceScroll.current += Math.max(0, lastHeight.current - height);
@@ -290,7 +330,12 @@ function MessageFeedView({ scrollRef, messages, renderMessage, keepLastMounted, 
       virtualizerRef.current?.scrollToIndex(focusIndex, { align: "start" });
       openingScrollUntil.current = performance.now() + OPENING_SCROLL_QUIET_MS;
     } else {
-      virtualizerRef.current?.scrollTo(BOTTOM_SCROLL_TARGET);
+      // virtua подключает scrollRef в микрозадаче: первый scroll должен
+      // прийти после её слушателя. Дальнейшие замеры доводит наш наблюдатель,
+      // без асинхронной цели virtua, которая тянула бы читателя обратно.
+      queueMicrotask(() => {
+        if (rootRef.current?.isConnected && scrollRef.current === scroller && stuck.current) scroller.scrollTop = scroller.scrollHeight;
+      });
       openingScrollUntil.current = 0;
     }
     // Прыжок вниз видно по событию прокрутки; в короткой ленте прыжка нет, и хватает пары кадров.
@@ -335,16 +380,19 @@ function MessageFeedView({ scrollRef, messages, renderMessage, keepLastMounted, 
   // к низу, запас над экраном держится здесь.
   const virtualizer = virtualizerRef.current;
   const editedIndex = keepMountedMessageId === undefined ? -1 : messages.findIndex((message) => message.id === keepMountedMessageId);
-  const tailStart =
-    positioned && followingBottom && virtualizer && lastIndex >= 0
-      ? Math.min(lastIndex, Math.max(0, virtualizer.findItemIndex(virtualizer.scrollOffset - BUFFER_PX)))
-      : lastIndex + 1;
+  // Низ DOM и оценки окна могут временно разойтись после замеров (особенно в WebKit).
+  // Следование за текущим низом не означает, что в окне последний индекс истории:
+  // закрепление «до lastIndex» в таком кадре монтировало сотни сообщений.
+  const scroller = scrollRef.current;
+  const keepBuffer = positioned && followingBottom && virtualizer && scroller && lastIndex >= 0;
+  const bufferStart = keepBuffer ? Math.max(0, virtualizer.findItemIndex(scroller.scrollTop - BUFFER_PX)) : 0;
+  const bufferEnd = keepBuffer ? Math.min(lastIndex, virtualizer.findItemIndex(scroller.scrollTop + scroller.clientHeight)) : -1;
   const keepMounted = useMemo(() => {
-    const kept = new Set(Array.from({ length: Math.max(0, lastIndex + 1 - tailStart) }, (_, offset) => tailStart + offset));
+    const kept = new Set(Array.from({ length: Math.max(0, bufferEnd - bufferStart + 1) }, (_, offset) => bufferStart + offset));
     if (keepLastMounted && lastIndex >= 0) kept.add(lastIndex);
     if (editedIndex >= 0) kept.add(editedIndex);
     return [...kept].sort((a, b) => a - b);
-  }, [editedIndex, keepLastMounted, lastIndex, tailStart]);
+  }, [bufferEnd, bufferStart, editedIndex, keepLastMounted, lastIndex]);
 
   return (
     <div ref={rootRef}>
@@ -356,6 +404,7 @@ function MessageFeedView({ scrollRef, messages, renderMessage, keepLastMounted, 
           itemSize={UNMEASURED_MESSAGE_HEIGHT_PX}
           bufferSize={positioned ? BUFFER_PX : 0}
           item={FeedItem}
+          as={FeedWindow}
           keepMounted={keepMounted}
           startMargin={startMargin}
         >

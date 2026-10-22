@@ -34,6 +34,10 @@ test("прокрутка до самого начала и обратно без
   page,
 }) => {
   test.skip(browserName !== "webkit", "в Chromium тот же проход идёт в perf-feed.spec.ts");
+  // Linux Docker (2 CPU): ~976 положений, 144 с при DPR=3 против 52 с при DPR=1;
+  // более медленный CI исчерпывает 180 с на обратном проходе. Сохраняем Retina
+  // и каждый замер покрытия. Скорость отдельно проверяет perf-feed.
+  test.setTimeout(300_000);
   await openLongChat(page, MESSAGE_COUNT);
 
   // Бросками по 8 экранов с остановкой, как листает читатель. Один проход на все 330 экранов без остановки — не жест:
@@ -41,6 +45,37 @@ test("прокрутка до самого начала и обратно без
   // Живой бросок и остановку она держит ровно: на экране остаётся то же сообщение на том же месте.
   await expectCleanSweep(page, "up", MESSAGE_COUNT, { flingScreens: 8 });
   await expectCleanSweep(page, "down", MESSAGE_COUNT, { flingScreens: 8 });
+});
+
+test("координаты строк и высота окна ленты не анимируются при пересчёте", async ({ page }) => {
+  await openLongChat(page, MESSAGE_COUNT);
+  await waitUntilFeedStill(page);
+  await page.getByRole("log").evaluate((log) => {
+    const container = log.querySelector("[data-feed-item]")!.parentElement!;
+    const observation = { mutations: 0, animations: [] as string[] };
+    (window as unknown as { feedLayoutMotion: typeof observation }).feedLayoutMotion = observation;
+    new MutationObserver((records) => {
+      for (const target of new Set(records.map((record) => record.target))) {
+        if (!(target instanceof HTMLElement) || (target !== container && !target.hasAttribute("data-feed-item"))) continue;
+        observation.mutations++;
+        for (const animation of target.getAnimations()) {
+          if (!(animation.effect instanceof KeyframeEffect)) continue;
+          for (const property of ["top", "height"]) {
+            if (animation.effect.getKeyframes().some((frame) => property in frame)) observation.animations.push(property);
+          }
+        }
+      }
+    }).observe(container, { subtree: true, attributes: true, attributeFilter: ["style"] });
+  });
+
+  await send(page, "Расскажи подробно");
+  await expect(lastAnswer(page)).toContainText("Пункт 50:", { timeout: 30_000 });
+  await waitUntilFeedStill(page);
+  const observation = await page.evaluate(() => (window as unknown as {
+    feedLayoutMotion: { mutations: number; animations: string[] };
+  }).feedLayoutMotion);
+  expect(observation.mutations, "рост ответа действительно изменил окно ленты").toBeGreaterThan(0);
+  expect(observation.animations, "служебные координаты должны меняться вместе с компенсацией прокрутки").toEqual([]);
 });
 
 test("сообщение, отправленное сверху, приводит ленту вниз, и лента едет за ответом", async ({ browserName, page }) => {
@@ -114,6 +149,7 @@ test("прокрутка вверх во время ответа: положен
   // над экраном, само поправляет прокрутку, и содержимое при этом стоит на месте.
   // Поэтому ждём, пока окно ленты уляжется после прыжка.
   const spot = await waitUntilFeedStill(page);
+  expect(await distanceFromBottom(page), "читатель действительно отошёл от низа").toBeGreaterThan(96);
   const topBefore = await spot.evaluate((element) => element.getBoundingClientRect().top);
 
   // Пока ответ дописывается (до конца, это минута, не ждём), место на экране не меняется.

@@ -1,6 +1,6 @@
 {
   "name": "@ykurilov/agent-chat-skin-oduvanchik",
-  "version": "0.71.0",
+  "version": "0.71.1",
   "license": "MIT",
   "type": "module",
   "sideEffects": [
@@ -10,7 +10,8 @@
     "dist",
     "README.md",
     "CHANGELOG.md",
-    "LICENSE"
+    "LICENSE",
+    "TANDEM_NOTICES.md"
   ],
   "exports": {
     ".": {
@@ -47,7 +48,12 @@
     "micromark-extension-gfm": "^3.0.0",
     "@phosphor-icons/react": "^2.1.10",
     "@ykurilov/ds-react": "^0.1.0",
-    "@ykurilov/ds-tokens": "^0.1.0"
+    "@ykurilov/ds-tokens": "^0.1.0",
+    "@radix-ui/react-dialog": "^1.1.23",
+    "@radix-ui/react-dropdown-menu": "^2.1.24",
+    "class-variance-authority": "^0.7.1",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
   },
   "peerDependencies": {
     "react": "^19.3.0",

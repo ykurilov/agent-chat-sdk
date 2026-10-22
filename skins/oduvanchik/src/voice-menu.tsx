@@ -1,4 +1,5 @@
-import { Button, Menu, MenuContent, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "@tandem/ui";
+import { Button } from "@tandem/ui";
+import { Menu, MenuContent, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "./primitives/menu";
 import type { VoiceDialogView } from "@ykurilov/agent-chat-react";
 import { useChatLabels } from "@ykurilov/agent-chat-react";
 import { ChevronDown, Volume2 } from "./icons";

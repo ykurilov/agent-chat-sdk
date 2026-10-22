@@ -1,9 +1,9 @@
 import { cn } from "@tandem/ui";
 import type { StepIcon } from "@ykurilov/agent-chat-react";
 import { BookOpen, Bookmark, Bot, Brain, Camera, CircleCheck, Clock, Eye, Film, Globe, Image, Pencil, Plug, Search, SquareTerminal, Wrench } from "./icons";
-import type { LucideIcon } from "./icons";
+import type { SkinIcon } from "./icons";
 
-const ICONS: Record<string, LucideIcon> = {
+const ICONS: Record<string, SkinIcon> = {
   thinking: Brain,
   read: Eye,
   edit: Pencil,

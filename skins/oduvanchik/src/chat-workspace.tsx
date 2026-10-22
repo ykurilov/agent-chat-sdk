@@ -1,4 +1,5 @@
-import { Button, Dialog, DialogContent, DialogTitle } from "@tandem/ui";
+import { Button } from "@tandem/ui";
+import { Dialog, DialogContent, DialogTitle } from "./primitives/dialog";
 import type { ChatListSkin } from "@ykurilov/agent-chat-react";
 import { useChatLabels } from "@ykurilov/agent-chat-react";
 import { Menu } from "./icons";

@@ -92,6 +92,22 @@ describe("окно ленты", () => {
     expect(mounted("m0")).toBeNull();
   });
 
+  it.each([false, true])("промежуточный низ после замеров не закрепляет весь остаток истории (keepLastMounted=%s)", async (keepLastMounted) => {
+    layout.uninstall();
+    layout = installFakeLayout({ viewportHeight: VIEWPORT_HEIGHT, itemHeight: 100 });
+    await renderFeed({ messages: makeMessages(500), keepLastMounted });
+    await scrollTo(30_000);
+    const top = scroller().scrollTop;
+    // DOM уже сжался после замеров, а окно ещё хранит оценки/отложенные поправки
+    // WebKit. Малый шаг оказывается у текущего низа и включает следование за ним.
+    layout.setScrollHeight(top + VIEWPORT_HEIGHT + 40);
+    await scrollTo(top + 40);
+
+    expect(mountedCount()).toBeLessThanOrEqual(40);
+    // Только растущий ответ закреплён за краем окна, остальные дальние сообщения сняты.
+    expect(mounted("m499") !== null).toBe(keepLastMounted);
+  });
+
   it("при открытии скроллер внизу (FR-002)", async () => {
     await renderFeed({ messages: makeMessages(500) });
 
@@ -158,8 +174,8 @@ describe("окно ленты", () => {
 
 describe("прилипание к низу", () => {
   /** Растёт последнее сообщение: как дописывающийся ответ. */
-  async function growLastMessage(height: number) {
-    const item = mounted("m499")!.closest<HTMLElement>("[data-feed-item]")!;
+  async function growLastMessage(height: number, messageId = "m499") {
+    const item = mounted(messageId)!.closest<HTMLElement>("[data-feed-item]")!;
     item.setAttribute("data-test-height", String(height));
     await act(async () => layout.notifyResize(item));
     await settle();
@@ -212,6 +228,53 @@ describe("прилипание к низу", () => {
     expect(Math.abs(scroller().scrollTop - maxScrollTop())).toBeLessThanOrEqual(1);
   });
 
+  it.each([
+    { movement: 200, growth: 400, anchorShift: 0, follows: false },
+    { movement: 104, growth: 400, anchorShift: -104, follows: true },
+    { movement: 272, growth: -140, anchorShift: 0, follows: true },
+    { movement: 112, growth: 400, anchorShift: -104, follows: false },
+  ])("рост перед доставкой отложенного события scroll: movement=$movement growth=$growth follows=$follows", async ({ movement, growth, anchorShift, follows }) => {
+    // Все строки измерены до гонки: отложенное событие не смешивается с
+    // первичными оценками высот длинной истории (её лимит проверяется отдельно).
+    await renderFeed({ messages: makeMessages(20), keepLastMounted: true });
+    const element = scroller();
+    const height = element.scrollHeight;
+    const bottom = element.scrollTop;
+    const target = bottom - movement;
+    const anchor = mounted("m19")!.closest<HTMLElement>("[data-feed-item]")!;
+    anchor.setAttribute("data-test-start-offset", String(bottom + 200));
+    await act(async () => element.dispatchEvent(new Event("scroll")));
+    const dispatch = element.dispatchEvent;
+    const pending: Event[] = [];
+    // Браузер меняет scrollTop сразу, а native scroll доставляет позже.
+    element.dispatchEvent = (event) => {
+      if (event.type === "scroll") { pending.push(event); return true; }
+      return dispatch.call(element, event);
+    };
+    try {
+      await act(async () => {
+        anchor.setAttribute("data-test-start-offset", String(bottom + 200 + anchorShift));
+        layout.setScrollHeight(height + growth);
+        element.scrollTop = target;
+        anchor.style.outlineWidth = "0px";
+      });
+      expect(element.scrollTop).toBe(follows ? maxScrollTop() : target);
+      element.dispatchEvent = dispatch;
+      await act(async () => { for (const event of pending) dispatch.call(element, event); });
+      await settle();
+      // После замеров virtua вправе компенсировать логический offset.
+      // Читатель остаётся выше низа, а следующий рост сохраняет его место.
+      const position = element.scrollTop;
+      if (!follows) expect(maxScrollTop() - position).toBeGreaterThan(96);
+      layout.setScrollHeight(element.scrollHeight + 400);
+      await growLastMessage(250, "m19");
+      if (follows) expect(Math.abs(element.scrollTop - maxScrollTop())).toBeLessThanOrEqual(1);
+      else expect(element.scrollTop).toBe(position);
+    } finally {
+      element.dispatchEvent = dispatch;
+    }
+  });
+
   it("прокрутка вверх больше чем на 96 px в кадре роста снимает прилипание", async () => {
     await renderFeed({ messages: makeMessages(500), keepLastMounted: true });
     const bottom = scroller().scrollTop;
@@ -242,6 +305,39 @@ describe("прилипание к низу", () => {
 
     // Низ доведён сразу, не дожидаясь следующего куска ответа.
     expect(topRightAfter).toBe(maxScrollTop());
+  });
+
+  it.each([
+    { readerUp: false, movement: 104, follows: true },
+    { readerUp: true, movement: 104, follows: false },
+    { readerUp: false, movement: 112, follows: false },
+    { readerUp: false, movement: 304, follows: false },
+  ])("поправка якоря при росте списка: movement=$movement readerUp=$readerUp follows=$follows", async ({ readerUp, movement, follows }) => {
+    await renderFeed({ messages: makeMessages(500), keepLastMounted: true });
+    const bottom = scroller().scrollTop;
+    const height = scroller().scrollHeight;
+    const anchor = mounted("m499")!.closest<HTMLElement>("[data-feed-item]")!;
+    // Существующее сообщение в экране. После замера его координата в списке
+    // сдвигается на -104 px, хотя добавленное сообщение увеличило общую высоту.
+    anchor.setAttribute("data-test-start-offset", String(bottom + 200));
+    await act(async () => scroller().dispatchEvent(new Event("scroll")));
+    anchor.setAttribute("data-test-start-offset", String(bottom + 200 - 104));
+    layout.setScrollHeight(height + 400);
+    let actual = -1;
+    act(() => {
+      if (readerUp) scroller().dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: -104 }));
+      scroller().scrollTop = bottom - movement;
+      actual = scroller().scrollTop;
+    });
+    expect(actual).toBe(follows ? maxScrollTop() : bottom - movement);
+    // Проверяем и следующий рост после доставки очереди scroll/observer/rAF:
+    // компенсация не снимает следование, а читателя назад вниз не возвращает.
+    await settle();
+    const position = scroller().scrollTop;
+    layout.setScrollHeight(scroller().scrollHeight + 400);
+    await growLastMessage(250);
+    if (follows) expect(Math.abs(scroller().scrollTop - maxScrollTop())).toBeLessThanOrEqual(1);
+    else expect(scroller().scrollTop).toBe(position);
   });
 
   describe("клавиши, нажатые в поле ввода, ленту не трогают", () => {
@@ -493,6 +589,27 @@ describe("прилипание к низу", () => {
       }
       return next;
     }
+
+    it("читатель ушёл вверх сразу после отправки: дальнейшие замеры не возвращают его к низу", async () => {
+      const handle = createRef<MessageFeedHandle>();
+      const messages = makeMessages(40);
+      const view = render(<Harness messages={messages} keepLastMounted handleRef={handle} />);
+      await settle();
+      await settle();
+      const next = await quickTurn(view, handle, messages);
+
+      // Не ждём 150 мс тишины virtua: начальная доводка ещё может быть жива.
+      await act(async () => { scroller().scrollTop -= 3 * scroller().clientHeight; });
+      const position = scroller().scrollTop;
+      expect(maxScrollTop() - position).toBeGreaterThan(96);
+
+      await growLastMessage(900, next.at(-1)!.id);
+
+      expect(scroller().scrollTop).toBe(position);
+      expect(maxScrollTop() - scroller().scrollTop).toBeGreaterThan(96);
+      await growLastMessage(1_200, next.at(-1)!.id);
+      expect(scroller().scrollTop).toBe(position);
+    });
 
     it("лента открыта внизу: новый ответ остаётся у низа", async () => {
       const handle = createRef<MessageFeedHandle>();

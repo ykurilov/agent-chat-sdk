@@ -1,4 +1,4 @@
-import { Alert } from "@tandem/ui";
+import { Alert } from "./primitives/alert";
 import type { ChatSkin } from "@ykurilov/agent-chat-react";
 import type { ComponentProps } from "react";
 

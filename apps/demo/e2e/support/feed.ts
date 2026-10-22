@@ -103,6 +103,24 @@ export interface Opening {
 export async function readOpening(page: Page, chatId: string): Promise<Opening> {
   await page.waitForFunction(() => (window as unknown as { opening: { lastMessageShownAt: number | null } }).opening.lastMessageShownAt !== null, undefined, {
     timeout: 30_000,
+  }).catch(async (error: unknown) => {
+    console.error(
+      "Лента не показала последнее сообщение",
+      await page.evaluate(() => {
+        const answers = document.querySelectorAll("[data-status]");
+        const last = answers[answers.length - 1];
+        const scroller = document.querySelector('[role="log"]')?.parentElement;
+        return {
+          answers: answers.length,
+          last: last?.textContent?.slice(0, 150),
+          box: last?.getBoundingClientRect().toJSON(),
+          view: scroller?.getBoundingClientRect().toJSON(),
+          top: scroller?.scrollTop,
+          height: scroller?.scrollHeight,
+        };
+      }),
+    );
+    throw error;
   });
   const { historyArrivedAt, lastMessageShownAt } = await page.evaluate((id) => {
     const arrivals = performance
@@ -147,9 +165,11 @@ export interface Sweep {
   reachedEdge: boolean;
   frames: number;
   maxItems: number;
+  maxItemsAt?: { frame: number; top: number; height: number; first: string; last: string };
   emptyFrames: number;
   firstShown: boolean;
   lastShown: boolean;
+  emptySamples: { frame: number; top: number; topGap: number; bottomGap: number; internalGap: boolean }[];
 }
 
 /**
@@ -164,11 +184,35 @@ export async function sweepFeed(
   lastMarker: string,
   { flingScreens }: { flingScreens?: number } = {},
 ): Promise<Sweep> {
+  await waitUntilFeedStill(page);
   return page.getByRole("log").evaluate(
     async (log, args) => {
       const scroller = log.parentElement!;
-      const frame = () => new Promise((resolve) => requestAnimationFrame(resolve));
+      // rAF идёт ДО ResizeObserver и замеров virtua. Чтение в нём видит промежуточную
+      // разметку, которая ещё не была показана. Следующая задача — после этой фазы рендера;
+      // пустоты проверяем один раз, без ожидания, пока они исчезнут.
+      const frame = () => new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
       const step = scroller.clientHeight * 0.8;
+      // В WebKit изменение scrollTop и доставка scroll могут оказаться в разных
+      // циклах рендера. Один rAF не означает, что окно обработало новое положение.
+      const scrollStep = async () => {
+        await new Promise<void>((resolve, reject) => {
+          const done = () => {
+            clearTimeout(timer);
+            scroller.removeEventListener("scroll", done);
+            resolve();
+          };
+          const timer = setTimeout(() => {
+            scroller.removeEventListener("scroll", done);
+            reject(new Error("событие scroll не пришло после шага ленты"));
+          }, 2_000);
+          scroller.addEventListener("scroll", done, { once: true });
+          const before = scroller.scrollTop;
+          scroller.scrollTop += args.direction === "up" ? -step : step;
+          if (scroller.scrollTop === before) done();
+        });
+        await frame();
+      };
       // Ждёт, пока прокрутка затихнет: от последнего события прошло 250 мс. Так читатель останавливается между бросками.
       const untilScrollQuiet = () =>
         new Promise<void>((resolve) => {
@@ -184,22 +228,43 @@ export async function sweepFeed(
           scroller.addEventListener("scroll", restart, { passive: true });
         });
       const flingFrames = args.flingScreens ? Math.ceil(args.flingScreens / 0.8) : 0;
-      const sweep = { reachedEdge: false, frames: 0, maxItems: 0, emptyFrames: 0, firstShown: false, lastShown: false };
+      const sweep: Sweep = {
+        reachedEdge: false, frames: 0, maxItems: 0, emptyFrames: 0, firstShown: false, lastShown: false, emptySamples: [],
+      };
       const atEdge = () =>
         args.direction === "up" ? scroller.scrollTop <= 0 : scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 1;
       for (; sweep.frames < 800; sweep.frames++) {
         const view = scroller.getBoundingClientRect();
-        const items = [...document.querySelectorAll("[data-feed-item]")]
-          .map((item) => ({ box: item.getBoundingClientRect(), text: item.textContent ?? "" }))
-          .filter(({ box }) => box.bottom > view.top && box.top < view.bottom)
+        const mounted = [...document.querySelectorAll("[data-feed-item]")];
+        const items = mounted
+          .map((item) => ({ box: item.getBoundingClientRect(), text: item.textContent ?? "", visible: getComputedStyle(item).visibility === "visible" }))
+          .filter(({ box, visible }) => visible && box.bottom > view.top && box.top < view.bottom)
           .sort((a, b) => a.box.top - b.box.top);
-        sweep.maxItems = Math.max(sweep.maxItems, document.querySelectorAll("[data-feed-item]").length);
+        if (mounted.length > sweep.maxItems) {
+          sweep.maxItems = mounted.length;
+          sweep.maxItemsAt = {
+            frame: sweep.frames, top: scroller.scrollTop, height: scroller.scrollHeight,
+            first: mounted[0]?.textContent?.slice(0, 100) ?? "",
+            last: mounted[mounted.length - 1]?.textContent?.slice(0, 100) ?? "",
+          };
+        }
         const first = items[0];
         const last = items[items.length - 1];
         const gaps = items.some((item, index) => index > 0 && item.box.top - items[index - 1]!.box.bottom > 1);
         const topOpen = !first || (first.box.top > view.top + 1 && !first.text.includes(args.firstMarker));
         const bottomOpen = !last || (last.box.bottom < view.bottom - 1 && !last.text.includes(args.lastMarker));
-        if (gaps || topOpen || bottomOpen) sweep.emptyFrames++;
+        if (gaps || topOpen || bottomOpen) {
+          sweep.emptyFrames++;
+          if (sweep.emptySamples.length < 5) {
+            sweep.emptySamples.push({
+              frame: sweep.frames,
+              top: scroller.scrollTop,
+              topGap: first ? first.box.top - view.top : view.height,
+              bottomGap: last ? view.bottom - last.box.bottom : view.height,
+              internalGap: gaps,
+            });
+          }
+        }
         sweep.firstShown ||= items.some((item) => item.text.includes(args.firstMarker));
         sweep.lastShown ||= items.some((item) => item.text.includes(args.lastMarker));
         if (atEdge()) {
@@ -214,7 +279,11 @@ export async function sweepFeed(
           // машине дольше): ждём его показа, а эти кадры в пустоты не считаем.
           const edgeMarker = args.direction === "up" ? args.firstMarker : args.lastMarker;
           for (let settle = 0; settle < 120; settle++) {
-            const shown = [...document.querySelectorAll("[data-feed-item]")].some((item) => (item.textContent ?? "").includes(edgeMarker));
+            const shown = [...document.querySelectorAll("[data-feed-item]")].some((item) => {
+              const box = item.getBoundingClientRect();
+              return getComputedStyle(item).visibility === "visible" && box.bottom > view.top && box.top < view.bottom
+                && (item.textContent ?? "").includes(edgeMarker);
+            });
             if (shown) {
               if (args.direction === "up") sweep.firstShown = true;
               else sweep.lastShown = true;
@@ -224,8 +293,7 @@ export async function sweepFeed(
           }
           break;
         }
-        scroller.scrollTop += args.direction === "up" ? -step : step;
-        await frame();
+        await scrollStep();
         if (flingFrames && (sweep.frames + 1) % flingFrames === 0) await untilScrollQuiet();
       }
       return sweep;
@@ -245,9 +313,9 @@ export async function expectCleanSweep(page: Page, direction: "up" | "down", mes
   const up = direction === "up";
   expect(sweep.reachedEdge, `${up ? "верх" : "низ"} ленты достигнут`).toBe(true);
   expect(up ? sweep.firstShown : sweep.lastShown, `${up ? "первое" : "последнее"} сообщение чата показано`).toBe(true);
-  expect(sweep.emptyFrames, `кадров с пустотой на экране при прокрутке ${up ? "вверх" : "вниз"}`).toBe(0);
+  expect(sweep.emptyFrames, `кадров с пустотой на экране при прокрутке ${up ? "вверх" : "вниз"}: ${JSON.stringify(sweep)}`).toBe(0);
   expect(sweep.maxItems).toBeGreaterThan(0);
-  expect(sweep.maxItems).toBeLessThanOrEqual(FEED_ITEMS_LIMIT);
+  expect(sweep.maxItems, `размер окна ленты: ${JSON.stringify(sweep)}`).toBeLessThanOrEqual(FEED_ITEMS_LIMIT);
   return sweep;
 }
 
@@ -274,23 +342,26 @@ export async function openLongChat(page: Page, messageCount: number): Promise<Op
 }
 
 /**
- * Ждёт, пока место на экране первого видимого сообщения простоит неподвижно 30 кадров подряд (около полсекунды).
+ * Ждёт, пока первое видимое сообщение стоит на том же месте полсекунды, независимо от частоты кадров.
  * Окно ленты после открытия или прыжка измеряет сообщения и поправляет прокрутку; пока оно не улеглось,
  * положение читателя ещё не установилось. Возвращает это сообщение.
  */
 export async function waitUntilFeedStill(page: Page): Promise<JSHandle<Element>> {
   const stillFirst = await page.waitForFunction(
-    () => {
+    (checkId) => {
       const view = document.querySelector('[role="log"]')!.parentElement!.getBoundingClientRect();
-      const first = [...document.querySelectorAll("[data-feed-item]")].find((element) => element.getBoundingClientRect().bottom > view.top + 40);
+      const first = [...document.querySelectorAll("[data-feed-item]")].find((element) => {
+        const box = element.getBoundingClientRect();
+        return getComputedStyle(element).visibility === "visible" && box.bottom > view.top + 40 && box.top < view.bottom;
+      });
       const top = first?.getBoundingClientRect().top;
-      const still = window as unknown as { __feedSpot?: { top?: number; frames: number } };
+      const still = window as unknown as { __feedSpot?: { checkId: number; first: Element | undefined; top?: number; since: number } };
       const spot = still.__feedSpot;
-      still.__feedSpot = spot && spot.top === top ? { top, frames: spot.frames + 1 } : { top, frames: 0 };
-      return still.__feedSpot.frames >= 30 && first;
+      still.__feedSpot = spot && spot.checkId === checkId && spot.first === first && spot.top === top ? spot : { checkId, first, top, since: performance.now() };
+      return performance.now() - still.__feedSpot.since >= 500 && first;
     },
-    undefined,
-    { polling: "raf" },
+    Date.now(),
+    { polling: 50 },
   );
   return stillFirst as JSHandle<Element>;
 }

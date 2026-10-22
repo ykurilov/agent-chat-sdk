@@ -1,4 +1,4 @@
-import { Markdown } from "@tandem/ui";
+import { Markdown } from "./primitives/markdown";
 import { useChatLabels } from "@ykurilov/agent-chat-react";
 import { memo, useEffect } from "react";
 import { withoutExternalImages } from "./external-images";
@@ -30,7 +30,7 @@ function useDisarmedLinkGuard() {
 
 /**
  * Markdown текста модели (ответ, сводка сжатия): картинки с чужих адресов показываются ссылкой, браузер не ходит
- * по ним сам. Весь текст модели в скине рисуется через него, голый `Markdown` из `@tandem/ui` — только здесь.
+ * по ним сам. Весь текст модели в скине рисуется через него, внутренний Markdown с Phosphor не экспортируется приложению.
  */
 export const SafeMarkdown = memo(function SafeMarkdown({ markdown }: { markdown: string }) {
   const labels = useChatLabels();

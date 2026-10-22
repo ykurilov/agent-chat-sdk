@@ -42,7 +42,7 @@ import { createDemoTools } from "./demo-tools";
 import { createDemoWebTools } from "./demo-web-tools";
 import { connectionModes, createConnectionSimulation, parseConnectionMode } from "./connection-simulation";
 import { demoBeforeTurn, demoTurnRefusal, parseDemoFailure, withDemoFailure, withFailureSimulation } from "./failure-simulation";
-import { createDemoMockModel, firstTextAt } from "./mock-model";
+import { createDemoMockModel, firstTextAt, releaseMockToolCall } from "./mock-model";
 import { demoImageLibrary } from "./demo-image-library";
 import { demoVideoLibrary } from "./demo-videos";
 import { createDemoReports, researcherHelper } from "./demo-background";
@@ -395,6 +395,7 @@ export async function createDemoApp(options: DemoAppOptions) {
   app.get("/api/health", (c) => c.json({ ok: true, model: options.model }));
   // Замер задержки (SC-001): когда заглушка отдала первый кусок текста на этот вопрос.
   if (mock) app.get("/api/demo/first-text-at", (c) => c.json({ at: firstTextAt(c.req.query("question") ?? "") }));
+  if (mock) app.post("/api/demo/tool-call/:id/release", (c) => c.json({ released: releaseMockToolCall(c.req.param("id")) }));
   if (mock && spending?.setLimitUsd) {
     const { setLimitUsd } = spending;
     app.post("/api/demo/spending-limit", async (c) => {

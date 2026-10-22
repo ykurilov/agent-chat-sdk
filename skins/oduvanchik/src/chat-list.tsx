@@ -1,4 +1,6 @@
-import { Badge, Button, cn, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Input, Menu, MenuContent, MenuItem, MenuTrigger } from "@tandem/ui";
+import { Badge, Button, cn, Input } from "@tandem/ui";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./primitives/dialog";
+import { Menu, MenuContent, MenuItem, MenuTrigger } from "./primitives/menu";
 import type { ChatListSkin } from "@ykurilov/agent-chat-react";
 import { useChatLabels } from "@ykurilov/agent-chat-react";
 import { MoreHorizontal, Plus } from "./icons";

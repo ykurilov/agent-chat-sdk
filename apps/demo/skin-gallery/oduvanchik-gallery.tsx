@@ -42,7 +42,7 @@ function Gallery() {
     <main className="gallery-app"><header><span className="oduvanchik-label">Мастерская / Рассылки</span><button onClick={toggleTheme}>Светлая / тёмная</button></header>
       <h1>Рассылка к вебинару</h1><p className="oduvanchik-label">Проект · 24 октября</p>
       <article className="gallery-doc"><h2>Письма, которые ведут к встрече</h2><p>Пять писем: от первого знакомства с темой до напоминания о начале вебинара.</p><p>Агент изучает материалы проекта и предлагает расписание. Перед отправкой каждое действие ждёт вашего решения.</p></article>
-      <button onClick={() => { setStage("welcome"); setValue(""); }}>Новый чат</button>
+      <button className="gallery-new-chat" onClick={() => { setStage("welcome"); setValue(""); }}>Новый чат</button>
     </main>
     <AgentPanel open mode="push" width={490} title={stage === "welcome" ? "Агент" : "План рассылки"} listOpen={listOpen} onListOpenChange={setListOpen} onClose={noop} onEscape={() => setListOpen(false)} list={<button onClick={() => { setStage("welcome"); setListOpen(false); }}>Новый чат</button>}>
       <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>

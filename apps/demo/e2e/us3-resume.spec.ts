@@ -34,7 +34,13 @@ test("закрыть страницу посреди ответа — ответ
   await reopened.goto(chatUrl);
   const answer = lastAnswer(reopened);
   await expect(answer).toHaveAttribute("data-status", "streaming");
-  const atOpen = await lastParagraph(answer);
+  // При перемонтировании окна Markdown может на кадр исчезнуть даже после toContainText.
+  // Утверждение ниже проверяет тот же снимок текста, на котором дождались его первого показа.
+  let atOpen = Number.NEGATIVE_INFINITY;
+  await expect.poll(async () => {
+    atOpen = await lastParagraph(answer);
+    return Number.isFinite(atOpen);
+  }).toBe(true);
   expect(atOpen).toBeGreaterThan(beforeClose + 3);
   // И продолжает расти на глазах.
   await expect.poll(() => lastParagraph(answer)).toBeGreaterThan(atOpen + 1);

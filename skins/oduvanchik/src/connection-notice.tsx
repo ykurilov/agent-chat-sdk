@@ -1,4 +1,5 @@
-import { Alert, Button } from "@tandem/ui";
+import { Button } from "@tandem/ui";
+import { Alert } from "./primitives/alert";
 import type { ChatSkin } from "@ykurilov/agent-chat-react";
 import { useChatLabels } from "@ykurilov/agent-chat-react";
 import { RotateCcw } from "./icons";
