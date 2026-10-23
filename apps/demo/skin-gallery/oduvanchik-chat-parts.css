@@ -1,0 +1,10 @@
+@import "tailwindcss";
+@import "@ykurilov/agent-chat-skin-oduvanchik/styles.css";
+@source "../../../skins/oduvanchik/src";
+@source "../node_modules/@tandem/ui/dist";
+html,body,#root { height:100%; margin:0; }
+.parts-gallery { height:100dvh; display:flex; flex-direction:column; background:var(--yk-bg); color:var(--yk-text); font-family:var(--yk-font-sans); }
+.parts-scene { flex:1; min-height:0; }
+.parts-controls { flex:none; display:flex; flex-wrap:wrap; gap:8px; padding:8px 20px; }
+.parts-controls button { background:var(--yk-surface-2); color:var(--yk-text); border:0; border-radius:8px; padding:5px 8px; font:12px var(--yk-font-sans); }
+.parts-controls button[aria-pressed=true] { box-shadow:inset 0 0 0 1px var(--yk-border-strong); }

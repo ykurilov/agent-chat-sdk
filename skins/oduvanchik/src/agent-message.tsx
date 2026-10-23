@@ -61,7 +61,7 @@ export function OduvanchikAgentMessage({
         {/* Строка с кнопками стоит под пузырём всегда, пока ответ пишется — скрытая. Если её вставлять в конце, пузырь
             перестаёт быть последним в колонке, и правило `tr:last-child td` дизайн-системы заставляет браузер
             пересчитать стили каждой ячейки всех таблиц ответа разом (R16). */}
-        <div className={streaming ? "hidden" : "mt-1 flex h-7 items-center gap-2"}>
+        <div className={streaming ? "hidden" : "oduvanchik-answer-actions mt-1 flex h-7 items-center gap-2"}>
           {!streaming && (
             <>
               {branchSwitcher}
@@ -74,7 +74,7 @@ export function OduvanchikAgentMessage({
                   variant="ghost"
                   size="sm"
                   onClick={onRetry}
-                  className="h-7 gap-1.5 rounded-[var(--radius-small)] px-2 [&_svg]:size-3.5"
+                  className="oduvanchik-answer-action h-7 gap-1.5 rounded-[var(--radius-small)] px-2 [&_svg]:size-3.5"
                 >
                   <RotateCcw aria-hidden="true" />
                   {labels.retry}
@@ -85,7 +85,7 @@ export function OduvanchikAgentMessage({
                   variant="ghost"
                   size="sm"
                   onClick={onRegenerate}
-                  className="h-7 gap-1.5 rounded-[var(--radius-small)] px-2 [&_svg]:size-3.5"
+                  className="oduvanchik-answer-action h-7 gap-1.5 rounded-[var(--radius-small)] px-2 [&_svg]:size-3.5"
                 >
                   <RefreshCw aria-hidden="true" />
                   {labels.regenerate}
@@ -96,7 +96,7 @@ export function OduvanchikAgentMessage({
                   variant="ghost"
                   size="sm"
                   onClick={onEdit}
-                  className="h-7 gap-1.5 rounded-[var(--radius-small)] px-2 [&_svg]:size-3.5"
+                  className="oduvanchik-answer-action h-7 gap-1.5 rounded-[var(--radius-small)] px-2 [&_svg]:size-3.5"
                 >
                   <Pencil aria-hidden="true" />
                   {labels.editAnswer}
@@ -112,7 +112,7 @@ export function OduvanchikAgentMessage({
                       onCopy();
                       setCopied(true);
                     }}
-                    className="size-7 rounded-[var(--radius-small)] text-[var(--foreground-subtle)] [&_svg]:size-3.5"
+                    className="oduvanchik-answer-action size-7 rounded-[var(--radius-small)] text-[var(--foreground-subtle)] [&_svg]:size-3.5"
                   >
                     {copied ? <Check /> : <Copy />}
                   </Button>
@@ -132,7 +132,7 @@ function OduvanchikMessageAction({ action }: { action: MessageActionView }) {
   const buttonState = { disabled: action.busy, "aria-busy": action.busy, onClick: action.onRun };
   if (action.icon === undefined) {
     return (
-      <Button variant="ghost" size="sm" {...buttonState} className="h-7 gap-1.5 rounded-[var(--radius-small)] px-2 [&_svg]:size-3.5">
+      <Button variant="ghost" size="sm" {...buttonState} className="oduvanchik-answer-action h-7 gap-1.5 rounded-[var(--radius-small)] px-2 [&_svg]:size-3.5">
         {action.label}
       </Button>
     );
@@ -144,7 +144,7 @@ function OduvanchikMessageAction({ action }: { action: MessageActionView }) {
         size="icon"
         aria-label={action.label}
         {...buttonState}
-        className="size-7 rounded-[var(--radius-small)] text-[var(--foreground-subtle)] [&_svg]:size-3.5"
+        className="oduvanchik-answer-action size-7 rounded-[var(--radius-small)] text-[var(--foreground-subtle)] [&_svg]:size-3.5"
       >
         {action.icon}
       </Button>

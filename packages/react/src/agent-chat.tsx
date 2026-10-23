@@ -43,7 +43,7 @@ import { SUGGEST_REPLIES, widgetCallOf } from "./widgets/widget-view";
 import { WidgetPart } from "./widgets/widget-part";
 import { helperCallViewOf, isHelperPart } from "./helpers/helper-call";
 import type { AttachmentsPlugin, MessageAttachmentsView } from "./attachments-contract";
-import type { AgentVideoView, ChatSkin, DiagramColors, LiveDemoColors, MessageActionView, ModelChoiceView, ToolApprovalView, ToolCallState } from "./skin-contract";
+import type { AgentVideoView, ChatHeaderView, ChatSkin, DiagramColors, LiveDemoColors, MessageActionView, ModelChoiceView, ToolApprovalView, ToolCallState } from "./skin-contract";
 import { useAgentChat } from "./use-agent-chat";
 import { useModelChoice } from "./use-model-choice";
 import { useVoiceDictation } from "./use-voice-dictation";
@@ -77,6 +77,10 @@ interface FeedExtensions extends AgentChatExtensions {
 }
 
 export interface AgentChatProps extends AgentChatExtensions {
+  /** Optional application heading and trailing content, rendered by the selected skin. */
+  header?: ChatHeaderView;
+  /** Application-owned result. Shown after loaded history while idle; never changes server status. Null/false removes it. */
+  completion?: ReactNode;
   composerOptions?: ComposerOptions;
   /** Адрес обработчика чата, например `/api/chat`. */
   api: string;
@@ -180,7 +184,7 @@ function SubjectAgentChat(props: AgentChatProps & { subject: string }) {
   return <SubjectChatLoading skin={props.skin} />;
 }
 
-function AgentChatBody({ composerOptions, api, chatId, skin, liveness, voice, voiceDialog, attachments: attachmentsPlugin, spendingLimits, onBusyChange, appBridge, initialDraft, answerEditing, onFeedChange, messageActions, onTurnFinished, onTurnRefused, composerActions, onAppEvent, onChatAccessChange, onStateChange, onModelChosen, onChatUnavailable, reloadKey, steering, widgets, diagrams, liveDemos, images, videos, appEvents, workView, stepPhrases, noticeLines, answerDetails }: AgentChatProps & { chatId: string }) {
+function AgentChatBody({ header, completion, composerOptions, api, chatId, skin, liveness, voice, voiceDialog, attachments: attachmentsPlugin, spendingLimits, onBusyChange, appBridge, initialDraft, answerEditing, onFeedChange, messageActions, onTurnFinished, onTurnRefused, composerActions, onAppEvent, onChatAccessChange, onStateChange, onModelChosen, onChatUnavailable, reloadKey, steering, widgets, diagrams, liveDemos, images, videos, appEvents, workView, stepPhrases, noticeLines, answerDetails }: AgentChatProps & { chatId: string }) {
   const spendingNoticeId = useId();
   const closedNoticeId = useId();
   const chat = useAgentChat({
@@ -692,9 +696,14 @@ function AgentChatBody({ composerOptions, api, chatId, skin, liveness, voice, vo
       </>
     ) : notices[0];
 
+  const voiceActive = Boolean(dictation.view && (dictation.view.state !== "idle" || dictation.view.polishing))
+    || Boolean(dialog && dialog.state !== "off" && dialog.state !== "error");
+  const visibleCompletion = chat.loaded && !busy && !voiceActive && !chat.loadFailed && completion !== false ? completion : undefined;
   const layout = (
     <skin.Layout
-      empty={chat.loaded && !chat.loadFailed && !chat.sendFailed && !chat.serverRefusal && !chat.refusal && chat.connection === "online" && !chatClosed && !busy && feedMessages.length === 0}
+      header={header}
+      completion={visibleCompletion}
+      empty={visibleCompletion == null && chat.loaded && !chat.loadFailed && !chat.sendFailed && !chat.serverRefusal && !chat.refusal && chat.connection === "online" && !chatClosed && !busy && feedMessages.length === 0}
       feed={feed}
       scrollRef={scrollRef}
       announcement={announced}

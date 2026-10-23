@@ -46,7 +46,9 @@
     "lucide-react": "1.33.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "zod": "^4.6.5"
+    "zod": "^4.6.5",
+    "@ykurilov/ds-react": "^0.3.0",
+    "@ykurilov/ds-tokens": "^0.2.0"
   },
   "devDependencies": {
     "@ai-sdk/provider": "4.0.19",

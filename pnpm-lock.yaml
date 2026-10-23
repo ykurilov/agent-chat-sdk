@@ -107,6 +107,12 @@ importers:
       '@ykurilov/agent-chat-web-tools':
         specifier: workspace:*
         version: link:../../packages/web-tools
+      '@ykurilov/ds-react':
+        specifier: ^0.3.0
+        version: 0.3.0(@phosphor-icons/react@2.1.10(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(@ykurilov/ds-tokens@0.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      '@ykurilov/ds-tokens':
+        specifier: ^0.2.0
+        version: 0.2.0
       ai:
         specifier: 7.0.122
         version: 7.0.122(zod@4.6.5)
@@ -950,8 +956,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/react
       '@ykurilov/ds-react':
-        specifier: ^0.2.0
-        version: 0.2.0(@phosphor-icons/react@2.1.10(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(@ykurilov/ds-tokens@0.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        specifier: ^0.3.0
+        version: 0.3.0(@phosphor-icons/react@2.1.10(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(@ykurilov/ds-tokens@0.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@ykurilov/ds-tokens':
         specifier: ^0.2.0
         version: 0.2.0
@@ -989,6 +995,9 @@ importers:
       '@ykurilov/agent-chat-sandbox':
         specifier: workspace:*
         version: link:../../packages/sandbox
+      '@ykurilov/agent-chat-skin-tandem':
+        specifier: workspace:*
+        version: link:../tandem
       '@ykurilov/agent-chat-web-tools':
         specifier: workspace:*
         version: link:../../packages/web-tools
@@ -3253,8 +3262,8 @@ packages:
   '@xyflow/system@0.0.83':
     resolution: {integrity: sha512-a//eDjez3WZF47aaPTfVUDD0OINOq+WVwBZCRTqG+m0a5euX8EwlJ4jMY1Wxz0Ocj4xOeekJ70V22Pq0ll8RJw==}
 
-  '@ykurilov/ds-react@0.2.0':
-    resolution: {integrity: sha512-5t1EnhV8zY4/YTCZoKCCetdSI2xJNSRWle1TGe/rcipzOFy9mfSn6Br4C7LRPXuvlMc1RU9IIveiUDkU4rjuzQ==}
+  '@ykurilov/ds-react@0.3.0':
+    resolution: {integrity: sha512-HD/b+1jVdteE7zl5yskDo+3lsgiT0bZPG+bBkcWsa/qQ3Enok120AAboTrbNLo2aO5d0FbBGyedbOYfnxplZ0w==}
     peerDependencies:
       '@phosphor-icons/react': ^2.1.0
       '@ykurilov/ds-tokens': ^0.2.0
@@ -6673,7 +6682,7 @@ snapshots:
       d3-selection: 3.0.0
       d3-zoom: 3.0.0
 
-  '@ykurilov/ds-react@0.2.0(@phosphor-icons/react@2.1.10(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(@ykurilov/ds-tokens@0.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
+  '@ykurilov/ds-react@0.3.0(@phosphor-icons/react@2.1.10(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(@ykurilov/ds-tokens@0.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
     dependencies:
       '@phosphor-icons/react': 2.1.10(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@ykurilov/ds-tokens': 0.2.0

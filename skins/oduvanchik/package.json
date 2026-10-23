@@ -1,6 +1,6 @@
 {
   "name": "@ykurilov/agent-chat-skin-oduvanchik",
-  "version": "0.74.0",
+  "version": "0.75.0",
   "license": "MIT",
   "type": "module",
   "sideEffects": [
@@ -57,7 +57,7 @@
     "mdast-util-gfm": "^3.1.0",
     "micromark-extension-gfm": "^3.0.0",
     "@phosphor-icons/react": "^2.1.10",
-    "@ykurilov/ds-react": "^0.2.0",
+    "@ykurilov/ds-react": "^0.3.0",
     "@ykurilov/ds-tokens": "^0.2.0",
     "@radix-ui/react-dialog": "^1.1.23",
     "@radix-ui/react-dropdown-menu": "^2.1.24",
@@ -77,7 +77,8 @@
     "@ykurilov/agent-chat-web-tools": "workspace:*",
     "jsdom": "^30.1.1",
     "react": "^19.3.0",
-    "@ykurilov/agent-chat-sandbox": "workspace:*"
+    "@ykurilov/agent-chat-sandbox": "workspace:*",
+    "@ykurilov/agent-chat-skin-tandem": "workspace:*"
   },
   "peerDependenciesMeta": {
     "@ykurilov/agent-chat-sandbox": {

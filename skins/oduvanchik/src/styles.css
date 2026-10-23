@@ -158,7 +158,7 @@
 /* Studio: DS role tokens, scoped to this skin. ScrollArea owns the only feed scroll root. */
 .oduvanchik-thread-root { height: 100%; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 .oduvanchik-thread-scroll { padding-inline-start: var(--yk-studio-scrollbar-gap); }
-.oduvanchik-thread { width: 100%; max-width: var(--yk-studio-thread-width); margin: 0 auto; padding: 24px 0 12px; font-size: var(--yk-studio-body-size); line-height: var(--yk-studio-body-line-height); }
+.oduvanchik-thread { padding: 24px 0 12px; font-size: var(--yk-studio-body-size); line-height: var(--yk-studio-body-line-height); }
 .oduvanchik-thread .oduvanchik-agent-body { line-height: var(--yk-studio-body-line-height); }
 .oduvanchik-thread .tandem-markdown { font-size: inherit; line-height: inherit; }
 .oduvanchik-thread .oduvanchik-agent > div { max-width: 100%; }
@@ -221,3 +221,33 @@
 .oduvanchik-thread .tandem-markdown strong { font-weight: 550; }
 .oduvanchik-thread .tandem-markdown blockquote { border-color: var(--yk-accent); color: var(--yk-text); font-size: 18px; line-height: 1.65; padding-left: 18px; }
 .oduvanchik-thread-empty .oduvanchik-welcome-intro h1 { max-width: 440px; font-weight: 450; letter-spacing: -.035em; }
+
+/* Shared DS chat column: equal header/feed/composer edges, one virtual scroll root.
+   Header/footer reserve the measured native gutter without clipping their popovers.
+   The column's 20px margin also provides the >=16px gap for overlay scrollbars. */
+.oduvanchik-thread-root > .yk-chat-header,
+.oduvanchik-composer-wrap { padding-inline: var(--oduvanchik-scrollbar-gutter, 0px); }
+.oduvanchik-thread-scroll.yk-scroll-area { padding-inline: 0; scrollbar-gutter: stable both-edges; }
+.oduvanchik-thread.yk-chat-column { max-width: none; padding-inline: 0; }
+.oduvanchik-composer-column { max-width: none; }
+.oduvanchik-thread > .yk-completion { margin-block: 8px 12px; }
+.oduvanchik-composer-wrap[hidden] { display: none; }
+.oduvanchik-field textarea { height: 26px; min-height: 26px; max-height: 160px; line-height: 26px; }
+.oduvanchik-field-send,
+.oduvanchik-field-mic > button { width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0; }
+.oduvanchik-field-inline { flex-direction: row; align-items: flex-end; padding: 8px 8px 8px 20px; gap: 6px; }
+.oduvanchik-field-inline textarea { flex: 1; width: 0; margin-block: 7px; }
+.oduvanchik-field-inline .oduvanchik-field-bar { display: contents; }
+.oduvanchik-field-inline .oduvanchik-field-mic { margin-inline-start: 0; }
+.oduvanchik-answer-actions { margin-inline-start: -8px; height: auto; min-height: 32px; }
+.oduvanchik-answer-action { height: 32px; padding-inline: 8px; opacity: 0; transition: opacity .15s; }
+.oduvanchik-answer-action[aria-label] { width: 32px; }
+.oduvanchik-answer-action svg { width: 16px; height: 16px; }
+.oduvanchik-agent:hover .oduvanchik-answer-action,
+.oduvanchik-answer-actions:focus-within .oduvanchik-answer-action { opacity: 1; }
+@media (hover: none) { .oduvanchik-answer-action { opacity: 1; } }
+
+/* Tandem's shared primitive CSS animates inherited text colors. Progress state
+   must switch label and fill together, including the first frame after max. */
+.oduvanchik-chat .yk-chat-progress,
+.oduvanchik-chat .yk-chat-progress__label { transition: none; }

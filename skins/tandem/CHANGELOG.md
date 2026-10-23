@@ -1,5 +1,27 @@
 # @ykurilov/agent-chat-skin-tandem
 
+## 0.75.0
+
+### Minor Changes
+
+- dfb9869: Необязательные `AgentChat.header` и `AgentChat.completion`: приложение задаёт шапку и свой итог. Итог появляется после успешно загруженной истории, когда ход свободен, скрывает поле без сброса черновика и не меняет серверное состояние. Во время ответа или активного голосового ввода управление остановкой доступно. Новые слоты Layout описаны в договоре скина 31.
+  
+  В «Одуванчике» общая колонка DS 730px для шапки, переписки и поля; действия видны при наведении/фокусе и всегда на touch; поле 26–160px и круглые кнопки 40px. Используются готовые ChatHeader/ChatProgress/CompletionCard из DS, без копирования компонентов. Явный Тандем поддерживает необязательные слоты в своём оформлении.
+  
+  ### Как обновить приложение
+  
+  Обновите используемые пакеты SDK одной версией. Скин «Одуванчик» использует ds-react ^0.3.0 и ds-tokens ^0.2.0, отдельного CSS-импорта сверх CSS скина не требуется. Для прямых импортов ChatProgress/CompletionCard добавьте в зависимости приложения `@ykurilov/ds-react ^0.3.0`, `@ykurilov/ds-tokens ^0.2.0` и `@phosphor-icons/react ^2.1.10`. Новые свойства необязательны. Приложение передаёт `header={{ title, aside }}` и `completion={<CompletionCard .../>}`; снятие `completion` возвращает поле с прежним черновиком. Слова, статусы и действия принадлежат приложению; английские имена статусов задайте через `statusNames`. Без новых свойств дополнительных действий нет. Для собственного скина — поддержка Layout.header/completion по docs/skin-v31.md.
+
+### Patch Changes
+
+- Updated dependencies [dfb9869]
+  - @ykurilov/agent-chat-react@0.75.0
+  - @ykurilov/agent-chat-flows@0.75.0
+  - @ykurilov/agent-chat-messengers@0.75.0
+  - @ykurilov/agent-chat-sandbox@0.75.0
+  - @ykurilov/agent-chat-mcp@0.75.0
+  - @ykurilov/agent-chat-skills@0.75.0
+
 ## 0.74.0
 
 ### Patch Changes

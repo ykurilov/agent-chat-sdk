@@ -1,5 +1,13 @@
 # @ykurilov/agent-chat-messengers
 
+## 0.75.0
+
+### Patch Changes
+
+- Updated dependencies [dfb9869]
+  - @ykurilov/agent-chat-react@0.75.0
+  - @ykurilov/agent-chat-core@0.75.0
+
 ## 0.74.0
 
 ### Patch Changes

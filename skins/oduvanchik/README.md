@@ -1,6 +1,6 @@
 # Скин Одуванчик
 
-`@ykurilov/agent-chat-skin-oduvanchik` - скин SDK Agent Chat, договор `ChatSkin` v30. Нейтральный фон, системный шрифт, оранжевый акцент, чёрная кнопка отправки (светлая в тёмной теме), сфера работы агента и значки Phosphor.
+`@ykurilov/agent-chat-skin-oduvanchik` - скин SDK Agent Chat, договор `ChatSkin` v31. Нейтральный фон, системный шрифт, оранжевый акцент, чёрная кнопка отправки (светлая в тёмной теме), сфера работы агента и значки Phosphor.
 
 ## Подключение
 
@@ -102,7 +102,7 @@ const composerOptions: ComposerOptions = {
   composerOptions={composerOptions} />;
 ```
 
-`openContextPicker`, `attachProject`, `saveToolSetting` - обработчики приложения. Проекты передаются агенту через контекст приложения (например `appBridge`); переключатели инструментов приложение связывает с разрешёнными серверными настройками хода. Скин сам не включает инструменты ядра и не выдаёт проект за загруженный файл. Без `attachments` загрузки файлов нет, без `voice` нет микрофона. [Полный общий договор](../../docs/skin-v29.md).
+`openContextPicker`, `attachProject`, `saveToolSetting` - обработчики приложения. Проекты передаются агенту через контекст приложения (например `appBridge`); переключатели инструментов приложение связывает с разрешёнными серверными настройками хода. Скин сам не включает инструменты ядра и не выдаёт проект за загруженный файл. Без `attachments` загрузки файлов нет, без `voice` нет микрофона. [Договор вариантов поля](../../docs/skin-v29.md).
 
 ## Проверка вида
 
@@ -134,3 +134,36 @@ import { AgentSandbox } from "@ykurilov/agent-chat-skin-oduvanchik/sandbox";
 Обновить SDK одной версией до 0.74.0 и пересобрать CSS. В песочнице заменить импорт экрана на `/sandbox`, убрать явные скины Тандема и использовать CSS Одуванчика. Серверные адреса, админские права, плагины, история и миграции не меняются. Прежний явный Тандем сохраняется с его CSS; остальные админские экраны (`flows`, `messengers`, `skills`, `mcp`, `client-card`) этим выпуском не переводятся.
 
 Витрина: `/oduvanchik-studio.html?state=empty|dialog|working&theme=light|dark`. Сценарий: `pnpm --filter @ykurilov/agent-chat-demo exec playwright test -c skin-gallery/playwright.config.ts oduvanchik-studio.spec.ts --workers=1`. Снимки - `screenshotFolder("agent-chat-oduvanchik-studio")`. Живое демо `/sandbox`, явный Тандем - `/sandbox?skin=tandem`.
+
+## Шапка, ход работы и итог приложения
+
+Общая колонка `yk-chat-column` берётся из DS (730px, на телефоне с отступами). Поле 26–160px, микрофон и отправка круглые 40px. Действия под ответом доступны при наведении и клавиатурном фокусе, на устройствах без hover видны постоянно. Подсказка поля задаётся через `ChatLabelsProvider.composerPlaceholder`; по умолчанию короткая «Напишите сообщение».
+
+Если приложение импортирует готовые части DS напрямую, объявите их в зависимостях приложения вместе с peer-зависимостями:
+
+```sh
+pnpm add @ykurilov/ds-react@^0.3.0 @ykurilov/ds-tokens@^0.2.0 @phosphor-icons/react@^2.1.10
+```
+
+```tsx
+import { useState } from "react";
+import { AgentChat } from "@ykurilov/agent-chat-skin-oduvanchik/chat";
+import { Button, ChatProgress, CompletionCard } from "@ykurilov/ds-react";
+import "@ykurilov/agent-chat-skin-oduvanchik/styles.css";
+
+function ApplicationChat() {
+  // Значения загружает и изменяет приложение; SDK не выводит их из текста модели.
+  const [showResult, setShowResult] = useState(false);
+  return <AgentChat api="/api/chat" chatId="chat-id"
+    header={{ title: "Название приложения", aside: <ChatProgress label="Шаг 2 из 3" value={2} max={3} /> }}
+    completion={showResult ? <CompletionCard title="Заголовок результата"
+      description="Пояснение приложения"
+      items={[{ id: "one", label: "Пункт приложения", status: "done" }]}
+      action={<Button variant="secondary" onClick={() => setShowResult(false)}>Продолжить</Button>}
+      note="Подпись приложения" /> : undefined} />;
+}
+```
+
+`header` и `completion` необязательны. Приложение показывает итог по своему состоянию. Карточка располагается после сообщений в том же скроллере, а поле скрывается с сохранением черновика и DOM. Снятие `completion` возвращает поле. Фокус автоматически не переносится; при явном действии приложение может направить его в поле. Во время ответа или активного голосового ввода итог отложен и управление остановкой доступно. Итог не закрывает серверный чат и не добавляет сообщений.
+
+Требуются ds-react ^0.3.0 и ds-tokens ^0.2.0; стили DS уже входят в единственный импорт CSS скина. Для английских карточек передайте `statusNames={{ done: "done", later: "later" }}`; видимые `statusLabel` и все бизнес-слова принадлежат приложению. Явный Тандем остаётся доступен и использует собственный CSS. Общий headless React принимает нейтральные свойства без зависимости от DS; договор — [skin-v31](../../docs/skin-v31.md).

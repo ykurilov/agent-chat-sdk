@@ -19,3 +19,8 @@ const defaults: [AgentChatProps, AgentPanelProps, ChatWorkspaceProps] = [{ api: 
 <HeadlessAgentChat api="/api/chat" chatId="c1" skin={oduvanchikSkin} />;
 // @ts-expect-error The headless entry still requires explicit skin.
 <HeadlessAgentChat api="/api/chat" chatId="c1" />;
+
+import { ChatProgress, CompletionCard } from "@ykurilov/ds-react";
+import type { ChatHeaderView } from "@ykurilov/agent-chat-react";
+const header: ChatHeaderView = {title:"Application",aside:<ChatProgress label="Progress" value={1} max={2}/>,headingLevel:2};
+<AgentChat api="/api/chat" chatId="c1" header={header} completion={<CompletionCard title="Application result" action={<button>Continue</button>}/>}/>;

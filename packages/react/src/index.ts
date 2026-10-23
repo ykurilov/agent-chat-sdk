@@ -72,6 +72,7 @@ export type {
   AgentVideoView,
   ChatOriginView,
   ChatSkin,
+  ChatHeaderView,
   CustomWidgetProps,
   DiagramColors,
   DiagramView,

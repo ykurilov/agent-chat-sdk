@@ -1,5 +1,11 @@
 # @ykurilov/agent-chat-storage-postgres
 
+## 0.75.0
+
+### Patch Changes
+
+- @ykurilov/agent-chat-core@0.75.0
+
 ## 0.74.0
 
 ### Patch Changes
