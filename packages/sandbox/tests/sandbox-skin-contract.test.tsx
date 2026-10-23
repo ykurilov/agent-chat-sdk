@@ -20,6 +20,7 @@ describe("договор скина песочницы, версия 1 (типы
 
   it("SandboxLayout: чат, журнал и выдвижная панель", () => {
     expectTypeOf<Props<"SandboxLayout">>().toEqualTypeOf<{
+      busy?: boolean;
       header: ReactNode;
       chat: ReactNode;
       journal: ReactNode;

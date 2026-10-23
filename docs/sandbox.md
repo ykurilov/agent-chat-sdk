@@ -52,15 +52,18 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 ```
 
-Страница (React):
+Страница (React), официальный Одуванчик по умолчанию (с 0.74.0):
 
 ```tsx
-import { AgentSandbox } from "@ykurilov/agent-chat-sandbox/react";
-import { tandemSandboxSkin } from "@ykurilov/agent-chat-skin-tandem/sandbox";
+import { AgentSandbox } from "@ykurilov/agent-chat-skin-oduvanchik/sandbox";
 
-<AgentSandbox skin={tandemSkin} sandboxSkin={tandemSandboxSkin} chatListSkin={tandemSkin}
+<AgentSandbox
   chatProps={{ attachments: attachmentsClient, images: imagesClient, videos: videosClient, widgets, diagrams: diagramsClient }} />
 ```
+
+CSS: один `@import "@ykurilov/agent-chat-skin-oduvanchik/styles.css";` после Tailwind и `@source` на dist скина и `@tandem/ui/dist`, как у [обычного чата](../skins/oduvanchik/README.md). У контейнера явная высота, у flex/grid-предков `min-height: 0`. Не оборачивать чат второй ScrollArea. Журнал на телефоне открывается шторкой; переписка и журнал прокручиваются независимо.
+
+Низкоуровневый импорт из `@ykurilov/agent-chat-sandbox/react` по-прежнему требует явные `skin`, `sandboxSkin`, `chatListSkin`. Для сохранения Тандема использовать его прежние три скина и CSS. Остальные свойства экрана и серверные права остаются прежними.
 
 Адрес по умолчанию `/api/sandbox` (`basePath` у обработчика и у экрана). Пример целиком — `apps/demo` (страница `/sandbox`,
 `apps/demo/server/demo-app.ts`).
@@ -151,7 +154,7 @@ createSandboxHandler({
 ```
 
 ```tsx
-<AgentSandbox people skin={tandemSkin} sandboxSkin={tandemSandboxSkin} chatListSkin={tandemSkin} />
+<AgentSandbox people />
 ```
 
 - **Без опции `people`** раздела нет: адреса `/people…` отвечают 404, полосы разделов нет, экран прежний.
@@ -182,7 +185,7 @@ createSandboxHandler({
 - Экран рисуют скины: чат — `ChatSkin` (договор версии 15, новые части необязательные: кнопка «Изменить ответ» и отметки
   «изменено»), песочницу — `SandboxSkin` версии 1 (`SandboxLayout`, `JournalList`, `ModelCallDetails`, `ToolCallDetails`,
   `InstructionEditor`, `AnswerEditor`). Слой поведения решает, что показать и хранит черновики; скин только рисует. Тандем
-  готов: `@ykurilov/agent-chat-skin-tandem/sandbox`.
+  и Одуванчик готовы: `@ykurilov/agent-chat-skin-tandem/sandbox` и `@ykurilov/agent-chat-skin-oduvanchik/sandbox`.
 - С `people` у `SandboxSkin` два необязательных слота: `SandboxSections` (переключатель «Песочница / Чаты людей») и
   `PeopleChats` (раздел целиком). Нет их — простой вид; Тандем рисует свои.
 - Необязательный слот `ChatReopen` — кнопка «Открыть чат снова» (`onReopen`, `pending`, `error`). Нет — простая кнопка.

@@ -108,7 +108,7 @@ export function createSandboxHandler(options: SandboxHandlerOptions): ChatHandle
   if (chat.env) journal.addSecrets?.(secretsFromEnv(chat.env));
   // Без опции `people` раздела нет: адреса `/people…` — 404, как до него.
   const people = options.people ? createPeopleRoutes({ service, storage: chat.storage, attachments: chat.attachments, people: options.people }) : null;
-  const routes = createSandboxRoutes({ service, journal, people, staffCopies, appInstructions: chat.agent.instructions, logError });
+  const routes = createSandboxRoutes({ service, journal, people, staffCopies, appInstructions: chat.agent.instructions, logError, readHistory: (request) => inner.fetch(request) });
   startRetention(journal, options.retentionDays ?? DEFAULT_RETENTION_DAYS, logError);
 
   return {
@@ -129,9 +129,9 @@ export function createSandboxHandler(options: SandboxHandlerOptions): ChatHandle
         // Источник проверяется после админа: не-админ всегда получает 404, как будто песочницы нет.
         if (!isSafeMethod(request.method) && !allowsOrigin(request)) return errorResponse(403, "forbidden_origin");
         const owner = sandboxOwnerOf(user.id);
+        ownerOfRequest.set(request, owner);
         const own = await routes.handle(request, segments, { adminId: user.id, owner });
         if (own) return own;
-        ownerOfRequest.set(request, owner);
         return await inner.fetch(request);
       } catch (error) {
         return errorToResponse(error, request, logError);
@@ -141,6 +141,7 @@ export function createSandboxHandler(options: SandboxHandlerOptions): ChatHandle
 }
 
 interface RouteInput {
+  readHistory: (request: Request) => Promise<Response>;
   service: ChatService;
   journal: SandboxJournal;
   people: ReturnType<typeof createPeopleRoutes> | null;
@@ -157,7 +158,7 @@ interface Caller {
 }
 
 /** Адреса песочницы поверх чата: журнал, настройки, правка ответа, история с отметками правок, удаление с журналом, чаты людей. */
-function createSandboxRoutes({ service, journal, people, staffCopies, appInstructions, logError }: RouteInput) {
+function createSandboxRoutes({ service, journal, people, staffCopies, appInstructions, logError, readHistory }: RouteInput) {
   async function settingsResponse(chatId: string): Promise<Response> {
     const settings = await journal.getSettings(chatId);
     const body: SandboxSettingsResponse = {
@@ -245,8 +246,14 @@ function createSandboxRoutes({ service, journal, people, staffCopies, appInstruc
     // Идентификаторы чатов — UUID, поэтому пути `models`, `chats`, `journal`, `memory` и `people` с чатом не пересекаются.
     if (first !== undefined && first !== "models" && second === undefined) {
       if (method === "GET") {
-        const history = await service.getHistory(caller.owner, first);
-        return Response.json({ ...history, answerEdits: await answerEdits(first) });
+        // Preserve transport metadata (including backgroundTasks:false), then add sandbox marks.
+        const response = await readHistory(request);
+        if (!response.ok || !response.headers.get("content-type")?.includes("application/json")) return response;
+        const history = await response.json();
+        const headers = new Headers(response.headers);
+        // The augmented JSON has a different byte length; retain all other transport headers/status.
+        headers.delete("content-length");
+        return Response.json({ ...history, answerEdits: await answerEdits(first) }, { status: response.status, headers });
       }
       if (method === "DELETE") {
         await service.deleteChat(caller.owner, first);

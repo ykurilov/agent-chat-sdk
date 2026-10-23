@@ -76,6 +76,7 @@ describe("словарь надписей", () => {
       memoryMergeRevertFor: memoryMergeRevertFor("30 сентября в 12:05"),
     }).toEqual({
       locale: "ru",
+      welcome: { title: "С чего начнём?", description: "Задайте вопрос или опишите задачу." },
       composerSettings: {
         levels: { off: "Выкл", on: "Вкл", minimal: "Минимум", low: "Низко", medium: "Средне", high: "Высоко", max: "Максимум" },
         model: "Модель", reasoning: "Рассуждения", tools: "Инструменты", settings: "Настройки ответа", done: "Готово", via: "Через", search: "Найти модель", showReasoning: "Показывать ход мысли", project: "Проект", file: "Файл", image: "Картинка", textModels: "Текстовые задачи", imageModels: "Текст и изображения", models: "Модели", noResults: "Ничего не найдено", price: "USD за миллион токенов", input: "вход", output: "выход",

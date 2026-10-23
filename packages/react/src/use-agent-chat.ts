@@ -392,7 +392,8 @@ export function useAgentChat({
   const [capabilities, setCapabilities] = useState<ChatCapabilities>(ALL_CAPABILITIES);
   const [closed, setClosed] = useState<ChatClosure | null>(null);
   // Сервер без заявки (старый) мог бы держать фон: спрашиваем его сами, как раньше.
-  const [backgroundTasksAvailable, setBackgroundTasksAvailable] = useState(true);
+  const [backgroundCapability, setBackgroundCapability] = useState<{ chatUrl: string; available: boolean } | null>(null);
+  const backgroundTasksAvailable = backgroundCapability?.chatUrl === chatUrl ? backgroundCapability.available : true;
   const [modelAcceptsImages, setModelAcceptsImages] = useState<boolean | undefined>(undefined);
   const [externalContent, setExternalContent] = useState(false);
   const showClosure = useCallback((next: ChatClosure | null) => {
@@ -404,12 +405,16 @@ export function useAgentChat({
       const next = capabilitiesOf(history.capabilities);
       setCapabilities((current) => (sameCapabilities(current, next) ? current : next));
       showClosure(closureOf(history.chat?.closed));
-      setBackgroundTasksAvailable(history.backgroundTasks !== false);
+      // Partial/legacy branch envelopes do not erase a capability already learned for this chat.
+      if (typeof history.backgroundTasks === "boolean") {
+        const available = history.backgroundTasks;
+        setBackgroundCapability((current) => current?.chatUrl === chatUrl && current.available === available ? current : { chatUrl, available });
+      }
       setModelAcceptsImages(typeof history.modelAcceptsImages === "boolean" ? history.modelAcceptsImages : undefined);
       // Только включается: история, прочитанная раньше куска потока, признак не снимает.
       if (history.externalContent === true) setExternalContent(true);
     },
-    [showClosure],
+    [chatUrl, showClosure],
   );
   const onTurnRefusedRef = useRef(onTurnRefused);
   onTurnRefusedRef.current = onTurnRefused;

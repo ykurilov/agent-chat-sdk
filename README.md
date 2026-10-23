@@ -19,7 +19,7 @@
 - Проверка ответа перед отправкой: ловит чужие слова на другом языке и выдуманные ссылки.
 - Внешний вид отделён от поведения. Стандартный вид - Одуванчик через `/chat`; явный Тандем или свой скин сохраняют приоритет.
 
-Версия 0.73.0.
+Версия 0.74.0.
 
 ## Установка
 
@@ -205,7 +205,7 @@ pnpm vite                  # страница: откройте http://localhost
 | [`@ykurilov/agent-chat-voice`](packages/voice) | голосовой ввод (диктовка) |
 | [`@ykurilov/agent-chat-voice-dialog`](packages/voice-dialog) | голосовой разговор с агентом |
 | [`@ykurilov/agent-chat-web-tools`](packages/web-tools) | поиск и чтение сайтов для агента |
-| [`@ykurilov/agent-chat-skin-oduvanchik`](skins/oduvanchik) | стандартный UI /chat: Одуванчик по умолчанию |
+| [`@ykurilov/agent-chat-skin-oduvanchik`](skins/oduvanchik) | стандартный UI /chat и Студия /sandbox: Одуванчик по умолчанию |
 | [`@ykurilov/agent-chat-skin-tandem`](skins/tandem) | готовый вид «Тандем» |
 
 ## Демо из этого репозитория

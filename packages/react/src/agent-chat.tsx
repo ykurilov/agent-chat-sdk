@@ -694,6 +694,7 @@ function AgentChatBody({ composerOptions, api, chatId, skin, liveness, voice, vo
 
   const layout = (
     <skin.Layout
+      empty={chat.loaded && !chat.loadFailed && !chat.sendFailed && !chat.serverRefusal && !chat.refusal && chat.connection === "online" && !chatClosed && !busy && feedMessages.length === 0}
       feed={feed}
       scrollRef={scrollRef}
       announcement={announced}

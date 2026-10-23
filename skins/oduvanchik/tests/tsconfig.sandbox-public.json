@@ -1,0 +1,4 @@
+{
+  "extends": "./tsconfig.public.json",
+  "include": ["public-sandbox-api.tsx"]
+}

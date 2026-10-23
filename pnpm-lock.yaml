@@ -950,11 +950,11 @@ importers:
         specifier: workspace:*
         version: link:../../packages/react
       '@ykurilov/ds-react':
-        specifier: ^0.1.0
-        version: 0.1.0(@phosphor-icons/react@2.1.10(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(@ykurilov/ds-tokens@0.1.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        specifier: ^0.2.0
+        version: 0.2.0(@phosphor-icons/react@2.1.10(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(@ykurilov/ds-tokens@0.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@ykurilov/ds-tokens':
-        specifier: ^0.1.0
-        version: 0.1.0
+        specifier: ^0.2.0
+        version: 0.2.0
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -986,6 +986,9 @@ importers:
       '@ykurilov/agent-chat-attachments':
         specifier: workspace:*
         version: link:../../packages/attachments
+      '@ykurilov/agent-chat-sandbox':
+        specifier: workspace:*
+        version: link:../../packages/sandbox
       '@ykurilov/agent-chat-web-tools':
         specifier: workspace:*
         version: link:../../packages/web-tools
@@ -3250,16 +3253,16 @@ packages:
   '@xyflow/system@0.0.83':
     resolution: {integrity: sha512-a//eDjez3WZF47aaPTfVUDD0OINOq+WVwBZCRTqG+m0a5euX8EwlJ4jMY1Wxz0Ocj4xOeekJ70V22Pq0ll8RJw==}
 
-  '@ykurilov/ds-react@0.1.0':
-    resolution: {integrity: sha512-5Oy36+K/q+lT7zQ2/zcmXIH+jBSb9zJWMHtFQVD5IWhKWTT5FPg3fER2zalrr4aUUfqhdCN7pjNBmYaE9/ziJw==}
+  '@ykurilov/ds-react@0.2.0':
+    resolution: {integrity: sha512-5t1EnhV8zY4/YTCZoKCCetdSI2xJNSRWle1TGe/rcipzOFy9mfSn6Br4C7LRPXuvlMc1RU9IIveiUDkU4rjuzQ==}
     peerDependencies:
       '@phosphor-icons/react': ^2.1.0
-      '@ykurilov/ds-tokens': ^0.1.0
+      '@ykurilov/ds-tokens': ^0.2.0
       react: ^18.2.0 || ^19.0.0
       react-dom: ^18.2.0 || ^19.0.0
 
-  '@ykurilov/ds-tokens@0.1.0':
-    resolution: {integrity: sha512-Fw3vrQutxq5aDNPhyP1OtbZye6s9qiE/zGftnZYFGcedm81Kfvd9GBr8EoB7BxVS2Zvc9h9P/26mbBCkAP6iow==}
+  '@ykurilov/ds-tokens@0.2.0':
+    resolution: {integrity: sha512-r4YcY6tUFjVcuZfRnZt3BmK/YzJC1KoXvCxqpAny+1qCUIIzz7UNDl0O92p65DqIsBS6ouumCjjHuZcNF/0zSQ==}
 
   '@ykurilov/tandem-ui@0.7.0':
     resolution: {integrity: sha512-lxNq9BIxvL64F4Oz5qmIlra9+zhcwpGYVQeG2nEZvnaY+NZvoJ1iCv9Pseh+angi4pTPYTI6i3mTEOXNYdeDtw==}
@@ -6670,14 +6673,14 @@ snapshots:
       d3-selection: 3.0.0
       d3-zoom: 3.0.0
 
-  '@ykurilov/ds-react@0.1.0(@phosphor-icons/react@2.1.10(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(@ykurilov/ds-tokens@0.1.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
+  '@ykurilov/ds-react@0.2.0(@phosphor-icons/react@2.1.10(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(@ykurilov/ds-tokens@0.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
     dependencies:
       '@phosphor-icons/react': 2.1.10(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
-      '@ykurilov/ds-tokens': 0.1.0
+      '@ykurilov/ds-tokens': 0.2.0
       react: 19.3.0
       react-dom: 19.3.0(react@19.3.0)
 
-  '@ykurilov/ds-tokens@0.1.0': {}
+  '@ykurilov/ds-tokens@0.2.0': {}
 
   '@ykurilov/tandem-ui@0.7.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
     dependencies:

@@ -166,6 +166,8 @@ export interface SandboxSkin {
    * `journalOpen`). У панелей `aria-label` из `labels.chatPanel` и `labels.journalPanel`.
    */
   SandboxLayout: ComponentType<{
+    /** Идёт ход агента; реальные записи журнала приходят отдельно. */
+    busy?: boolean;
     /** Над чатом: редактор инструкции и прочее управление чатом. */
     header: ReactNode;
     /** `ChatWorkspace` со списком песочных чатов. */
@@ -176,6 +178,8 @@ export interface SandboxSkin {
   }>;
   /** Список обращений и вызовов хода или всего чата. */
   JournalList: ComponentType<{
+    /** Идёт ход, журнал перечитывается после его завершения. */
+    busy?: boolean;
     /** `empty` — записей нет (`labels.journalEmpty`). */
     state: SandboxLoadState | "empty";
     rows: JournalRowView[];

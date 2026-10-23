@@ -224,6 +224,8 @@ export interface ComposerSettingsLabels {
 }
 
 export interface ChatLabels {
+  /** Приветствие пустого чата. Скины без приветствия игнорируют. */
+  welcome?: { title?: string; description?: string };
   composerSettings?: Partial<ComposerSettingsLabels>;
   /**
    * Язык словаря (BCP 47): `ru` у `russianLabels`, `en` у `englishLabels`. Скин по нему выбирает свои надписи — например,
@@ -476,13 +478,14 @@ const resetPhrase = (info: SpendingInfo) => (info.resetsAt ? `, обновитс
 const mergeDate = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
 
 /** Словарь, в котором есть и необязательные надписи: их подставляет `ChatLabelsProvider`. */
-export type ResolvedChatLabels = Omit<ChatLabels, "widgets" | "diagram" | "demo" | "images" | "videos" | "viewer" | "voice" | "helpers" | "tasks" | "notices" | "messengerStatus" | "workView" | "composerSettings"> &
+export type ResolvedChatLabels = Omit<ChatLabels, "widgets" | "diagram" | "demo" | "images" | "videos" | "viewer" | "voice" | "helpers" | "tasks" | "notices" | "messengerStatus" | "workView" | "composerSettings" | "welcome"> &
   Required<
     Pick<
       ChatLabels,
       "externalImageLink" | "answerCutByLength" | "answerEdited" | "answerUndelivered" | "toolOutputEdited" | "editAnswer" | "steeringPending" | "thinkingPhrases" | "thinkingElapsed" | "spendingMessagesLeft" | "spendingMessagesExhausted" | "editMessageLimit"
     >
   > & {
+    welcome: { title: string; description: string };
     composerSettings: ComposerSettingsLabels;
     widgets: WidgetLabels;
     diagram: DiagramLabels;
@@ -684,6 +687,7 @@ export const englishWorkLabels: Pick<ResolvedChatLabels, "helpers" | "tasks" | "
 
 export const russianLabels: ResolvedChatLabels = {
   locale: "ru",
+  welcome: { title: "С чего начнём?", description: "Задайте вопрос или опишите задачу." },
   helpers: russianHelpers,
   tasks: russianTasks,
   notices: russianNotices,
@@ -1010,6 +1014,7 @@ const englishMergeDate = new Intl.DateTimeFormat("en-US", { day: "numeric", mont
 /** Полный английский словарь чата: `<ChatLabelsProvider labels={englishLabels}>`. Свои поправки — поверх него. */
 export const englishLabels: ResolvedChatLabels = {
   locale: "en",
+  welcome: { title: "Where shall we start?", description: "Ask a question or describe a task." },
   ...englishWorkLabels,
   workView: englishWorkViewLabels,
   composerSettings: { levels: { off: "Off", on: "On", minimal: "Minimal", low: "Low", medium: "Medium", high: "High", max: "Max" }, model: "Model", reasoning: "Reasoning", tools: "Tools", settings: "Response settings", done: "Done", via: "Via", search: "Find model", showReasoning: "Show reasoning", project: "Project", file: "File", image: "Image", textModels: "Text tasks", imageModels: "Text and images", models: "Models", noResults: "No results", price: "USD per million tokens", input: "input", output: "output" },
@@ -1303,6 +1308,7 @@ export function ChatLabelsProvider({ labels, children }: { labels: ChatLabels; c
   const resolved = useMemo(
     () => ({
       ...labels,
+      welcome: { ...(labels.locale?.startsWith("en") ? englishLabels : russianLabels).welcome, ...labels.welcome },
       composerSettings: { ...(labels.locale?.startsWith("en") ? englishLabels : russianLabels).composerSettings, ...labels.composerSettings },
       externalImageLink: labels.externalImageLink ?? russianLabels.externalImageLink,
       answerCutByLength: labels.answerCutByLength ?? russianLabels.answerCutByLength,

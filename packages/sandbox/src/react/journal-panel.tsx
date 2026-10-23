@@ -23,7 +23,7 @@ type Loaded<View> = { state: "loading" } | { state: "failed" } | { state: "ready
  * Журнал открытого чата: обращения к модели и вызовы инструментов хода или всего чата. Записи грузятся при открытии
  * чата и перечитываются после конца каждого хода; подробности строки — по нажатию, один раз.
  */
-export function JournalPanel({
+export function useJournalPanel({
   skin,
   client,
   chatId,
@@ -33,7 +33,7 @@ export function JournalPanel({
 }: {
   skin: SandboxSkin;
   client: SandboxClient;
-  chatId: string;
+  chatId: string | null;
   /** Сообщения текущей ветки. */
   messages: AgentChatMessage[];
   busy: boolean;
@@ -48,6 +48,7 @@ export function JournalPanel({
 
   const reload = useCallback(() => {
     const ticket = ++request.current;
+    if (chatId === null) return;
     client.journal(chatId).then(
       (entries) => ticket === request.current && setLoad({ state: "ready", entries }),
       () => ticket === request.current && setLoad((current) => ({ ...current, state: "failed" })),
@@ -60,6 +61,7 @@ export function JournalPanel({
     setOpenIds(new Set());
     setDetails({});
     reload();
+    return () => { request.current++; };
   }, [reload]);
 
   // Ход закончился: журнал уже записал его обращения и вызовы.
@@ -165,6 +167,7 @@ export function JournalPanel({
   const state = load.state === "ready" && rows.length === 0 ? "empty" : load.state;
   return (
     <skin.JournalList
+      busy={busy}
       state={state}
       rows={rows}
       {...(load.state === "failed" && { onRetry: reload })}

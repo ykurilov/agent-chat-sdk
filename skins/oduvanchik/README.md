@@ -1,6 +1,6 @@
 # Скин Одуванчик
 
-`@ykurilov/agent-chat-skin-oduvanchik` - скин SDK Agent Chat, договор `ChatSkin` v29. Нейтральный фон, системный шрифт, оранжевый акцент, чёрная кнопка отправки (светлая в тёмной теме), сфера работы агента и значки Phosphor.
+`@ykurilov/agent-chat-skin-oduvanchik` - скин SDK Agent Chat, договор `ChatSkin` v30. Нейтральный фон, системный шрифт, оранжевый акцент, чёрная кнопка отправки (светлая в тёмной теме), сфера работы агента и значки Phosphor.
 
 ## Подключение
 
@@ -58,7 +58,7 @@ import { tandemSkin } from "@ykurilov/agent-chat-skin-tandem";
 
 ## Что пока осталось базовым
 
-Сложные виджеты, просмотр медиа, редакторы памяти и диалоговый голосовой режим используют нейтральные примитивы `@tandem/ui` с переменными «Одуванчика». Это не полная замена примитивов на `ds-react`. Отдельные расширения `sandbox`, `flows`, `messengers`, `skills`, `mcp`, `client-card` здесь не экспортируются; для их административных экранов пока остаётся скин Тандема.
+Сложные виджеты, просмотр медиа, редакторы памяти и диалоговый голосовой режим используют нейтральные примитивы `@tandem/ui` с переменными «Одуванчика». Это не полная замена примитивов на `ds-react`. Песочница экспортируется из `/sandbox`. Отдельные расширения `flows`, `messengers`, `skills`, `mcp`, `client-card` здесь не экспортируются; для их административных экранов пока остаётся скин Тандема.
 
 Все значки внутри официального скина, включая копирование кода, уведомления, выбранный голос, стрелки меню и закрытие диалогов, - Phosphor regular. Внутренние `primitives` адаптированы из `@ykurilov/tandem-ui@0.7.0` (MIT, [лицензия](TANDEM_NOTICES.md)): Markdown сохраняет `react-markdown`/`remark-gfm`, меню и диалоги - Radix, клавиатуру, фокус и порталы. Свойств подмены значков в исходных компонентах нет. Адаптеры поддерживаются здесь; сторонний пакет Тандема не изменяется. Транзитивная зависимость `lucide-react` остаётся у `@tandem/ui`, но компоненты Одуванчика её значки не рисуют. Приложение не импортирует эти внутренние компоненты и не подменяет значки CSS-правилами.
 
@@ -69,7 +69,7 @@ import { tandemSkin } from "@ykurilov/agent-chat-skin-tandem";
 
 После выпуска обновить `@ykurilov/agent-chat-*` одной версией и пересобрать приложение с прежними `oduvanchikSkin` и CSS. Дополнительных зависимостей и настроек от приложения не требуется: Markdown и Radix устанавливаются зависимостями скина. Удалить временные переопределения значков в приложении, если они были добавлены. Договор скина и данные не меняются. Проверочная витрина `/oduvanchik-icons.html` показывает реальные компоненты скина с Markdown, уведомлениями, голосовым меню и подтверждением удаления памяти.
 
-Сфера и переменные подключены из опубликованных `@ykurilov/ds-react@^0.1.0` и `@ykurilov/ds-tokens@^0.1.0`. Эти пакеты, Phosphor и CSS входят в зависимости скина; приложение предоставляет React и React DOM 19. Локальных копий сферы/токенов нет.
+Сфера и переменные подключены из опубликованных `@ykurilov/ds-react@^0.2.0` и `@ykurilov/ds-tokens@^0.2.0`. Эти пакеты, Phosphor и CSS входят в зависимости скина; приложение предоставляет React и React DOM 19. Локальных копий сферы/токенов нет.
 
 ## Три вида поля
 
@@ -109,3 +109,28 @@ const composerOptions: ComposerOptions = {
 `apps/demo/skin-gallery/oduvanchik.html` - новый чат, шаги, файл и подтверждение. `/oduvanchik-composers.html` - все три вида поля с каталогом SDK и имитацией ответа. Запуск: `pnpm --filter @ykurilov/agent-chat-demo exec vite --config skin-gallery/vite.config.ts`, адрес `/oduvanchik.html`. Перед локальной витриной собрать `@ykurilov/agent-chat-react`, затем этот скин. Браузерный сценарий трёх полей: `pnpm --filter @ykurilov/agent-chat-demo exec playwright test -c skin-gallery/playwright.config.ts oduvanchik-composers.spec.ts --workers=1`. Прежний сценарий: `pnpm --filter @ykurilov/agent-chat-demo exec playwright test -c skin-gallery/playwright.config.ts oduvanchik.spec.ts --workers=1`.
 
 Снимки сохраняются через `screenshotFolder("agent-chat-oduvanchik-composers")` (прежняя витрина - `agent-chat-skin-oduvanchik`); `E2E_SCREENSHOT_DIR` меняет папку. Публиковать пакет следует вместе с общей группой версий SDK.
+
+## Песочница «Студия» (с 0.74.0)
+
+```tsx
+import { AgentSandbox } from "@ykurilov/agent-chat-skin-oduvanchik/sandbox";
+
+<div style={{ height: "100dvh", minHeight: 0 }}>
+  <AgentSandbox basePath="/api/sandbox"
+    chatProps={{ composerOptions: { variant: "extended" } }} />
+</div>;
+```
+
+Установить `@ykurilov/agent-chat-sandbox` той же версии, что остальные пакеты SDK. Скин берёт его как необязательный peer; обычные `/chat` и корневой экспорт скина не импортируют песочницу. Серверные `createSandboxHandler` и проверка `isAdmin` остаются в приложении, это не общедоступная страница чата. [Настройка сервера](../../docs/sandbox.md).
+
+`AgentSandboxProps` сохраняет свойства исходного экрана. По умолчанию используются `oduvanchikSkin`, `oduvanchikSandboxSkin`, `oduvanchikStudioChatListSkin`; явные `skin`, `sandboxSkin`, `chatListSkin` имеют приоритет. Низкоуровневый `AgentSandbox` из `@ykurilov/agent-chat-sandbox/react` сохраняет три обязательных скина. CSS тот же, что для `/chat`, подключается явно один раз.
+
+Студия использует опубликованные `StudioLayout`, `ScrollArea`, `Sheet` из DS 0.2.0. Высоту задаёт приложение; у flex/grid-предков требуется `min-height: 0`. Не оборачивать чат дополнительной прокруткой. Журнал содержит реальные вызовы `model`/`tool`, время, токены, стоимость и раскрываемые параметры; отсутствие цены или записи не подменяется демонстрационными данными. Во время хода сфера показывает работу, записи перечитываются после завершения. История чатов открывается отдельной панелью, журнал на ширине до 700 px - шторкой с клавиатурным фокусом.
+
+В обычном чате и песочнице приветствие появляется после успешной загрузки пустой истории. Надписи задаются через `ChatLabelsProvider`: `labels={{ ...russianLabels, welcome: { title: "С чего начнём?", description: "Опишите задачу." } }}`. Во время загрузки, ошибки, ответа и подтверждения приветствия нет. Это оформление пустоты, не сохранённая реплика агента.
+
+### Переход на Студию
+
+Обновить SDK одной версией до 0.74.0 и пересобрать CSS. В песочнице заменить импорт экрана на `/sandbox`, убрать явные скины Тандема и использовать CSS Одуванчика. Серверные адреса, админские права, плагины, история и миграции не меняются. Прежний явный Тандем сохраняется с его CSS; остальные админские экраны (`flows`, `messengers`, `skills`, `mcp`, `client-card`) этим выпуском не переводятся.
+
+Витрина: `/oduvanchik-studio.html?state=empty|dialog|working&theme=light|dark`. Сценарий: `pnpm --filter @ykurilov/agent-chat-demo exec playwright test -c skin-gallery/playwright.config.ts oduvanchik-studio.spec.ts --workers=1`. Снимки - `screenshotFolder("agent-chat-oduvanchik-studio")`. Живое демо `/sandbox`, явный Тандем - `/sandbox?skin=tandem`.

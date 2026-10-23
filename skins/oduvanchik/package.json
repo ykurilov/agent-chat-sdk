@@ -1,6 +1,6 @@
 {
   "name": "@ykurilov/agent-chat-skin-oduvanchik",
-  "version": "0.73.0",
+  "version": "0.74.0",
   "license": "MIT",
   "type": "module",
   "sideEffects": [
@@ -27,6 +27,11 @@
       "@ykurilov/agent-chat-source": "./src/chat.tsx",
       "types": "./dist/types/chat.d.ts",
       "import": "./dist/chat.js"
+    },
+    "./sandbox": {
+      "@ykurilov/agent-chat-source": "./src/sandbox/index.tsx",
+      "types": "./dist/types/sandbox/index.d.ts",
+      "import": "./dist/sandbox/index.js"
     }
   },
   "engines": {
@@ -52,8 +57,8 @@
     "mdast-util-gfm": "^3.1.0",
     "micromark-extension-gfm": "^3.0.0",
     "@phosphor-icons/react": "^2.1.10",
-    "@ykurilov/ds-react": "^0.1.0",
-    "@ykurilov/ds-tokens": "^0.1.0",
+    "@ykurilov/ds-react": "^0.2.0",
+    "@ykurilov/ds-tokens": "^0.2.0",
     "@radix-ui/react-dialog": "^1.1.23",
     "@radix-ui/react-dropdown-menu": "^2.1.24",
     "class-variance-authority": "^0.7.1",
@@ -62,7 +67,8 @@
   },
   "peerDependencies": {
     "react": "^19.3.0",
-    "react-dom": "^19.3.0"
+    "react-dom": "^19.3.0",
+    "@ykurilov/agent-chat-sandbox": "workspace:^"
   },
   "devDependencies": {
     "@testing-library/react": "^16.3.3",
@@ -70,7 +76,12 @@
     "@ykurilov/agent-chat-attachments": "workspace:*",
     "@ykurilov/agent-chat-web-tools": "workspace:*",
     "jsdom": "^30.1.1",
-    "react": "^19.3.0"
+    "react": "^19.3.0",
+    "@ykurilov/agent-chat-sandbox": "workspace:*"
   },
-  "peerDependenciesMeta": {}
+  "peerDependenciesMeta": {
+    "@ykurilov/agent-chat-sandbox": {
+      "optional": true
+    }
+  }
 }

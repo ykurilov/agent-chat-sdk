@@ -217,3 +217,13 @@ describe("срок жизни журнала (T040)", () => {
     spy.mockRestore();
   });
 });
+
+it("sandbox history preserves the inner transport's absence-of-background marker", async () => {
+  const setup = setupSandbox();
+  const chatId = await setup.createChat();
+  const response = await setup.call("GET", `/${chatId}`);
+  expect(response.status).toBe(200);
+  const history = await response.json();
+  expect(history.backgroundTasks).toBe(false);
+  expect(history.answerEdits).toEqual({});
+});

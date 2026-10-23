@@ -6,7 +6,7 @@ import type { AnswerEditMark } from "../types";
 import { AnswerEditorHost } from "./answer-editor-host";
 import { ChatReopenControl } from "./chat-reopen";
 import { InstructionHeader } from "./instruction-header";
-import { JournalPanel } from "./journal-panel";
+import { useJournalPanel } from "./journal-panel";
 import { PeopleChatsPanel } from "./people-chats-panel";
 import type { ReadOnlyChatProps } from "./people-chats-panel";
 import { createSandboxClient, DEFAULT_SANDBOX_BASE_PATH } from "./sandbox-client";
@@ -122,9 +122,12 @@ export function AgentSandbox({ basePath = DEFAULT_SANDBOX_BASE_PATH, skin, sandb
     [chatId, client, edits, sandboxSkin],
   );
 
+  // State belongs above the layout: a responsive inspector may remount its renderer.
+  const journal = useJournalPanel({ skin: sandboxSkin, client, chatId, messages: feed.messages, busy: feed.busy, edits });
   const Sections = sandboxSkin.SandboxSections ?? PlainSandboxSections;
   const sandboxView = (
     <sandboxSkin.SandboxLayout
+      busy={feed.busy}
       header={
         chatId !== null && (
           <>
@@ -147,7 +150,7 @@ export function AgentSandbox({ basePath = DEFAULT_SANDBOX_BASE_PATH, skin, sandb
         />
       }
       journal={
-        chatId !== null && <JournalPanel skin={sandboxSkin} client={client} chatId={chatId} messages={feed.messages} busy={feed.busy} edits={edits} />
+        chatId !== null && journal
       }
       journalOpen={journalOpen}
       onJournalOpenChange={setJournalOpen}

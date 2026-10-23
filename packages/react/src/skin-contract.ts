@@ -354,7 +354,7 @@ export interface StaffMessageView {
 }
 
 /**
- * Договор скина, версия 29: необязательные Composer.options, AgentMessage.modelDetails и WorkSteps.live.completed.
+ * Договор скина, версия 30: необязательный Layout.empty. Версия 29: необязательные Composer.options, AgentMessage.modelDetails и WorkSteps.live.completed.
  * Скины 28 работают без правок. В версии 28 добавились только необязательные значки шагов и заголовки раздумий:
  * `WorkStepsView.live.icon`, `WorkStepsView.done.items`, `icons`, `moreIcons` и `Reasoning.title`, docs/skin-v28.md;
  * скин версии 27 работает без правок: шаги без значков, раздумья — «Думал N сек».
@@ -410,6 +410,8 @@ export interface StaffMessageView {
  */
 export interface ChatSkin {
   Layout: ComponentType<{
+    /** История успешно загружена, сообщений нет и ход не выполняется. Необязательная подсказка для приветствия. */
+    empty?: boolean;
     feed: ReactNode;
     composer: ReactNode;
     notice?: ReactNode;
