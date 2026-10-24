@@ -26,6 +26,9 @@ export interface HiddenContextBlock {
 /** Что отдаёт источник блоков: показанные блоки и скрытые ради места. */
 export type ContextBlockEntry = ContextBlock | HiddenContextBlock;
 
+/** Когда перечитывать блоки приложения; по умолчанию — каждый новый ход. */
+export type ContextBlocksRefresh = "turn" | "history-start";
+
 export function isHiddenBlock(entry: ContextBlockEntry): entry is HiddenContextBlock {
   return (entry as HiddenContextBlock).hidden === true;
 }
@@ -66,7 +69,8 @@ export interface ContextBlocksInput {
 }
 
 /**
- * Блоки приложения для вопроса хода: зовётся один раз в начале хода. Пустой список, `null` и `undefined` — блоков нет.
+ * Блоки приложения для вопроса хода: по умолчанию один вызов в начале нового хода; `history-start` повторяет
+ * чтение только при отсутствии снимка или смене начала истории. Пустой список, `null` и `undefined` — блоков нет.
  * Бросила, вернула не список или не ответила в срок — блоки приложения берутся из прошлого ответа.
  */
 export type ContextBlocksSource = (
@@ -89,6 +93,8 @@ export interface FrozenContextData {
    * Нет поля — память не читалась (групповой ход, сбой, ответ старой версии).
    */
   memoryFrom?: string;
+  /** Успешный снимок приложения при этом начале истории; только режим `history-start`. */
+  appContextFrom?: string;
   /** Служебные сообщения хода от `prepareTurn`: модель видит их текстом после блоков. В разницу блоков не входят. */
   notices?: AgentNotice[];
 }

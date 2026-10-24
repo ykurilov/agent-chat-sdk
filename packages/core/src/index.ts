@@ -283,7 +283,7 @@ export type { AgentToolsModel, AgentToolsSource } from "./agent-run/run-agent-tu
 export { AgentViewerError } from "./agent-run/agent-viewer";
 export type { AgentViewer, AgentViewerInput, AgentViewerSource } from "./agent-run/agent-viewer";
 export type { StepContext, StepContextInput } from "./agent-run/step-context";
-export type { ContextBlock, ContextBlockEntry, ContextBlocksInput, ContextBlocksSource, HiddenContextBlock } from "./frozen-context/context-blocks";
+export type { ContextBlock, ContextBlockEntry, ContextBlocksInput, ContextBlocksRefresh, ContextBlocksSource, HiddenContextBlock } from "./frozen-context/context-blocks";
 export { FROZEN_CONTEXT_PART_TYPE } from "./frozen-context/context-blocks";
 export { END_TURN_PART_TYPE } from "./agent-run/end-turn";
 export type { ProviderFallbackSetting } from "./agent-run/next-attempt";

@@ -40,7 +40,8 @@ export async function resumeNoteForTurn(
   if (!seen) return undefined;
   const place = input.samePlace ? (seen.blocks.find((block) => block.key === SCREEN_PLACE_KEY)?.text ?? null) : screenPlaceBlock(input.place);
   const note = await freezeTurnContext(input, turn, { id: turn.answer.id, data: seen }, place);
-  return hasNewBlocks(note) ? note : undefined;
+  // Смена/снятие отметки должна пережить resume даже при тех же текстах: пустая заметка не меняет prompt.
+  return hasNewBlocks(note) || note.appContextFrom !== seen.appContextFrom ? note : undefined;
 }
 
 /** Блоки хода против базы: дата, место, память и блоки приложения на сейчас. */
@@ -81,11 +82,13 @@ async function freezeTurnContext(
       },
     });
   }
+  const historyStart = turn.history[0]?.id ?? input.messageId;
   return freezeContext({
     chatId: input.chatId,
     sources,
     // Начало видимой истории: то же — память из базы; после сжатия другое — память заново. Агент говорит первым — сам ответ.
-    memoryFrom: turn.history[0]?.id ?? input.messageId,
+    memoryFrom: historyStart,
+    ...(input.contextBlocksRefresh === "history-start" && { appContextFrom: historyStart }),
     base,
     signal: input.abortSignal,
     ...(input.logError && { logError: input.logError }),

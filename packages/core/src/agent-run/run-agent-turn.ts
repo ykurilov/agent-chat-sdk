@@ -108,7 +108,7 @@ import type { AppStateRecord } from "../app-state/app-state";
 import { CLOSED_STATE_KEY, publicStateChunk } from "../app-state/state-messages";
 import type { HiddenStateKey } from "../app-state/state-messages";
 import { FROZEN_CONTEXT_PART_TYPE, latestFrozenContextOf } from "../frozen-context/context-blocks";
-import type { ContextBlocksSource, FrozenContextData } from "../frozen-context/context-blocks";
+import type { ContextBlocksRefresh, ContextBlocksSource, FrozenContextData } from "../frozen-context/context-blocks";
 import { frozenContextForTurn, resumeNoteForTurn } from "../frozen-context/turn-context";
 import { AgentViewerError, resolveAgentViewer, viewerInput } from "./agent-viewer";
 import type { AgentViewer, AgentViewerSource } from "./agent-viewer";
@@ -284,6 +284,7 @@ export interface AgentTurnInput {
   viewer?: AgentViewerSource;
   /** Блоки приложения для вопроса хода: один опрос в начале хода, дальше застывают в ответе (`agent.contextBlocks`). */
   contextBlocks?: ContextBlocksSource;
+  contextBlocksRefresh?: ContextBlocksRefresh;
   /** Срок ответа `contextBlocks`, мс, уже проверенный; `Infinity` — без срока. Нет — 5 с. */
   contextBlocksTimeoutMs?: number;
   /**
@@ -671,7 +672,15 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
       // Продолжение с сообщениями подготовки: они — заметкой продолжения, даже если блоки не менялись.
       if (resume && turnNotices && !frozen.fresh) {
         const seen = latestFrozenContextOf(resume.message.parts);
-        if (seen) resumeNote = { ...(resumeNote ?? { blocks: seen.blocks, sent: { changed: [], removed: [] }, base: messageId }), notices: turnNotices };
+        if (seen) {
+          resumeNote = {
+            ...(resumeNote ?? {
+              blocks: seen.blocks, sent: { changed: [], removed: [] }, base: messageId,
+              ...(input.contextBlocksRefresh === "history-start" && seen.appContextFrom !== undefined && { appContextFrom: seen.appContextFrom }),
+            }),
+            notices: turnNotices,
+          };
+        }
       }
       const outages = input.providerOutages ?? createProviderOutages({ now: () => (input.now ?? (() => new Date()))().getTime(), logError });
       // Запасные на паузе (кончились деньги, не принят ключ) пропускаются: ответить они всё равно не могут.
@@ -1512,6 +1521,7 @@ async function openAttempt(
     stepContext,
     stepContextTimeoutMs,
     contextBlocks: _contextBlocks,
+    contextBlocksRefresh: _contextBlocksRefresh,
     contextBlocksTimeoutMs: _contextBlocksTimeoutMs,
     ...requestInput
   } = input;

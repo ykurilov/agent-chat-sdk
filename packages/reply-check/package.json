@@ -1,6 +1,6 @@
 {
   "name": "@ykurilov/agent-chat-reply-check",
-  "version": "0.79.1",
+  "version": "0.80.0",
   "license": "MIT",
   "description": "Проверки ответа агента для replyChecks службы чата: чужие слова и выдуманные ссылки.",
   "type": "module",

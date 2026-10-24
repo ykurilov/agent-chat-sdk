@@ -20,7 +20,7 @@ import type { AgentToolsModel, AgentToolsSource } from "./agent-run/run-agent-tu
 import { DEFAULT_STEP_CONTEXT_TIMEOUT_MS } from "./agent-run/step-context";
 import type { StepContext } from "./agent-run/step-context";
 import { DEFAULT_CONTEXT_BLOCKS_TIMEOUT_MS } from "./frozen-context/app-blocks";
-import type { ContextBlocksSource } from "./frozen-context/context-blocks";
+import type { ContextBlocksRefresh, ContextBlocksSource } from "./frozen-context/context-blocks";
 import { channelPart, isHumanMessage, turnChannelOf } from "./agent-run/channel-notes";
 import { createChatEvents } from "./chat-events/chat-events";
 import { chatHasExternalContent } from "./external-content/external-content";
@@ -366,6 +366,8 @@ export interface AgentSettings {
    * `private: true` — блок не показывается в групповом ходе. Не задано — запрос побайтно прежний.
    */
   contextBlocks?: ContextBlocksSource;
+  /** Снимок до смены начала истории, как у памяти; по умолчанию `turn` — прежнее чтение каждого хода. */
+  contextBlocksRefresh?: ContextBlocksRefresh;
   /**
    * Права человека из базы приложения (админ ли, тариф): зовётся один раз в начале хода, до `contextBlocks` и сборки
    * инструментов; повторная попытка и запасной провайдер не зовут снова. Итог — полем `viewer` в `contextBlocks` и в
@@ -1421,6 +1423,9 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     prepareTurn,
     ...agentSettings
   } = options.agent;
+  if (agentSettings.contextBlocksRefresh !== undefined && agentSettings.contextBlocksRefresh !== "turn" && agentSettings.contextBlocksRefresh !== "history-start") {
+    throw new TypeError('agent.contextBlocksRefresh: ждём "turn" или "history-start"');
+  }
   const stepContextTimeoutMs = resolveTimeoutMs(stepContextTimeoutSetting, DEFAULT_STEP_CONTEXT_TIMEOUT_MS, "agent.stepContextTimeoutMs");
   const contextBlocksTimeoutMs = resolveTimeoutMs(contextBlocksTimeoutSetting, DEFAULT_CONTEXT_BLOCKS_TIMEOUT_MS, "agent.contextBlocksTimeoutMs");
   const turnLimits = resolveTurnLimits({ turnTimeoutMs, maxOutputTokens }, options.catalog);

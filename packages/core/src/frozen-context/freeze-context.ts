@@ -29,31 +29,37 @@ export async function freezeContext(input: {
    * чате память не перечитывается и не досылается. Нет — память читается каждый ход.
    */
   memoryFrom?: string;
+  /** Тот же триггер для приложения в opt-in режиме; нет — прежнее чтение каждого хода. */
+  appContextFrom?: string;
   base: { id: string; data: FrozenContextData } | null;
   logError?: (message: string) => void;
   /** «Стоп»: источник, прерванный им, не считается сбоем — блоки из базы, строки в журнале нет. */
   signal?: AbortSignal;
 }): Promise<FrozenContextData> {
-  const { chatId, sources, base, signal, memoryFrom } = input;
+  const { chatId, sources, base, signal, memoryFrom, appContextFrom } = input;
   const log = input.logError ?? console.error;
   const fromBase = (source: SourceName) => base?.data.blocks.filter((block) => sourceOf(block.key) === source) ?? [];
-  // `fresh` — блоки из источника, а не из базы.
-  const read = async (source: SourceName, fetch: (() => Promise<readonly ContextBlockEntry[] | null | undefined>) | undefined): Promise<{ blocks: readonly ContextBlockEntry[]; fresh: boolean }> => {
-    if (!fetch) return { blocks: fromBase(source), fresh: false };
+  // Один механизм снимка для памяти и приложения: ошибка не подтверждает новое начало.
+  const read = async (source: SourceName, fetch: (() => Promise<readonly ContextBlockEntry[] | null | undefined>) | undefined, from?: string): Promise<{ blocks: readonly ContextBlockEntry[]; from?: string }> => {
+    const previous = source === "memory" ? base?.data.memoryFrom : base?.data.appContextFrom;
+    const kept = from !== undefined && previous === from;
+    if (kept || !fetch) return { blocks: fromBase(source), ...(kept && { from }) };
     try {
       const blocks = await fetch();
       if (blocks !== null && blocks !== undefined && !Array.isArray(blocks)) throw new TypeError(`ждём список блоков, а пришло ${typeof blocks}`);
-      return { blocks: blocks ?? [], fresh: true };
+      return { blocks: blocks ?? [], ...(from !== undefined && { from }) };
     } catch (error) {
       if (!signal?.aborted) log(`[блоки контекста] чат=${chatId} источник=${source} сбой: ${error instanceof Error ? error.message : "неизвестная ошибка"}; блоки из прошлого хода`);
-      return { blocks: fromBase(source), fresh: false };
+      return { blocks: fromBase(source) };
     }
   };
-  const memoryKept = memoryFrom !== undefined && base?.data.memoryFrom === memoryFrom;
-  const [memoryRead, appRead] = await Promise.all([read("memory", memoryKept ? undefined : sources.memory), read("app", sources.app)]);
+  const [memoryRead, appRead] = await Promise.all([read("memory", sources.memory, memoryFrom), read("app", sources.app, appContextFrom)]);
   const memory = memoryRead.blocks;
   const app = appRead.blocks;
-  const memoryMark = memoryFrom !== undefined && (memoryKept || memoryRead.fresh) ? { memoryFrom } : {};
+  const marks = {
+    ...(memoryRead.from !== undefined && { memoryFrom: memoryRead.from }),
+    ...(appRead.from !== undefined && { appContextFrom: appRead.from }),
+  };
   const accepted = new Set<string>();
   const hidden = new Set<string>();
   // Скрытый ради места — только помечается: в набор не входит, против базы это не «удалён».
@@ -89,7 +95,7 @@ export async function freezeContext(input: {
   accepted.add(SCREEN_PLACE_KEY);
   blocks.push(...app.filter((block) => accept(block, "app")).map(copyBlock));
   if (sources.place) blocks.push({ key: SCREEN_PLACE_KEY, text: sources.place });
-  if (!base) return { blocks, sent: "all", base: null, ...memoryMark };
+  if (!base) return { blocks, sent: "all", base: null, ...marks };
   const before = new Map(base.data.blocks.map((block) => [block.key, block.text]));
   const keys = new Set(blocks.map((block) => block.key));
   const gone = base.data.blocks.filter((block) => !keys.has(block.key)).map((block) => block.key);
@@ -102,7 +108,7 @@ export async function freezeContext(input: {
       ...(hiddenNow.length > 0 && { hidden: hiddenNow }),
     },
     base: base.id,
-    ...memoryMark,
+    ...marks,
   };
 }
 
