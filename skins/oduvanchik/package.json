@@ -1,6 +1,6 @@
 {
   "name": "@ykurilov/agent-chat-skin-oduvanchik",
-  "version": "0.77.0",
+  "version": "0.78.0",
   "license": "MIT",
   "type": "module",
   "sideEffects": [
@@ -32,6 +32,15 @@
       "@ykurilov/agent-chat-source": "./src/sandbox/index.tsx",
       "types": "./dist/types/sandbox/index.d.ts",
       "import": "./dist/sandbox/index.js"
+    },
+    "./flows": {
+      "@ykurilov/agent-chat-source": "./src/flows/index.ts",
+      "types": "./dist/types/flows/index.d.ts",
+      "import": "./dist/flows/index.js"
+    },
+    "./flows/styles.css": {
+      "@ykurilov/agent-chat-source": "./src/flows/styles.css",
+      "default": "./dist/flows/styles.css"
     }
   },
   "engines": {
@@ -47,7 +56,7 @@
     "directory": "skins/oduvanchik"
   },
   "scripts": {
-    "build": "node ../../scripts/build-package.mjs && cp src/styles.css dist/",
+    "build": "node ../../scripts/build-package.mjs && cp src/styles.css dist/ && cp src/flows/styles.css dist/flows/",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
@@ -68,7 +77,8 @@
   "peerDependencies": {
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "@ykurilov/agent-chat-sandbox": "workspace:^"
+    "@ykurilov/agent-chat-sandbox": "workspace:^",
+    "@ykurilov/agent-chat-flows": "workspace:^"
   },
   "devDependencies": {
     "@testing-library/react": "^16.3.3",
@@ -78,10 +88,14 @@
     "jsdom": "^30.1.1",
     "react": "^19.3.0",
     "@ykurilov/agent-chat-sandbox": "workspace:*",
-    "@ykurilov/agent-chat-skin-tandem": "workspace:*"
+    "@ykurilov/agent-chat-skin-tandem": "workspace:*",
+    "@ykurilov/agent-chat-flows": "workspace:*"
   },
   "peerDependenciesMeta": {
     "@ykurilov/agent-chat-sandbox": {
+      "optional": true
+    },
+    "@ykurilov/agent-chat-flows": {
       "optional": true
     }
   }

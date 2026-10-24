@@ -1,0 +1,6 @@
+@import "tailwindcss";
+/* The order is the same as in the documented consumer integration. */
+@import "@ykurilov/agent-chat-skin-oduvanchik/styles.css";
+@import "@ykurilov/agent-chat-skin-oduvanchik/flows/styles.css";
+@source "../../../skins/oduvanchik/src";
+html, body, #root { height: 100%; margin: 0; }

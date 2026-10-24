@@ -992,6 +992,9 @@ importers:
       '@ykurilov/agent-chat-attachments':
         specifier: workspace:*
         version: link:../../packages/attachments
+      '@ykurilov/agent-chat-flows':
+        specifier: workspace:*
+        version: link:../../packages/flows
       '@ykurilov/agent-chat-sandbox':
         specifier: workspace:*
         version: link:../../packages/sandbox

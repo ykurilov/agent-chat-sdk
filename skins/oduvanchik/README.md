@@ -50,6 +50,45 @@ import { tandemSkin } from "@ykurilov/agent-chat-skin-tandem";
 
 Для нового чата экспортируется `OduvanchikWelcome` с большой сферой: приложение передаёт `title`, `description`, `suggestions: [{ label, category? }]` и `onPick`. Это дополнительная композиция, SDK не вставляет её автоматически в пустую ленту. Сфера отдельно - `OduvanchikSphere`.
 
+## Редактор сценария
+
+С 0.78.0 вход `@ykurilov/agent-chat-skin-oduvanchik/flows` экспортирует `oduvanchikFlowEditorSkin` и тип `OduvanchikFlowEditorSkin`. Это полный договор `FlowEditorSkin` v1, включая все дополнительные части. Подключите `@ykurilov/agent-chat-flows` той же версии SDK: это optional peer, который не требуется обычному `/chat` или корневому скину.
+
+```tsx
+"use client";
+import { FlowTestChat, FlowLabelsProvider, russianFlowLabels } from "@ykurilov/agent-chat-flows/react";
+import type { FlowTestChatProps } from "@ykurilov/agent-chat-flows/react";
+import { oduvanchikFlowEditorSkin } from "@ykurilov/agent-chat-skin-oduvanchik/flows";
+import { AgentChat } from "@ykurilov/agent-chat-skin-oduvanchik/chat";
+
+export function ScenarioEditor(props: Omit<FlowTestChatProps, "skin">) {
+  return <FlowLabelsProvider labels={russianFlowLabels}>
+    <FlowTestChat {...props} skin={oduvanchikFlowEditorSkin}
+      header="compact" inspector="collapsible" minimap="collapsed" fullscreen
+      testChat={{ ...props.testChat,
+        renderChat: (chatId, { noticeLines }) =>
+          <AgentChat api="/api/chat" chatId={chatId} noticeLines={noticeLines} />,
+      }} />
+  </FlowLabelsProvider>;
+}
+```
+
+Приложение передаёт прежние `value`, `savedValue`, `onChange`, `onSave`, `catalog`, `checks`, `testChat` и `advanceSteps`; высота задаётся контейнером. `readOnly={locked}` оставляет просмотр и тестовый чат, блокируя правки. `FlowEditor` без тестового чата принимает тот же скин. В Next App Router импортируйте UI из клиентского модуля с `"use client"`; не передавайте объект скина из Server Component. Node SSR и разрешение типов этого входа проверяются отдельно от Next SSR; одна успешная сборка Next не доказывает рендер всех вкладок.
+
+CSS страницы с редактором **и** чатом (Tailwind CSS 4):
+
+```css
+@import "tailwindcss";
+@import "@ykurilov/agent-chat-skin-oduvanchik/styles.css";
+@import "@ykurilov/agent-chat-skin-oduvanchik/flows/styles.css";
+@source "../node_modules/@ykurilov/agent-chat-skin-oduvanchik/dist";
+@source "../node_modules/@tandem/ui/dist";
+```
+
+Базовый `/styles.css` подключает DS один раз, `/flows/styles.css` добавляет оформление редактора. Этот же порядок используется на странице только с редактором. Не добавляйте отдельно токены, DS CSS или палитру Тандема. Компоненты редактора используют DS напрямую, без примитивов Тандема. Его оформление ограничено `.oduvanchik-flow`, не переписывает `--surface`, `--action` и другие переменные Тандема. Явный Тандем сохраняет прежние скин и CSS.
+
+При переходе с Тандема меняются импорт и значение `skin`; формат JSON, runtime, guard подтверждений, адреса сервера и сохранённые настройки доски прежние. Общие переходы редактируются в отдельном разделе, без глобального узла на холсте. Пример с настоящим тестовым чатом и моделью-заглушкой: `apps/demo/skin-gallery/oduvanchik-flows.tsx`.
+
 ## Что оформлено
 
 Лента и ответ без пузыря; сообщение человека на серой поверхности; действия под ответом; карточка шагов v28 со значками, раскрытием и неизвестным видом шага; раздумья с заголовком; карточка подтверждения с полосой акцента; поле ввода с чёрной отправкой, остановкой, файлами, вставкой/перетаскиванием и выбором модели. Поле сохраняет черновик при появлении меню, вложений и голоса. Enter отправляет, Shift+Enter переносит строку; Enter при IME-композиции не отправляет.
@@ -58,7 +97,7 @@ import { tandemSkin } from "@ykurilov/agent-chat-skin-tandem";
 
 ## Что пока осталось базовым
 
-Сложные виджеты, просмотр медиа, редакторы памяти и диалоговый голосовой режим используют нейтральные примитивы `@tandem/ui` с переменными «Одуванчика». Это не полная замена примитивов на `ds-react`. Песочница экспортируется из `/sandbox`. Отдельные расширения `flows`, `messengers`, `skills`, `mcp`, `client-card` здесь не экспортируются; для их административных экранов пока остаётся скин Тандема.
+Сложные виджеты, просмотр медиа, редакторы памяти и диалоговый голосовой режим используют нейтральные примитивы `@tandem/ui` с переменными «Одуванчика». Это не полная замена примитивов на `ds-react`. Песочница экспортируется из `/sandbox`. Отдельные расширения `messengers`, `skills`, `mcp`, `client-card` здесь не экспортируются; для их административных экранов пока остаётся скин Тандема.
 
 Все значки внутри официального скина, включая копирование кода, уведомления, выбранный голос, стрелки меню и закрытие диалогов, - Phosphor regular. Внутренние `primitives` адаптированы из `@ykurilov/tandem-ui@0.7.0` (MIT, [лицензия](TANDEM_NOTICES.md)): Markdown сохраняет `react-markdown`/`remark-gfm`, меню и диалоги - Radix, клавиатуру, фокус и порталы. Свойств подмены значков в исходных компонентах нет. Адаптеры поддерживаются здесь; сторонний пакет Тандема не изменяется. Транзитивная зависимость `lucide-react` остаётся у `@tandem/ui`, но компоненты Одуванчика её значки не рисуют. Приложение не импортирует эти внутренние компоненты и не подменяет значки CSS-правилами.
 
@@ -69,7 +108,7 @@ import { tandemSkin } from "@ykurilov/agent-chat-skin-tandem";
 
 После выпуска обновить `@ykurilov/agent-chat-*` одной версией и пересобрать приложение с прежними `oduvanchikSkin` и CSS. Дополнительных зависимостей и настроек от приложения не требуется: Markdown и Radix устанавливаются зависимостями скина. Удалить временные переопределения значков в приложении, если они были добавлены. Договор скина и данные не меняются. Проверочная витрина `/oduvanchik-icons.html` показывает реальные компоненты скина с Markdown, уведомлениями, голосовым меню и подтверждением удаления памяти.
 
-Сфера и переменные подключены из опубликованных `@ykurilov/ds-react@^0.2.0` и `@ykurilov/ds-tokens@^0.2.0`. Эти пакеты, Phosphor и CSS входят в зависимости скина; приложение предоставляет React и React DOM 19. Локальных копий сферы/токенов нет.
+Сфера и переменные подключены из опубликованных `@ykurilov/ds-react@^0.3.0` и `@ykurilov/ds-tokens@^0.2.0`. Эти пакеты, Phosphor и CSS входят в зависимости скина; приложение предоставляет React и React DOM 19. Локальных копий сферы/токенов нет.
 
 ## Три вида поля
 

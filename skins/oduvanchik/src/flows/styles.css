@@ -1,0 +1,26 @@
+/* Editor additions: load the base Oduvanchik stylesheet first; it owns the DS imports. */
+@source ".";
+
+.oduvanchik-flow {
+  font-family: var(--yk-font-sans);
+  color: var(--yk-text);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.oduvanchik-flow *, .oduvanchik-flow *::before, .oduvanchik-flow *::after { box-sizing: border-box; }
+.oduvanchik-flow summary:focus-visible, .oduvanchik-flow [role="button"]:not(button):focus-visible { outline: 2px solid var(--yk-accent); outline-offset: 2px; }
+.oduvanchik-flow svg { flex-shrink: 0; }
+.oduvanchik-flow .yk-input { width: 100%; min-width: 0; }
+.oduvanchik-flow [aria-pressed="true"].yk-button { border-color: var(--yk-accent); color: var(--yk-accent-text); }
+.oduvanchik-flow .oduvanchik-flow-danger { color: var(--yk-danger); }
+.oduvanchik-flow .yk-button.h-auto { height: auto; white-space: normal; padding: var(--yk-space-3); line-height: 1.5; }
+.oduvanchik-flow-exit-toolbar { display: flex; flex-direction: column; gap: var(--yk-space-2); }
+.oduvanchik-flow-condition-type { align-self: flex-start; max-width: 100%; }
+/* The headless editor's fullscreen stacking context is 2000. Only our own DS portal goes above it. */
+.yk-overlay:has(.oduvanchik-flow-dialog) { z-index: 2100; }
+@media (max-width: 860px) { .oduvanchik-flow .oduvanchik-flow-wide { display: none; } }
+.oduvanchik-flow-scroll { scrollbar-gutter: stable; padding-inline-end: var(--yk-studio-scrollbar-gap); }
+.oduvanchik-flow-dialog { display: flex; flex-direction: column; gap: var(--yk-space-4); min-width: 0; }
+.oduvanchik-flow-dialog textarea { min-height: 240px; }
+.oduvanchik-flow .font-mono { font-family: var(--yk-font-mono); }
+@media (prefers-reduced-motion: reduce) { .oduvanchik-flow * { transition-duration: 0s; } }

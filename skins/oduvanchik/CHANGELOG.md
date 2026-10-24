@@ -6,6 +6,22 @@
 - Обновление приложения: обновить пакеты SDK одной версией после выпуска, пересобрать и убрать временные подмены значков. API и CSS-импорты прежние, миграций нет.
 
 
+## 0.78.0
+
+### Minor Changes
+
+- 8edae2e: Добавлен официальный скин редактора сценариев Одуванчик: `/flows` с `oduvanchikFlowEditorSkin` и отдельный `/flows/styles.css`. Полный договор FlowEditorSkin v1, включая общие переходы, дни, условия, проверку, JSON, перенос версий и рамку тестового чата. Элементы управления из опубликованного ds-react, значки Phosphor. Явный Тандем сохраняется.
+  
+  ### Как обновить приложение
+  
+  Обновите используемые пакеты SDK одной версией. В клиентском модуле редактора замените импорт `tandemFlowEditorSkin` из `@ykurilov/agent-chat-skin-tandem/flows` на `oduvanchikFlowEditorSkin` из `@ykurilov/agent-chat-skin-oduvanchik/flows` и значение `skin`. `FlowEditor`/`FlowTestChat` остаются из `@ykurilov/agent-chat-flows/react`, метки и все свойства прежние. Для чата внутри `testChat.renderChat` используйте `AgentChat` из `/chat` скина Одуванчика. Подключите `/flows/styles.css` после базового `/styles.css` скина, в том числе на странице только с редактором; сохраните Tailwind `@source` на dist скина. Приложению с редактором нужен пакет flows (optional peer); обычному `/chat` он не нужен. Проверьте общие переходы, сохранение, readOnly, тестовый чат и обе темы. JSON, runtime, судья и подтверждения не меняются; миграций данных нет.
+
+### Patch Changes
+
+- @ykurilov/agent-chat-flows@0.78.0
+  - @ykurilov/agent-chat-react@0.78.0
+  - @ykurilov/agent-chat-sandbox@0.78.0
+
 ## 0.77.0
 
 ### Patch Changes

@@ -1,5 +1,12 @@
 # @ykurilov/agent-chat-flows
 
+## 0.78.0
+
+### Patch Changes
+
+- @ykurilov/agent-chat-core@0.78.0
+  - @ykurilov/agent-chat-react@0.78.0
+
 ## 0.77.0
 
 ### Minor Changes
@@ -10,7 +17,7 @@
   
   `previewMigration` и опция `requiresConfirmation` у `migrateChats` оставляют разговоры без подходящей квитанции на прежней версии. Старый путь или поле карточки не считаются доказательством. Увеличения контекста судьи, автоматической проверки владения доменом и изменений JSON редактора нет.
   
-  Подключение, отмена, миграция и ограничения: [docs/flow-confirmations.md](../../docs/flow-confirmations.md). Без новых опций поведение прежнее; SQL-миграций нет. Приложение обрабатывает `busy`/`stale` при отмене и само определяет доверенный маршрут исправления атрибуции.
+  Подключение, отмена, миграция и ограничения: [docs/flow-confirmations.md](https://github.com/ykurilov/agent-chat-sdk/blob/main/docs/flow-confirmations.md). Без новых опций поведение прежнее; SQL-миграций нет. Приложение обрабатывает `busy`/`stale` при отмене и само определяет доверенный маршрут исправления атрибуции.
 
 ### Patch Changes
 

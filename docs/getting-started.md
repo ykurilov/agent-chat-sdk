@@ -2028,3 +2028,7 @@ pnpm update "@ykurilov/agent-chat-*" --latest
 ### Шапка и итог приложения
 
 Стандартный `AgentChat` из `@ykurilov/agent-chat-skin-oduvanchik/chat` принимает необязательные `header={{ title, aside }}` и `completion={ReactNode}`. Для aside используйте `ChatProgress`, для итога — `CompletionCard` из `@ykurilov/ds-react`. Слова и бизнес-состояние задаёт приложение. Пока отображается итог, поле скрыто с сохранением черновика; снятие итога возвращает ввод, выполняющийся ответ всегда оставляет «Стоп». Итог не закрывает серверный чат и не создаёт автоматических ответов. Подключение и пример — [README скина](../skins/oduvanchik/README.md#шапка-ход-работы-и-итог-приложения); для своего скина — [договор 31](skin-v31.md). DS-компоненты используют единственный CSS-импорт скина.
+
+### Редактор сценария в Одуванчике
+
+Для `FlowEditor` и `FlowTestChat` используйте `oduvanchikFlowEditorSkin` из `@ykurilov/agent-chat-skin-oduvanchik/flows` и `/flows/styles.css` (с 0.78). Приложению с редактором требуется optional peer `@ykurilov/agent-chat-flows`; обычному `/chat` он не нужен. [Подключение, вложенный чат и CSS](../skins/oduvanchik/README.md#редактор-сценария).

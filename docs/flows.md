@@ -196,6 +196,8 @@ const decision = await flow.admit({ ownerId, chatId, text });
 
 ## Подключение: редактор
 
+Официальный Одуванчик с 0.78: `oduvanchikFlowEditorSkin` из `@ykurilov/agent-chat-skin-oduvanchik/flows`. Он реализует весь договор редактора и рамку `FlowTestChat`; отдельный CSS `/flows/styles.css` и пример вложенного чата из OD `/chat` описаны в [README скина](../skins/oduvanchik/README.md#редактор-сценария). Движок, JSON, общие переходы в настройках и серверные подтверждения прежние. Пример ниже сохраняет явный Тандем.
+
 Редактор — управляемый компонент: сценарий хранит и сохраняет ваше приложение.
 
 ```tsx
