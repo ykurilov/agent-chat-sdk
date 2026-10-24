@@ -9,8 +9,10 @@ import { createInMemoryChatStorage } from "../../../src/storage/in-memory-storag
 import type { ModelPrice } from "../../../src/models/model-catalog";
 import type { ChatStorage } from "../../../src/storage/chat-storage";
 import { generateResult, mockCatalog, mockEnv, mockModelId } from "../support/mock-model";
-import { conversation } from "../support/compaction-fixtures";
+import { compactionRecord, conversation, timeAt } from "../support/compaction-fixtures";
 import { newStoredMessage } from "../../../src/conversation/types";
+import { channelPart } from "../../../src/agent-run/channel-notes";
+import { FROZEN_CONTEXT_PART_TYPE } from "../../../src/frozen-context/context-blocks";
 
 const choice = { modelId: mockModelId, providerId: "mock" };
 const settingsInput: CompactionSettings = { thresholdTokens: 500, tailTokens: 100, summaryCeilingTokens: 100 };
@@ -46,6 +48,7 @@ function heldSummarizer() {
 
 async function setup(input: {
   contexts: Array<number | null>;
+  messages?: StoredMessage[];
   model?: MockLanguageModelV4;
   backup?: MockLanguageModelV4;
   settings?: CompactionSettings | false;
@@ -54,7 +57,7 @@ async function setup(input: {
 }) {
   const storage: ChatStorage = createInMemoryChatStorage();
   await storage.createChat({ id: "chat-1", ownerId: "anna", ...choice });
-  for (const message of conversation(input.contexts)) await storage.insertMessage(message);
+  for (const message of input.messages ?? conversation(input.contexts)) await storage.insertMessage(message);
   const model = input.model ?? summarizer();
   const logError = vi.fn();
   const service = createCompactionService({
@@ -76,6 +79,36 @@ async function settled(service: { isCompacting(chatId: string): boolean }): Prom
 }
 
 describe("сжатие после ответа", () => {
+  it("повторный compactNow использует первый успешный app anchor всей ветки, даже если после fallback он за новой границей", async () => {
+    const messages = conversation([100, 300, 600, 700]);
+    for (let n = 1; n <= 4; n++) messages[n * 2 - 1]!.parts.unshift({ type: FROZEN_CONTEXT_PART_TYPE, data: {
+      blocks: [{ key: "profile", text: n === 4 ? "FRESH_ROOT_APP" : "OLD_FALLBACK_APP" }],
+      ...(n === 1 ? { appContextFrom: "u1" } : n === 4 ? { appContextFrom: "u2" } : {}),
+      base: n === 1 ? null : `a${n - 1}`, sent: n === 1 ? "all" : { changed: n === 4 ? ["profile"] : [], removed: [] },
+    } });
+    const { storage, service, model } = await setup({ contexts: [], messages,
+      settings: { thresholdTokens: 1_000_000, tailTokens: 350, summaryCeilingTokens: 100 } });
+    await storage.insertCompaction(compactionRecord({ id: "first", throughMessageId: "a1", createdAt: timeAt(2) }));
+    expect(await service.compactNow("chat-1", choice)).toBe("compacted");
+    const records = await storage.listCompactions("chat-1");
+    expect(records.at(-1)!.throughMessageId).toBe("a2");
+    const prompt = JSON.stringify(model.doGenerateCalls[0]!.prompt);
+    expect(prompt).toContain("FRESH_ROOT_APP"); expect(prompt).not.toContain("OLD_FALLBACK_APP");
+    expect(prompt).not.toContain("вопрос 3"); expect(prompt).not.toContain("ответ 4");
+  });
+
+  it("group/privacy берутся со всей ветки, даже если групповое сообщение осталось за границей сжатия", async () => {
+    const messages = conversation([100, 300, 600]);
+    messages.find(m => m.id === "a1")!.parts.unshift({ type: FROZEN_CONTEXT_PART_TYPE, data: {
+      blocks: [{ key: "profile", text: "PUBLIC_PROFILE" }, { key: "private", text: "PRIVATE_BEFORE_GROUP", private: true }], base: null, sent: "all",
+    } });
+    messages.find(m => m.id === "u3")!.parts.push(channelPart("web", { author: "Anna", allowedTools: [] })!);
+    const { service, model } = await setup({ contexts: [], messages });
+    expect(await service.compactNow("chat-1", choice)).toBe("compacted");
+    const prompt = JSON.stringify(model.doGenerateCalls[0]!.prompt);
+    expect(prompt).toContain("PUBLIC_PROFILE"); expect(prompt).not.toContain("PRIVATE_BEFORE_GROUP");
+  });
+
   it("контекст выше порога — фоном появляется запись с границами, сводкой, размером и расходом", async () => {
     const { storage, service } = await setup({ contexts: [100, 300, 600] });
     await service.afterAnswer({ chatId: "chat-1", answerId: "a3" });

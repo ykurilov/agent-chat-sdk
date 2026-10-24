@@ -18,7 +18,7 @@ describe("история модели с применённой сводкой",
     expect(history.map((message) => message.id)).toEqual(["u3", "a3", "u4", "a4"]);
     const [first] = history;
     expect(first?.role).toBe("user");
-    expect(first?.parts).toEqual([
+    expect(JSON.parse(JSON.stringify(first?.parts))).toEqual([
       { type: "text", text: summaryFrame("## Цель\nдоделать отчёт") },
       { type: "text", text: "вопрос 3" },
     ]);

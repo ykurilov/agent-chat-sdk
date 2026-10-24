@@ -10,6 +10,12 @@ import type { AgentChatMessage } from "../../../src/conversation/types";
 import { extendCatalog } from "../../../src/models/catalog-changes";
 import { standardCatalog } from "../../../src/models/standard-catalog";
 import { generateResult, mockCatalog, mockEnv, mockModelId } from "../support/mock-model";
+import { buildModelRequest } from "../../../src/agent-run/build-model-request";
+import { channelPart } from "../../../src/agent-run/channel-notes";
+import { FROZEN_CONTEXT_PART_TYPE } from "../../../src/frozen-context/context-blocks";
+import { applyCompaction } from "../../../src/compaction/compacted-history";
+import { activeCompaction } from "../../../src/compaction/compaction-plan";
+import { compactionRecord, conversation } from "../support/compaction-fixtures";
 
 const settings = resolveCompactionSettings({ thresholdTokens: 1000, tailTokens: 300, summaryCeilingTokens: 100 })!;
 const history: AgentChatMessage[] = [
@@ -41,6 +47,63 @@ const textOf = (content: unknown): string =>
   typeof content === "string" ? content : (content as Array<{ type: string; text?: string }>).map((part) => part.text ?? "").join("");
 
 describe("выполнение сжатия", () => {
+  it("durable projection исключает core/private blocks и private removed/hidden keys во всех resume notes; transient steps остаются без frozen", async () => {
+    const model = new MockLanguageModelV4({ doGenerate: async () => generateResult("сводка") });
+    const full = { blocks: [{ key: "private_profile", text: "PRIVATE", private: true }, { key: "memory:secret", text: "MEMORY", private: true },
+      { key: "today", text: "TODAY" }, { key: "screen_place", text: "PLACE" }, { key: "profile", text: "PUBLIC" }], base: null, sent: "all" as const };
+    const note = { blocks: [{ key: "profile", text: "PUBLIC_NEXT" }], base: "a1", sent: { changed: ["profile"], removed: ["private_profile", "today", "screen_place"], hidden: ["memory:secret"] } };
+    const messages: AgentChatMessage[] = [history[0]!, { ...history[1]!, parts: [{ type: FROZEN_CONTEXT_PART_TYPE, data: full }, ...history[1]!.parts,
+      { type: FROZEN_CONTEXT_PART_TYPE, data: note }, { type: "text", text: "continued" }] }];
+    await compact(model, { history: messages });
+    const durable = JSON.stringify(model.doGenerateCalls[0]!.prompt);
+    expect(durable).toContain("PUBLIC"); expect(durable).toContain("PUBLIC_NEXT");
+    for (const secret of ["PRIVATE", "MEMORY", "TODAY", "PLACE", "private_profile", "memory:secret", "today", "screen_place"]) expect(durable).not.toContain(secret);
+    await compact(model, { history: messages, task: "Summarize steps", transient: true });
+    const transient = JSON.stringify(model.doGenerateCalls[1]!.prompt);
+    expect(transient).toContain("continued"); expect(transient).not.toContain("PUBLIC"); expect(transient).not.toContain("PRIVATE");
+  });
+
+  it("повторное сжатие сохраняет app prefix у summary, когда anchor остался за новой границей", async () => {
+    const model = new MockLanguageModelV4({ doGenerate: async () => generateResult("сводка") });
+    const branch = conversation([100, 200, 300, 400]);
+    for (let n = 1; n <= 4; n++) branch[n * 2 - 1]!.parts.unshift({ type: FROZEN_CONTEXT_PART_TYPE, data: {
+      blocks: [{ key: "profile", text: n === 4 ? "ROOT_APP" : "STALE_APP" }], appContextFrom: n === 4 ? "u2" : "u1", base: n === 1 ? null : `a${n - 1}`,
+      sent: n === 1 ? "all" : { changed: n === 4 ? ["profile"] : [], removed: [] },
+    } });
+    const active = activeCompaction(branch, [compactionRecord({ id: "first", throughMessageId: "a1" })]);
+    const visible = applyCompaction(branch, active);
+    const prefix = applyCompaction(branch.slice(0, 4), active);
+    const ordinary = await buildModelRequest({ catalog: mockCatalog({ mock: model }), env: mockEnv, chatId: "chat-1",
+      modelId: mockModelId, providerId: "mock", instructions: "Ты помощник.", tools: { lookup }, history: visible, frozenContext: { group: false } });
+    await compact(model, { history: prefix, contextHistory: visible });
+    const prompt = model.doGenerateCalls[0]!.prompt;
+    expect(JSON.stringify(prompt.slice(1, -1))).toBe(JSON.stringify(ordinary.messages.slice(0, 2)));
+    expect(JSON.stringify(prompt)).not.toContain("STALE_APP");
+  });
+
+  it.each([false, true])("запрос сжатия использует общий frozen builder, сохранённые блоки и notices; group=%s", async group => {
+    const model = new MockLanguageModelV4({ doGenerate: async () => generateResult("сводка") });
+    const marker = group ? channelPart("web", { author: "Anna", allowedTools: [] }) : undefined;
+    const messages: AgentChatMessage[] = [
+      { ...history[0]!, parts: [...history[0]!.parts, ...(marker ? [marker] : [])] },
+      { ...history[1]!, parts: [{ type: FROZEN_CONTEXT_PART_TYPE, data: {
+        blocks: [{ key: "profile", text: "APP_SNAPSHOT" }, { key: "secret", text: "PRIVATE_SNAPSHOT", private: true }],
+        base: null, sent: "all", notices: [{ kind: "app", title: "SAVED_NOTICE" }],
+      } }, ...history[1]!.parts] },
+    ];
+    const ordinary = await buildModelRequest({ catalog: mockCatalog({ mock: model }), env: mockEnv, chatId: "chat-1",
+      modelId: mockModelId, providerId: "mock", instructions: "Ты помощник.", tools: { lookup }, history: messages, frozenContext: { group: true } });
+    // generateText сериализует instructions в первое system-сообщение; сравнивается фактический prompt на границе модели.
+    const expected = [{ role: "system", content: "Ты помощник." }, ...ordinary.messages];
+    await compact(model, { history: messages });
+    const prompt = model.doGenerateCalls[0]!.prompt;
+    expect(JSON.stringify(prompt.slice(0, -1))).toBe(JSON.stringify(expected));
+    expect(JSON.stringify(prompt)).toContain("APP_SNAPSHOT");
+    expect(JSON.stringify(prompt)).toContain("SAVED_NOTICE");
+    expect(JSON.stringify(prompt)).not.toContain("PRIVATE_SNAPSHOT");
+    expect(JSON.stringify(prompt)).not.toContain(FROZEN_CONTEXT_PART_TYPE);
+  });
+
   it("вызов выключенного виджета (switchableTools, нет в tools) идёт сводке текстом, а включённого — вызовом", async () => {
     const withCalls: AgentChatMessage[] = [
       history[0]!,

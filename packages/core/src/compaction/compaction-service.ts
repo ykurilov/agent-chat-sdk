@@ -207,7 +207,8 @@ export function createCompactionService(options: CompactionServiceOptions): Comp
       }
       overflow?.onStart();
       model = settings.model ?? model;
-      const history = applyCompaction(branch.slice(0, plan.throughIndex + 1), activeCompaction(branch, compactions));
+      const active = activeCompaction(branch, compactions);
+      const history = applyCompaction(branch.slice(0, plan.throughIndex + 1), active);
       const chat = await storage.getChat(chatId);
       const ownerId = chat?.ownerId ?? "";
       const result = await runCompaction({
@@ -220,6 +221,7 @@ export function createCompactionService(options: CompactionServiceOptions): Comp
           ...(options.switchableTools && { switchableTools: options.switchableTools }),
         ...observation(ownerId, answerId),
         history,
+        contextHistory: applyCompaction(branch, active),
         ...(options.attachments && { attachments: options.attachments }),
         ...(options.serviceBlocks && { serviceBlocks: options.serviceBlocks }),
         settings,
@@ -395,6 +397,7 @@ export function createCompactionService(options: CompactionServiceOptions): Comp
           ...(options.switchableTools && { switchableTools: options.switchableTools }),
           ...observation(ownerId, answerId),
           history: [...history, { id: `${chatId}-answer-steps`, role: "assistant", parts: steps }],
+          transient: true,
           ...(options.attachments && { attachments: options.attachments }),
         ...(options.serviceBlocks && { serviceBlocks: options.serviceBlocks }),
           settings,

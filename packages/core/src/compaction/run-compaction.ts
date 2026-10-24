@@ -12,6 +12,7 @@ import type { ModelCatalog } from "../models/model-catalog";
 import { classifyProviderError } from "../provider-errors/classify-provider-error";
 import type { ResolvedCompactionSettings } from "./compaction-settings";
 import { compactionTask, shrinkRequest } from "./compaction-task";
+import { isReservedKey } from "../frozen-context/context-blocks";
 
 /** Сколько раз можно просить ужать сводку, вылезшую за потолок. */
 const MAX_SHRINK_ATTEMPTS = 2;
@@ -50,6 +51,10 @@ export interface CompactionRunInput {
   switchableTools?: ReadonlySet<string>;
   /** Что сжимаем: история до границы включительно (со сводкой прежней записи, если она есть). */
   history: readonly AgentChatMessage[];
+  /** Полная эффективная ветка: только для выбора app anchor, сообщения за границей в пересказ не идут. */
+  contextHistory?: readonly AgentChatMessage[];
+  /** Только пересказ шагов внутри текущего ответа: не сохраняется как общая сводка чата. */
+  transient?: true;
   /** Вложения проходят тот же путь, что в обычном ходе: сводка видит текст файлов. */
   attachments?: MessageAttachments;
   /** Служебные форматы хода: поддельные блоки в прошлых ответах вырезаются так же, как в ходе (кэш хода). */
@@ -92,6 +97,13 @@ export async function runCompaction(input: CompactionRunInput): Promise<Compacti
     const request = await buildModelRequest({
       ...requestInput,
       ...input.model,
+      // Общая сводка не несёт privacy-схему: только публичные app blocks, без памяти/даты/места.
+      // Пересказ шагов остаётся на прежнем пути без frozen blocks; никакого нового private opt-in.
+      ...(!input.transient && { frozenContext: {
+        group: true,
+        includeKey: (key: string) => !isReservedKey(key),
+        ...(input.contextHistory && { anchorHistory: input.contextHistory }),
+      } }),
       // Бюджет рассуждений — от предела сводки, а не от потолка модели: иначе он больше предела.
       maxOutputTokens,
       ...(lowestLevel && { reasoning: lowestLevel }),
@@ -102,7 +114,7 @@ export async function runCompaction(input: CompactionRunInput): Promise<Compacti
       role: "user",
       content: input.task ?? compactionTask({ summaryCeilingTokens: settings.summaryCeilingTokens, instruction: settings.instruction }),
     };
-    let base: ModelMessage[] = [...request.messages, task];
+    let base: ModelMessage[] = [...request.messages, ...(request.noteAfterApprovals ?? []), task];
     let messages = base;
     let summary = "";
     let summaryTokens = 0;

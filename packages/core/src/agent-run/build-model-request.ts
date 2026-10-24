@@ -32,7 +32,7 @@ import { withStaffRepliesJoined } from "./staff-replies";
 import { withBurstsJoined } from "../bursts/message-bursts";
 import { withCorrectionsJoined } from "../steering/turn-steering";
 import { holdNoteAfterApprovals, withFrozenContext } from "../frozen-context/frozen-context-messages";
-import type { FrozenContextData } from "../frozen-context/context-blocks";
+import type { FrozenContextProjection } from "../frozen-context/frozen-context-messages";
 import { withoutUndelivered } from "./undelivered";
 import { withoutGarbledTails } from "./garbled-tail";
 import { withoutForgedBlocks } from "./forged-blocks";
@@ -100,9 +100,9 @@ export async function buildModelRequest(input: {
   /**
    * Застывшие блоки хода (память, дата, блоки приложения, место): текстом в вопрос перед каждым ответом, у которого они
    * есть, после пометок режима и канала (`withFrozenContext`). `current` — блоки ответа, которого в истории ещё нет.
-   * Нет — блоков в запросе нет: запросы сжатия и помощников идут без них.
+   * Нет — блоков в запросе нет. Сжатие включает сохранённые блоки тем же механизмом, без чтения источников.
    */
-  frozenContext?: { current?: { answerId: string; data: FrozenContextData }; group: boolean };
+  frozenContext?: FrozenContextProjection;
   /**
    * Сообщения после истории только в этом запросе (служебная пометка попытки): в историю не пишутся. Метка кэша конца —
    * на последнем сообщении истории, хвост без метки: его не будет в следующих запросах, записывать его в кэш незачем,
@@ -167,7 +167,9 @@ export async function buildModelRequest(input: {
   const sendable = input.switchableTools ? withSwitchedOffCallsAsText(cleaned, input.switchableTools, tools) : cleaned;
   const noted = withStaffRepliesJoined(withChannelNotes(withModeNotes(withBurstsJoined(withCorrectionsJoined(sendable)), input.modeNotes)));
   const held: { messages: readonly AgentChatMessage[]; note?: AgentChatMessage } = input.frozenContext
-    ? holdNoteAfterApprovals(withFrozenContext(noted, input.frozenContext))
+    ? holdNoteAfterApprovals(withFrozenContext(noted, { ...input.frozenContext,
+      ...(input.frozenContext.anchorHistory && { anchorHistory: sendableHistory(input.frozenContext.anchorHistory) }),
+    }))
     : { messages: noted };
   const history = selectReasoningForModel(held.messages, {
     modelId: profile.id,

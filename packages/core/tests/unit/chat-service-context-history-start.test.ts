@@ -1,9 +1,10 @@
 import { tool } from "ai";
+import { MockLanguageModelV4 } from "ai/test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { latestFrozenContextOf } from "../../src/frozen-context/context-blocks";
 import { APP_STATE_PART_TYPE } from "../../src/app-state/app-state";
-import { readAll, streamStart, summarizingModel } from "./support/mock-model";
+import { generateResult, readAll, streamStart, summarizingModel } from "./support/mock-model";
 import { callTool, lastUserTexts, noticeService, saying, scriptedModel, userMessage, waitTurn } from "./support/notice-chat";
 
 const blocks = (text: string) => [{ key: "profile", text }];
@@ -14,6 +15,29 @@ const plain = (model: Model, index: number) => model.doStreamCalls[index]!.promp
 describe("agent.contextBlocksRefresh", () => {
   beforeEach(() => { vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(new Date("2026-01-01T12:00:00Z")); });
   afterEach(() => vi.useRealTimers());
+
+  it("durable private compaction не передаёт private app/memory summarizer-у и не раскрывает их следующей группе", async () => {
+    const streaming = summarizingModel("unused", [100, 200, 300, 400]);
+    const model = new MockLanguageModelV4({ doStream: options => streaming.doStream(options), doGenerate: async ({ prompt }) => {
+      const raw = JSON.stringify(prompt);
+      return generateResult(raw.includes("SECRET_APP") || raw.includes("SECRET_MEMORY") ? "COPIED_SECRET" : "PUBLIC_SUMMARY", { output: 20 });
+    } });
+    const { service, storage } = noticeService(model, { agent: {
+      contextBlocksRefresh: "history-start", contextBlocks: () => [{ key: "private_profile", text: "SECRET_APP", private: true }, { key: "profile", text: "PUBLIC_APP" }],
+    }, memory: { instructions: "Memory", toolNames: [], tools: () => ({}), snapshot: async () => "SECRET_MEMORY" },
+      compaction: { thresholdTokens: 1_000_000, tailTokens: 100, summaryCeilingTokens: 100 } });
+    const chat = await service.createChat("anna");
+    for (let n = 1; n <= 3; n++) await ask(service, chat.id, `private-u${n}`);
+    expect(JSON.stringify(model.doStreamCalls[0]!.prompt)).toContain("SECRET_APP");
+    expect(JSON.stringify(model.doStreamCalls[0]!.prompt)).toContain("SECRET_MEMORY");
+    expect(await service.compactNow("anna", chat.id)).toBe("compacted");
+    expect(JSON.stringify(model.doGenerateCalls[0]!.prompt)).not.toContain("SECRET_");
+    expect((await storage.listCompactions(chat.id))[0]!.summary).toBe("PUBLIC_SUMMARY");
+    await readAll(await service.sendMessage("anna", chat.id, userMessage("group-after-private", "group"), { group: { author: "Anna", allowedTools: [] } }));
+    const group = JSON.stringify(model.doStreamCalls.at(-1)!.prompt);
+    expect(group).toContain("PUBLIC_SUMMARY"); expect(group).toContain("PUBLIC_APP");
+    expect(group).not.toContain("COPIED_SECRET"); expect(group).not.toContain("SECRET_");
+  });
 
   it("неверная политика отклоняется при создании службы", () => {
     expect(() => noticeService(scriptedModel(), { agent: { contextBlocksRefresh: "never" as never } })).toThrow(/contextBlocksRefresh/);
@@ -131,6 +155,39 @@ describe("agent.contextBlocksRefresh", () => {
     expect(plain(model, model.doStreamCalls.length - 1).slice(0, before.length)).toEqual(before);
     const root = latestFrozenContextOf((await storage.listMessages(chat.id)).at(-1)!.parts)?.appContextFrom;
     expect(typeof root).toBe("string"); expect(root).not.toBe("u1");
+  });
+
+  it("compaction оставляет несколько frozen tail answers: свежие блоки у summary, branch и storage изолированы", async () => {
+    const model = summarizingModel("SUMMARY_BOUNDARY", [100, 200, 300, 400, 500, 600, 700, 800]);
+    const source = vi.fn(() => blocks("APP_OLD"));
+    const { service, storage } = noticeService(model, { agent: { contextBlocks: source, contextBlocksRefresh: "history-start" },
+      compaction: { thresholdTokens: 1_000_000, tailTokens: 350, summaryCeilingTokens: 100 } });
+    const chat = await service.createChat("anna");
+    for (let n = 1; n <= 5; n++) await ask(service, chat.id, `tail-u${n}`);
+    const before = await storage.listMessages(chat.id);
+    expect(await service.compactNow("anna", chat.id)).toBe("compacted");
+    const compact = model.doGenerateCalls[0]!;
+    expect(JSON.stringify(compact.prompt)).toContain("APP_OLD");
+    source.mockImplementation(() => blocks("APP_FRESH"));
+    await ask(service, chat.id, "post-compact");
+    expect(source).toHaveBeenCalledTimes(2);
+    const prompt = model.doStreamCalls.at(-1)!.prompt;
+    expect(JSON.stringify(prompt)).not.toContain("APP_OLD");
+    expect(JSON.stringify(prompt).split("APP_FRESH")).toHaveLength(2);
+    const first = JSON.stringify(prompt[1]);
+    expect(first).toContain("SUMMARY_BOUNDARY");
+    expect(first).toContain("APP_FRESH");
+    expect(first.indexOf("APP_FRESH")).toBeLessThan(first.indexOf("tail-u2"));
+    expect(JSON.stringify(prompt.at(-1))).not.toContain("APP_FRESH");
+    expect((await storage.listMessages(chat.id)).slice(0, before.length)).toEqual(before);
+    await ask(service, chat.id, "next-post-compact");
+    expect(plain(model, model.doStreamCalls.length - 1).slice(0, prompt.length)).toEqual(plain(model, model.doStreamCalls.length - 2));
+    source.mockImplementation(() => blocks("APP_OTHER_BRANCH"));
+    await readAll(await service.editMessage("anna", chat.id, "tail-u3", userMessage("tail-u3-edit", "edited tail")));
+    expect(source).toHaveBeenCalledTimes(3);
+    const other = JSON.stringify(model.doStreamCalls.at(-1)!.prompt);
+    expect(other).toContain("APP_OTHER_BRANCH"); expect(other).not.toContain("APP_FRESH"); expect(other).not.toContain("APP_OLD");
+    expect(JSON.stringify((await service.getHistory("anna", chat.id)).messages)).not.toContain("compaction-summary");
   });
 
   it("включение на старом paused answer фиксирует metadata-only note; notices на следующих resume не стирают marker", async () => {

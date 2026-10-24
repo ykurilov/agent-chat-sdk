@@ -2,8 +2,9 @@ import { hasAnswerContent } from "../agent-run/auto-continue";
 import { GREETING_LEAD } from "../agent-run/greeting-lead";
 import type { AgentChatMessage } from "../conversation/types";
 import { noticeText } from "../notices/notices-for-model";
-import { FROZEN_CONTEXT_PART_TYPE, frozenContextOf, isMemoryKey, latestFrozenContextOf, noLongerValid, notShownForSpace } from "./context-blocks";
+import { FROZEN_CONTEXT_PART_TYPE, frozenContextOf, isMemoryKey, isReservedKey, latestFrozenContextOf, noLongerValid, notShownForSpace } from "./context-blocks";
 import type { FrozenContextData } from "./context-blocks";
+import { isSummaryPart } from "../compaction/summary-part";
 
 /**
  * База хода: последний ответ со словами и с частью застывших блоков в видимой истории — с тем, что модель видела в нём
@@ -33,11 +34,21 @@ const RESUME_NOTE_ID = "frozen-context-note-";
  */
 export function withFrozenContext(
   history: readonly AgentChatMessage[],
-  options: { current?: { answerId: string; data: FrozenContextData }; group: boolean },
+  options: FrozenContextProjection,
 ): AgentChatMessage[] {
   const { current, group } = options;
   const dataOf = (message: AgentChatMessage): FrozenContextData | undefined =>
     message.role !== "assistant" ? undefined : current && message.id === current.answerId ? current.data : frozenContextOf(message.parts);
+  // Только сжатая история. Включение history-start посреди обычного чата не переносит будущие данные назад.
+  const root = history[0];
+  const anchorHistory = options.anchorHistory && options.anchorHistory[0]?.id === root?.id ? options.anchorHistory : history;
+  const allowed = options.includeKey ?? (() => true);
+  const anchor = root?.parts.some(isSummaryPart)
+    ? anchorHistory.flatMap(message => message.role === "assistant"
+      ? [dataOf(message), ...message.parts.filter(p => p.type === FROZEN_CONTEXT_PART_TYPE).slice(1).map(p => (p as { data: FrozenContextData }).data)]
+      : []).concat(current?.data).find(data => data?.appContextFrom === root.id)
+    : undefined;
+  let anchored = false;
   // Что модель видела последним у каждого ответа: его блоки, затем заметки продолжения по порядку. База — всегда раньше.
   const seen = new Map<string, FrozenContextData>();
   const output: AgentChatMessage[] = [];
@@ -48,24 +59,44 @@ export function withFrozenContext(
     if (last?.role === "user") output[output.length - 1] = { ...last, parts: [...last.parts, ...parts] };
     else output.push({ id: `frozen-context-${output.length}`, role: "user", parts: output.length === 0 ? [{ type: "text", text: GREETING_LEAD }, ...parts] : parts });
   };
-  const textsOf = (data: FrozenContextData) => blockTexts(data, data.base === null ? undefined : seen.get(data.base), group);
+  const textsOf = (data: FrozenContextData, base: FrozenContextData | undefined) => {
+    // У summary уже полный app snapshot. До его исходного места старые app блоки не показываем;
+    // дату, память, место и notices по-прежнему выводим на своих местах. После него — прежние delta.
+    const include = (key: string) => allowed(key) && (!anchor || anchored || isReservedKey(key));
+    const texts = blockTexts(data, base, group, anchor || options.includeKey ? include : undefined);
+    if (data === anchor) anchored = true;
+    return texts;
+  };
   let currentPlaced = false;
   for (const message of history) {
     const data = dataOf(message);
     if (data) {
-      place(textsOf(data));
+      place(textsOf(data, data.base === null ? undefined : seen.get(data.base)));
       seen.set(message.id, data);
       if (message.id === current?.answerId) currentPlaced = true;
     }
     // База заметки — прошлые блоки её же ответа, а не номер в ней: у копии «Повторить» номер ответа другой.
-    output.push(...withResumeNotes(message, (note) => {
-      const texts = blockTexts(note, seen.get(message.id), group);
+    const placed = anchor && message === root ? { ...message, parts: message.parts.flatMap(part => isSummaryPart(part)
+      ? [part, ...anchor.blocks.filter(block => !isReservedKey(block.key) && allowed(block.key) && !(group && block.private)).map(block => ({ type: "text" as const, text: block.text }))]
+      : [part]) } : message;
+    output.push(...withResumeNotes(placed, (note) => {
+      const texts = textsOf(note, seen.get(message.id));
       seen.set(message.id, note);
       return texts;
     }));
   }
-  if (current && !currentPlaced) place(textsOf(current.data));
+  if (current && !currentPlaced) place(textsOf(current.data, current.data.base === null ? undefined : seen.get(current.data.base)));
   return output;
+}
+
+/** Внутренняя проекция общего сборщика; не настройка агента и не данные модели. */
+export interface FrozenContextProjection {
+  current?: { answerId: string; data: FrozenContextData };
+  group: boolean;
+  /** При сжатии префикса anchor ищется в полной эффективной ветке; её текст сюда не переносится. */
+  anchorHistory?: readonly AgentChatMessage[];
+  /** Допустимые ключи блоков в проекции; нет — прежний набор. Текст переписки не фильтруется. */
+  includeKey?: (key: string) => boolean;
 }
 
 /** Ответ, разрезанный заметками продолжения (все части застывших блоков после первой). Заметка без текстов не режет. */
@@ -105,12 +136,12 @@ export function holdNoteAfterApprovals(messages: AgentChatMessage[]): { messages
 const awaitsApprovedRun = (part: AgentChatMessage["parts"][number]): boolean => (part as { state?: string }).state === "approval-responded";
 
 /** Тексты блоков, которые ушли модели с этим ответом, и служебные сообщения хода. База не видна — весь набор. */
-function blockTexts(data: FrozenContextData, base: FrozenContextData | undefined, group: boolean): string[] {
-  return [...changedBlockTexts(data, base, group), ...(data.notices ?? []).map(noticeText)];
+function blockTexts(data: FrozenContextData, base: FrozenContextData | undefined, group: boolean, include?: (key: string) => boolean): string[] {
+  return [...changedBlockTexts(data, base, group, include), ...(data.notices ?? []).map(noticeText)];
 }
 
-function changedBlockTexts(data: FrozenContextData, base: FrozenContextData | undefined, group: boolean): string[] {
-  const shown = (block: { private?: boolean }) => !(group && block.private);
+function changedBlockTexts(data: FrozenContextData, base: FrozenContextData | undefined, group: boolean, include?: (key: string) => boolean): string[] {
+  const shown = (block: { key: string; private?: boolean }) => (!include || include(block.key)) && !(group && block.private);
   if (data.sent === "all" || !base) return data.blocks.filter(shown).map((block) => block.text);
   const now = new Map(data.blocks.map((block) => [block.key, block]));
   const before = new Map(base.blocks.map((block) => [block.key, block]));
@@ -118,7 +149,7 @@ function changedBlockTexts(data: FrozenContextData, base: FrozenContextData | un
     const block = now.get(key);
     return block && shown(block) ? [block.text] : [];
   });
-  const visibleKeys = (keys: readonly string[]) => keys.filter((key) => !(group && (before.get(key)?.private ?? isMemoryKey(key))));
+  const visibleKeys = (keys: readonly string[]) => keys.filter((key) => (!include || include(key)) && !(group && (before.get(key)?.private ?? isMemoryKey(key))));
   const removed = visibleKeys(data.sent.removed);
   if (removed.length > 0) texts.push(noLongerValid(removed));
   const hidden = visibleKeys(data.sent.hidden ?? []);

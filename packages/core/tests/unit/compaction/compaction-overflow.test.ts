@@ -87,7 +87,7 @@ describe("compactForOverflow: сжатие, когда ход упёрся в о
     const [record] = await storage.listCompactions("chat-1");
     expect(record).toMatchObject({ fromMessageId: "u1", throughMessageId: "a2", summary: "## Цель\nсводка" });
     expect(history?.map((message) => message.id)).toEqual(["u3", "a3", "q"]);
-    expect(history?.[0]?.parts[0]).toEqual({ type: "text", text: summaryFrame("## Цель\nсводка") });
+    expect(JSON.parse(JSON.stringify(history?.[0]?.parts[0]))).toEqual({ type: "text", text: summaryFrame("## Цель\nсводка") });
     expect(await storage.sumUsage({ ownerId: "anna" })).toEqual([expect.objectContaining({ modelId: mockModelId, providerId: "mock", outputTokens: 20 })]);
     expect(overflowLines(logError)).toEqual([
       `[переполнение] чат=chat-1 модель=${mockModelId} провайдер=mock сжатие=начато`,
@@ -102,7 +102,7 @@ describe("compactForOverflow: сжатие, когда ход упёрся в о
 
     expect((await storage.listCompactions("chat-1"))[0]).toMatchObject({ fromMessageId: "u1", throughMessageId: "a1" });
     expect(history?.map((message) => message.id)).toEqual(["q"]);
-    expect(history?.[0]?.parts).toEqual([
+    expect(JSON.parse(JSON.stringify(history?.[0]?.parts))).toEqual([
       { type: "text", text: summaryFrame("## Цель\nсводка") },
       { type: "text", text: "новый вопрос" },
     ]);

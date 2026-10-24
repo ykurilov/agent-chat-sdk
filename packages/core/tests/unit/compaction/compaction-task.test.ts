@@ -35,4 +35,10 @@ describe("задание сжатия", () => {
     expect(task).toContain("<attachment");
     expect(task).toContain("Прикреплённые файлы");
   });
+
+  it("пересказ заканчивается у границы сжатия, оставленный хвост идёт отдельно", () => {
+    const task = compactionTask({ summaryCeilingTokens: 500 });
+    expect(task).toContain("заканчивается на последнем сообщении перед этим заданием");
+    expect(task).toContain("более поздняя переписка останется в контексте отдельно");
+  });
 });
