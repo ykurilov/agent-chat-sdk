@@ -175,6 +175,9 @@ export { CLOSED_STATE_KEY, hiddenStateKeyOf, isStateMessage, publicAppStateParts
 export type { HiddenStateKey } from "./app-state/state-messages";
 export { DEFAULT_STATE_CHANGED_ATTEMPTS, DEFAULT_STATE_CHANGED_TIMEOUT_MS } from "./app-state/state-changed";
 export type { StateChangedHandler, StateChangedInput, StateChangeReason } from "./app-state/state-changed";
+/** @internal Серверная capability расширения flows; не часть ChatService/HTTP. */
+export { flowStateCommitter } from "./app-state/flow-state-commit";
+export type { FlowStateCommit, FlowStateCommitInput, FlowStateCommitResult } from "./app-state/flow-state-commit";
 export type {
   AbandonedAnswers,
   AfterTurnHandler,

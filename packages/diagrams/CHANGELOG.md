@@ -1,5 +1,9 @@
 # @ykurilov/agent-chat-diagrams
 
+## 0.77.0
+
+No changes in this release.
+
 ## 0.76.0
 
 No changes in this release.

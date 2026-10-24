@@ -1,4 +1,6 @@
 export { createAgentFlow } from "./agent-flow";
+export type { FlowConfirmationSpec, FlowExitGuard, FlowRevokeConfirmationInput, FlowRevokeConfirmationResult } from "./confirmations";
+export type * from "../engine/confirmation";
 export { FLOW_SERVICE_BLOCKS } from "./flow-service-blocks";
 export type * from "./flow-types";
 export { DEFAULT_JUDGE_MODEL, DEFAULT_JUDGE_THRESHOLD, DEFAULT_JUDGE_TIMEOUT_MS } from "./judge";

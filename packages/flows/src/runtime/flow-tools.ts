@@ -135,6 +135,7 @@ function flowExitTool(input: FlowToolsInput, model: AgentToolsModel): Tool {
       const { flow } = turn.pinned;
       const chosen = judgeExits(flow, turn.run.state)[exit - 1];
       if (!chosen) return `Нет такого условия: номер ${exit}. Номера условий — в карточке состояния.`;
+      if (runtime.confirmations?.guardFor(turn.pinned.flowId, turn.run.state, chosen.exitId)) return "Этот выход проверяется сервером после полного ответа: подтверждённая веха и актуальное сообщение человека должны быть проверены вместе. Переход пока не выполнен.";
       if (!claimAllowed(turn.run, chosen.exitId)) return "Это условие уже проверяли: подожди ответа человека и продолжай разговор.";
 
       const state = stateById(flow, turn.run.state)!;

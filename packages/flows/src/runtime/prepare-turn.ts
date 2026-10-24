@@ -103,6 +103,14 @@ export function flowPrepareTurn(runtime: FlowRuntime, appTimeZone: () => string 
       }
       // После конца переходов нет: ожидающее снимается, сообщение человека только считается.
       const ended = run.endedAt !== undefined;
+      if (!ended && run.checkedTransition) {
+        const decision = run.checkedTransition;
+        const scope = { ownerId: ctx.ownerId, chatId: ctx.chatId, flowId: pinned!.flowId };
+        const allowed = decision.versionId === pinned!.versionId && decision.answerId === previousAnswer && decision.transition.from === run.state && runtime.confirmations?.allows(scope, run, decision.transition.exitId);
+        const { checkedTransition, ...withoutDecision } = run;
+        run = withoutDecision;
+        if (allowed) run = await step(run, pendingEvent(decision.transition, timeZone));
+      }
       for (const change of ended ? [] : pending) {
         if (change.kind === "migrate") {
           // Версия в записи чата уже новая (`migrateBatch`): переводится только место в сценарии.
@@ -114,6 +122,7 @@ export function flowPrepareTurn(runtime: FlowRuntime, appTimeZone: () => string 
         } else if (change.kind === "transition") {
           // Переход судьи или таймера — только на той ветке, где он решён, и только из того же состояния.
           if (change.branchHead !== previousAnswer || run.state !== change.transition.from) continue;
+          if (runtime.confirmations?.guardFor(pinned!.flowId, run.state, change.transition.exitId)) continue;
           const out: Transition[] = [];
           run = await step(run, pendingEvent(change.transition, timeZone), out);
           // Применённые в срок уже сообщены; дотянутое ходом поверх них — новое.

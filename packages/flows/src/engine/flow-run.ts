@@ -1,3 +1,5 @@
+import type { FlowConfirmationRecord, FlowConfirmationRef } from "./confirmation";
+
 /** Ключ в состоянии чата (`ChatState`), под которым лежит `FlowRun`. */
 export const FLOW_STATE_KEY = "flow";
 
@@ -39,6 +41,19 @@ export interface FlowPathEntry {
 
 /** Где чат в сценарии. Хранится в состоянии чата под `FLOW_STATE_KEY`; все времена — мс с 1970 года. */
 export interface FlowRun {
+  /** Проверки сервера: на этой ветке, для этого человека/чата/сценария. Модель их не устанавливает. */
+  confirmations?: Record<string, FlowConfirmationRecord>;
+  /** Идемпотентность полного afterTurn check; отрицательный результат не переносится на следующий human turn. */
+  confirmationCheck?: { answerId: string; configurationHash: string };
+  /** Receipt и решение сохраняются одной записью до применения перехода. */
+  checkedTransition?: {
+    versionId: string;
+    transition: Transition;
+    requires: FlowConfirmationRef;
+    criterionHash: string;
+    answerId: string;
+    humanMessageId: string;
+  };
   state: string;
   /** Когда вошли в текущее состояние. */
   enteredAt: number;

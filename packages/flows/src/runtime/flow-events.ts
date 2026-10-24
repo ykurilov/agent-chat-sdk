@@ -32,6 +32,7 @@ export interface PinnedFlow {
 
 /** Что общего у частей сценария в службе чата: хранилище, часы, сценарий чата и отчёт о переходах. */
 export interface FlowRuntime {
+  confirmations?: import("./confirmations").FlowConfirmations;
   store: FlowStore;
   now(): number;
   logError(message: string): void;

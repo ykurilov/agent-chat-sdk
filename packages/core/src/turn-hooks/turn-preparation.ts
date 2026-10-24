@@ -70,6 +70,7 @@ function checkedResult(result: PrepareTurnResult, state: AppStateValues, chatId:
   const records: AppStateRecord[] = [];
   const writer = createAppStateWriter({
     base: state,
+    serverFlowChecks: true,
     write: (record) => records.push(record),
     logError: () => {},
     chatId,

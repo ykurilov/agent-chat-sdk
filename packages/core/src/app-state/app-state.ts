@@ -28,7 +28,7 @@ export interface AppStateRecord {
   unset?: string[];
 }
 
-/** Состояние чата для инструмента (`model.state`): служебных ключей SDK не видит и не пишет. */
+/** Состояние чата для инструмента (`model.state`): верхних ключей `$` не видит; результаты проверки flow читает, но не пишет. */
 export interface AppStateAccess {
   /** Значение по пути (копия); без пути — всё состояние. Нет значения — `undefined`. */
   get(path?: string): unknown;
@@ -105,6 +105,8 @@ export function createAppStateWriter(context: {
   logError: (message: string) => void;
   chatId: string;
   reserved?: boolean;
+  /** @internal Только доверенная серверная подготовка хода и flows compare-head commit. Не часть model.state. */
+  serverFlowChecks?: true;
 }): AppStateWriter {
   let current = jsonCopy(context.base) as AppStateValues;
   let closed = false;
@@ -121,6 +123,14 @@ export function createAppStateWriter(context: {
   }
 
   function commit(record: AppStateRecord, next: AppStateValues): void {
+    // Проверяем результат целиком: set/unset родительского flow не должны обходить защиту листовых путей.
+    if (!context.serverFlowChecks) {
+      for (const field of ["confirmations", "confirmationCheck", "checkedTransition"]) {
+        if (JSON.stringify(valueAt(current, ["flow", field])) !== JSON.stringify(valueAt(next, ["flow", field]))) {
+          throw new TypeError(`state: flow.${field} — результат серверной проверки SDK; инструмент модели не меняет и не удаляет его`);
+        }
+      }
+    }
     context.write(record);
     current = next;
   }

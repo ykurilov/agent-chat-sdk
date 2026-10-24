@@ -41,6 +41,7 @@ export function fakeTimers() {
 export const emptyClientCard = (): ClientCardTools => ({ tools: {}, block: async () => "", read: async () => [], forget: async () => {} });
 
 export interface FlowChatSetup {
+  flowOptions?: Partial<AgentFlowOptions>;
   /** JSON сценария; `null` — чат без сценария. По умолчанию — «Разбор» прототипа. */
   flowJson?: Record<string, any> | null;
   edit?: (json: Record<string, any>) => void;
@@ -75,6 +76,7 @@ export function flowChat(setup: FlowChatSetup = {}) {
       judge: { fallback: { modelId: mockModelId, providerId: "mock" } },
       logError,
       ...(setup.onTransition && { onTransition: setup.onTransition }),
+      ...setup.flowOptions,
     },
     modules,
   );

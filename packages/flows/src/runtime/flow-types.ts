@@ -513,6 +513,8 @@ export interface ChatsByStateOptions extends FlowChatSelection {
 }
 
 export interface MigrateChatsInput extends FlowChatSelection {
+  /** Strict: без подходящего SDK receipt чат остаётся на исходной immutable версии. */
+  requiresConfirmation?: import("../engine/confirmation").FlowConfirmationRef;
   flowId: string;
   toVersionId: string;
   /** Куда перевести чаты из состояний, которых нет в новой версии: id старого → id нового. */
@@ -560,6 +562,9 @@ export interface FlowChatOptions {
 }
 
 export interface AgentFlowOptions {
+  /** Серверные подтверждения. Не поля карточки, не инструменты записи фактов и не JSON редактора. */
+  confirmations?: readonly import("./confirmations").FlowConfirmationSpec[];
+  exitGuards?: readonly import("./confirmations").FlowExitGuard[];
   /** Какой сценарий у чата; `null` — чат без сценария. Зовётся, пока чат не закреплён за версией. */
   loadFlow: (input: { ownerId: string; chat: Chat }) => Promise<LoadedFlow | null>;
   /** `memoryFlowStore()`, `sqliteFlowStore(path)`, `postgresFlowStore(pool)`. */
@@ -607,6 +612,13 @@ export interface FlowSignalInput {
 }
 
 export interface AgentFlowHandle {
+  /** Read-only strict preview. Старый path/card/currentState не восстанавливают proof. */
+  previewMigration(input: Pick<MigrateChatsInput, "flowId" | "toVersionId" | "requiresConfirmation" | "chatIds" | "filter" | "includeEnded" | "includeTestChats"> & { requiresConfirmation: import("../engine/confirmation").FlowConfirmationRef }): Promise<{
+    eligible: string[];
+    keepOriginal: Array<{ chatId: string; status: "ambiguous"; reason: string }>;
+  }>;
+  /** Только доверенный backend: исправление атрибуции. busy/stale требуют обработки приложением. */
+  revokeConfirmation(input: import("./confirmations").FlowRevokeConfirmationInput): Promise<import("./confirmations").FlowRevokeConfirmationResult>;
   /** Склеивает сценарий с настройками службы чата: инструкция, инструменты, блоки, `prepareTurn`, `afterTurn`. */
   withChat<T extends FlowChatOptions>(options: T): T;
   /** Служба чата (`attach(service)`, как в 0.48) или служба на чат и своя доставка. */

@@ -66,11 +66,12 @@ import { branchForks, currentChildOf, nextSiblingTime, selectCurrentBranch } fro
 import { withoutGlueFragments } from "./conversation/glue-fragments";
 import { closeHangingToolCalls, partsForContinuation } from "./conversation/hanging-tool-calls";
 import { loadCurrentBranch, loadCurrentBranchLinks } from "./conversation/load-current-branch";
-import { appStatePart, foldAppState, publicAppState } from "./app-state/app-state";
+import { appStatePart, createAppStateWriter, foldAppState, publicAppState } from "./app-state/app-state";
 import type { AppStateRecord, AppStateValues } from "./app-state/app-state";
 import { branchStateOf, readBranchState } from "./app-state/branch-state";
 import type { BranchState } from "./app-state/branch-state";
 import { createStateChanged } from "./app-state/state-changed";
+import { registerFlowStateCommit } from "./app-state/flow-state-commit";
 import type { StateChangeReason, StateChangedHandler } from "./app-state/state-changed";
 import { CLOSED_STATE_KEY, closureOfState, hiddenStateKeyOf, isStateMessage, publicMessages, stateMessage } from "./app-state/state-messages";
 import type { AppNoticeViews } from "./app-state/state-messages";
@@ -4133,6 +4134,45 @@ export function createChatService(input: ChatServiceOptions): ChatService {
   }
 
   abandonedBurstReceivers.set(service, receivingAbandonedBurst);
+  registerFlowStateCommit(service, async (input) => {
+    if (![input.flowId, input.revision].every((value) => typeof value === "string" && value.trim().length > 0 && value.length <= 200)) throw new TypeError("flow commit: flowId/revision — непустые строки до 200 знаков");
+    if (typeof input.idempotencyKey !== "string" || !input.idempotencyKey.trim() || input.idempotencyKey.length > 200) {
+      throw new TypeError("flow commit: idempotencyKey — непустая строка до 200 знаков");
+    }
+    if (!input.flow || typeof input.flow !== "object" || Array.isArray(input.flow)) throw new TypeError("flow commit: flow — JSON-объект");
+    const chat = await storage.getChat(input.chatId);
+    if (!chat || chat.ownerId !== input.ownerId || deleting.has(input.chatId)) return { status: "not_found" };
+    if (closing) return { status: "busy" };
+    // Детерминированный id переживает перезапуск; никакого произвольного message/parts из приложения.
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify([input.ownerId, input.chatId, input.flowId, input.revision, input.idempotencyKey])));
+    const operationId = `flow-state:${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+    try {
+      return await whileStarting(input.chatId, async () => {
+        const { branch } = await loadTree(input.chatId);
+        const before = foldAppState(branch);
+        // Та же проверка JSON и пределов 16/256 КБ, что при записи состояния из хода.
+        const writer = createAppStateWriter({ base: before, write: () => {}, logError, chatId: input.chatId, serverFlowChecks: true });
+        writer.set("flow", input.flow);
+        writer.close();
+        const record: AppStateRecord = { set: { flow: writer.values().flow } };
+        const earlier = await storage.getMessage(operationId);
+        if (earlier) {
+          if (JSON.stringify(earlier.parts) !== JSON.stringify([appStatePart(record)])) throw new TypeError("flow commit: idempotencyKey уже использован с другим payload");
+          // Более свежий revoke/ход уже мог отменить записанное решение: replay не даёт права повторять его эффекты.
+          return branch.at(-1)?.id === operationId ? { status: "same" as const, atMessageId: operationId } : { status: "stale" as const };
+        }
+        const head = branch.at(-1)?.id ?? null;
+        if (head !== input.expectedAtMessageId) return { status: "stale" as const };
+        const message = stateMessage({ chatId: input.chatId, parentId: head, record });
+        await storage.insertMessage({ ...message, id: operationId });
+        await branchChanged(input.ownerId, input.chatId, "flowCommit", before);
+        return { status: "applied" as const, atMessageId: operationId };
+      });
+    } catch (error) {
+      if (error instanceof ChatBusyError) return { status: "busy" };
+      throw error;
+    }
+  });
   return service;
 
   function isDetachedAnswer(last: StoredMessage | undefined, runningId: string | null): boolean {

@@ -6,7 +6,7 @@ import type { AppStateValues } from "./app-state";
  * Почему сменилось состояние: ход в конце ветки (`turn`), смена ветки или запись проверки ответа виджета
  * (`widgetAnswer`: `ctx.state` в `checkAnswer`, сразу после записи ответа, до продолжения хода).
  */
-export type StateChangeReason = "turn" | "editMessage" | "regenerate" | "retry" | "selectBranch" | "editAnswer" | "widgetAnswer";
+export type StateChangeReason = "turn" | "editMessage" | "regenerate" | "retry" | "selectBranch" | "editAnswer" | "widgetAnswer" | "flowCommit";
 
 /** Что получает `onStateChanged`: состояние без служебных ключей SDK. */
 export interface StateChangedInput {

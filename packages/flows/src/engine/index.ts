@@ -1,4 +1,5 @@
 export * from "./flow-run";
+export type * from "./confirmation";
 export { nextTransition, type FlowEvent } from "./next-transition";
 export {
   startRun,

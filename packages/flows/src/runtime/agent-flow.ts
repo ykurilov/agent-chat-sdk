@@ -1,7 +1,11 @@
 import { FLOW_SERVICE_BLOCKS } from "./flow-service-blocks";
+import { confirmationHash, createConfirmations, type FlowRevokeConfirmationInput, type FlowRevokeConfirmationResult } from "./confirmations";
+import { judgeConfirmations } from "./confirmation-judge";
+import { previewConfirmedMigration } from "./confirmation-migration";
 import { createHash, randomUUID } from "node:crypto";
 import {
   ChatNotFoundError,
+  flowStateCommitter,
   type AgentWidgetSettings,
   type Chat,
   type ChatInstructionsTurn,
@@ -69,6 +73,7 @@ import {
   chatRun,
   currentRun,
   exactFirstText,
+  pendingEvent,
   reportTransition,
   runOutsideTurn,
   storedRun,
@@ -155,6 +160,7 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
   const now = () => clock().getTime();
   const iso = () => clock().toISOString();
   const logError = options.logError ?? ((message: string) => console.error(message));
+  const confirmations = createConfirmations(options.confirmations, options.exitGuards);
   const defaultTimeZone = options.defaultTimeZone === undefined ? undefined : ianaTimeZone(options.defaultTimeZone);
   if (defaultTimeZone === null) throw new TypeError(`createAgentFlow: defaultTimeZone «${options.defaultTimeZone}» — не пояс IANA`);
 
@@ -312,7 +318,10 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
     const key = `${flowId}\u0000${versionId}`;
     let found = versions.get(key);
     if (!found) {
-      found = store.getVersion(flowId, versionId).then((saved) => saved?.flow ?? null);
+      found = store.getVersion(flowId, versionId).then((saved) => {
+        if (saved) confirmations.validate(flowId, saved.flow);
+        return saved?.flow ?? null;
+      });
       versions.set(key, found);
       void found.then((flow) => flow ?? versions.delete(key), () => versions.delete(key));
     }
@@ -334,7 +343,7 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
   /** Разобрать и проверить сценарий приложения; с ошибками — `null` и строка в журнал. */
   function checkedFlow(flowId: string, versionId: string, value: unknown): AgentFlow | null {
     const checked = flowOrProblem(flowId, versionId, value);
-    if ("flow" in checked) return checked.flow;
+    if ("flow" in checked) { confirmations.validate(flowId, checked.flow); return checked.flow; }
     logError(checked.problem);
     return null;
   }
@@ -489,6 +498,7 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
   }
 
   const runtime: FlowRuntime = {
+    confirmations,
     store,
     now,
     logError,
@@ -589,7 +599,7 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
 
   // ---------- Судья после хода ----------
 
-  async function deliverFirstText(ownerId: string, chatId: string, messageId: string, condition: string, text: string): Promise<void> {
+  async function deliverFirstText(ownerId: string, chatId: string, messageId: string, condition: string, text: string, guarded = false): Promise<void> {
     for (let attempt = 0; ; attempt += 1) {
       const result = await (await portOf({ ownerId, chatId })).deliverNotices({
         ownerId,
@@ -597,7 +607,8 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
         notices: [{ kind: "app", name: "flow_judge", title: `Проверка разговора: ${condition}` }],
         wakeAgent: true,
         deliveryKey: `flow:${chatId}:judge:${messageId}`,
-        reply: { text },
+        // Guarded decision может быть отозван после judge: готовый reply обошёл бы результат prepareTurn.
+        ...(!guarded && { reply: { text } }),
       });
       if (result.status !== "busy") return;
       // Чат занят: заканчивается этот же ход или человек уже пишет — тогда переход применит его ход.
@@ -610,7 +621,8 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
     const { ownerId, chatId, messageId } = result;
     const pinned = await chatFlow(ownerId, chatId);
     if (!pinned) return;
-    const { values } = await (await portOf({ ownerId, chatId })).getChatState(ownerId, chatId);
+    const service = await portOf({ ownerId, chatId });
+    const { values, atMessageId } = await service.getChatState(ownerId, chatId);
     const run = storedRun(values[FLOW_STATE_KEY]);
     // Ветку уже сменили или ход не записал место — судить нечего.
     if (!run || run.answerId !== messageId) return;
@@ -625,7 +637,18 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
     const state = stateById(pinned.flow, run.state);
     if (!state || isFinal(state)) return;
     const conditions = judgeExits(pinned.flow, run.state);
-    if (conditions.length === 0) return;
+    const withConfirmations = confirmations.forState(pinned.flowId, run.state).length > 0 || conditions.some(({ exitId }) => confirmations.guardFor(pinned.flowId, run.state, exitId));
+    if (conditions.length === 0 && !withConfirmations) return;
+    if (withConfirmations) {
+      const checked = await judgeConfirmations({ confirmations, pinned, run, result, port: service, atMessageId, judge: judge(), threshold: options.judge.threshold ?? 0.7,
+        now: chatTime(run, now()), conditions, goal: stateGoal(state.instructions), messages: await history(ownerId, chatId, { run, answer: { id: messageId, parts: result.parts } }) });
+      if (!checked.saved || !checked.transition) return;
+      const transition = checked.transition;
+      if (!confirmations.guardFor(pinned.flowId, run.state, transition.exitId)) await store.addPending(chatId, { kind: "transition", key: `judge:${messageId}`, transition, branchHead: messageId });
+      const first = exactFirstText(pinned.flow, transition.to);
+      if (first) await deliverFirstText(ownerId, chatId, messageId, conditions.find((item) => item.exitId === transition.exitId)!.text, first, Boolean(confirmations.guardFor(pinned.flowId, run.state, transition.exitId)));
+      return;
+    }
 
     const verdicts = await judge().checkAll({
       ownerId,
@@ -646,6 +669,33 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
   }
 
   // ---------- Кнопки виджетов ----------
+
+  async function revokeConfirmation(input: FlowRevokeConfirmationInput): Promise<FlowRevokeConfirmationResult> {
+    if (!input.reason?.trim() || input.reason.length > 1000) throw new TypeError("revokeConfirmation: reason — непустая строка до 1000 знаков");
+    if (typeof input.idempotencyKey !== "string" || !input.idempotencyKey.trim() || input.idempotencyKey.length > 180) throw new TypeError("revokeConfirmation: idempotencyKey — непустая строка до 180 знаков");
+    const pinned = await chatFlow(input.ownerId, input.chatId);
+    if (!pinned || pinned.flowId !== input.flowId) return { status: "not_found" };
+    const spec = confirmations.specFor(input.flowId, input);
+    if (!spec) return { status: "stale" };
+    const service = await portOf(input);
+    const commit = flowStateCommitter(service);
+    if (!commit) throw new Error("confirmations: служба чата не предоставляет внутреннюю flows capability");
+    const snapshot = await service.getChatState(input.ownerId, input.chatId);
+    const run = storedRun(snapshot.values[FLOW_STATE_KEY]);
+    if (!run) return { status: "not_found" };
+    const old = run.confirmations?.[spec.key];
+    if (old && (old.scope?.ownerId !== input.ownerId || old.scope.chatId !== input.chatId || old.scope.flowId !== input.flowId)) return { status: "stale" };
+    if (old?.status === "revoked" && old.operationKey === input.idempotencyKey) {
+      if (old.reason !== input.reason || old.revision !== input.revision) throw new TypeError("revokeConfirmation: idempotencyKey уже использован с другим payload");
+      return { status: "same", atMessageId: snapshot.atMessageId! };
+    }
+    if (snapshot.atMessageId !== input.expectedAtMessageId || (old && (old.revision !== spec.revision || old.criterionHash !== confirmationHash(spec)))) return { status: "stale" };
+    const scope = { ownerId: input.ownerId, chatId: input.chatId, flowId: input.flowId };
+    const { checkedTransition, ...withoutDecision } = run;
+    const next: FlowRun = { ...withoutDecision, ...(checkedTransition && checkedTransition.requires.key !== spec.key && { checkedTransition }), confirmations: { ...run.confirmations,
+      [spec.key]: { key: spec.key, revision: spec.revision, status: "revoked", versionId: pinned.versionId, scope, criterionHash: confirmationHash(spec), revokedAt: chatTime(run, now()), afterMessageId: run.answerId ?? null, reason: input.reason, operationKey: input.idempotencyKey } } };
+    return commit({ ...scope, revision: confirmations.revision(input.flowId), expectedAtMessageId: input.expectedAtMessageId, idempotencyKey: `revoke:${input.idempotencyKey}`, flow: next as unknown as Record<string, unknown> });
+  }
 
   async function buttonPressed(context: WidgetAnswerContext): Promise<void> {
     const pinned = await chatFlow(context.ownerId, context.chatId);
@@ -804,7 +854,13 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
     const timeZone = await timeZones.of(ownerId, chatId);
     const transitions: Transition[] = [];
     const input = { now: at, card: await runtime.cardValues(ownerId), out: transitions, onChainLimit: () => {}, timeZone };
-    run = withPending(pinned.flow, run, record?.pending ?? [], input);
+    const decision = run.checkedTransition;
+    if (decision && decision.versionId === pinned.versionId && decision.answerId === run.answerId && decision.transition.from === run.state && confirmations.allows({ ownerId, chatId, flowId: pinned.flowId }, run, decision.transition.exitId)) {
+      const { checkedTransition, ...withoutDecision } = run;
+      run = advance(pinned.flow, withoutDecision, pendingEvent(decision.transition, timeZone), input);
+    }
+    const pending = (record?.pending ?? []).filter((change) => change.kind !== "transition" || !confirmations.guardFor(pinned.flowId, change.transition.from, change.transition.exitId));
+    run = withPending(pinned.flow, run, pending, input);
     const schedule = pinned.flow.schedule;
     if (record?.endedAt) run = endedRun(pinned.flow, run, { endedAt: Date.parse(record.endedAt), endReason: record.endReason ?? "final" });
     const { answerId: _answerId, firstReasons: _firstReasons, ...plain } = run;
@@ -900,7 +956,7 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
                 } catch (error) {
                   logError(`[сценарий] чат=${input.chatId} состояние не записано в хранилище: ${errorText(error)}`);
                 }
-                await reschedule(input.ownerId, input.chatId, run, input.atMessageId);
+                await reschedule(input.ownerId, input.chatId, run, input.reason === "flowCommit" ? run.answerId ?? null : input.atMessageId);
               })();
               track(moved);
               await moved;
@@ -939,10 +995,14 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
     noteStaffReply: (input) => pauses().noteStaffReply(input),
     reportDelivery: (input) => delivery().report(input),
     readRun,
+    revokeConfirmation,
+    previewMigration: (input) => previewConfirmedMigration(input, { store, confirmations, portFor: portOf }),
     chatsByState: (flowId, options) => migrator().chatsByState(flowId, options),
     async migrateChats(input) {
       try {
-        return await migrator().migrateChats(input);
+        if (!input.requiresConfirmation) return await migrator().migrateChats(input);
+        const preview = await previewConfirmedMigration({ ...input, requiresConfirmation: input.requiresConfirmation }, { store, confirmations, portFor: portOf });
+        return await migrator().migrateChats({ ...input, chatIds: preview.eligible, filter: undefined });
       } finally {
         forgetPorts();
       }

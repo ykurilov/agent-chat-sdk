@@ -1,4 +1,4 @@
-import type { ChatService } from "@ykurilov/agent-chat-core";
+import { flowStateCommitter, type ChatService } from "@ykurilov/agent-chat-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { callTool, noticeService, saying, scriptedModel } from "../../../core/tests/unit/support/notice-chat";
 import { mockModelId } from "../../../core/tests/unit/support/mock-model";
@@ -45,6 +45,29 @@ function cardChat(setup: {
 const note = (field: string, value: unknown, id = "n1") => callTool("flow_note", id, { field, value });
 
 describe("T080 переход по данным в том же ответе", () => {
+  it("flow_note, clear карточки и отказ flow_exit сохраняют квитанцию и неизвестные поля приложения", async () => {
+    const chat = cardChat({ flow: "sales-review", scripts: [
+      saying("Привет"), note("name", "Анна"), saying("Запомнил"),
+      callTool("client_card", "clear-card", { action: "forget", field: "all" }), saying("Карточка очищена"),
+      callTool("flow_exit", "declined-exit", { exit: 1, why: "Заявка" }), saying("Продолжим"),
+    ] });
+    const { id } = await newChat(chat.service);
+    await say(chat.service, id, "Привет"); await chat.flow.settled();
+    const snapshot = await chat.service.getChatState(OWNER, id);
+    const confirmations = { ownPublished: { status: "confirmed", revision: "1", source: { kind: "judge" } } };
+    const applicationData = { retained: 42 };
+    expect((await flowStateCommitter(chat.service)!({ ownerId: OWNER, chatId: id, flowId: "sales-review", revision: "1", expectedAtMessageId: snapshot.atMessageId,
+      idempotencyKey: "seed-server-proof", flow: { ...(snapshot.values.flow as Record<string, unknown>), confirmations, applicationData } })).status).toBe("applied");
+    for (const message of ["Меня зовут Анна", "Забудь карточку", "Попробуй перейти"]) {
+      await say(chat.service, id, message); await chat.flow.settled();
+      expect((await chat.service.getChatState(OWNER, id)).values.flow).toMatchObject({ confirmations, applicationData });
+    }
+    expect(toolOutput(chat.model.doStreamCalls[2]!, "n1")).toContain("Записано");
+    expect(toolOutput(chat.model.doStreamCalls[4]!, "clear-card")).toContain("Стёр всё");
+    expect(toolOutput(chat.model.doStreamCalls[6]!, "declined-exit")).toContain("Судья не подтвердил");
+    await chat.flow.stop(); await chat.service.flush();
+  });
+
   it("поле карточки: flow_note записал значение — в результате карточка нового состояния", async () => {
     const chat = cardChat({
       flow: "sales-review",
