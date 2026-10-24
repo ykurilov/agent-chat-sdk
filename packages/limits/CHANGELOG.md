@@ -1,5 +1,11 @@
 # @ykurilov/agent-chat-limits
 
+## 0.76.0
+
+### Patch Changes
+
+- @ykurilov/agent-chat-core@0.76.0
+
 ## 0.75.0
 
 ### Patch Changes

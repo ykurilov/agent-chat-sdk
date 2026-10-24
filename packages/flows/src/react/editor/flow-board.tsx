@@ -25,7 +25,6 @@ import { activeExits, isFinal, stateById } from "../../engine/flow-graph";
 import type { FlowEditorLabels } from "../../labels/editor";
 import { useFlowLabels } from "../flow-labels";
 import type {
-  FlowAnyStateNodeProps,
   FlowEdgeKind,
   FlowEdgeProps,
   FlowEditorSkin,
@@ -52,12 +51,10 @@ const INPUT_HANDLE = "in";
 const LEGEND_KINDS: FlowEdgeKind[] = ["judge", "data", "event", "timer", "return"];
 
 type StateNodeData = { view: Omit<FlowStateNodeProps, "renderInputHandle" | "renderExitHandle">; draggable: boolean };
-type AnyNodeData = { view: Omit<FlowAnyStateNodeProps, "renderExitHandle">; draggable: boolean };
 type FlowEdgeData = Omit<FlowEdgeProps, "edgeId" | "path" | "labelX" | "labelY">;
 
 type StateNode = Node<StateNodeData, "state">;
-type AnyNode = Node<AnyNodeData, "any">;
-type BoardNode = StateNode | AnyNode;
+type BoardNode = StateNode;
 type BoardEdge = Edge<FlowEdgeData, "flow">;
 
 const SkinContext = createContext<FlowEditorSkin | null>(null);
@@ -86,16 +83,6 @@ function StateNodeView({ data }: NodeProps<StateNode>) {
   );
 }
 
-function AnyNodeView({ data }: NodeProps<AnyNode>) {
-  const skin = useSkin();
-  return (
-    <>
-      <skin.FlowAnyStateNode {...data.view} renderExitHandle={(exitId) => exitHandle(exitId, data.draggable)} />
-      {data.draggable ? <Handle type="source" position={Position.Right} id={NEW_EXIT_HANDLE} className="flow-board__new-exit" /> : null}
-    </>
-  );
-}
-
 function EdgeView({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data }: EdgeProps<BoardEdge>) {
   const skin = useSkin();
   const [path, labelX, labelY] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition });
@@ -103,14 +90,13 @@ function EdgeView({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targ
   return <skin.FlowEdge {...data} edgeId={id} path={path} labelX={labelX} labelY={labelY} />;
 }
 
-const nodeTypes = { state: StateNodeView, any: AnyNodeView };
+const nodeTypes = { state: StateNodeView };
 const edgeTypes = { flow: EdgeView };
 
 /** Место узла: из `layout`, а без него — сетка по порядку состояний. */
 function nodePosition(flow: AgentFlow, nodeId: string, index: number): FlowPoint {
   const saved = flow.layout[nodeId];
   if (saved) return saved;
-  if (nodeId === ANY_STATE_LAYOUT_KEY) return { x: 40, y: -220 };
   return { x: 40 + (index % 4) * 330, y: 40 + Math.floor(index / 4) * 260 };
 }
 
@@ -178,28 +164,7 @@ function useBoardModel(editor: FlowEditorController) {
         },
       },
     }));
-    if (flow.anyState.exits.length > 0 || flow.anyState.except.length > 0 || flow.layout[ANY_STATE_LAYOUT_KEY]) {
-      nodes.push({
-        id: ANY_STATE_LAYOUT_KEY,
-        type: "any",
-        position: nodePosition(flow, ANY_STATE_LAYOUT_KEY, 0),
-        draggable: editable,
-        data: {
-          draggable: editable,
-          view: {
-            except: flow.anyState.except.map((id) => stateById(flow, id)?.title ?? id),
-            exits: exitRows(flow, catalog, flow.anyState.exits, issues, labels),
-            selected: selection.kind === "any",
-            dimmed: marks !== null,
-            issues: countFor(issues, (issue) => !issue.place.stateId && flow.anyState.exits.some((exit) => exit.id === issue.place.exitId)),
-            onSelect: () => selectable && select({ kind: "any" }),
-          },
-        },
-      });
-    }
-
     const owners: Array<{ nodeId: string; exits: FlowExit[] }> = [
-      { nodeId: ANY_STATE_LAYOUT_KEY, exits: flow.anyState.exits },
       ...flow.states.map((state) => ({ nodeId: state.id, exits: state.exits })),
     ];
     const edges: BoardEdge[] = owners.flatMap(({ nodeId, exits }) =>

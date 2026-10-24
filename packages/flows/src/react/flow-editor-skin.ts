@@ -71,7 +71,7 @@ export interface FlowStateNodeProps {
   onSelect(): void;
 }
 
-/** Узел «Из любого состояния»: общие переходы. */
+/** Legacy-компонент: с 0.76 общие переходы находятся в настройках, доска этот узел не рисует. */
 export interface FlowAnyStateNodeProps {
   /** Названия состояний-исключений. */
   except: string[];
@@ -120,6 +120,8 @@ export interface FlowHeaderProps {
   onAddState(): void;
   onOpenCard(): void;
   onOpenJson(): void;
+  /** Открыть отдельные настройки общих переходов (не узел доски). Доступно и в readOnly. */
+  onOpenAnyState?(): void;
   /** Есть, если приложение передало `onSave`. */
   onSave?(): void;
   saving: boolean;
@@ -229,6 +231,8 @@ export interface FlowTargetOption {
 
 /** Карточка условия в панели состояния или общих переходов. */
 export interface FlowExitCardProps {
+  /** Читаемое правило общих переходов: условие → цель, локализовано слоем поведения. */
+  summary?: string;
   exitId: string;
   when: FlowCondition;
   to: string | null;

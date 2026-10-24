@@ -162,3 +162,8 @@ describe("скин редактора сценария Тандема", () => {
     expect(onGo).toHaveBeenCalledOnce();
   });
 });
+
+it("unknown common exceptions stay visible and removable",()=>{
+ const change=vi.fn();render(<tandemFlowEditorSkin.FlowAnyStatePanel except={["removed_state"]} states={[]} onExceptChange={change} exits={<div/>} onAddExit={vi.fn()}/>);
+ fireEvent.click(screen.getByRole("button",{name:"removed_state"}));expect(change).toHaveBeenCalledWith([]);
+});

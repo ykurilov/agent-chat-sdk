@@ -218,7 +218,7 @@ export function removeField(flow: AgentFlow, list: FieldList, fieldId: string): 
 
 /** Где поставить новое состояние без места: под всеми узлами доски. */
 export function freeSpot(flow: AgentFlow): FlowPoint {
-  const points = Object.values(flow.layout);
+  const points = flow.states.flatMap((state) => flow.layout[state.id] ? [flow.layout[state.id]!] : []);
   if (points.length === 0) return { x: 80, y: 80 };
   return { x: Math.min(...points.map((point) => point.x)), y: Math.max(...points.map((point) => point.y)) + 240 };
 }

@@ -237,7 +237,7 @@ export function TandemFlowAnyStatePanel(props: FlowAnyStatePanelProps) {
       <p className="text-sm text-[var(--foreground-muted)]">{labels.anyStatePanel.hint}</p>
       <div className="flex flex-col gap-1.5">
         <span className="text-sm font-medium text-[var(--foreground)]">{labels.anyStatePanel.except}</span>
-        <ChipToggles items={props.states.map((state) => ({ id: state.stateId, title: state.title }))} selected={props.except} onChange={props.onExceptChange} />
+        <ChipToggles items={[...props.states.map((state) => ({ id: state.stateId, title: state.title })), ...props.except.filter((id) => !props.states.some((state) => state.stateId === id)).map((id) => ({ id, title: id }))]} selected={props.except} onChange={props.onExceptChange} />
       </div>
       <section className="flex flex-col gap-3 border-t border-[var(--border)] pt-4" aria-label={labels.statePanel.exits}>
         <h3 className="text-base font-semibold text-[var(--foreground)]">{labels.statePanel.exits}</h3>

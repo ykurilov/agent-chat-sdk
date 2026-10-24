@@ -1,7 +1,7 @@
 import { Badge, Button, TandemMark, cn } from "@tandem/ui";
 import type { FlowEditorFrameProps, FlowHeaderProps } from "@ykurilov/agent-chat-flows/react";
 import { useFlowLabels } from "@ykurilov/agent-chat-flows/react";
-import { Braces, Eye, IdCard, Maximize2, MessagesSquare, Minimize2, Play, Plus, Save, ShieldCheck, Shuffle } from "lucide-react";
+import { Braces, Eye, IdCard, Maximize2, MessagesSquare, Minimize2, Play, Plus, Save, Settings2, ShieldCheck, Shuffle } from "lucide-react";
 import type { CSSProperties } from "react";
 import { useEffect, useState } from "react";
 import { FlowHeaderMenu, type FlowHeaderMenuItem } from "./flow-header-menu";
@@ -88,6 +88,7 @@ export function TandemFlowHeader(props: FlowHeaderProps) {
   const menuItems: FlowHeaderMenuItem[] = [
     { key: "state", label: labels.header.state, icon: <Plus />, disabled: mode === "run" || props.readOnly === true, onSelect: props.onAddState },
     { key: "card", label: labels.header.card, icon: <IdCard />, disabled: mode === "run", onSelect: props.onOpenCard },
+    ...(props.onOpenAnyState ? [{ key: "any-state", label: labels.anyStatePanel.title, icon: <Settings2 />, disabled: mode === "run", onSelect: props.onOpenAnyState }] : []),
     { key: "json", label: labels.header.json, icon: <Braces />, onSelect: props.onOpenJson },
     ...(props.onOpenMigrate ? [{ key: "migrate", label: labels.header.migrate, icon: <Shuffle />, onSelect: props.onOpenMigrate }] : []),
     ...(props.onOpenTestChat ? [{ key: "test-chat", label: testChatLabels.title, icon: <MessagesSquare />, onSelect: props.onOpenTestChat }] : []),
@@ -114,6 +115,9 @@ export function TandemFlowHeader(props: FlowHeaderProps) {
           <IdCard aria-hidden="true" className="size-4" />
           <span className="label">{labels.header.card}</span>
         </Button>
+        {props.onOpenAnyState && <Button variant="secondary" size="sm" className={cn(compact, wide)} onClick={props.onOpenAnyState} disabled={mode === "run"} title={labels.anyStatePanel.title}>
+          <Settings2 aria-hidden="true" className="size-4" /><span className="label">{labels.anyStatePanel.title}</span>
+        </Button>}
         <Button
           variant={mode === "check" ? "primary" : "secondary"}
           size="sm"

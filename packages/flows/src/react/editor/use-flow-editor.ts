@@ -236,7 +236,8 @@ export function useFlowEditor(options: UseFlowEditorOptions) {
 
   const goToIssue = useCallback((issue: FlowIssue) => {
     const { stateId, exitId, fieldId, sideTaskId } = issue.place;
-    if (stateId && flow.states.some((state) => state.id === stateId)) setSelection({ kind: "state", stateId, ...(exitId ? { exitId } : {}) });
+    if (issue.code === "unknown_except_state") setSelection({ kind: "any" });
+    else if (stateId && flow.states.some((state) => state.id === stateId)) setSelection({ kind: "state", stateId, ...(exitId ? { exitId } : {}) });
     else if (exitId && flow.anyState.exits.some((exit) => exit.id === exitId)) setSelection({ kind: "any", exitId });
     else if (sideTaskId) setSelection({ kind: "overview", sideTaskId });
     else if (fieldId) setSelection({ kind: "card" });

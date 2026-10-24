@@ -73,7 +73,10 @@ function useTestChatView(): TestChatView {
 function withTestChat(skin: FlowEditorSkin): FlowEditorSkin {
   function Header(props: FlowHeaderProps) {
     const { controller } = useTestChatView();
-    return <skin.FlowHeader {...props} onOpenTestChat={controller.open} />;
+    const openAnyState = props.onOpenAnyState;
+    return <skin.FlowHeader {...props} onOpenTestChat={controller.open}
+      {...(openAnyState ? { onOpenAnyState: () => { controller.close(); openAnyState(); } } : {})}
+    />;
   }
   function Frame(props: FlowEditorFrameProps) {
     const { panel } = useTestChatView();

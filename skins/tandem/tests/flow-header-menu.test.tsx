@@ -2,6 +2,8 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { FlowHeaderProps } from "@ykurilov/agent-chat-flows/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { FlowLabelsProvider } from "@ykurilov/agent-chat-flows/react";
+import { englishFlowLabels } from "@ykurilov/agent-chat-flows/react";
 import { tandemFlowEditorSkin } from "../src/flows";
 
 // Шапка доски на телефоне: лишние кнопки уходят в меню «⋯», Прогон и сохранение остаются.
@@ -90,4 +92,16 @@ describe("меню «⋯» шапки доски", () => {
     fireEvent.click(screen.getByRole("button", { name: "Ещё действия" }));
     expect(screen.getByRole("menuitem", { name: "Выйти из полного экрана" })).toBeTruthy();
   });
+});
+
+it("common settings remains a view action in a locked compact header",()=>{
+ const onOpenAnyState=vi.fn();render(<FlowHeader {...header({readOnly:true,onOpenAnyState})} compact/>);
+ fireEvent.click(screen.getByRole("button",{name:"Ещё действия"}));
+ const item=screen.getByRole("menuitem",{name:"Общие переходы"});expect(item.getAttribute("aria-disabled")).not.toBe("true");fireEvent.click(item);expect(onOpenAnyState).toHaveBeenCalledOnce();
+});
+
+it("common settings entry uses the supplied language labels",()=>{
+ const labels={...englishFlowLabels,editor:{...englishFlowLabels.editor,anyStatePanel:{...englishFlowLabels.editor.anyStatePanel,title:"Global route settings"}}};
+ render(<FlowLabelsProvider labels={labels}><FlowHeader {...header({onOpenAnyState:vi.fn()})}/></FlowLabelsProvider>);
+ expect(screen.getByRole("button",{name:"Global route settings"})).toBeTruthy();
 });

@@ -76,6 +76,7 @@ export interface BoardSpace {
   /** Кнопка сворачивания панели нужна только в обычной правке: проверка и прогон держат панель открытой. */
   inspectorToggleable: boolean;
   toggleInspector(): void;
+  showInspector(): void;
   fullscreenAllowed: boolean;
   fullscreen: boolean;
   setFullscreen(on: boolean): void;
@@ -136,6 +137,10 @@ export function useBoardSpace(
       toggleMinimap: () => remember("minimap", !minimapOpen),
       inspectorOpen,
       inspectorToggleable: !needed,
+      showInspector: () => {
+        if (inspector === "collapsible") setFollowed(true);
+        else remember("inspector", true);
+      },
       toggleInspector: () => {
         if (needed) return;
         if (inspector === "collapsible") setFollowed(!inspectorOpen);

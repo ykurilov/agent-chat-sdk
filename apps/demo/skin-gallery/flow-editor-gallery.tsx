@@ -6,6 +6,7 @@ import { createRoot } from "react-dom/client";
 import salesReview from "../../../packages/flows/tests/fixtures/sales-review.json";
 import sheetsLesson from "../../../packages/flows/tests/fixtures/sheets-lesson.json";
 import shopSupport from "../../../packages/flows/tests/fixtures/shop-support.json";
+import anyStateSettings from "../../../packages/flows/tests/fixtures/any-state-settings.json";
 import marathonDays from "../flow-test-chat/marathon-days.json";
 import "../src/styles.css";
 
@@ -19,6 +20,7 @@ const params = new URLSearchParams(location.search);
 document.documentElement.classList.toggle("dark", params.get("theme") === "dark");
 
 const fixtures: Record<string, unknown> = {
+  "any-state-settings": anyStateSettings,
   "sales-review": salesReview,
   "shop-support": shopSupport,
   "sheets-lesson": sheetsLesson,
@@ -33,7 +35,7 @@ function loadFixture(name: string): AgentFlow {
 
 /** Что умеет «приложение» витрины: инструменты и события всех трёх примеров. */
 const catalog = {
-  tools: ["give_booking_link", "call_expert", "find_order", "start_refund", "search_knowledge", "call_operator", "check_answer", "show_example"],
+  tools: ["finish_dialog", "give_booking_link", "call_expert", "find_order", "start_refund", "search_knowledge", "call_operator", "check_answer", "show_example"],
   events: ["booking_link", { name: "start_refund", label: "Возврат оформлен" }],
   widgets: [],
   fields: [

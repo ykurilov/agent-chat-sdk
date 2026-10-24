@@ -1,4 +1,4 @@
-import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import {
   FLOW_OPS_BY_FIELD_TYPE,
   FLOW_DATA_OPS,
@@ -92,6 +92,7 @@ export function FlowEditor({ skin, className, style, header: headerMode, legend,
       issues={editor.issueCount}
       onAddState={() => editor.addState(freeSpot(flow))}
       onOpenCard={() => editor.select({ kind: "card" })}
+      onOpenAnyState={() => { editor.select({ kind: "any" }); space.showInspector(); }}
       onOpenJson={editor.openJson}
       {...(options.onSave && !editor.readOnly ? { onSave: () => void editor.save() } : {})}
       saving={editor.saving}
@@ -115,7 +116,7 @@ export function FlowEditor({ skin, className, style, header: headerMode, legend,
       <skin.FlowEditorFrame
         header={header}
         board={<FlowBoard editor={editor} skin={skin} space={space} />}
-        panel={space.inspectorOpen ? <EditorPanel editor={editor} skin={skin} labels={labels} /> : null}
+        panel={space.inspectorOpen ? <EditorPanel editor={editor} skin={skin} labels={labels} onNavigate={space.showInspector} /> : null}
         dialog={<EditorDialog editor={editor} skin={skin} />}
         {...(space.header === "compact" ? { compact: true } : {})}
         // Свои класс и стиль приложения рассчитаны на место в странице; на весь экран редактор занимает окно.
@@ -172,10 +173,12 @@ function ExitCards({ editor, skin, labels, owner }: { editor: FlowEditorControll
     <>
       {exits.map((exit, index) => {
         const fieldType = exit.when.type === "data" ? fieldById(flow, exit.when.field)?.field.type : undefined;
+        const summary = `${conditionText(flow, exit.when, labels, editor.catalog)} → ${targetTitle(flow, exit.to, labels) ?? labels.board.noTarget}`;
         return (
+          <ExitFocus label={summary} key={exit.id} exitId={exit.id} selection={editor.selection} owner={owner}>
           <skin.FlowExitCard
-            key={exit.id}
             exitId={exit.id}
+            {...(owner === null ? { summary } : {})}
             when={exit.when}
             to={exit.to}
             fields={fields}
@@ -193,10 +196,23 @@ function ExitCards({ editor, skin, labels, owner }: { editor: FlowEditorControll
             onMoveDown={() => editor.edit((current) => moveExit(current, owner, exit.id, 1))}
             onDelete={() => editor.edit((current) => removeExit(current, owner, exit.id))}
           />
+          </ExitFocus>
         );
       })}
     </>
   );
+}
+
+/** Validation navigation focuses the rule container, never a text input or mobile keyboard. */
+function ExitFocus({ label, exitId, selection, owner, children }: { label: string; exitId: string; selection: FlowEditorController["selection"]; owner: ExitOwner; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const focused = (selection.kind === "any" && owner === null || selection.kind === "state" && selection.stateId === owner) && selection.exitId === exitId;
+  useEffect(() => {
+    if (!focused || !ref.current) return;
+    ref.current.scrollIntoView?.({ block: "nearest" });
+    ref.current.focus({ preventScroll: true });
+  }, [focused, selection]);
+  return <div ref={ref} role="group" aria-label={label} tabIndex={focused ? -1 : undefined} data-flow-exit-focus={exitId}>{children}</div>;
 }
 
 function FieldRows({ editor, skin, list }: { editor: FlowEditorController; skin: FlowEditorSkin; list: FieldList }) {
@@ -221,8 +237,8 @@ function FieldRows({ editor, skin, list }: { editor: FlowEditorController; skin:
   );
 }
 
-function EditorPanel({ editor, skin, labels }: { editor: FlowEditorController; skin: FlowEditorSkin; labels: FlowEditorLabels }): ReactNode {
-  const panel = <EditablePanel editor={editor} skin={skin} labels={labels} />;
+function EditorPanel({ editor, skin, labels, onNavigate }: { editor: FlowEditorController; skin: FlowEditorSkin; labels: FlowEditorLabels; onNavigate(): void }): ReactNode {
+  const panel = <EditablePanel editor={editor} skin={skin} labels={labels} onNavigate={onNavigate} />;
   // Только просмотр: поля и кнопки панели правок выключены сразу, а не молча возвращают прежнее значение.
   if (!editor.readOnly || editor.mode !== "edit") return panel;
   return (
@@ -232,11 +248,11 @@ function EditorPanel({ editor, skin, labels }: { editor: FlowEditorController; s
   );
 }
 
-function EditablePanel({ editor, skin, labels }: { editor: FlowEditorController; skin: FlowEditorSkin; labels: FlowEditorLabels }): ReactNode {
+function EditablePanel({ editor, skin, labels, onNavigate }: { editor: FlowEditorController; skin: FlowEditorSkin; labels: FlowEditorLabels; onNavigate(): void }): ReactNode {
   const { flow, selection } = editor;
 
   if (editor.mode === "check") {
-    return <skin.FlowCheckPanel issues={editor.issues.map((issue) => ({ ...issue, onGo: () => editor.goToIssue(issue) }))} />;
+    return <skin.FlowCheckPanel issues={editor.issues.map((issue) => ({ ...issue, onGo: () => { editor.goToIssue(issue); onNavigate(); } }))} />;
   }
   if (editor.mode === "run" && editor.simulation) return <RunPanel editor={editor} skin={skin} labels={labels} />;
 
@@ -280,17 +296,7 @@ function EditablePanel({ editor, skin, labels }: { editor: FlowEditorController;
       />
     );
   }
-  if (selection.kind === "any") {
-    return (
-      <skin.FlowAnyStatePanel
-        except={flow.anyState.except}
-        states={stateLinks(editor)}
-        onExceptChange={(except) => editor.edit((current) => setExcept(current, except))}
-        exits={<ExitCards editor={editor} skin={skin} labels={labels} owner={null} />}
-        onAddExit={(kind) => editor.edit((current) => addExit(current, null, kind).flow)}
-      />
-    );
-  }
+  if (selection.kind === "any") return <AnyStateSettings editor={editor} skin={skin} labels={labels} />;
   if (selection.kind === "card") {
     return (
       <skin.FlowCardPanel
@@ -324,12 +330,23 @@ function EditablePanel({ editor, skin, labels }: { editor: FlowEditorController;
       issues={editor.issueCount}
       sections={
         <>
+          <div style={{ flex: "none" }}><AnyStateSettings editor={editor} skin={skin} labels={labels} /></div>
           <ScheduleSection editor={editor} skin={skin} labels={labels} />
           <SideTasksSection editor={editor} skin={skin} focused={selection.kind === "overview" ? selection.sideTaskId : undefined} />
         </>
       }
     />
   );
+}
+
+function AnyStateSettings({ editor, skin, labels }: { editor: FlowEditorController; skin: FlowEditorSkin; labels: FlowEditorLabels }) {
+  return <skin.FlowAnyStatePanel
+    except={editor.flow.anyState.except}
+    states={stateLinks(editor)}
+    onExceptChange={(except) => editor.edit((current) => setExcept(current, except))}
+    exits={<ExitCards editor={editor} skin={skin} labels={labels} owner={null} />}
+    onAddExit={(kind) => editor.edit((current) => addExit(current, null, kind).flow)}
+  />;
 }
 
 /** Находки по «Дням и времени»: их коды из `checkFlow`. */

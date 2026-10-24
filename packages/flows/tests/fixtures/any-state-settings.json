@@ -1,0 +1,11 @@
+{
+  "format": "agent-flow", "version": 1, "id": "common-settings", "name": "Настройки сценария", "start": "intro",
+  "common": "Обсудить задачу человека.", "tools": ["finish_dialog"],
+  "anyState": {"except": ["review"], "exits": [{"id": "finish_dialog", "when": {"type": "event", "event": "tool", "name": "finish_dialog"}, "to": "final"}]},
+  "states": [
+    {"id": "intro", "title": "Знакомство", "instructions": "Узнать задачу.", "exits": [{"id": "next", "when": {"type": "judge", "text": "Задача названа"}, "to": "review"}]},
+    {"id": "review", "title": "Обсуждение", "instructions": "Обсудить решение.", "exits": [{"id": "done", "when": {"type": "judge", "text": "Решение готово"}, "to": "final"}]},
+    {"id": "final", "title": "Завершение разговора", "instructions": "Подвести итог."}
+  ],
+  "layout": {"intro": {"x": 40, "y": 40}, "review": {"x": 370, "y": 40}, "final": {"x": 700, "y": 40}, "@any": {"x": -5000, "y": -5000}}
+}

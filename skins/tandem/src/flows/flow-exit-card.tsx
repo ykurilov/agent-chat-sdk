@@ -30,6 +30,7 @@ export function TandemFlowExitCard(props: FlowExitCardProps) {
         errors.length > 0 ? "border-[var(--destructive)]" : "border-[var(--border)]",
       )}
     >
+      {props.summary && <p data-flow-exit-summary="" className="text-sm font-medium text-[var(--foreground)]">{props.summary}</p>}
       <div className="flex items-center gap-1">
         <div role="radiogroup" aria-label={labels.exitCard.when} className="flex min-w-0 flex-1 flex-wrap gap-0.5 rounded-[var(--radius-control)] bg-[var(--surface-muted)] p-0.5">
           {KINDS.map((kind) => (
