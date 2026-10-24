@@ -2032,3 +2032,7 @@ pnpm update "@ykurilov/agent-chat-*" --latest
 ### Редактор сценария в Одуванчике
 
 Для `FlowEditor` и `FlowTestChat` используйте `oduvanchikFlowEditorSkin` из `@ykurilov/agent-chat-skin-oduvanchik/flows` и `/flows/styles.css` (с 0.78). Приложению с редактором требуется optional peer `@ykurilov/agent-chat-flows`; обычному `/chat` он не нужен. [Подключение, вложенный чат и CSS](../skins/oduvanchik/README.md#редактор-сценария).
+
+## Контракты приложения: новые чаты, фото и контекст
+
+[Приветствие HTTP-нового чата, текущий вопрос для async contextBlocks, названия, данные импорта, номера фотографий и тестовая модель](app-chat-contracts.md). Там же описаны direct DeepSeek и гарантия полных блоков после компакции.

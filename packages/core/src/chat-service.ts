@@ -72,6 +72,8 @@ import { branchStateOf, readBranchState } from "./app-state/branch-state";
 import type { BranchState } from "./app-state/branch-state";
 import { createStateChanged } from "./app-state/state-changed";
 import { registerFlowStateCommit } from "./app-state/flow-state-commit";
+import { chatImageReferences, numberedImageParts } from "./attachments/chat-image-numbers";
+import type { ChatImageReference } from "./attachments/chat-image-numbers";
 import type { StateChangeReason, StateChangedHandler } from "./app-state/state-changed";
 import { CLOSED_STATE_KEY, closureOfState, hiddenStateKeyOf, isStateMessage, publicMessages, stateMessage } from "./app-state/state-messages";
 import type { AppNoticeViews } from "./app-state/state-messages";
@@ -845,7 +847,7 @@ export interface ChatService {
    * @throws TypeError в приветствии не ровно одно из text/instruction или оно пустое либо длиннее 10 000 знаков, `data` не
    * JSON-объект или больше 16 КБ: чат не создан.
    */
-  createChat(userId: string, options?: { origin?: ExternalChannel; greeting?: ChatGreeting; data?: Record<string, unknown> }): Promise<Chat>;
+  createChat(userId: string, options?: { origin?: ExternalChannel; greeting?: ChatGreeting; data?: Record<string, unknown>; title?: string }): Promise<Chat>;
   /**
    * Чат объекта приложения (урок, заказ): у владельца один чат на ключ. Нет — создаётся (с данными, названием и
    * приветствием), есть — отдаётся как есть: данные и приветствие у найденного чата не меняются. Одновременные вызовы
@@ -919,6 +921,8 @@ export interface ChatService {
    * @throws ChatNotFoundError чата нет или он чужой.
    */
   getChatData(userId: string, chatId: string): Promise<Record<string, unknown>>;
+  /** Нумерованные картинки человека в полной активной ветке, включая сжатую историю. Только чтение, с проверкой владельца. */
+  getChatImages(userId: string, chatId: string): Promise<ChatImageReference[]>;
   /** События чата: начало и конец хода (с причиной и каналом), смена задач фона, смена данных чата. Возвращает отписку. */
   subscribeEvents(listener: (event: ChatEvent) => void): () => void;
   /**
@@ -2208,6 +2212,11 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     startingSlots.set(chatId, turnSlots.take(userId));
   }
 
+  async function filePartsWithNumbers(chatId: string, parts: StoredFilePart[]): Promise<AgentChatMessage["parts"]> {
+    if (!options.attachments?.imageNumbers || !parts.some(part => part.mediaType.startsWith("image/"))) return parts;
+    return numberedImageParts(await storage.listMessages(chatId), parts);
+  }
+
   async function acceptFiles(userId: string, chatId: string, files: IncomingFilePart[]): Promise<StoredFilePart[]> {
     return files.length > 0 ? options.attachments!.acceptUserParts({ userId, chatId, parts: files }) : [];
   }
@@ -2734,7 +2743,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
         parentId: branch.at(-1)?.id ?? null,
         role: "user",
         parts: [
-          ...fileParts,
+          ...await filePartsWithNumbers(chatId, fileParts),
           ...(text.trim().length > 0 ? [{ type: "text" as const, text }] : []),
           ...(sendOptions?.voiceMode === true ? [voiceModePart(await currentVoice(userId), undefined, uniqueVoiceSounds(sendOptions.voiceSounds ?? []))] : []),
           ...[channelPart(sendOptions?.channel ?? "web", sendOptions?.group)].filter((part) => part !== undefined),
@@ -3088,7 +3097,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
             chatId,
             parentId,
             role: "user",
-            parts: [...fileParts, ...(text.trim().length > 0 ? [{ type: "text" as const, text }] : []), steerPart()],
+            parts: [...await filePartsWithNumbers(chatId, fileParts), ...(text.trim().length > 0 ? [{ type: "text" as const, text }] : []), steerPart()],
           });
           await confirmFiles(correction.id, fileParts);
           await storage.insertMessage(correction);
@@ -3190,6 +3199,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     liveDemos: input.agent.liveDemos === true,
     checksReplies: replyChecks.checks.length > 0,
     async createChat(userId, createOptions) {
+      const title = createOptions?.title === undefined ? undefined : normalizeChatTitle(createOptions.title);
       if (createOptions?.data !== undefined) {
         assertChatData(createOptions.data);
         // Хранилище без данных чата молча их потеряло бы: отказ до создания чата.
@@ -3202,6 +3212,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
           ownerId: userId,
           ...(await choiceForNewChat(userId)),
           ...(createOptions?.origin && { origin: createOptions.origin }),
+          ...(title !== undefined && { title }),
           ...(createOptions?.data !== undefined && { data: createOptions.data }),
         },
         createOptions?.greeting,
@@ -3382,6 +3393,11 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     async getChatData(userId, chatId) {
       const chat = await ownChat(userId, chatId);
       return structuredClone(chatDataOfInput(chat) ?? {});
+    },
+
+    async getChatImages(userId, chatId) {
+      await ownChat(userId, chatId);
+      return chatImageReferences(await currentBranch(chatId));
     },
 
     async listChats(userId, listOptions) {
@@ -3618,7 +3634,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
             parentId: edited.parentId,
             role: "user",
             parts: [
-              ...fileParts,
+              ...await filePartsWithNumbers(chatId, fileParts),
               ...(text.trim().length > 0 ? [{ type: "text" as const, text }] : []),
               ...(editOptions?.voiceMode === true
                 ? [

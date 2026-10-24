@@ -1,4 +1,4 @@
-import { modelAcceptsImages } from "@ykurilov/agent-chat-core";
+import { CHAT_IMAGE_NUMBER_PART, chatImageReferences, modelAcceptsImages } from "@ykurilov/agent-chat-core";
 import type { AgentChatMessage, ModelProfile } from "@ykurilov/agent-chat-core";
 import { isAttachmentId } from "./attachment-storage";
 import { fitImageForModel } from "./fit-image";
@@ -96,6 +96,7 @@ export async function prepareHistory(input: {
   imagePlans?: ImagePlanCache;
   /** Плашка вместо картинки для модели без зрения; нет — пометка «не показана». */
   imagesForBlindModels?: ResolvedImagesForBlindModels;
+  imageNumbers?: boolean;
 }): Promise<AgentChatMessage[]> {
   const { storage, chatId, model, imagesForBlindModels: blind } = input;
   const seesImages = modelAcceptsImages(model.profile, model.providerId);
@@ -126,8 +127,15 @@ export async function prepareHistory(input: {
   }
 
   return Promise.all(
-    input.history.map(async (message) =>
-      message.parts.some((part) => part.type === "file") ? { ...message, parts: await Promise.all(message.parts.map(convert)) } : message,
-    ),
+    input.history.map(async (message) => {
+      const numbers = input.imageNumbers ? new Map(chatImageReferences([message]).map(ref => [ref.attachmentId, ref.number])) : undefined;
+      if (!message.parts.some(part => part.type === "file" || part.type === CHAT_IMAGE_NUMBER_PART)) return message;
+      const converted = await Promise.all(message.parts.filter(part => part.type !== CHAT_IMAGE_NUMBER_PART).map(async part => {
+        const number = part.type === "file" && part.url.startsWith(PREFIX) ? numbers?.get(part.url.slice(PREFIX.length)) : undefined;
+        const value = await convert(part);
+        return number === undefined ? [value] : [{ type: "text" as const, text: `[Фото №${number}]` }, value];
+      }));
+      return { ...message, parts: converted.flat() };
+    }),
   );
 }

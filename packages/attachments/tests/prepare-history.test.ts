@@ -28,6 +28,21 @@ async function setup() {
 }
 
 describe("вложения в запросе к модели", () => {
+  it("opt-in places a durable human photo number immediately beside its image; default prompt is byte-equivalent", async () => {
+    const { image, storage, message, ref } = await setup();
+    const base = message([ref(image), { type: "text", text: "текст" }]);
+    const numbered = message([ref(image), { type: "data-chat-image-number", data: { attachmentId: image.id, number: 3 } }, { type: "text", text: "текст" }]);
+    const run = (history: AgentChatMessage[], imageNumbers = false) => prepareHistory({ storage, chatId: "chat-1", history, model: { profile: seeing, providerId: "p" }, imageNumbers });
+    expect(JSON.stringify(await run([numbered]))).toBe(JSON.stringify(await run([base])));
+    const result = await run([numbered], true);
+    expect(result[0]!.parts.map(p => p.type)).toEqual(["text", "file", "text"]);
+    expect(result[0]!.parts[0]).toEqual({ type: "text", text: "[Фото №3]" });
+    expect((result[0]!.parts[1] as { url: string }).url).toMatch(/^data:image\/png/);
+    expect(JSON.stringify(await run([numbered], true))).toBe(JSON.stringify(result));
+    expect(JSON.stringify(await run([{ ...numbered, role: "assistant" }], true))).not.toContain("Фото №");
+    expect(JSON.stringify(await run([message([ref(image), { type: "data-chat-image-number", data: { attachmentId: crypto.randomUUID(), number: 99 } }])], true))).not.toContain("Фото №");
+  });
+
   it("картинка для модели со зрением — байтами в data-URL, имя и тип на месте", async () => {
     const { image, message, ref, run, png } = await setup();
     const [result] = await run([message([ref(image), { type: "text", text: "Что тут?" }])], seeing);

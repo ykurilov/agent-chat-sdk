@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { ANSWER_STALE_AFTER_MS } from "../../src/agent-run/answer-liveness";
 import { ApprovalNotPendingError, ChatNotFoundError, NothingToRetryError, createChatService } from "../../src/chat-service";
+import type { ContextBlocksSource } from "../../src/frozen-context/context-blocks";
 import type { ChatService } from "../../src/chat-service";
 import { createRunningAnswerRegistry } from "../../src/running-answers/running-answer-registry";
 import { createInMemoryChatStorage } from "../../src/storage/in-memory-storage";
@@ -47,7 +48,7 @@ const callsRemove = (...calls: Array<[string, string]>): LanguageModelV4StreamPa
 function setup(
   scripts: LanguageModelV4StreamPart[][],
   storage: ChatStorage = createInMemoryChatStorage(),
-  extra: { needsApproval?: boolean | ((input: { path: string }) => boolean); limits?: SpendingLimits } = {},
+  extra: { needsApproval?: boolean | ((input: { path: string }) => boolean); limits?: SpendingLimits; contextBlocks?: ContextBlocksSource } = {},
 ) {
   const execute = vi.fn(async ({ path }: { path: string }) => `удалено ${path}`);
   const model = scriptedModel(scripts);
@@ -58,6 +59,7 @@ function setup(
       defaultChoice: { modelId: mockModelId, providerId: "mock" },
       agent: {
         instructions: "Ты помощник.",
+        contextBlocks: extra.contextBlocks,
         tools: {
           remove: tool({ description: "Удалить", title: "Удалить файл", inputSchema: z.object({ path: z.string() }), needsApproval: extra.needsApproval ?? true, execute }),
         },
@@ -87,6 +89,18 @@ const requestedApprovalId = async (service: ChatService, chatId: string) => {
 const promptText = (model: ReturnType<typeof scriptedModel>, call: number) => JSON.stringify(model.doStreamCalls[call]!.prompt);
 
 describe("подтверждение вызова инструмента", () => {
+
+  it("approval resume retains the original human id/text and does not classify approval as a new question", async () => {
+    const source = vi.fn<ContextBlocksSource>(async ({ userMessage }) => [{ key: "classify", text: `human:${userMessage?.id}:${userMessage?.text}` }]);
+    const { service, model } = setup([callsRemove(["c1", "a"])], undefined, { contextBlocks: source });
+    const { chat } = await askAndWaitForRequest(service, "удали только a");
+    await service.answerApproval("anna", chat.id, await requestedApprovalId(service, chat.id), "allow");
+    await readAll((await service.subscribe("anna", chat.id))!);
+    expect(source.mock.calls).toHaveLength(2);
+    for (const [input] of source.mock.calls) expect(input.userMessage).toEqual({ id: "u1", text: "удали только a" });
+    expect(promptText(model, 1).split("human:u1:удали только a")).toHaveLength(2);
+  });
+
   it("ход останавливается на запросе: инструмент не выполнен, ответ ждёт решения", async () => {
     const { service, execute } = setup([callsRemove(["c1", "a"])]);
     const { chat, chunks } = await askAndWaitForRequest(service);

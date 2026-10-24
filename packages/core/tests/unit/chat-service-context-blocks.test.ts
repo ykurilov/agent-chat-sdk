@@ -44,6 +44,39 @@ function fakeMemory(read: () => string | null): LongTermMemory {
 }
 
 describe("agent.contextBlocks в службе (US2)", () => {
+
+  it("a server notice never reclassifies a stale human question", async () => {
+    const source = vi.fn((_input: ContextBlocksInput) => []);
+    const { service } = build(source);
+    const chat = await service.createChat("anna");
+    await readAll(await service.sendMessage("anna", chat.id, userMessage("real-human", "мой вопрос")));
+    await service.deliverNotices({ ownerId: "anna", chatId: chat.id, notices: [{ kind: "app", title: "таймер" }], wakeAgent: true, deliveryKey: "tick", awaitAnswer: true });
+    expect(source).toHaveBeenCalledTimes(2);
+    expect(source.mock.calls[0]![0].userMessage).toEqual({ id: "real-human", text: "мой вопрос" });
+    expect(source.mock.calls[1]![0].userMessage).toBeNull();
+  });
+
+  it("awaits async classification of the current human text without cross-chat state", async () => {
+    const source = vi.fn(async (input: ContextBlocksInput) => {
+      await Promise.resolve();
+      return [{ key: "classification", text: `mode:${input.userMessage?.id}:${input.userMessage?.text}` }];
+    });
+    const { service, model } = build(source);
+    const a = await service.createChat("anna");
+    const b = await service.createChat("boris");
+    await Promise.all([
+      readAll(await service.sendMessage("anna", a.id, userMessage("a-question", "мой режим"))),
+      readAll(await service.sendMessage("boris", b.id, userMessage("b-question", "другой режим"))),
+    ]);
+    expect(source.mock.calls.map(([input]) => [input.ownerId, input.userMessage])).toEqual([
+      ["anna", { id: "a-question", text: "мой режим" }],
+      ["boris", { id: "b-question", text: "другой режим" }],
+    ]);
+    expect(JSON.stringify(model.doStreamCalls[0]!.prompt)).toContain("mode:a-question:мой режим");
+    expect(JSON.stringify(model.doStreamCalls[0]!.prompt)).not.toContain("другой режим");
+    expect(JSON.stringify(model.doStreamCalls[1]!.prompt)).toContain("mode:b-question:другой режим");
+  });
+
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date(2026, 0, 1, 12));

@@ -166,5 +166,5 @@ function screenDataOf(name: string | undefined, data: unknown, views: AppNoticeV
 
 /** Части только для модели: застывшие блоки контекста и отметка конца хода инструментом без слов. */
 export function isModelOnlyPart(part: { type: string }): boolean {
-  return part.type === FROZEN_CONTEXT_PART_TYPE || part.type === END_TURN_PART_TYPE;
+  return part.type === FROZEN_CONTEXT_PART_TYPE || part.type === END_TURN_PART_TYPE || part.type === "data-chat-image-number";
 }

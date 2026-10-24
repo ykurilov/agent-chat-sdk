@@ -276,6 +276,9 @@ export type {
 } from "./subject-chats/subject-chats";
 export { AttachmentRejectedError, withoutFileParts } from "./attachments/message-attachments";
 export type { IncomingFilePart, MessageAttachments, StoredFilePart } from "./attachments/message-attachments";
+export type { ChatImageReference } from "./attachments/chat-image-numbers";
+/** @internal Чтение серверной метки пакетом attachments. */
+export { CHAT_IMAGE_NUMBER_PART, chatImageReferences } from "./attachments/chat-image-numbers";
 export type { AgentToolsModel, AgentToolsSource } from "./agent-run/run-agent-turn";
 export { AgentViewerError } from "./agent-run/agent-viewer";
 export type { AgentViewer, AgentViewerInput, AgentViewerSource } from "./agent-run/agent-viewer";

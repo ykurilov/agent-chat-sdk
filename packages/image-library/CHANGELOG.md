@@ -1,5 +1,11 @@
 # @ykurilov/agent-chat-image-library
 
+## 0.79.0
+
+### Patch Changes
+
+- @ykurilov/agent-chat-react@0.79.0
+
 ## 0.78.0
 
 ### Patch Changes

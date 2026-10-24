@@ -23,8 +23,23 @@ describe("DeepSeek: рассуждения полем thinking", () => {
     expect(request(deepseekProvider, "on")).toEqual({ providerOptions: { deepseek: { thinking: { type: "enabled" } } } });
   });
 
-  it.each(["minimal", "low", "medium", "high", "max"] as const)("уровень %s не поддерживается", (level) => {
-    expect(() => request(deepseekProvider, level)).toThrow(/deepseek/i);
+  it.each([["minimal", "low"], ["low", "low"], ["medium", "high"], ["high", "high"], ["max", "max"]] as const)("уровень %s — direct effort %s", (level, effort) => {
+    expect(request(deepseekProvider, level)).toEqual({ providerOptions: { deepseek: { thinking: { type: "enabled" }, reasoningEffort: effort } } });
+  });
+
+  it.each(["off", "low", "high", "max"] as const)("wire body direct DeepSeek %s, not OpenRouter reasoning", async (level) => {
+    const bodies: Record<string, unknown>[] = [];
+    const fetch: typeof globalThis.fetch = async (_url, init) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      return new Response("{}", { status: 500 });
+    };
+    const model = deepseekProvider.createLanguageModel("deepseek-flash", "test-key", { fetch }) as unknown as { doGenerate(options: unknown): Promise<unknown> };
+    await model.doGenerate({ prompt: [{ role: "user", content: [{ type: "text", text: "Hello" }] }], ...request(deepseekProvider, level) }).catch(() => {});
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]!.thinking).toEqual({ type: level === "off" ? "disabled" : "enabled" });
+    if (level === "off") expect(bodies[0]).not.toHaveProperty("reasoning_effort");
+    else expect(bodies[0]!.reasoning_effort).toBe(level);
+    expect(bodies[0]).not.toHaveProperty("reasoning");
   });
 });
 

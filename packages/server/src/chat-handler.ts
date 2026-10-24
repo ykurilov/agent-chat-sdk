@@ -34,6 +34,7 @@ import {
   WidgetAnswerRefusedError,
   WidgetNotPendingError,
 } from "@ykurilov/agent-chat-core";
+import type { NewChatGreetingResolver } from "./new-chat-greeting";
 import type {
   AbandonedBurstsOptions,
   AfterTurnHandler,
@@ -217,6 +218,13 @@ export interface ChatHandlerOptions extends ServiceOptionsOfServer {
    */
   newChatData?: NewChatDataResolver;
   /**
+   * Приветствие нового обычного чата (`POST {base}`), после `newChatData`. `null` — без приветствия.
+   * Решение до записи: исключение или неверное приветствие — 500, чат не создан. Указание запускает один ход
+   * после создания (обычные права/лимиты/расходы). GET, reload и чаты объектов эту функцию не вызывают.
+   * Повтор HTTP POST создаёт другой чат: гарантия — одна побудка на созданный чат, не идемпотентность POST.
+   */
+  newChatGreeting?: NewChatGreetingResolver;
+  /**
    * Чужие страницы, которым можно менять данные чата с куками человека, например `["https://school.getcourse.ru"]`,
    * когда чат встроен в чужой сайт и шлёт запросы прямо оттуда. Свою страницу вносить не нужно: запросы с неё проходят всегда.
    * Запрос, меняющий данные (не GET), с чужой страницы — ответ 403 `forbidden_origin`, ничего не записано.
@@ -336,6 +344,7 @@ const SERVER_ONLY_OPTIONS = {
   chatList: true,
   subjectChats: true,
   newChatData: true,
+  newChatGreeting: true,
   allowedOrigins: true,
   heartbeatIntervalMs: true,
 } satisfies Record<Exclude<keyof ChatHandlerOptions, keyof ServiceOptionsOfServer>, true>;
@@ -517,7 +526,11 @@ export function createChatServer(options: ChatHandlerOptions): { handler: ChatHa
       if (method === "GET" && options.chatList) return Response.json({ chats: await service.listChats(userId, chatListOptions(options.chatList)) });
       if (method !== "POST") return errorResponse(404, "not_found");
       const data = options.newChatData ? await resolveNewChatData(options.newChatData, { user: { id: userId }, request }) : undefined;
-      const chat = await service.createChat(userId, data && { data });
+      const greeting = options.newChatGreeting ? await options.newChatGreeting({ userId, chatData: structuredClone(data) }) : null;
+      if (greeting !== null && (typeof greeting !== "object" || Array.isArray(greeting))) {
+        throw new TypeError("newChatGreeting должен вернуть приветствие или null.");
+      }
+      const chat = await service.createChat(userId, { ...(data !== undefined && { data }), ...(greeting !== null && { greeting }) });
       return Response.json({ id: chat.id }, { status: 201 });
     }
 

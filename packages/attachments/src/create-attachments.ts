@@ -18,6 +18,8 @@ const ABANDONED_AFTER_MS = 24 * 60 * 60_000;
 const CLEANUP_EVERY_MS = 15 * 60_000;
 
 export interface CreateAttachmentsOptions {
+  /** Номер [Фото №N] рядом с новой картинкой человека. Старые файлы без метки не нумеруются. */
+  imageNumbers?: boolean;
   storage: AttachmentStorage;
   limits?: Partial<AttachmentLimits>;
   /** Часы; в тестах подменяются. */
@@ -121,12 +123,13 @@ export function createAttachments(options: CreateAttachmentsOptions): Attachment
 
   return {
     storage,
+    ...(options.imageNumbers && { imageNumbers: true }),
     instructions: blindImages ? `${attachmentsInstructions} ${blindImages.instructions}` : attachmentsInstructions,
     // Текст файла блоком `<attachment …>`, подделанный в ответе, ядро вырезает.
     serviceBlocks: [{ tag: "attachment" }],
     acceptUserParts,
     confirmUserParts,
-    prepareHistory: (input) => prepareHistory({ storage, imagePlans, ...input, ...(blindImages && { imagesForBlindModels: blindImages }) }),
+    prepareHistory: (input) => prepareHistory({ storage, imagePlans, ...input, ...(options.imageNumbers && { imageNumbers: true }), ...(blindImages && { imagesForBlindModels: blindImages }) }),
     async readChatImage({ chatId, attachmentId }) {
       const record = isAttachmentId(attachmentId) ? await storage.get(attachmentId) : undefined;
       if (!record || record.chatId !== chatId || record.kind !== "image") return undefined;

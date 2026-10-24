@@ -106,3 +106,5 @@ await chat.flush({ waitForAnswersMs: 20_000 }); // при штатной ост�
 Подключение целиком: [docs/getting-started.md](https://github.com/ykurilov/agent-chat-sdk/blob/main/docs/getting-started.md).
 
 Журнал изменений и что делать при обновлении: [CHANGELOG.md](./CHANGELOG.md). Все пакеты SDK выходят вместе и с одной версией; обновление — `pnpm update "@ykurilov/agent-chat-*" --latest`.
+
+Контракты интеграции приложения: [HTTP-приветствие, текущий вопрос, номера фото, метаданные и тесты](https://github.com/ykurilov/agent-chat-sdk/blob/main/docs/app-chat-contracts.md).

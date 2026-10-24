@@ -58,6 +58,21 @@ async function ask(service: ReturnType<typeof setup>["service"], chatId: string,
 }
 
 describe("данные чата: создание и чтение", () => {
+  it("createChat validates and persists an explicit title without sending metadata to the model", async () => {
+    const { service, storage, model } = setup();
+    const chat = await service.createChat("anna", { title: "  Личный   дневник  ", data: { secret: "metadata-secret" } });
+    expect(chat.title).toBe("Личный дневник");
+    expect((await storage.getChat(chat.id))?.title).toBe("Личный дневник");
+    await ask(service, chat.id);
+    expect((await storage.getChat(chat.id))?.title).toBe("Личный дневник");
+    expect(JSON.stringify(model.doStreamCalls)).not.toContain("metadata-secret");
+    expect(JSON.stringify(model.doStreamCalls)).not.toContain("Личный дневник");
+    for (const title of ["", "x".repeat(101), 42, null]) {
+      await expect(service.createChat("anna", { title: title as never })).rejects.toThrow();
+    }
+    expect(await storage.listChats("anna")).toHaveLength(1);
+  });
+
   it("createChat с data: чат обычный (без ключа объекта), данные записаны; subjectData — тот же объект", async () => {
     const { service, storage } = setup();
     const chat = await service.createChat("anna", { data: formData });

@@ -112,3 +112,5 @@ import { attachmentsClient } from "@ykurilov/agent-chat-attachments/react";
 `notice` с готовой надписью. `UserMessage` получает необязательное `attachments` (`MessageAttachmentsView`): миниатюры картинок и плашки файлов.
 Нет свойства — вложений нет, ничего про них не рисовать. Надписи пакета — `russianAttachmentsLabels`, английские — `englishAttachmentsLabels`, свои передаются в
 `createAttachmentsClient(labels)`.
+
+Контракты интеграции приложения: [HTTP-приветствие, текущий вопрос, номера фото, метаданные и тесты](https://github.com/ykurilov/agent-chat-sdk/blob/main/docs/app-chat-contracts.md).

@@ -180,6 +180,31 @@ describe("застывающий контекст: сценарии через �
     expect(lastUserTexts(next)).toEqual(["дальше"]);
   });
 
+
+  it("compaction restores every application block in full and stable order, once", async () => {
+    const blocks = [
+      { key: "first", text: "BEGIN_FIRST:" + "A".repeat(20_000) + ":END_FIRST" },
+      { key: "second", text: "BEGIN_SECOND:" + "Б".repeat(20_000) + ":END_SECOND" },
+      { key: "third", text: "BEGIN_THIRD:" + "C".repeat(20_000) + ":END_THIRD" },
+    ];
+    const model = scriptedModel([]);
+    const { service, storage } = build(model, {
+      agent: { instructions: "Помощник", contextBlocks: async () => blocks },
+      compaction: { thresholdTokens: 1_000_000, tailTokens: 100, summaryCeilingTokens: 100 },
+    });
+    const chat = await service.createChat("anna");
+    for (let n = 1; n <= 5; n++) await ask(service, chat.id, `block-u${n}`, `вопрос ${n}`);
+    expect(await service.compactNow("anna", chat.id)).toBe("compacted");
+    expect(await storage.listCompactions(chat.id)).toHaveLength(1);
+    await ask(service, chat.id, "after-block-compaction", "после сжатия");
+    const prompt = promptAt(model, -1);
+    const texts = prompt.flatMap(m => typeof m.content === "string" ? [m.content] : m.content.flatMap(p => p.type === "text" ? [p.text] : []));
+    expect(texts.filter(text => blocks.some(b => b.text === text))).toEqual(blocks.map(b => b.text));
+    for (const block of blocks) expect(count(prompt, block.text)).toBe(1);
+    await ask(service, chat.id, "after-block-compaction-2", "дальше");
+    expectPrefix(prompt, promptAt(model, -1));
+  });
+
   it("сжатие истории: блоки не теряются, а ход после первого сжатого начинается с его последнего шага", async () => {
     const model = scriptedModel(turnOne());
     const { service, storage } = build(model, { compaction: { thresholdTokens: 1_000_000, tailTokens: 100, summaryCeilingTokens: 100 } });

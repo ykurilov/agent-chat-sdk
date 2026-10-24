@@ -158,3 +158,5 @@ docs/getting-started.md, «Значки шагов и заголовки раз�
 Вид расхода (`source`) — штатный (`BUILT_IN_USAGE_SOURCES`: ответ, сжатие, память, голос `voice_input`/`voice_polish` и другие)
 или свой вид приложения строкой, например `service.recordUsage({ …, source: "font_download" })`, без приведения типа. Лимиты
 считают все виды вместе; отчёт по одному виду — `sumUsage({ source })`.
+
+Контракты интеграции приложения: [HTTP-приветствие, текущий вопрос, номера фото, метаданные и тесты](https://github.com/ykurilov/agent-chat-sdk/blob/main/docs/app-chat-contracts.md).

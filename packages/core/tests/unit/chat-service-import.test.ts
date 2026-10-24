@@ -41,6 +41,20 @@ function fakeAttachments() {
 const text = (value: string) => ({ type: "text" as const, text: value });
 
 describe("служба чата: импорт", () => {
+
+  it("import chat.data uses the existing server metadata contract and never enters the prompt", async () => {
+    const { service, storage, model } = setup();
+    const messages = [{ role: "user" as const, createdAt: "2025-01-01T10:00:00Z", parts: [text("история")] }];
+    const { chatId } = await service.importChat({ ownerId: "anna", chat: { data: { mode: "interview", privateValue: "import-metadata-secret" } }, messages });
+    expect((await storage.getChat(chatId))?.data).toEqual({ mode: "interview", privateValue: "import-metadata-secret" });
+    await readAll(await service.sendMessage("anna", chatId, { id: "new-question", role: "user", parts: [text("дальше")] }));
+    expect(JSON.stringify(model.doStreamCalls)).not.toContain("import-metadata-secret");
+    for (const data of [null, [], { value: "x".repeat(17_000) }]) {
+      await expect(service.importChat({ ownerId: "anna", chat: { data: data as never }, messages })).rejects.toThrow();
+    }
+    expect(await storage.listChats("anna")).toHaveLength(1);
+  });
+
   it("переносит переписку как есть: даты, порядок, первое сообщение от агента, цепочка родителей", async () => {
     const { service, storage, model } = setup();
     const { chatId } = await service.importChat({

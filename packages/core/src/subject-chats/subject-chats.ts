@@ -5,6 +5,7 @@ import type { AppStateRecord } from "../app-state/app-state";
 import { CLOSED_STATE_KEY } from "../app-state/state-messages";
 import { AttachmentRejectedError } from "../attachments/message-attachments";
 import type { MessageAttachments, StoredFilePart } from "../attachments/message-attachments";
+import { numberedImageParts } from "../attachments/chat-image-numbers";
 import { deriveChatTitle, normalizeChatTitle } from "../conversation/chat-title";
 import { newStoredMessage } from "../conversation/types";
 import type { AgentChatMessage, Chat, StoredMessage } from "../conversation/types";
@@ -277,7 +278,7 @@ export function createSubjectChats(deps: SubjectChatsDeps) {
             chatId,
             parentId: messages.at(-1)?.id ?? null,
             role: message.role,
-            parts,
+            parts: deps.attachments?.imageNumbers && message.role === "user" ? numberedImageParts(messages, parts) : parts,
             createdAt: isoDate(message.createdAt),
           }),
         );

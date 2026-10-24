@@ -11,6 +11,8 @@ import { freezeContext } from "./freeze-context";
 import type { FrozenContextSources } from "./freeze-context";
 import { frozenContextBase } from "./frozen-context-messages";
 import { withoutUndelivered } from "../agent-run/undelivered";
+import { isHumanMessage } from "../agent-run/channel-notes";
+import { isStateMessage } from "../app-state/state-messages";
 
 /**
  * Застывшие блоки ответа: уже есть в ответе (продолжение, копия «Повторить») — они, источники не спрашиваются; иначе
@@ -55,6 +57,8 @@ async function freezeTurnContext(
   const { memory, ownerId } = input;
   if (memory && ownerId && !input.group) sources.memory = () => memoryBlocks(memory, { userId: ownerId, chatId: input.chatId });
   if (input.contextBlocks) {
+    const question = turn.history.findLast((message) => message.role === "user" && !isStateMessage(message));
+    const human = question && isHumanMessage(question) ? question : undefined;
     sources.app = appBlocksSource({
       contextBlocks: input.contextBlocks,
       timeoutMs: input.contextBlocksTimeoutMs ?? DEFAULT_CONTEXT_BLOCKS_TIMEOUT_MS,
@@ -64,6 +68,7 @@ async function freezeTurnContext(
         chatId: input.chatId,
         ownerId: input.ownerId ?? "",
         messageId: input.messageId,
+        userMessage: human ? { id: human.id, text: human.parts.filter((part) => part.type === "text").map((part) => part.text).join("\n") } : null,
         chat: structuredClone({ ...(input.chatData && { data: input.chatData }) }),
         state: structuredClone(turn.state),
         ...(input.subject && { subject: structuredClone(input.subject) }),
