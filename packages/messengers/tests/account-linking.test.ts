@@ -2,6 +2,10 @@ import type { ResolvedUser } from "@ykurilov/agent-chat-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createAccountLinking, hashLinkCode, isLinkCode } from "../src/account-linking";
 import { messengerTexts } from "../src/messenger-texts";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createSqliteMessengerStore } from "../src/sqlite";
 import { createMemoryMessengerStore } from "../src/store/memory-store";
 import type { MessengerStore, MessengersOptions } from "../src/types";
 import { account, createFakeAdapter, update } from "./support/fake-adapter";
@@ -148,6 +152,47 @@ describe("привязка аккаунта", () => {
     await Promise.all(["1", "2", "3"].map((id) => linking.handleUpdate(update({ kind: "start", startPayload: code, account: account({ externalUserId: id }) }))));
     const linked = await Promise.all(["1", "2", "3"].map((id) => store.findLink("telegram", "bot1", id)));
     expect(linked.filter(Boolean)).toHaveLength(1);
+  });
+
+  it("хранилище без saveLinkIfFree не принимается: привязка не запускается с небезопасной записью", () => {
+    const { saveLinkIfFree: _, ...legacy } = createMemoryMessengerStore();
+    expect(() => createAccountLinking({ store: legacy as MessengerStore, bots: [createFakeAdapter().bot()], resolveUser: async () => null })).toThrow(TypeError);
+    expect(() => createAccountLinking({ store: legacy as MessengerStore, bots: [createFakeAdapter().bot()], resolveUser: async () => null })).toThrow(/saveLinkIfFree/);
+  });
+
+  let folder: string | undefined;
+  describe.each([
+    ["память", async () => createMemoryMessengerStore()],
+    ["SQLite", async () => createSqliteMessengerStore({ filePath: join((folder = await mkdtemp(join(tmpdir(), "linking-race-"))), "app.db") })],
+  ] as const)("два кода разных людей на один аккаунт одновременно (%s, аудит C-04)", (_name, open) => {
+    it("привязывает один, второй получает «занят»; запись и onLinked — у привязанного", async () => {
+      const shared = await open();
+      // Оба кода приняты раньше, чем кто-то из них записал привязку.
+      let arrived = 0;
+      let release!: () => void;
+      const bothConsumed = new Promise<void>((resolve) => (release = resolve));
+      const store: MessengerStore = {
+        ...shared,
+        consumeLinkCode: async (...args) => {
+          const claimed = await shared.consumeLinkCode(...args);
+          if (++arrived === 2) release();
+          await bothConsumed;
+          return claimed;
+        },
+      };
+      const onLinked = vi.fn();
+      const linking = createAccountLinking({ store, bots: [createFakeAdapter().bot()], onLinked, resolveUser: async () => null });
+      const anna = await linking.issueCode("anna", "telegram");
+      const boris = await linking.issueCode("boris", "telegram");
+      const outcomes = await Promise.all([anna, boris].map((offer) => linking.redeem(offer.code, account())));
+      expect([...outcomes].sort()).toEqual(["linked", "taken"]);
+      const winner = outcomes[0] === "linked" ? "anna" : "boris";
+      expect((await shared.findLink("telegram", "bot1", "100"))?.userId).toBe(winner);
+      expect(onLinked).toHaveBeenCalledTimes(1);
+      expect(onLinked.mock.calls[0]?.[0]).toMatchObject({ userId: winner });
+      await shared.close?.();
+      if (folder) await rm(folder, { recursive: true, force: true });
+    });
   });
 
   describe("сигнал onLinked", () => {

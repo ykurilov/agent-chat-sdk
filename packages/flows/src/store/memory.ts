@@ -1,5 +1,5 @@
-import type { ChatsInState, ClientCardEntry, FlowChatRecord, FlowStore, SavedFlowVersion, SideTaskRecord } from "./flow-store";
-import { appliedInTime, byVersionAndState, compareText, mappedState, migratePending, normalizeTime, pendingAdded } from "./flow-store-shared";
+import { FLOW_DELIVERY_EXIT, type ChatsInState, type ClientCardEntry, type FlowChatRecord, type FlowStore, type SavedFlowVersion, type SideTaskRecord } from "./flow-store";
+import { appliedInTime, byVersionAndState, compareText, mappedState, migratePending, normalizedDelivery, normalizeTime, pendingAdded, sameDelivery } from "./flow-store-shared";
 
 interface ChatRow extends FlowChatRecord {
   leaseUntil: string | null;
@@ -27,7 +27,9 @@ export function memoryFlowStore(): FlowStore {
   const versionKey = (flowId: string, versionId: string) => JSON.stringify([flowId, versionId]);
   const dayKey = (ownerId: string, day: string) => JSON.stringify([ownerId, day]);
   const isFree = (row: ChatRow, now: string) => row.leaseUntil === null || row.leaseUntil < now;
-  const isRunning = (row: ChatRow, now: string) => row.endedAt === null && (row.pausedUntil === null || row.pausedUntil <= now);
+  /** Разговор идёт и не на паузе; законченный — только ради повтора доставки. */
+  const isRunning = (row: ChatRow, now: string) =>
+    (row.endedAt === null || row.dueExitId === FLOW_DELIVERY_EXIT) && (row.pausedUntil === null || row.pausedUntil <= now);
   const withChat = (chatId: string, change: (row: ChatRow) => void): FlowChatRecord | null => {
     const row = chats.get(chatId);
     if (!row) return null;
@@ -36,6 +38,7 @@ export function memoryFlowStore(): FlowStore {
   };
 
   return {
+    guarded: true,
     async pinChat(input) {
       const existing = chats.get(input.chatId);
       if (existing) return toRecord(existing);
@@ -99,6 +102,7 @@ export function memoryFlowStore(): FlowStore {
     async setDue(chatId, due, options) {
       const row = chats.get(chatId);
       if (!row || (options?.unlessDelivery && row.delivery)) return;
+      if (options?.leaseOwner !== undefined && row.leaseOwner !== options.leaseOwner) return;
       row.dueAt = due ? normalizeTime(due.at) : null;
       row.dueExitId = due?.exitId ?? null;
       row.dueBranchHead = due?.branchHead ?? null;
@@ -195,7 +199,8 @@ export function memoryFlowStore(): FlowStore {
     async endChat(chatId, { reason, at }) {
       return withChat(chatId, (row) => {
         if (row.endedAt !== null) return;
-        Object.assign(row, { endedAt: normalizeTime(at), endReason: reason, dueAt: null, dueExitId: null, dueBranchHead: null, leaseUntil: null, leaseOwner: null });
+        Object.assign(row, { endedAt: normalizeTime(at), endReason: reason });
+        if (row.delivery === null) Object.assign(row, { dueAt: null, dueExitId: null, dueBranchHead: null, leaseUntil: null, leaseOwner: null });
       });
     },
     async reopenChat(chatId, { endedAt, at }) {
@@ -214,7 +219,18 @@ export function memoryFlowStore(): FlowStore {
       withChat(chatId, (row) => (row.dayClosedOn = day));
     },
     async setDelivery(chatId, delivery) {
-      withChat(chatId, (row) => (row.delivery = delivery === null ? null : copy({ ...delivery, retryAt: normalizeTime(delivery.retryAt) })));
+      withChat(chatId, (row) => (row.delivery = delivery === null ? null : copy(normalizedDelivery(delivery))));
+    },
+    async swapDelivery(chatId, { expected, next, due, claim, freeAt, endedAt }) {
+      const row = chats.get(chatId);
+      if (!row || !sameDelivery(row.delivery, expected)) return false;
+      if (endedAt !== undefined && row.endedAt !== (endedAt && normalizeTime(endedAt))) return false;
+      if (claim && !(isFree(row, normalizeTime(claim.now)) || row.leaseOwner === claim.owner || (claim.from !== undefined && row.leaseOwner === claim.from))) return false;
+      if (freeAt !== undefined && !isFree(row, normalizeTime(freeAt))) return false;
+      row.delivery = next === null ? null : copy(normalizedDelivery(next));
+      if (due !== undefined) Object.assign(row, { dueAt: due ? normalizeTime(due.at) : null, dueExitId: due?.exitId ?? null, dueBranchHead: due?.branchHead ?? null });
+      if (claim) Object.assign(row, { leaseOwner: claim.owner, leaseUntil: new Date(Date.parse(normalizeTime(claim.now)) + claim.leaseMs).toISOString() });
+      return true;
     },
 
     async readTimeZone(ownerId) {

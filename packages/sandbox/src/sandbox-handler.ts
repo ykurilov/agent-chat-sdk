@@ -14,7 +14,7 @@ import { secretsFromEnv } from "./journal/hide-secrets";
 import { createPeopleRoutes } from "./people/people-routes";
 import { createStaffCopies } from "./people/staff-copies";
 import { readOnlyMemory } from "./read-only-memory";
-import { sandboxOwnerOf } from "./sandbox-owner";
+import { realOwnerOf, sandboxOwnerOf } from "./sandbox-owner";
 import { sandboxTools } from "./sandbox-tools";
 import type {
   AnswerEditMark,
@@ -94,6 +94,14 @@ export function createSandboxHandler(options: SandboxHandlerOptions): ChatHandle
     subjectChats: undefined,
     // Данные нового чата тоже: они про человека приложения, а в песочнице чат создаёт админ.
     newChatData: undefined,
+    // Хуки, что пишут в данные приложения, тоже: копия состояния, итог хода и выбор модели легли бы на `sandbox:<админ>`,
+    // а в копии чата человека — поверх его данных (у этих хуков нет `staff`, отличить копию приложению нечем).
+    onStateChanged: undefined,
+    onTurnFinished: undefined,
+    onModelChosen: undefined,
+    // Решения, что только читают, — для настоящего админа, как у инструментов: песочного владельца приложение не знает.
+    ...(chat.newChatGreeting && { newChatGreeting: forRealAdmin(chat.newChatGreeting) }),
+    ...(chat.modelMenu && { modelMenu: forRealAdmin(chat.modelMenu) }),
     // Итог хода приложению — только из копии чата человека, с его объектом и `staff` (см. `staffCopies.afterTurn`).
     afterTurn: chat.afterTurn && staffCopies.afterTurn(chat.afterTurn),
     memory: chat.memory && readOnlyMemory(chat.memory, staffCopies),
@@ -138,6 +146,11 @@ export function createSandboxHandler(options: SandboxHandlerOptions): ChatHandle
       }
     },
   };
+}
+
+/** Решение приложения о человеке (`{ userId }`) получает настоящего админа вместо песочного владельца. */
+function forRealAdmin<Input extends { userId: string }, Result>(decide: (input: Input) => Result): (input: Input) => Result {
+  return (input) => decide({ ...input, userId: realOwnerOf(input.userId) });
 }
 
 interface RouteInput {

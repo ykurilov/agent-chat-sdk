@@ -52,3 +52,20 @@ describe("уборка старых записей", () => {
     expect(MESSENGER_RECORDS_KEEP_MS).toBeGreaterThan(24 * HOUR);
   });
 });
+
+describe("хранилище старого образца", () => {
+  it("без saveLinkIfFree createMessengers отказывается сразу, до запуска (аудит C-04)", () => {
+    const { saveLinkIfFree: _, ...legacy } = createMemoryMessengerStore();
+    const create = () =>
+      createMessengers({ store: legacy, service: createFakeChatService().service, resolveUser: async () => null, bots: [createFakeAdapter().bot()], basePath: "/api/messengers" } as unknown as MessengersOptions);
+    expect(create).toThrow(/saveLinkIfFree/);
+  });
+
+  it("без guarded: true createMessengers отказывается сразу: своё хранилище обещает условия держателя и аренды (0.81)", () => {
+    const { guarded: _, ...legacy } = createMemoryMessengerStore();
+    const create = () =>
+      createMessengers({ store: legacy, service: createFakeChatService().service, resolveUser: async () => null, bots: [createFakeAdapter().bot()], basePath: "/api/messengers" } as unknown as MessengersOptions);
+    expect(create).toThrow(TypeError);
+    expect(create).toThrow(/guarded/);
+  });
+});

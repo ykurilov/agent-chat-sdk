@@ -64,6 +64,10 @@ export type Attachments = MessageAttachments &
 
 export function createAttachments(options: CreateAttachmentsOptions): Attachments {
   const { storage } = options;
+  if (typeof storage.removeUnattached !== "function") {
+    // Без условного удаления DELETE и чистка могли бы убрать файл уже отправленного сообщения: не подменяем его безусловным.
+    throw new TypeError("AttachmentStorage: нужен метод removeUnattached(id) — удаление только неприкреплённого файла, атомарно с markAttached");
+  }
   const limits = resolveAttachmentLimits(options.limits);
   const now = options.now ?? (() => new Date());
   const imagePlans = createImagePlans(limits.imageCacheBytes);
@@ -100,7 +104,7 @@ export function createAttachments(options: CreateAttachmentsOptions): Attachment
       if (!record || record.chatId !== input.chatId || record.ownerId !== input.userId) throw notFound();
       if (!record.attached && Date.parse(record.createdAt) < now().getTime() - ABANDONED_AFTER_MS) {
         // Неотправленный файл старше суток уже подлежит чистке: убираем его сами и просим загрузить заново.
-        await storage.remove(record.id);
+        await storage.removeUnattached(record.id);
         throw new AttachmentRejectedError("attachment_expired", "Файл хранился слишком долго и удалён: загрузите его снова");
       }
       if (acceptedMediaTypes && !acceptedMediaTypes.includes(record.sourceMediaType ?? record.mediaType)) {
@@ -116,9 +120,24 @@ export function createAttachments(options: CreateAttachmentsOptions): Attachment
     return records.map((record) => ({ type: "file", url: `${PREFIX}${record.id}`, mediaType: record.mediaType, filename: record.name }));
   }
 
+  /**
+   * Отметка перед записью сообщения. Отметку проверяет чтение записи: файл, удалённый после приёма, или хранилище, которое
+   * отметку не записало, — отказ, и сообщение не пишется. Повтор отправки безопасен: отметка повторяется без ошибки.
+   * @throws AttachmentRejectedError `attachment_not_found` — файла нет или он не отмечен; `attachment_unavailable` — сбой хранилища.
+   */
   async function confirmUserParts(parts: readonly StoredFilePart[]): Promise<void> {
-    const ids = new Set(parts.flatMap((part) => (part.url.startsWith(PREFIX) ? [part.url.slice(PREFIX.length)] : [])));
-    await Promise.all([...ids].map((id) => storage.markAttached(id)));
+    const ids = [...new Set(parts.flatMap((part) => (part.url.startsWith(PREFIX) ? [part.url.slice(PREFIX.length)] : [])))];
+    const records = await Promise.all(ids.map(async (id) => {
+      await storage.markAttached(id);
+      return storage.get(id);
+    })).catch((error: unknown) => {
+      const unavailable = new AttachmentRejectedError("attachment_unavailable", "Файл сейчас не удалось прикрепить: отправьте сообщение ещё раз");
+      unavailable.cause = error;
+      throw unavailable;
+    });
+    if (records.some((record) => record?.attached !== true)) {
+      throw new AttachmentRejectedError("attachment_not_found", "Файл не найден: загрузите его ещё раз");
+    }
   }
 
   return {

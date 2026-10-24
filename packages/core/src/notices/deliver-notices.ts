@@ -1,3 +1,4 @@
+import { channelPart } from "../agent-run/channel-notes";
 import { isStateMessage } from "../app-state/state-messages";
 import type { UIMessage } from "ai";
 import { AGENT_NOTICE_PART_TYPE } from "./agent-notice";
@@ -15,7 +16,9 @@ interface NoticePartData {
 /** Части служебного сообщения: ключ доставки и `wakeAgent` хранятся рядом, чтобы повтор и счёт ходов читались из истории. */
 export function noticeMessageParts(input: DeliverNoticesInput): UIMessage["parts"] {
   const data: NoticePartData = { notices: input.notices, deliveryKey: input.deliveryKey, wakeAgent: input.wakeAgent };
-  return [{ type: AGENT_NOTICE_PART_TYPE, data } as UIMessage["parts"][number]];
+  // Канал и группа хода сервера — отметкой рядом, как у сообщения человека: ход и его продолжения читают их из истории.
+  const channel = channelPart(input.channel ?? "web", input.group);
+  return [{ type: AGENT_NOTICE_PART_TYPE, data } as UIMessage["parts"][number], ...(channel ? [channel as UIMessage["parts"][number]] : [])];
 }
 
 function noticeDataOf(message: Pick<UIMessage, "role" | "parts">): Partial<NoticePartData> | undefined {

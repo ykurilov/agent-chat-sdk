@@ -36,6 +36,8 @@ import { APP_STATE_PART_TYPE, chatStateOfEvent, foldChatState, publishChatState,
 import { AGENT_NOTICE_PART_TYPE } from "./notices/agent-notices";
 import type { ChatStateValues } from "./chat-state/chat-state";
 import { correctionMessage, correctionsAfterHistory, outgoingCorrection } from "./steering/corrections";
+import { ownedBy } from "./chat-lifetime";
+import type { ChatOwned } from "./chat-lifetime";
 
 /** Настройки живой связи. Всё необязательно: по умолчанию сроки из договора 002. */
 export interface LivenessOptions {
@@ -518,8 +520,8 @@ export function useAgentChat({
   correctionsRef.current = corrections;
   /** Id поправок, что ещё идут на сервер. */
   const sendingCorrections = useRef(new Set<string>());
-  /** Очередь запросов поправок: сервер получает их в том порядке, в каком человек их написал. */
-  const steerQueue = useRef<Promise<void>>(Promise.resolve());
+  /** Очередь запросов поправок показа чата: сервер получает их в том порядке, в каком человек их написал. */
+  const steerQueue = useRef<ChatOwned<Promise<void>> | null>(null);
   /**
    * Поправка, на которую сервер не ответил (обрыв, срок): он мог её уже записать. Тот же текст с теми же файлами уходит
    * снова с тем же id — сервер узнаёт повтор, второй копии нет.
@@ -527,7 +529,7 @@ export function useAgentChat({
   const unconfirmedCorrection = useRef<{ chatUrl: string; id: string; text: string; files: string } | null>(null);
   /** Ответ кончился, а поправки ждут: вкладка перечитывает историю и подключается к ходу по ним. */
   const [handingOff, setHandingOff] = useState(false);
-  const handOff = useRef<Promise<void> | null>(null);
+  const handOff = useRef<ChatOwned<Promise<void>> | null>(null);
   const handOffToCorrectionsRef = useRef<() => Promise<void>>(async () => {});
   /** Поток ответа открыт: читается в момент вызова, `onFinish` снимает его раньше, чем придёт отрисовка. */
   const answeringRef = useRef(false);
@@ -1245,7 +1247,8 @@ export function useAgentChat({
   }, [chatId]);
   const [approvalPendingId, setApprovalPendingId] = useState<string | null>(null);
   const [approvalFailure, setApprovalFailure] = useState<{ id: string; kind: ApprovalFailureKind; text?: string } | null>(null);
-  const approving = useRef(false);
+  /** Подтверждение, ответ на которое идёт на сервер: id запроса и показ чата, где его дали. */
+  const approving = useRef<ChatOwned<string> | null>(null);
 
   /** Номер последнего перечитывания истории и номер самого нового из показанных. */
   const historyReads = useRef({ started: 0, shown: 0 });
@@ -1331,9 +1334,14 @@ export function useAgentChat({
 
   const respondToApproval = useCallback(
     async (approvalId: string, decision: ApprovalDecision) => {
-      if (approving.current) return;
-      approving.current = true;
       const signal = chatLifetime.current.signal;
+      if (ownedBy(approving.current, signal) !== undefined) return;
+      const pending = { lifetime: signal, value: approvalId };
+      approving.current = pending;
+      // Ответ сервера пришёл, когда открыт уже другой чат (или тот же заново): он ничего не пишет на экран.
+      const fail = (kind: ApprovalFailureKind, text?: string) => {
+        if (!signal.aborted) setApprovalFailure({ id: approvalId, kind, ...(text !== undefined && { text }) });
+      };
       setApprovalFailure(null);
       setApprovalPendingId(approvalId);
       try {
@@ -1346,14 +1354,15 @@ export function useAgentChat({
             { timeoutMs: settingsRef.current.requestTimeoutMs, wholeBody: true },
           );
         } catch {
-          setApprovalFailure({ id: approvalId, kind: "connection" });
+          fail("connection");
           return;
         }
         // Приложение не пустило ход (или человека): его слова у карточки, а не «нет связи».
         const refusedByApp = response.ok ? null : await serverRefusalOf(response);
+        if (signal.aborted) return;
         if (refusedByApp?.kind) {
           announceAppRefusal(refusedByApp);
-          setApprovalFailure({ id: approvalId, kind: "refused", text: refusedByApp.text });
+          fail("refused", refusedByApp.text);
           return;
         }
         if (response.status === 429) {
@@ -1361,12 +1370,12 @@ export function useAgentChat({
           const refusal = await spendingRefusalOf(response);
           if (refusal && !signal.aborted) setSpending({ state: "exhausted", info: refusal });
           const tooManyTurns = !refusal && (await errorKindOf(response)) === "too_many_turns";
-          setApprovalFailure({ id: approvalId, kind: refusal ? "spending_limit" : tooManyTurns ? "too_many_turns" : "connection" });
+          fail(refusal ? "spending_limit" : tooManyTurns ? "too_many_turns" : "connection");
           return;
         }
         // Чат занят другим ходом: запрос жив, ответить можно чуть позже.
         if (response.status === 409 && (await errorKindOf(response)) === "busy") {
-          setApprovalFailure({ id: approvalId, kind: "busy" });
+          fail("busy");
           return;
         }
         // Запрос уже решён (на другом устройстве) или закрыт новым сообщением: показываем то, что на сервере.
@@ -1375,10 +1384,11 @@ export function useAgentChat({
           return;
         }
         if (!response.ok) {
-          setApprovalFailure({ id: approvalId, kind: "connection" });
+          fail("connection");
           return;
         }
         const { resumed } = (await response.json()) as { resumed: boolean };
+        if (signal.aborted) return;
         setMessages((current) => withApprovalDecision(current, approvalId, decision, resumed));
         if (!resumed) return;
         setResuming(true);
@@ -1390,14 +1400,14 @@ export function useAgentChat({
           if (!signal.aborted) setResuming(false);
         }
       } finally {
-        approving.current = false;
+        if (approving.current === pending) approving.current = null;
         if (!signal.aborted) setApprovalPendingId(null);
       }
     },
     [announceAppRefusal, chatUrl, request, rereadHistory, resumeWithProbe, setMessages, startSeries],
   );
 
-  const { answerWidget, widgetPendingId, widgetFailure, answeringWidget } = useWidgetAnswer({
+  const { answerWidget, widgetPendingId, widgetFailure, answeringWidget, forgetChat: forgetWidgetAnswer } = useWidgetAnswer({
     chatUrl,
     request,
     requestTimeoutMs: () => settingsRef.current.requestTimeoutMs,
@@ -1418,8 +1428,21 @@ export function useAgentChat({
     errorKindOf,
   });
 
+  // Смена чата: подтверждение, виджет и передача поправок прежнего чата больше не держат экран занятым. Их запросы
+  // доходят до сервера, но результат ничего не пишет (ownedBy, chat-lifetime.ts).
+  useEffect(
+    () => () => {
+      setResuming(false);
+      setHandingOff(false);
+      setApprovalPendingId(null);
+      setApprovalFailure(null);
+      forgetWidgetAnswer();
+    },
+    [chatId, forgetWidgetAnswer],
+  );
+
   const ownTurnStarting = useCallback(
-    () => busyRef.current || sending.current || approving.current || answeringWidget(),
+    () => busyRef.current || sending.current || ownedBy(approving.current, chatLifetime.current.signal) !== undefined || answeringWidget(),
     [answeringWidget],
   );
 
@@ -1530,18 +1553,19 @@ export function useAgentChat({
    * к ходу по ним. Пока это идёт, вкладка занята: обычная отправка не влезает между ответами.
    */
   const handOffToCorrections = useCallback(() => {
-    if (handOff.current) return handOff.current;
     const signal = chatLifetime.current.signal;
+    const going = ownedBy(handOff.current, signal);
+    if (going) return going;
     setHandingOff(true);
-    const run = (async () => {
-      await steerQueue.current;
-      await stopping.current;
+    const run: Promise<void> = (async () => {
+      await ownedBy(steerQueue.current, signal);
+      await ownedBy(stopping.current, signal);
       if (!signal.aborted) await refreshFromServer(signal);
     })().finally(() => {
-      handOff.current = null;
+      if (handOff.current?.value === run) handOff.current = null;
       if (!signal.aborted) setHandingOff(false);
     });
-    handOff.current = run;
+    handOff.current = { lifetime: signal, value: run };
     return run;
   }, [refreshFromServer]);
   handOffToCorrectionsRef.current = handOffToCorrections;
@@ -1566,7 +1590,7 @@ export function useAgentChat({
         setValue((current) => (current.length === 0 ? text : current));
         onRejected?.(kind);
       };
-      const sent = steerQueue.current.then(async () => {
+      const sent = (ownedBy(steerQueue.current, signal) ?? Promise.resolve()).then(async () => {
         let response: Response;
         try {
           response = await fetchWithDeadline(
@@ -1586,15 +1610,17 @@ export function useAgentChat({
         if (signal.aborted || chatUrlRef.current !== asked) return;
         if (!response.ok) {
           const spendingLimit = response.status === 429 ? await spendingRefusalOf(response) : null;
-          if (spendingLimit) setSpending({ state: "exhausted", info: spendingLimit });
           const refusedWithText = await serverRefusalOf(response);
+          const kind = spendingLimit ? "spending_limit" : (refusedWithText?.kind ?? (await errorKindOf(response)));
+          if (signal.aborted) return;
+          if (spendingLimit) setSpending({ state: "exhausted", info: spendingLimit });
           announceAppRefusal(refusedWithText);
-          refused(spendingLimit ? "spending_limit" : (refusedWithText?.kind ?? (await errorKindOf(response))));
+          refused(kind);
           return;
         }
         if (!answeringRef.current) void handOffToCorrectionsRef.current();
       });
-      steerQueue.current = sent.catch(() => undefined);
+      steerQueue.current = { lifetime: signal, value: sent.catch(() => undefined) };
     },
     [announceAppRefusal, chatUrl, request],
   );
@@ -1716,27 +1742,35 @@ export function useAgentChat({
     if (loadedChatState !== null) publishedState.current?.update(loadedChatState);
   }, [loadedChatState]);
 
-  /** Идущий «стоп»: повторное нажатие ждёт его же, второго запроса не будет. */
-  const stopping = useRef<Promise<void> | null>(null);
-  const stop = useCallback(() => {
-    if (stopping.current) return stopping.current;
-    // Попытки переподключения отменяются: собеседник сказал «стоп», ждать связи не нужно.
-    if (seriesRef.current) cancelSeries();
-    browserCallsLifetime.current?.abort();
-    browserCallsLifetime.current = null;
-    const stopped = (async () => {
-      await fetchWithDeadline(request, `${chatUrl}/stop`, { method: "POST" }, {
-        timeoutMs: settingsRef.current.requestTimeoutMs,
-        wholeBody: true,
-      }).catch(() => undefined);
-      await stopChat();
-      setMessages((messages) => markLastAnswerStopped(messages));
-    })().finally(() => {
-      stopping.current = null;
-    });
-    stopping.current = stopped;
-    return stopped;
-  }, [cancelSeries, chatUrl, request, setMessages, stopChat]);
+  /** Идущий «стоп» показа чата: повторное нажатие ждёт его же, второго запроса не будет. */
+  const stopping = useRef<ChatOwned<Promise<void>> | null>(null);
+  /** «Стоп» в показе чата `lifetime`: показ кончился — останавливать на экране уже нечего. */
+  const stopIn = useCallback(
+    (lifetime: AbortSignal): Promise<void> => {
+      const going = ownedBy(stopping.current, lifetime);
+      if (going) return going;
+      if (lifetime.aborted) return Promise.resolve();
+      // Попытки переподключения отменяются: собеседник сказал «стоп», ждать связи не нужно.
+      if (seriesRef.current) cancelSeries();
+      browserCallsLifetime.current?.abort();
+      browserCallsLifetime.current = null;
+      const stopped: Promise<void> = (async () => {
+        await fetchWithDeadline(request, `${chatUrl}/stop`, { method: "POST" }, {
+          timeoutMs: settingsRef.current.requestTimeoutMs,
+          wholeBody: true,
+        }).catch(() => undefined);
+        if (lifetime.aborted) return;
+        await stopChat();
+        if (!lifetime.aborted) setMessages((messages) => markLastAnswerStopped(messages));
+      })().finally(() => {
+        if (stopping.current?.value === stopped) stopping.current = null;
+      });
+      stopping.current = { lifetime, value: stopped };
+      return stopped;
+    },
+    [cancelSeries, chatUrl, request, setMessages, stopChat],
+  );
+  const stop = useCallback(() => stopIn(chatLifetime.current.signal), [stopIn]);
 
   const retry = useCallback(() => {
     if (connection === "offline") {
@@ -1834,13 +1868,15 @@ export function useAgentChat({
     [busy, canEdit, startEdit],
   );
 
-  /** Очередь замен: вторая начинается, когда первая закончена. */
-  const replacing = useRef<Promise<unknown>>(Promise.resolve());
+  /** Очередь замен показа чата: вторая начинается, когда первая закончена. Замены прежнего показа новый не ждёт. */
+  const replacing = useRef<ChatOwned<Promise<unknown>> | null>(null);
 
   const replaceLastVoiceMessage = useCallback(
     (text: string, options?: { sounds?: readonly VoiceSound[] }): Promise<boolean> => {
-      const run = replacing.current.then(async (): Promise<boolean> => {
-        const signal = chatLifetime.current.signal;
+      // Замена принадлежит показу чата, где её попросили: ждавшая в очереди после смены чата не начинается.
+      const signal = chatLifetime.current.signal;
+      const run = (ownedBy(replacing.current, signal) ?? Promise.resolve()).then(async (): Promise<boolean> => {
+        if (signal.aborted) return false;
         const messages = messagesRef.current;
         const index = messages.findLastIndex((message) => message.role === "user");
         const target = messages[index];
@@ -1850,27 +1886,28 @@ export function useAgentChat({
         const original = messages;
         // Экран не ждёт остановки: склеенный текст виден сразу, «Так.» и пустой ответ не мелькают.
         setMessages([...messages.slice(0, index), { ...target, parts: [{ type: "text", text }, { type: VOICE_MODE_PART_TYPE, data: true }] }]);
-        await stop();
-        if (!(await untilIdle(signal))) return restoreAfterFailure(original);
-        for (let attempt = 0; attempt < REPLACE_ATTEMPTS; attempt++) {
+        await stopIn(signal);
+        if (!(await untilIdle(signal))) return restoreAfterFailure(original, signal);
+        for (let attempt = 0; attempt < REPLACE_ATTEMPTS && !signal.aborted; attempt++) {
           const outcome = await startEdit(target.id, text, true, options?.sounds);
           if (outcome.status === "started") return true;
           // Остановка на сервере ещё доделывается: ход чата занят. Ждём и пробуем снова.
           if (!(outcome.status === "refused" && outcome.reason === "busy")) break;
           await pause(REPLACE_RETRY_MS, signal);
         }
-        return restoreAfterFailure(original);
+        return restoreAfterFailure(original, signal);
       });
-      replacing.current = run.catch(() => false);
+      replacing.current = { lifetime: signal, value: run.catch(() => false) };
       return run;
     },
-    [exhausted, loaded, refreshFromServer, setMessages, startEdit, stop],
+    [exhausted, loaded, refreshFromServer, setMessages, startEdit, stopIn],
   );
 
-  /** Склейка не вышла: на экране то, что хранит сервер, а не наша догадка. */
-  function restoreAfterFailure(original: AgentChatMessage[]): boolean {
+  /** Склейка не вышла: на экране то, что хранит сервер, а не наша догадка. Другой чат уже открыт — экран не его. */
+  function restoreAfterFailure(original: AgentChatMessage[], signal: AbortSignal): boolean {
+    if (signal.aborted) return false;
     setMessages(original);
-    void refreshFromServer(chatLifetime.current.signal);
+    void refreshFromServer(signal);
     return false;
   }
 

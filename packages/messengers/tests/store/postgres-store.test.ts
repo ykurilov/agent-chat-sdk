@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createPostgresChatStorage } from "../../../storage-postgres/src/postgres-storage";
 import { startTemporaryPostgres } from "../../../storage-postgres/tests/support/pglite-server";
 import type { TemporaryPostgres } from "../../../storage-postgres/tests/support/pglite-server";
+import { assertSafeToWipe } from "../../../storage-postgres/tests/support/wipe-guard";
 import { createPostgresMessengerStore } from "../../src/postgres";
 import { describeMessengerStoreContract } from "./messenger-store-contract";
 
@@ -123,5 +124,26 @@ describe("хранилище мессенджеров в PostgreSQL (pglite за
     const [links] = await Promise.all([running, store.close(), store.close()]);
     expect(links).toEqual([]);
     await expect(store.close()).resolves.toBeUndefined();
+  });
+});
+
+/**
+ * Договор на настоящем PostgreSQL с пулом из нескольких соединений: одновременные вызовы идут параллельно, а не по
+ * очереди, как в pglite. Включается `AGENT_CHAT_TEST_POSTGRES_URL`; схема `agent_chat` стирается (см. `wipe-guard.ts`).
+ */
+const realPostgresUrl = process.env.AGENT_CHAT_TEST_POSTGRES_URL;
+
+describe.skipIf(!realPostgresUrl)("хранилище мессенджеров в PostgreSQL (настоящий сервер)", () => {
+  if (realPostgresUrl) assertSafeToWipe(realPostgresUrl);
+
+  describeMessengerStoreContract(async () => {
+    const client = new pg.Client({ connectionString: realPostgresUrl });
+    await client.connect();
+    try {
+      await client.query("drop schema if exists agent_chat cascade");
+    } finally {
+      await client.end();
+    }
+    return createPostgresMessengerStore({ connectionString: realPostgresUrl!, poolSize: 5 });
   });
 });

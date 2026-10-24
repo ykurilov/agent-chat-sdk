@@ -1,4 +1,4 @@
-import type { FinalAnswerStatus, StoredMessage, UsageSource } from "../conversation/types";
+import type { AgentChannel, FinalAnswerStatus, GroupTurn, StoredMessage, UsageSource } from "../conversation/types";
 
 /** Что случилось с задачей или разговором. */
 export type AgentNoticeKind =
@@ -75,6 +75,17 @@ export interface DeliverNoticesInput {
    * дальше сообщение пишется без хода. `false` — без потолка: частоту держит вызывающий (ходы по расписанию).
    */
   maxServerTurnsInRow?: number | false;
+  /**
+   * Канал разговора, куда пойдёт ход (с 0.81): записывается отметкой в служебное сообщение, как у сообщения человека. Нет —
+   * ход по отметке последнего сообщения человека ветки (как раньше). Задаёт сервер (мессенджеры), не клиент.
+   */
+  channel?: AgentChannel;
+  /**
+   * Ход сервера в группе (с 0.81): границы группового хода — без памяти владельца и личных блоков, из инструментов
+   * приложения только `allowedTools`. Нужен, когда в ветке ещё нет сообщения группы (агент пишет первым). Повтор с тем же
+   * `deliveryKey` идёт по записанной отметке, а не по новой.
+   */
+  group?: GroupTurn;
 }
 
 export interface DeliverNoticesResult {

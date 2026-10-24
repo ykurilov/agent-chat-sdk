@@ -1,9 +1,6 @@
-import type { LookupAddress, LookupOneOptions } from "node:dns";
-import { isIP } from "node:net";
-import { assertPublicWebAddress, assertResolvesPublic, isPrivateAddress, WebToolError } from "@ykurilov/agent-chat-web-tools";
-import type { HostResolver } from "@ykurilov/agent-chat-web-tools";
-import { Agent, fetch as undiciFetch } from "undici";
-import { findMcpError, McpError } from "../mcp-error";
+import { assertPublicWebAddress, assertResolvesPublic, createPinnedFetch as createSharedPinnedFetch, WebToolError } from "@ykurilov/agent-chat-web-tools/network";
+import type { HostResolver, PinnedFetch } from "@ykurilov/agent-chat-web-tools/network";
+import { McpError } from "../mcp-error";
 
 export interface GuardedFetchOptions {
   fetch: typeof globalThis.fetch;
@@ -45,7 +42,7 @@ function asAddressError(error: unknown): unknown {
   if (!(error instanceof WebToolError)) return error;
   const message = error.message.startsWith("Адрес локальный или частный")
     ? "Адрес сервера локальный или частный: во внутреннюю сеть ходить нельзя."
-    : error.message.replace("Неверный адрес страницы", "Неверный адрес сервера");
+    : error.message.replace("Неверный адрес страницы", "Неверный адрес сервера").replace("Адрес не открылся", "Адрес сервера не открылся");
   return new McpError("bad_address", message);
 }
 
@@ -95,47 +92,21 @@ function withBodyLimit(response: Response, maxBytes: number): Response {
   return new Response(limited, { status: response.status, statusText: response.statusText, headers: response.headers });
 }
 
-type LookupCallback = (error: NodeJS.ErrnoException | null, address: string | LookupAddress[], family?: number) => void;
-
 /**
- * Разрешение имени в момент соединения: тот же ответ DNS и проверяется, и идёт в соединение. Между проверкой и
- * соединением нет второго запроса DNS — подмена ответа (DNS rebinding) во внутреннюю сеть не пустит.
+ * Встроенный `fetch` пакета — общий закреплённый `fetch` из `@ykurilov/agent-chat-web-tools/network`: имя разрешается и
+ * проверяется в момент соединения, соединение идёт на проверенный адрес. Отказ — `McpError` вида `bad_address`.
+ * `close` — закрыть соединения.
  */
-export function checkedLookup(resolveHost: HostResolver, allowPrivateNetwork: boolean) {
-  const checked = async (hostname: string): Promise<LookupAddress[]> => {
-    let addresses: string[];
-    try {
-      addresses = await resolveHost(hostname);
-    } catch {
-      addresses = [];
-    }
-    if (addresses.length === 0) throw new McpError("bad_address", "Адрес сервера не открылся: имя не разрешилось.");
-    if (!allowPrivateNetwork && addresses.some(isPrivateAddress)) throw new McpError("bad_address", "Адрес сервера локальный или частный: во внутреннюю сеть ходить нельзя.");
-    return addresses.map((address) => ({ address, family: isIP(address) || 4 }));
-  };
-  return (hostname: string, options: LookupOneOptions & { all?: boolean }, callback: LookupCallback): void => {
-    checked(hostname).then(
-      (all) => (options.all ? callback(null, all) : callback(null, all[0]!.address, all[0]!.family)),
-      (error: NodeJS.ErrnoException) => callback(error, []),
-    );
-  };
-}
-
-/**
- * Встроенный `fetch` пакета: имя разрешается и проверяется в момент соединения (`checkedLookup`), соединение идёт на
- * проверенный адрес. `close` — закрыть соединения.
- */
-export function createPinnedFetch(options: { resolveHost: HostResolver; allowPrivateNetwork: boolean }): { fetch: typeof globalThis.fetch; close(): Promise<void> } {
-  const agent = new Agent({ connect: { lookup: checkedLookup(options.resolveHost, options.allowPrivateNetwork) as never } });
+export function createPinnedFetch(options: { resolveHost: HostResolver; allowPrivateNetwork: boolean }): PinnedFetch {
+  const pinned = createSharedPinnedFetch(options);
   const fetch = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
     try {
-      return (await undiciFetch(input as never, { ...(init as object), dispatcher: agent } as never)) as unknown as Response;
+      return await pinned.fetch(input, init);
     } catch (error) {
-      // Отказ проверки адреса приходит причиной общего «fetch failed»: наружу — сам отказ.
-      throw findMcpError(error) ?? error;
+      throw asAddressError(error);
     }
   };
-  return { fetch, close: () => agent.close() };
+  return { fetch, close: pinned.close };
 }
 
 /**

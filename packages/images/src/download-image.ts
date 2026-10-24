@@ -1,4 +1,6 @@
 import { detectFileKind } from "@ykurilov/agent-chat-attachments";
+import { dnsHostResolver, sharedPinnedFetch, WebToolError } from "@ykurilov/agent-chat-web-tools/network";
+import type { HostResolver } from "@ykurilov/agent-chat-web-tools/network";
 import { isAllowedImageAddress } from "./download-address";
 import { ImageGenerationError } from "./image-generation-error";
 import { pngSize } from "./postprocess-image";
@@ -15,7 +17,14 @@ export const imageExtensions: Record<string, string> = { "image/png": "png", "im
 export interface DownloadGeneratedImageInput {
   /** Адрес готовой картинки у провайдера. */
   url: string;
-  fetch: typeof globalThis.fetch;
+  /**
+   * Свой `fetch` приложения (прокси) — граница доверия приложения: по нему идут все адреса, а закрепить соединение за
+   * проверенным адресом (от подмены DNS) должен он сам. Нет — склад провайдера качает общий закреплённый `fetch`:
+   * имя проверяется в момент соединения, во внутреннюю сеть не пускает. Сайт `trustedOrigin` — обычным `fetch`.
+   */
+  fetch?: typeof globalThis.fetch;
+  /** Как закреплённый `fetch` разрешает имена. По умолчанию системный DNS; заменяется в тестах. */
+  resolveHost?: HostResolver;
   maxImageBytes: number;
   /** Сайт подключения провайдера из настройки (`https://host:port`): с него можно скачивать и по http, и с localhost. */
   trustedOrigin?: string;
@@ -72,11 +81,21 @@ function checkedAddress(url: string, base: URL | undefined, trustedOrigin: strin
   return address;
 }
 
+/**
+ * Чем качать адрес. Сайт подключения из настройки — доверенный, пока адрес на нём: свой прокси или поддельный провайдер
+ * на localhost. Переадресация на другой сайт этого доверия не наследует и снова идёт закреплённым `fetch`.
+ */
+function fetchFor(input: DownloadGeneratedImageInput, address: URL): typeof globalThis.fetch {
+  if (input.fetch) return input.fetch;
+  if (input.trustedOrigin !== undefined && address.origin === input.trustedOrigin) return globalThis.fetch;
+  return sharedPinnedFetch(input.resolveHost ?? dnsHostResolver);
+}
+
 /** Ответ склада по адресу; переадресации идут вручную, каждый следующий адрес проверяется (download-address). */
 async function fetchImage(input: DownloadGeneratedImageInput, first: URL, signal: AbortSignal): Promise<Response> {
   let address = first;
   for (let hop = 0; ; hop++) {
-    const response = await input.fetch(address.href, { signal, redirect: "manual" });
+    const response = await fetchFor(input, address)(address.href, { signal, redirect: "manual" });
     const location = response.status >= 300 && response.status < 400 ? response.headers.get("location") : null;
     if (location === null) return response;
     await response.body?.cancel().catch(() => {});
@@ -107,6 +126,8 @@ export async function downloadGeneratedImage(input: DownloadGeneratedImageInput)
   } catch (error) {
     if (input.abortSignal?.aborted) throw input.abortSignal.reason ?? error;
     if (error instanceof ImageGenerationError) throw error;
+    // Имя склада указало во внутреннюю сеть или не разрешилось — проверка при соединении.
+    if (error instanceof WebToolError && error.kind === "bad_address") throw failure("Картинка не скачалась: неверный адрес");
     throw failure(timeout.signal.aborted ? "Картинка не скачалась: не успела" : "Картинка не скачалась");
   } finally {
     clearTimeout(timer);

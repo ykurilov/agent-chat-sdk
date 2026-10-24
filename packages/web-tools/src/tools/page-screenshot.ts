@@ -4,8 +4,8 @@ import type { Tool } from "ai";
 import { z } from "zod";
 import { assertPublicWebAddress } from "../page-address";
 import { createImageCache } from "../image-cache";
-import type { HostResolver } from "../page-address";
 import { downloadScreenshot } from "../screenshot-download";
+import type { ScreenshotDownloadOptions } from "../screenshot-download";
 import { formatPage } from "../result-text";
 import { callService } from "../service-call";
 import type { PageScreenshotService } from "../services";
@@ -38,8 +38,7 @@ function unavailable(pageUrl: string, text?: string): { type: "text"; value: str
  */
 export function pageScreenshotTool(
   screenshots: PageScreenshotService,
-  fetchImplementation: typeof globalThis.fetch,
-  resolveHost: HostResolver,
+  download: ScreenshotDownloadOptions & { fetch: typeof globalThis.fetch },
   characterLimit: number,
 ): Tool<{ url: string }, ScreenshotRecord> {
   // Запрос к модели собирается на каждом ходе: без кэша один и тот же снимок качался бы заново.
@@ -63,7 +62,7 @@ export function pageScreenshotTool(
     toModelOutput: async ({ output }) => {
       if (!isScreenshotRecord(output)) return unavailable("(адрес неизвестен)");
       const image =
-        cache.get(output.screenshotUrl) ?? (await downloadScreenshot(output.screenshotUrl, fetchImplementation, { resolveHost }));
+        cache.get(output.screenshotUrl) ?? (await downloadScreenshot(output.screenshotUrl, download.fetch, download));
       if (!image) return unavailable(output.pageUrl, output.text);
       cache.set(output.screenshotUrl, image);
       return {

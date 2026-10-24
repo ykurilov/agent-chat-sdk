@@ -1,6 +1,6 @@
 {
   "name": "@ykurilov/agent-chat-images",
-  "version": "0.80.1",
+  "version": "0.81.0",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,
@@ -52,6 +52,7 @@
   "dependencies": {
     "@ykurilov/agent-chat-attachments": "workspace:*",
     "@ykurilov/agent-chat-core": "workspace:*",
+    "@ykurilov/agent-chat-web-tools": "workspace:*",
     "ai": "7.0.122",
     "drizzle-orm": "^0.45.3",
     "sharp": "^0.35.5",

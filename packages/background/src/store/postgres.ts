@@ -65,6 +65,14 @@ export function createPostgresTaskStore(pool: Pool, migrationsFolder: string): T
       when?.pendingApprovalId !== undefined ? sql`${backgroundTasks.progress}->'pendingApproval'->>'approvalId' = ${when.pendingApprovalId}` : undefined,
     );
 
+  async function countActive(executor: Pick<typeof db, "select">, ownerId: string): Promise<number> {
+    const [row] = await executor
+      .select({ count: sql<number>`count(*)::int` })
+      .from(backgroundTasks)
+      .where(and(eq(backgroundTasks.ownerId, ownerId), isRunning));
+    return Number(row?.count ?? 0);
+  }
+
   async function get(ownerId: string, taskId: string): Promise<TaskRecord | null> {
     await ready;
     const [row] = await db.select().from(backgroundTasks).where(owned(ownerId, taskId));
@@ -98,11 +106,23 @@ export function createPostgresTaskStore(pool: Pool, migrationsFolder: string): T
     },
     async countActive(ownerId) {
       await ready;
-      const [row] = await db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(backgroundTasks)
-        .where(and(eq(backgroundTasks.ownerId, ownerId), isRunning));
-      return Number(row?.count ?? 0);
+      return countActive(db, ownerId);
+    },
+    async admitWithinLimit(admission, maxActive) {
+      await ready;
+      const ownerId = "create" in admission ? admission.create.ownerId : admission.resume.ownerId;
+      return db.transaction(async (tx) => {
+        // Места человека — по одному: замок держится до конца транзакции. Без него две копии видят одинаковый счёт и обе пишут.
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`agent_chat.background_tasks:${ownerId}`}, 0))`);
+        if ((await countActive(tx, ownerId)) >= maxActive) return "no_slot" as const;
+        if ("create" in admission) {
+          await tx.insert(backgroundTasks).values(toColumns(admission.create) as Row);
+          return admission.create;
+        }
+        const { taskId, patch, when } = admission.resume;
+        const [row] = await tx.update(backgroundTasks).set(toColumns(patch)).where(and(owned(ownerId, taskId), condition(when))).returning();
+        return row ? toRecord(row) : null;
+      });
     },
     async claim(taskId, leaseOwner, leaseUntil, now) {
       await ready;

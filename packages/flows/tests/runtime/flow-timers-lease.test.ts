@@ -81,3 +81,56 @@ describe("таймеры: обход дольше аренды", () => {
     expect(second.model.doStreamCalls.length).toBeGreaterThan(0);
   });
 });
+
+describe("таймеры: копия потеряла аренду посреди срабатывания (аудит kimi-3)", () => {
+  it("зависла перед касанием дольше аренды — касание и следующий срок за другой копией; устаревшая не пишет и не шлёт", async () => {
+    const store = memoryFlowStore();
+    const storage = createInMemoryChatStorage();
+    const sent: FlowOutgoing[] = [];
+    const deliver = async (message: FlowOutgoing) => {
+      sent.push(message);
+      return { status: "delivered" as const };
+    };
+    const [stale, fresh] = [0, 1].map(() => timerChat({ edit: nudging, store, storage, firstMessages: false })) as [TimerChat, TimerChat];
+    // Устаревшая копия зависает на проверке лимита — последней перед касанием.
+    let release!: () => void;
+    let markStalled!: () => void;
+    const released = new Promise<void>((resolve) => (release = resolve));
+    const stalled = new Promise<void>((resolve) => (markStalled = resolve));
+    const stallingPort = new Proxy(stale.service, {
+      get(target, key, receiver) {
+        if (key !== "assertWithinLimit") return Reflect.get(target, key, receiver);
+        return async (...args: Parameters<typeof target.assertWithinLimit>) => {
+          markStalled();
+          await released;
+          return target.assertWithinLimit(...args);
+        };
+      },
+    });
+    stale.flow.attach({ portFor: () => stallingPort, deliver });
+    fresh.flow.attach({ portFor: () => fresh.service, deliver });
+
+    const { id } = await stale.service.createChat(OWNER);
+    await human(stale, id, "Курс");
+    const humanTurns = stale.model.doStreamCalls.length;
+    clockAt(msk(14, 10, 15));
+    const staleTick = stale.flow.tick();
+    await stalled;
+
+    // Прошло больше минуты аренды: таймер берёт другая копия и касается сама.
+    clockAt(msk(14, 10, 17));
+    await fresh.flow.tick();
+    await waitTurn(fresh.service, id);
+    await fresh.flow.settled();
+    expect(sent.filter((message) => message.chatId === id)).toHaveLength(1);
+    const afterFresh = await store.getChat(id);
+
+    release();
+    await staleTick;
+    await stale.flow.settled();
+    expect(sent.filter((message) => message.chatId === id)).toHaveLength(1);
+    expect(stale.model.doStreamCalls).toHaveLength(humanTurns);
+    expect((await store.getChat(id))?.dueAt).toBe(afterFresh?.dueAt);
+    expect((await store.getChat(id))?.dueExitId).toBe(afterFresh?.dueExitId);
+  });
+});

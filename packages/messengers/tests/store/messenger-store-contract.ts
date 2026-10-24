@@ -33,6 +33,10 @@ export function describeMessengerStoreContract(create: () => Promise<MessengerSt
     return store;
   }
 
+  it("guarded: true — хранилище выполняет условия держателя и аренды (0.81)", async () => {
+    expect((await open()).guarded).toBe(true);
+  });
+
   describe("коды привязки", () => {
     it("код принимается один раз и только до срока", async () => {
       const store = await open();
@@ -75,6 +79,24 @@ export function describeMessengerStoreContract(create: () => Promise<MessengerSt
       await store.saveLink(link({ userId: "boris", linkedAt: at(3) }));
       expect((await store.findLink("telegram", "bot1", "100"))?.userId).toBe("boris");
       expect(await store.listLinks("anna")).toEqual([]);
+    });
+
+    it("привязка, если аккаунт свободен: свой — обновляется, чужой — не трогается (аудит C-04)", async () => {
+      const store = await open();
+      expect(await store.saveLinkIfFree(link())).toBe("saved");
+      expect(await store.saveLinkIfFree(link({ name: "Анна К.", username: undefined, linkedAt: at(2) }))).toBe("saved");
+      expect(await store.findLink("telegram", "bot1", "100")).toEqual({ messenger: "telegram", botId: "bot1", externalUserId: "100", userId: "anna", name: "Анна К.", linkedAt: at(2) });
+      expect(await store.saveLinkIfFree(link({ userId: "boris", name: "Борис", linkedAt: at(3) }))).toBe("taken");
+      expect((await store.findLink("telegram", "bot1", "100"))?.userId).toBe("anna");
+      expect(await store.listLinks("boris")).toEqual([]);
+    });
+
+    it("одновременно свободный аккаунт получает только один пользователь", async () => {
+      const store = await open();
+      const users = ["anna", "boris", "vera", "gleb"];
+      const results = await Promise.all(users.map((userId) => store.saveLinkIfFree(link({ userId }))));
+      expect(results.filter((result) => result === "saved")).toHaveLength(1);
+      expect((await store.findLink("telegram", "bot1", "100"))?.userId).toBe(users[results.indexOf("saved")]);
     });
   });
 
@@ -196,6 +218,25 @@ export function describeMessengerStoreContract(create: () => Promise<MessengerSt
       expect((await store.takeAbandonedUpdates(bot1, "c", at(15), at(30), 10)).map((item) => item.key)).toEqual(["mine"]);
       await store.renewUpdates(["mine"], "a", at(60));
       expect((await store.takeAbandonedUpdates(bot1, "d", at(31), at(40), 10)).map((item) => item.key)).toContain("mine");
+    });
+
+    it("закончить с держателем можно только своё: у кого забрали после срока, тот чужую работу не заканчивает (аудит kimi-4)", async () => {
+      const store = await open();
+      await store.claimUpdate("u1", at(0), work("a", at(5), "одно"));
+      expect((await store.takeAbandonedUpdates(bot1, "b", at(6), at(20), 10)).map((item) => item.key)).toEqual(["u1"]);
+      await store.finishUpdate("u1", "done", at(7), "a");
+      // Обновление всё ещё за «b»: продление его, сбой отпускает на повтор с содержимым.
+      await store.renewUpdates(["u1"], "b", at(30));
+      expect(await store.takeAbandonedUpdates(bot1, "c", at(25), at(40), 10)).toEqual([]);
+      await store.releaseUpdate("u1", "b", at(31));
+      expect(await store.takeAbandonedUpdates(bot1, "c", at(31), at(40), 10)).toEqual([{ key: "u1", update: work("a", at(5), "одно").update, receivedAt: at(0), attempts: 2 }]);
+      await store.finishUpdate("u1", "done", at(32), "c");
+      expect(await store.takeAbandonedUpdates(bot1, "d", at(50), at(60), 10)).toEqual([]);
+      expect(await store.claimUpdate("u1", at(51), work("d", at(60), "одно"))).toBe(false);
+      // Без держателя — как раньше, без условия.
+      await store.claimUpdate("mark", at(0));
+      await store.finishUpdate("mark", "done", at(1));
+      expect(await store.claimUpdate("mark", at(2))).toBe(false);
     });
 
     it("одновременно брошенное обновление забирает один", async () => {

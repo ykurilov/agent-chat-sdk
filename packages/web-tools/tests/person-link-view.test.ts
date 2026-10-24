@@ -242,6 +242,22 @@ describe("person_link_view: не больше трёх за разговор", (
     await insert("assistant", [1, 2, 3].map((n) => ({ ...refusal, toolCallId: `r${n}` })));
     await expect(view("https://a.example.com")).resolves.toBeDefined();
   });
+
+  it("локальный адрес отклонён проверкой до службы — отказ, в счёт не идёт ни в этом ходе, ни из истории", async () => {
+    await personSays("http://printer.local/ https://a.example.com https://b.example.com https://c.example.com");
+    const turn = randomUUID();
+    const refused = await view("http://printer.local/", { turnId: turn }).catch((error: unknown) => error);
+    expect(refused).toMatchObject({ kind: "bad_address" });
+    expect((refused as Error).message.startsWith("Отказ:")).toBe(true);
+    await insert("assistant", [{ type: `tool-${PERSON_LINK_TOOL}`, toolCallId: "past-refusal", state: "output-error", input: { url: "x" }, errorText: (refused as Error).message }]);
+
+    await view("https://a.example.com", { turnId: turn });
+    await view("https://b.example.com", { turnId: turn });
+    await view("https://c.example.com", { turnId: turn });
+    expect(shots).toHaveLength(3);
+    const usage = await storage.sumUsage({ chatId });
+    expect(usage.reduce((total, sum) => total + sum.costUsd, 0)).toBeCloseTo(0.015);
+  });
 });
 
 describe("person_link_view: что получает модель", () => {

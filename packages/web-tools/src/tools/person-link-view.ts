@@ -137,8 +137,13 @@ export function createPersonLinkTool(options: PersonLinkOptions): PersonLinkTool
             const result = await innerExecute({ url: requested.includes("://") ? requested : `https://${requested}` }, executeOptions);
             return typeof result === "string" ? { pageUrl: `https://${requested}`, text: result } : (result as ViewRecord);
           } catch (error) {
-            // Адрес не прошёл проверку безопасности: это отказ, а не неоткрывшаяся страница
-            if (executeOptions.abortSignal?.aborted || (error instanceof WebToolError && error.kind === "bad_address")) throw error;
+            if (executeOptions.abortSignal?.aborted) throw error;
+            // Адрес не прошёл проверку безопасности до обращения к службе: это отказ, а не неоткрывшаяся страница. Отказ
+            // просмотром не считается — ни в этом ходе, ни в истории (там его узнают по началу текста).
+            if (error instanceof WebToolError && error.kind === "bad_address") {
+              running.get(turn)?.delete(executeOptions.toolCallId);
+              throw new WebToolError("bad_address", `${REFUSAL} ${error.message}`);
+            }
             throw new WebToolError(
               "unavailable",
               "Страница не открылась. Скажи человеку об этом один раз и не проси ссылку снова: двигайся дальше без неё.",

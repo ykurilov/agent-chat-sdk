@@ -1,5 +1,15 @@
 # @ykurilov/agent-chat-react
 
+## 0.81.0
+
+### Patch Changes
+
+- 038b6e2: Исправления аудита клиентской зоны. `useAgentChat` без `key` при смене чата больше не переносит в новый чат дела прежнего: «Стоп», ответ на подтверждение или виджет, передачу поправок и сорвавшуюся голосовую замену; новый чат не остаётся «занятым», повторное открытие того же чата начинается с чистого состояния. Песочница не зовёт хуки приложения, которые пишут данные (`onStateChanged`, `onTurnFinished`, `onModelChosen`), ни в песочном чате, ни в копии чата человека; `newChatGreeting` и `modelMenu` решаются для настоящего админа. Вложения: удаление человеком и чистка брошенных больше не убирают файл, который отправляемое сообщение уже отметило; `confirmUserParts` отказывает `AttachmentRejectedError` (`attachment_not_found` — файла нет или отметка не записана, `attachment_unavailable` — сбой хранилища), а не отмечает молча.
+  
+  ### Как обновить приложение
+  
+  Обновите пакеты SDK одной версией. Со встроенными хранилищами вложений (`createDiskAttachmentStorage`, `createMemoryAttachmentStorage`) ничего менять не нужно. Своё хранилище (`AttachmentStorage`, например S3) должно получить метод `removeUnattached(id): Promise<boolean>` — удалить файл, только если он не прикреплён, атомарно с `markAttached` того же файла; `removeUnattachedOlderThan` должен следовать тому же правилу. Без метода `createAttachments` бросает ошибку при запуске. Проверьте хранилище обновлённым `describeAttachmentStorageContract`. Если песочница полагалась на `onStateChanged`, `onTurnFinished` или `onModelChosen` в песочных чатах — в песочнице они больше не зовутся. [Подробности](https://github.com/ykurilov/agent-chat-sdk/blob/main/docs/audit-client.md).
+
 ## 0.80.1
 
 No changes in this release.

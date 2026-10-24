@@ -14,18 +14,20 @@ export const screenshotMaxRedirects = 3;
 export interface ScreenshotDownloadOptions {
   /** Разрешает имя в адреса для проверки: наш сервер сам ходит по этому адресу. */
   resolveHost: HostResolver;
+  /** `fetch` сам проверяет каждый адрес в момент соединения (`createPinnedFetch`): отдельной проверки DNS до запроса нет. */
+  pinned?: boolean;
 }
 
 /**
  * Скачивает снимок по адресу из записи истории. Возвращает `undefined`, если снимка больше нет:
  * ссылка устарела, это не картинка, она слишком велика или ведёт не туда. Переходы выполняются вручную,
  * не больше трёх, и каждый проходит ту же проверку, что и первый адрес: только http(s), не локальный адрес,
- * имя не указывает во внутреннюю сеть.
+ * имя не указывает во внутреннюю сеть. Имя проверяет закреплённый `fetch` при соединении (`pinned`), иначе — DNS до запроса.
  */
 export async function downloadScreenshot(
   address: string,
   fetchImplementation: typeof globalThis.fetch,
-  { resolveHost }: ScreenshotDownloadOptions,
+  { resolveHost, pinned = false }: ScreenshotDownloadOptions,
 ): Promise<DownloadedImage | undefined> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), screenshotDownloadTimeoutMs);
@@ -34,7 +36,8 @@ export async function downloadScreenshot(
     for (let redirects = 0; ; redirects++) {
       // Встроенная картинка (data:) сети не касается; для первого адреса она допустима, для перехода нет.
       if (redirects === 0 && new URL(current).protocol === "data:") return await readImage(await fetchImplementation(current, { signal: controller.signal }));
-      await assertResolvesPublic(assertPublicWebAddress(current), resolveHost);
+      const url = assertPublicWebAddress(current);
+      if (!pinned) await assertResolvesPublic(url, resolveHost);
       const response = await fetchImplementation(current, { signal: controller.signal, redirect: "manual" });
       if (response.status < 300 || response.status >= 400) return await readImage(response);
       const location = response.headers.get("location");

@@ -6,6 +6,7 @@ import type { HostResolver } from "./page-address";
 import type { PageReaderService, PageScreenshotService, WebSearchService } from "./services";
 import { WebToolError } from "./web-tool-error";
 import type { WebToolErrorKind } from "./web-tool-error";
+import { sharedPinnedFetch } from "./pinned-fetch";
 import { pageScreenshotTool } from "./tools/page-screenshot";
 import { readPageTool } from "./tools/read-page";
 import { webSearchTool } from "./tools/web-search";
@@ -19,7 +20,11 @@ export interface CreateWebToolsOptions {
   pageCharacterLimit?: number;
   /** Служба снимков. Без неё инструмента `page_screenshot` нет. */
   screenshots?: PageScreenshotService;
-  /** Для скачивания снимка при сборке запроса к модели. */
+  /**
+   * Свой `fetch` для скачивания снимка — граница доверия приложения: имя проверяется по DNS до запроса, а закрепить
+   * соединение за проверенным адресом (от подмены DNS) должен сам этот `fetch` (`createPinnedFetch` из `/network`).
+   * Без него снимок качает общий закреплённый `fetch`: имя проверяется в момент соединения.
+   */
   fetch?: typeof globalThis.fetch;
   /** Как разрешать имена при скачивании снимка. По умолчанию системный DNS; заменяется в тестах. */
   resolveHost?: HostResolver;
@@ -74,7 +79,7 @@ export function createWebTools(options: CreateWebToolsOptions): (model: WebTools
   const pageCharacterLimit = options.pageCharacterLimit ?? defaultPageCharacterLimit;
   const screenshotTool =
     options.screenshots &&
-    pageScreenshotTool(options.screenshots, options.fetch ?? globalThis.fetch, options.resolveHost ?? dnsHostResolver, pageCharacterLimit);
+    pageScreenshotTool(options.screenshots, screenshotDownload(options), pageCharacterLimit);
   const withScreenshot: ToolSet = screenshotTool ? { ...tools, page_screenshot: screenshotTool } : tools;
   const counted = options.spending && countingSpending(options.spending);
 
@@ -92,6 +97,12 @@ const refusedBeforeWork: ReadonlySet<WebToolErrorKind> = new Set(["bad_address",
  * служба могла списать кредиты, лучше записать лишнее, чем потерять. Не пишет отказ до работы службы и вызов хода,
  * остановленного ещё до него. Описания и схемы те же объекты — кэш модели не трогается.
  */
+function screenshotDownload(options: CreateWebToolsOptions) {
+  const resolveHost = options.resolveHost ?? dnsHostResolver;
+  if (options.fetch) return { fetch: options.fetch, resolveHost };
+  return { fetch: sharedPinnedFetch(resolveHost), resolveHost, pinned: true };
+}
+
 function countingSpending(spending: WebToolsSpending) {
   const prices: Record<string, number | undefined> = spending.pricePerCallUsd;
   for (const [name, price] of Object.entries(prices)) {

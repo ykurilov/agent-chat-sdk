@@ -54,7 +54,7 @@ import type {
 import { createClientCard } from "./client-card";
 import { createChatTimeZones, createFirstMessageRules, createFlowTimeZones, ianaTimeZone, pageTimeZone, UNKNOWN_TIME_ZONE } from "./first-message-rules";
 import { createFlowJudge } from "./judge";
-import { createFlowTimers } from "./flow-timers";
+import { createFlowTimers, DEFAULT_TIMER_LEASE_MS } from "./flow-timers";
 import { createChatMigrator } from "./migrate-chats";
 import { sendFlowSignal } from "./flow-signals";
 import { withFlowKnownTexts } from "./flow-known-texts";
@@ -156,6 +156,10 @@ function turnWindow(messages: readonly HistoryMessage[], run: FlowRun, answer: {
 /** Сборка сценария с подменяемыми модулями. Приложению — `createAgentFlow`. */
 export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules = {}): BuiltAgentFlow {
   const { store } = options;
+  // Условия хранилища (аренда, условная замена доставки) — договор, а не пожелание: без признака сценарий не запускается.
+  if ((store as { guarded?: unknown } | undefined)?.guarded !== true) {
+    throw new TypeError("createAgentFlow: хранилище сценариев без guarded: true — с 0.81 своё FlowStore должно выполнять условия setDue/swapDelivery/leaseDue/endChat (см. обновление 0.81)");
+  }
   const clock = options.now ?? (() => new Date());
   const now = () => clock().getTime();
   const iso = () => clock().toISOString();
@@ -319,8 +323,11 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
     let found = versions.get(key);
     if (!found) {
       found = store.getVersion(flowId, versionId).then((saved) => {
-        if (saved) confirmations.validate(flowId, saved.flow);
-        return saved?.flow ?? null;
+        if (!saved) return null;
+        // Сохранённая версия не прошла проверку подтверждений приложения: чат идёт без сценария, а не падает каждым ходом.
+        const problem = confirmationProblem(flowId, versionId, saved.flow);
+        if (problem) logError(problem);
+        return problem ? null : saved.flow;
       });
       versions.set(key, found);
       void found.then((flow) => flow ?? versions.delete(key), () => versions.delete(key));
@@ -337,13 +344,25 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
     const catalog = { tools: parsed.flow.tools, events: [], widgets: [] };
     const errors = checkFlow(parsed.flow, catalog).filter((issue) => issue.level === "error" && !SERVER_UNKNOWN_CODES.has(issue.code));
     if (errors.length > 0) return { problem: `[сценарий] ${flowId}@${versionId} с ошибками, чат идёт без сценария: ${errors.map((issue) => issue.message).join("; ")}` };
-    return { flow: parsed.flow };
+    const problem = confirmationProblem(flowId, versionId, parsed.flow);
+    return problem ? { problem } : { flow: parsed.flow };
+  }
+
+  /** Сценарий против подтверждений приложения (`exitGuards`): несовпадение — текст ошибки, иначе `null`. */
+  function confirmationProblem(flowId: string, versionId: string, flow: AgentFlow): string | null {
+    try {
+      confirmations.validate(flowId, flow);
+      return null;
+    } catch (error) {
+      if (!(error instanceof TypeError)) throw error;
+      return `[сценарий] ${flowId}@${versionId} не сходится с подтверждениями приложения, чат идёт без сценария: ${error.message}`;
+    }
   }
 
   /** Разобрать и проверить сценарий приложения; с ошибками — `null` и строка в журнал. */
   function checkedFlow(flowId: string, versionId: string, value: unknown): AgentFlow | null {
     const checked = flowOrProblem(flowId, versionId, value);
-    if ("flow" in checked) { confirmations.validate(flowId, checked.flow); return checked.flow; }
+    if ("flow" in checked) return checked.flow;
     logError(checked.problem);
     return null;
   }
@@ -375,7 +394,10 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
     if (loaded.stateId !== undefined && !stateById(flow, loaded.stateId)) {
       return void fail(`[сценарий] чат=${chatId}: состояния «${loaded.stateId}» нет в ${loaded.flowId}@${loaded.versionId}, чат идёт без сценария`), null;
     }
-    await saveChecked(loaded, flow);
+    // Под номером уже сохранён другой сценарий — чат пойдёт по сохранённому: его проверка тоже до закрепления.
+    if ((await saveChecked(loaded, flow)) === "conflict" && !(await versionFlow(loaded.flowId, loaded.versionId))) {
+      return void fail(`[сценарий] чат=${chatId}: сохранённая версия ${loaded.flowId}@${loaded.versionId} не прошла проверку, чат идёт без сценария`), null;
+    }
     const at = now();
     const startedAt = loaded.startedAt ?? new Date(at);
     const { lastHumanAt, lastAgentAt, nudgeStep, today } = loaded;
@@ -544,11 +566,12 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
     createFlowDelivery({
       runtime,
       deliver: () => attachment?.deliver,
+      leaseMs: options.timers?.leaseMs ?? DEFAULT_TIMER_LEASE_MS,
       port: portOf,
       finish,
       firstMessages,
       timeZoneOf: (ownerId, chatId) => timeZones.of(ownerId, chatId),
-      onUndelivered: rescheduleUndelivered,
+      recount: recountFromState,
     }),
   );
 
@@ -566,11 +589,14 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
     }
   }
 
-  /** Канал SDK не доставил ответ: касание не засчитано (FR-309) — сроки по месту из состояния, не раньше отказа. */
-  async function rescheduleUndelivered({ ownerId, chatId, at }: { ownerId: string; chatId: string; at: number }): Promise<void> {
+  /**
+   * Сроки по месту из состояния: доставка закончилась. Касание не дошло (FR-309) — не засчитано, сроки не раньше отказа
+   * `failedAt`.
+   */
+  async function recountFromState({ ownerId, chatId, failedAt }: { ownerId: string; chatId: string; failedAt?: number }): Promise<void> {
     const { values } = await (await portOf({ ownerId, chatId })).getChatState(ownerId, chatId);
     const run = storedRun(values[FLOW_STATE_KEY]);
-    if (run) await reschedule(ownerId, chatId, run, run.answerId ?? null, at);
+    if (run) await reschedule(ownerId, chatId, run, run.answerId ?? null, failedAt);
   }
 
   /** Данные чата для отбора при переводе. Служба не подключена или чата в ней уже нет — пусто. */
@@ -755,9 +781,25 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
     const run = await runOutsideTurn(runtime, { ownerId, chatId }, pinned.flow, values, now(), record);
     // Ждущий повтор доставки после конца не нужен.
     await store.setDelivery(chatId, null);
-    const result = await finish().end({ ownerId, chatId, pinned, run, reason, ...(outcome !== undefined && { outcome }), at: chatTime(run, now()) });
-    if (result.ended) remember(chatId, { ...pinned, ended: true });
+    const at = chatTime(run, now());
+    const result = await finish().end({ ownerId, chatId, pinned, run, reason, ...(outcome !== undefined && { outcome }), at });
+    // Открыт заново, пока дочищали, — в памяти уже открытый: «закончен» поверх не пишем.
+    if (result.ended && (await dropDeliveryAfterEnd(chatId, new Date(at).toISOString()))) remember(chatId, { ...pinned, ended: true });
     return result;
+  }
+
+  /**
+   * Отправка, записанная, пока разговор ещё не закончился, снимается вместе со сроком — одной заменой и только пока конец
+   * тот же: открытый заново разговор (`flow.reopen`) не трогается. Замена не прошла — запись сменила другая операция:
+   * читаем снова. После конца новая отправка не запишется (`endedAt` в `swapDelivery`), так что повторов немного.
+   * `false` — конец уже не этот.
+   */
+  async function dropDeliveryAfterEnd(chatId: string, endedAt: string): Promise<boolean> {
+    const sameEnd = (record: FlowChatRecord | null): record is FlowChatRecord => record !== null && record.endedAt !== null && Date.parse(record.endedAt) === Date.parse(endedAt);
+    for (let record = await store.getChat(chatId); sameEnd(record); record = await store.getChat(chatId)) {
+      if (await store.swapDelivery(chatId, { expected: record.delivery, next: null, due: null, endedAt })) return true;
+    }
+    return false;
   }
 
   // ---------- Открыть заново ----------
@@ -967,6 +1009,9 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
       };
     },
     attach(target) {
+      if ("portFor" in target && target.deliver && typeof store.swapDelivery !== "function") {
+        throw new TypeError("flow.attach({ deliver }): хранилищу сценариев нужен swapDelivery (с 0.81) — без него доставка не защищена от второй копии");
+      }
       if ("portFor" in target) {
         attachment = target;
         port = undefined;
@@ -994,6 +1039,7 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
     resume: (input) => pauses().resume(input),
     noteStaffReply: (input) => pauses().noteStaffReply(input),
     reportDelivery: (input) => delivery().report(input),
+    resumeDelivery: (input) => delivery().resume(input),
     readRun,
     revokeConfirmation,
     previewMigration: (input) => previewConfirmedMigration(input, { store, confirmations, portFor: portOf }),

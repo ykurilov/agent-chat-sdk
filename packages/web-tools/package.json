@@ -1,6 +1,6 @@
 {
   "name": "@ykurilov/agent-chat-web-tools",
-  "version": "0.80.1",
+  "version": "0.81.0",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,
@@ -24,6 +24,11 @@
       "@ykurilov/agent-chat-source": "./src/labels.ts",
       "types": "./dist/types/labels.d.ts",
       "import": "./dist/labels.js"
+    },
+    "./network": {
+      "@ykurilov/agent-chat-source": "./src/network.ts",
+      "types": "./dist/types/network.d.ts",
+      "import": "./dist/network.js"
     }
   },
   "engines": {
@@ -45,6 +50,7 @@
   "dependencies": {
     "@ykurilov/agent-chat-core": "workspace:*",
     "ai": "7.0.122",
+    "undici": "^7.30.0",
     "zod": "^4.6.5"
   }
 }

@@ -1,5 +1,5 @@
 import type { StateMap } from "../engine/migrate-run";
-import type { ChatsInState, MigrateBatchInput, PendingFlowChange } from "./flow-store";
+import type { ChatsInState, FlowPendingDelivery, MigrateBatchInput, PendingFlowChange } from "./flow-store";
 
 // Общее у трёх хранилищ сценариев: одинаковые ключи, порядок и правила, чтобы договор держался везде.
 
@@ -41,4 +41,20 @@ export function withoutNul<T>(value: T): T {
   if (typeof value === "string") return value.replaceAll("\u0000", "") as T;
   if (typeof value !== "object") return value;
   return JSON.parse(JSON.stringify(value, (_key, item: unknown) => (typeof item === "string" ? item.replaceAll("\u0000", "") : item))) as T;
+}
+
+/** Запись доставки к одному виду: времена — как их вернёт база. */
+export function normalizedDelivery(delivery: FlowPendingDelivery): FlowPendingDelivery {
+  return {
+    ...delivery,
+    retryAt: normalizeTime(delivery.retryAt),
+    ...(delivery.pausedAt !== undefined && { pausedAt: normalizeTime(delivery.pausedAt) }),
+    ...(delivery.resumedAt !== undefined && { resumedAt: normalizeTime(delivery.resumedAt) }),
+  };
+}
+
+/** Та же запись доставки для `swapDelivery`: обе нет или совпали `messageId`, `attempt` и `token`. */
+export function sameDelivery(stored: FlowPendingDelivery | null, expected: FlowPendingDelivery | null): boolean {
+  if (stored === null || expected === null) return stored === expected;
+  return stored.messageId === expected.messageId && stored.attempt === expected.attempt && (stored.token ?? null) === (expected.token ?? null);
 }

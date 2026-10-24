@@ -1,4 +1,4 @@
-import type { TaskRecord, TaskStore } from "../types";
+import type { TaskCondition, TaskPatch, TaskRecord, TaskStore } from "../types";
 import { isRunningStatus, meetsCondition, NOTICE_STATUSES, patchEntries, withoutEmptyFields } from "./task-store";
 
 const copy = (record: TaskRecord): TaskRecord => withoutEmptyFields(structuredClone(record));
@@ -12,6 +12,16 @@ export function memoryTaskStore(): TaskStore {
     const task = tasks.get(taskId);
     return task && task.ownerId === ownerId ? task : undefined;
   };
+  const countActive = (ownerId: string) => [...tasks.values()].filter((task) => task.ownerId === ownerId && isRunningStatus(task.status)).length;
+  const update = (ownerId: string, taskId: string, patch: TaskPatch, when: TaskCondition | undefined): TaskRecord | null => {
+    const task = owned(ownerId, taskId);
+    if (!task || !meetsCondition(task, when)) return null;
+    const changed = { ...task } as Record<string, unknown>;
+    for (const [key, value] of patchEntries(structuredClone(patch))) changed[key] = value;
+    const next = withoutEmptyFields(changed as unknown as TaskRecord);
+    tasks.set(taskId, next);
+    return copy(next);
+  };
   const isFree = (task: TaskRecord, leaseOwner: string, now: string) =>
     task.leaseOwner === leaseOwner || task.leaseUntil === undefined || task.leaseUntil < now;
 
@@ -24,19 +34,24 @@ export function memoryTaskStore(): TaskStore {
       return task ? copy(task) : null;
     },
     async update(ownerId, taskId, patch, when) {
-      const task = owned(ownerId, taskId);
-      if (!task || !meetsCondition(task, when)) return null;
-      const changed = { ...task } as Record<string, unknown>;
-      for (const [key, value] of patchEntries(structuredClone(patch))) changed[key] = value;
-      const next = withoutEmptyFields(changed as unknown as TaskRecord);
-      tasks.set(taskId, next);
-      return copy(next);
+      return update(ownerId, taskId, patch, when);
     },
     async listForChat(ownerId, chatId) {
       return [...tasks.values()].filter((task) => task.ownerId === ownerId && task.chatId === chatId).sort(byCreatedAt).map(copy);
     },
     async countActive(ownerId) {
-      return [...tasks.values()].filter((task) => task.ownerId === ownerId && isRunningStatus(task.status)).length;
+      return countActive(ownerId);
+    },
+    async admitWithinLimit(admission, maxActive) {
+      // Без ожиданий между подсчётом и записью: в памяти одного процесса это и есть одно действие.
+      const ownerId = "create" in admission ? admission.create.ownerId : admission.resume.ownerId;
+      if (countActive(ownerId) >= maxActive) return "no_slot";
+      if ("create" in admission) {
+        tasks.set(admission.create.id, copy(admission.create));
+        return copy(admission.create);
+      }
+      const { taskId, patch, when } = admission.resume;
+      return update(ownerId, taskId, patch, when);
     },
     async claim(taskId, leaseOwner, leaseUntil, now) {
       const task = tasks.get(taskId);

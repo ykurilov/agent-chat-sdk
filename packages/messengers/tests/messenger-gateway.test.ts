@@ -419,6 +419,38 @@ describe("шлюз мессенджеров", () => {
     expect(on.fake.texts()).toEqual([messengerTexts.groupConnected("Анна"), "Ответ"]);
   });
 
+  it("группа: кнопка подсказки — те же границы и предел участника, что у сообщения (аудит gemini-2)", async () => {
+    const { fake, chats, link, post, settle } = setup({ groups: { allowedTools: ["search"], perMemberHourly: 2 } });
+    await link();
+    await post([update({ chat: groupChat, kind: "command", text: "/connect" })]);
+    await settle();
+    const suggesting = () =>
+      streamOf([
+        { type: "start", messageId: "a1" },
+        { type: "text-start", id: "t1" },
+        { type: "text-delta", id: "t1", delta: "Выберите" },
+        { type: "text-end", id: "t1" },
+        { type: "tool-input-available", toolCallId: "s1", toolName: "suggest_replies", input: { replies: ["Да", "Нет"] } },
+        { type: "finish" },
+      ]);
+    chats.service.respond = suggesting;
+    await post([update({ chat: groupChat, text: "@test_bot вопрос", group: { mentioned: true, replyToBot: false } })]);
+    await settle();
+    const pressSuggestion = async (callbackId: string) => {
+      const button = fake.sent.findLast((sent) => sent.message.buttons?.length)?.message.buttons?.[0]?.[0];
+      await post([update({ chat: groupChat, kind: "button", text: undefined, buttonId: button?.id, callbackId })]);
+      await settle();
+    };
+    await pressSuggestion("cb1");
+    expect(chats.sent).toHaveLength(2);
+    expect(chats.sent[1]).toMatchObject({ message: { parts: [{ type: "text", text: "Да" }] }, options: { channel: "telegram", group: { allowedTools: ["search"], author: "Анна" } } });
+
+    // Два обращения за час уже есть: третье — кнопкой — сверх предела, агент не зовётся.
+    await pressSuggestion("cb2");
+    expect(chats.sent).toHaveLength(2);
+    expect(fake.texts().at(-1)).toBe(messengerTexts.memberLimit);
+  });
+
   it("группа: /stop чужого хода от постороннего — отказ; автор хода и подключивший — останавливают", async () => {
     const { fake, chats, link, post, settle } = setup({ groups: {} });
     await link();
@@ -595,6 +627,29 @@ describe("обновление не теряется при сбое", () => {
     const later = new Date(Date.now() + 60 * 60_000).toISOString();
     expect(await crashed.store.takeAbandonedUpdates({ messenger: "telegram", botId: "bot1" }, "check", later, later, 10)).toEqual([]);
     await restarted.messengers.stop();
+  });
+
+  it("зависшая копия ожила, когда обновление уже у другой: чужую работу не заканчивает, обновление остаётся в работе (аудит kimi-4)", async () => {
+    const stale = setup();
+    await stale.link();
+    // Обе копии висят на обработке, пока тест их не отпустит.
+    const gate = stale.chats.service.assertTurnAllowed.bind(stale.chats.service);
+    const waiting: Array<() => void> = [];
+    stale.chats.service.assertTurnAllowed = (...args) => new Promise((resolve) => waiting.push(() => resolve(gate(...args))));
+    await stale.post([update({ key: "telegram:bot1:stale", text: "Как дела?" })]);
+    await vi.advanceTimersByTimeAsync(1000);
+
+    const fresh = setup({ store: stale.store, service: stale.chats.service });
+    await fresh.messengers.start();
+    await vi.advanceTimersByTimeAsync(LEASE_EXPIRED);
+    expect(waiting).toHaveLength(2);
+
+    waiting[0]!();
+    await vi.advanceTimersByTimeAsync(1000);
+    const later = new Date(Date.now() + 60 * 60_000).toISOString();
+    expect((await stale.store.takeAbandonedUpdates({ messenger: "telegram", botId: "bot1" }, "check", later, later, 10)).map((item) => item.key)).toEqual(["telegram:bot1:stale"]);
+    waiting[1]!();
+    await fresh.messengers.stop();
   });
 
   it("упал посреди ответа: сообщение уже в чате и на него ответили — второго хода нет", async () => {

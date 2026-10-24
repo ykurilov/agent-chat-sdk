@@ -35,6 +35,11 @@ const PURGE_EVERY_MS = 60 * 60_000;
  */
 export function createMessengers(options: MessengersOptions) {
   const { store, bots } = options;
+  if ((store as { guarded?: unknown }).guarded !== true) {
+    throw new TypeError(
+      "createMessengers: хранилище мессенджеров без guarded: true — с 0.81 своё MessengerStore должно выполнять условия держателя и аренды и атомарный saveLinkIfFree (см. MessengerStore.guarded)",
+    );
+  }
   // Без службы чата шлюз до неё не доходит: заглушка только держит форму для модулей разговора.
   const chatEnabled = options.service !== undefined;
   const service = options.service ?? serviceWithoutChat;

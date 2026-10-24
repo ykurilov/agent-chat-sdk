@@ -6,7 +6,7 @@ import { commandOf } from "./bot-commands";
 import type { ButtonActions, CardButton, PressOutcome } from "./button-actions";
 import type { AnswerChunk, MessengerChatService, MessengerUserMessage } from "./chat-port";
 import type { ConversationContext, ConversationPolicy, OpenedChat, PolicyReply } from "./conversation-policy";
-import { authorNameOf, type GroupChats } from "./group-chats";
+import type { GroupChats } from "./group-chats";
 import type { InboundMedia } from "./inbound-media";
 import type { ExternalChat, InboundUpdate } from "./messenger-adapter";
 import { defaultTextsOf, type MessengerTexts, type MessengerTextsOf } from "./messenger-texts";
@@ -228,7 +228,8 @@ export function createMessengerGateway(deps: {
   async function finish(update: InboundUpdate, work: () => Promise<void>) {
     try {
       await work();
-      await store.finishUpdate(update.key, "done", new Date().toISOString()).catch(logError);
+      // Закончить только своё: аренду могли забрать (копия зависла дольше срока), тогда итог пишет новый держатель.
+      await store.finishUpdate(update.key, "done", new Date().toISOString(), holder).catch(logError);
     } catch (error) {
       logError(error);
       await store.releaseUpdate(update.key, holder, new Date(Date.now() + UPDATE_RETRY_MS).toISOString()).catch(logError);
@@ -254,7 +255,7 @@ export function createMessengerGateway(deps: {
         if (held.has(item.key)) continue;
         if (item.attempts > UPDATE_RETRIES || Date.now() - Date.parse(item.receivedAt) > DELIVERY_GIVE_UP_MS) {
           logError(new Error(`messengers: обновление ${item.key} не обработано за ${item.attempts} попыток — брошено`));
-          await store.finishUpdate(item.key, "failed", new Date().toISOString()).catch(logError);
+          await store.finishUpdate(item.key, "failed", new Date().toISOString(), holder).catch(logError);
           continue;
         }
         enqueue(bot, item.update as InboundUpdate, { messageId: inboundMessageId(item.key, item.receivedAt), retry: true });
@@ -374,10 +375,13 @@ export function createMessengerGateway(deps: {
     if (outcome.reply) await reply(bot, ctx.key, update.chat, outcome.reply);
     if (outcome.selectChat) await reply(bot, ctx.key, update.chat, await policy.selectChat(ctx, outcome.selectChat));
     if (outcome.resume) await follow(bot, ctx.key, update.chat, ctx.userId, outcome.resume.chatId, { trigger: "human" }, outcome.resume.stream);
-    if (outcome.userText !== undefined) {
-      const group = update.chat.type === "group" ? { allowedTools: [], author: authorNameOf(update.account) } : undefined;
-      await talk({ bot, update: { ...update, kind: "text", text: outcome.userText }, inbound, key: ctx.key, ctx, ...(group && { group }) });
-    }
+    if (outcome.userText === undefined) return;
+    const asText: InboundUpdate = { ...update, kind: "text", text: outcome.userText };
+    if (update.chat.type !== "group") return talk({ bot, update: asText, inbound, key: ctx.key, ctx });
+    const decision = await groups.handlePressedText(update);
+    if (decision.type === "reply") return reply(bot, ctx.key, update.chat, decision.text);
+    if (decision.type === "ignore") return;
+    return talk({ bot, update: asText, inbound, key: ctx.key, ctx: { ...ctx, userId: decision.userId }, group: decision.group });
   }
 
   /** Сообщение агенту и ответ в разговор. */
@@ -386,7 +390,7 @@ export function createMessengerGateway(deps: {
     const texts = textsOf(key);
     let opened: OpenedChat;
     try {
-      opened = await policy.currentChat(ctx);
+      opened = await policy.currentChat({ ...ctx, ...(turn.group && { group: turn.group }) });
     } catch (error) {
       // Приложение не дало завести первый чат (`beforeCreateChat`).
       if (isAppRefusal(error)) return reply(bot, key, update.chat, refusalText(error, texts));
@@ -428,7 +432,7 @@ export function createMessengerGateway(deps: {
       } catch (error) {
         if (errorNamed(error, "ChatNotFoundError") && attempt === 1) {
           try {
-            opened = await policy.openChat({ ...ctx, reason: "chat_gone" });
+            opened = await policy.openChat({ ...ctx, reason: "chat_gone", ...(turn.group && { group: turn.group }) });
           } catch (openError) {
             if (isAppRefusal(openError)) return reply(bot, key, update.chat, refusalText(openError, texts));
             throw openError;

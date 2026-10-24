@@ -69,10 +69,23 @@ export function createGroupChats(options: { store: MessengerStore; groups?: Mess
     const addressed = answerTo === "all" || update.group?.mentioned === true || update.group?.replyToBot === true;
     if (!addressed) return { type: "ignore" };
     if (!connected) return { type: "reply", text: textsOf(key).connectHint };
-    if (!(await withinMemberLimit(key, update.account.externalUserId))) {
-      return (await warnOnce(key, update.account.externalUserId)) ? { type: "reply", text: textsOf(key).memberLimit } : { type: "ignore" };
+    return admitTurn(key, update.account, connected);
+  }
+
+  /** Кнопка-подсказка в группе стала сообщением агенту: те же предел участника и границы группы, что у сообщения. */
+  async function handlePressedText(update: InboundUpdate): Promise<GroupDecision> {
+    const key = keyOf(update);
+    const conversation = await store.getConversation(key);
+    if (conversation?.active !== true || conversation.type !== "group") return { type: "reply", text: textsOf(key).connectHint };
+    return admitTurn(key, update.account, conversation);
+  }
+
+  /** Ход в подключённой группе: обращение засчитано в предел участника, ход — с разрешёнными инструментами группы. */
+  async function admitTurn(key: ConversationKey, account: ExternalAccount, connected: MessengerConversation): Promise<GroupDecision> {
+    if (!(await withinMemberLimit(key, account.externalUserId))) {
+      return (await warnOnce(key, account.externalUserId)) ? { type: "reply", text: textsOf(key).memberLimit } : { type: "ignore" };
     }
-    return { type: "turn", userId: connected.userId, group: { allowedTools, author: authorNameOf(update.account) } };
+    return { type: "turn", userId: connected.userId, group: { allowedTools, author: authorNameOf(account) } };
   }
 
   /** Группы выключены: один ответ на группу, отметка — запись разговора без плательщика. */
@@ -148,7 +161,7 @@ export function createGroupChats(options: { store: MessengerStore; groups?: Mess
     return userId !== undefined && (userId === conversation?.userId || userId === conversation?.connectedBy);
   }
 
-  return { enabled, groupCommands, installCommands, handleUpdate, checkPress, mayStop };
+  return { enabled, groupCommands, installCommands, handleUpdate, handlePressedText, checkPress, mayStop };
 }
 
 export type GroupChats = ReturnType<typeof createGroupChats>;

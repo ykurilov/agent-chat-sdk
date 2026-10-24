@@ -21,7 +21,7 @@ import { DEFAULT_STEP_CONTEXT_TIMEOUT_MS } from "./agent-run/step-context";
 import type { StepContext } from "./agent-run/step-context";
 import { DEFAULT_CONTEXT_BLOCKS_TIMEOUT_MS } from "./frozen-context/app-blocks";
 import type { ContextBlocksRefresh, ContextBlocksSource } from "./frozen-context/context-blocks";
-import { channelPart, isHumanMessage, turnChannelOf } from "./agent-run/channel-notes";
+import { channelOfMessage, channelPart, inheritedGroupPart, isHumanMessage, turnChannelOf } from "./agent-run/channel-notes";
 import { createChatEvents } from "./chat-events/chat-events";
 import { chatHasExternalContent } from "./external-content/external-content";
 import type { ChatEvent, ChatEvents, ChatTurnTrigger } from "./chat-events/chat-events";
@@ -1754,11 +1754,12 @@ export function createChatService(input: ChatServiceOptions): ChatService {
   /**
    * Файлы отмечаются прикреплёнными до записи сообщения. Отмеченный, но не отправленный файл безвреден (уйдёт вместе с чатом),
    * а неотмеченный файл записанного сообщения через сутки удалила бы чистка брошенных, если сервер упал между двумя шагами.
-   * Сбой отметки сообщение не отменяет.
+   * Сбой отметки отменяет сообщение: ошибка доходит вызывающему до записи, место в счёте сообщений отдаётся назад, повтор
+   * того же сообщения проходит заново.
    */
-  async function confirmFiles(messageId: string, fileParts: Parameters<NonNullable<typeof options.attachments>["confirmUserParts"]>[0]): Promise<void> {
+  async function confirmFiles(fileParts: Parameters<NonNullable<typeof options.attachments>["confirmUserParts"]>[0]): Promise<void> {
     if (fileParts.length === 0) return;
-    await options.attachments!.confirmUserParts(fileParts).catch((error: unknown) => logError(`Не удалось отметить вложения сообщения ${logValue(messageId)}: ${String(error)}`));
+    await options.attachments!.confirmUserParts(fileParts);
   }
 
   async function ownChat(userId: string, chatId: string): Promise<Chat> {
@@ -2757,7 +2758,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
         // Окно тишины пачки считается от этого времени: по часам службы.
         ...(burst && { createdAt: writtenAt.toISOString() }),
       });
-      await confirmFiles(question.id, fileParts);
+      await confirmFiles(fileParts);
       await storage.insertMessage(question);
       return question;
     });
@@ -3097,14 +3098,21 @@ export function createChatService(input: ChatServiceOptions): ChatService {
       return await writingCountedMessage(userId, chatId, async () => {
         const queued = await steering.accept(chatId, async (parentId) => {
           const fileParts = await acceptFiles(userId, chatId, files);
+          // Поправка — часть идущего хода: группа хода остаётся и у неё, и у продолжения после неё.
+          const groupPart = inheritedGroupPart(turnChannelOf(await currentBranch(chatId)));
           const correction = newStoredMessage({
             id: message.id,
             chatId,
             parentId,
             role: "user",
-            parts: [...await filePartsWithNumbers(chatId, fileParts), ...(text.trim().length > 0 ? [{ type: "text" as const, text }] : []), steerPart()],
+            parts: [
+              ...await filePartsWithNumbers(chatId, fileParts),
+              ...(text.trim().length > 0 ? [{ type: "text" as const, text }] : []),
+              steerPart(),
+              ...(groupPart ? [groupPart] : []),
+            ],
           });
-          await confirmFiles(correction.id, fileParts);
+          await confirmFiles(fileParts);
           await storage.insertMessage(correction);
           return correction;
         }, page);
@@ -3437,6 +3445,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
       if (actionOptions?.by !== "app") await assertChatRules(userId, chat, { capabilities: ["chatList"] });
       if (starting.has(chatId)) throw new ChatBusyError(chatId);
       deleting.add(chatId);
+      // Аренда хода, как у запуска хода: ход другой копии не стирается из-под неё («занято»), её новый ход не начнётся в удаляемом чате.
       await holdingChat(chatId, async () => {
         // Идущий ответ останавливаем и ждём, пока он допишется: после удаления в хранилище не должно появиться записей.
         registry.abort(chatId);
@@ -3445,7 +3454,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
         // Файлы — первыми: не удалились — чат цел, и удаление можно повторить; остаться файлам без чата нельзя.
         await options.attachments?.removeChatFiles?.(chatId);
         await storage.deleteChat(chatId);
-      }).finally(() => deleting.delete(chatId));
+      }, { lease: "required" }).finally(() => deleting.delete(chatId));
       // Задачи фона удалённого чата отменяются; сбой фона удаление не отменяет — чата уже нет.
       await options.background?.chatDeleted(userId, chatId).catch((error: unknown) => logError(`Фон: не удалось убрать задачи удалённого чата ${chatId}: ${String(error)}`));
       await options.limits?.chatDeleted?.({ userId, chatId }).catch((error: unknown) => logError(`Лимиты: не удалось стереть окна удалённого чата ${chatId}: ${String(error)}`));
@@ -3653,10 +3662,12 @@ export function createChatService(input: ChatServiceOptions): ChatService {
                 : []),
               // Правленое сообщение пачки остаётся в своей пачке: отметка с прежним временем записи.
               ...edited.parts.filter((part) => part.type === BURST_PART_TYPE),
+              // Правленое сообщение группы остаётся в границах группы: отметка — из записанного сообщения, не из запроса.
+              ...[inheritedGroupPart(channelOfMessage(edited))].filter((part) => part !== undefined),
             ],
             createdAt: nextSiblingTime(messages, selections, edited.parentId),
           });
-          await confirmFiles(question.id, fileParts);
+          await confirmFiles(fileParts);
           await storage.insertMessage(question);
           return { branch, index, edited, question };
         });

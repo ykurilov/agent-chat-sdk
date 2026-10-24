@@ -168,6 +168,11 @@ export interface CreateImageQueueOptions {
   forgetFinishedAfterMs?: number;
   /** Предел одного файла; по умолчанию 10 МБ. */
   maxImageBytes?: number;
+  /**
+   * Свой `fetch` приложения: запросы к провайдеру и скачивание картинок. Это граница доверия приложения: закрепить
+   * соединение за проверенным адресом (от подмены DNS) должен он сам (`createPinnedFetch` из
+   * `@ykurilov/agent-chat-web-tools/network`). Без него картинку со склада провайдера качает закреплённый `fetch`.
+   */
   fetch?: typeof globalThis.fetch;
   logError?: (message: string) => void;
   now?: () => Date;
@@ -783,7 +788,7 @@ export function createImageQueue(options: CreateImageQueueOptions): ImageQueue {
       try {
         file = await downloadGeneratedImage({
           url,
-          fetch: last.connection.fetch,
+          ...(last.downloadFetch && { fetch: last.downloadFetch }),
           maxImageBytes,
           ...(last.trustedOrigin !== undefined && { trustedOrigin: last.trustedOrigin }),
           abortSignal: rt.controller.signal,

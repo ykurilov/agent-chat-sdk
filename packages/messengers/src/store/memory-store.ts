@@ -24,6 +24,7 @@ export function createMemoryMessengerStore(): MessengerStore {
   }
 
   return {
+    guarded: true,
     async saveLinkCode(code) {
       codes.set(code.codeHash, { userId: code.userId, messenger: code.messenger, expiresAt: code.expiresAt });
     },
@@ -35,6 +36,13 @@ export function createMemoryMessengerStore(): MessengerStore {
     },
     async saveLink(link) {
       links.set(linkId(link.messenger, link.botId, link.externalUserId), structuredClone(withoutEmpty(link)));
+    },
+    async saveLinkIfFree(link) {
+      const id = linkId(link.messenger, link.botId, link.externalUserId);
+      const existing = links.get(id);
+      if (existing && existing.userId !== link.userId) return "taken";
+      links.set(id, structuredClone(withoutEmpty(link)));
+      return "saved";
     },
     async findLink(messenger, botId, externalUserId) {
       const link = links.get(linkId(messenger, botId, externalUserId));
@@ -87,9 +95,10 @@ export function createMemoryMessengerStore(): MessengerStore {
       }
       return true;
     },
-    async finishUpdate(key) {
+    async finishUpdate(key, _status, _now, holder) {
       // Повтор узнаётся по самому ключу; содержимое законченного не нужно.
       const entry = updates.get(key);
+      if (holder !== undefined && (!entry?.work || entry.holder !== holder)) return;
       if (entry) updates.set(key, { receivedAt: entry.receivedAt, attempts: entry.attempts });
     },
     async renewUpdates(keys, holder, leaseUntil) {

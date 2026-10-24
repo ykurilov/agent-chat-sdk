@@ -1,5 +1,12 @@
 # @ykurilov/agent-chat-memory
 
+## 0.81.0
+
+### Patch Changes
+
+- Updated dependencies [58204d2]
+  - @ykurilov/agent-chat-core@0.81.0
+
 ## 0.80.1
 
 ### Patch Changes

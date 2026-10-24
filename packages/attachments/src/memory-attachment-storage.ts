@@ -23,6 +23,10 @@ export function createMemoryAttachmentStorage(): AttachmentStorage {
     async remove(id) {
       if (isAttachmentId(id)) records.delete(id);
     },
+    async removeUnattached(id) {
+      const entry = isAttachmentId(id) ? records.get(id) : undefined;
+      return entry !== undefined && !entry.record.attached && records.delete(id);
+    },
     async removeAllOfChat(chatId) {
       let removed = 0;
       for (const [id, { record }] of records) {

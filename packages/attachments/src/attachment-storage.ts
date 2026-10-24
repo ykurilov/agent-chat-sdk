@@ -30,18 +30,27 @@ export interface StoredAttachment {
  * общим набором `describeAttachmentStorageContract` из `@ykurilov/agent-chat-attachments/storage-contract`.
  * `id` — всегда UUID; всё, что на UUID не похоже, хранилище не читает и не пишет (`save` бросает ошибку,
  * остальные методы молча ничего не находят).
+ *
+ * Отправка сообщения отмечает файл (`markAttached`) и читает запись: увидела `attached: true` — сообщение пишется со
+ * ссылкой на файл. Поэтому неотправленное убирается только условно (`removeUnattached`, `removeUnattachedOlderThan`):
+ * проверка «не прикреплён» и удаление атомарны относительно `markAttached` того же файла, и файл, отметку которого
+ * уже прочитали, они не убирают. Безусловный `remove` — для файлов, судьбу которых решили целиком: отменённый импорт.
  */
 export interface AttachmentStorage {
   save(record: StoredAttachment, bytes: Uint8Array): Promise<void>;
   get(id: string): Promise<StoredAttachment | undefined>;
   readBytes(id: string): Promise<Uint8Array | undefined>;
+  /** Отмечает файл прикреплённым; повторно и для неизвестного файла — не ошибка. */
   markAttached(id: string): Promise<void>;
+  /** Убирает файл, прикреплённый или нет. */
   remove(id: string): Promise<void>;
+  /** Убирает файл, только если он не прикреплён; `true` — убран. Без него `createAttachments` не создаётся. */
+  removeUnattached(id: string): Promise<boolean>;
   /** Убирает все файлы чата, в том числе прикреплённые (чат удалён); возвращает, сколько убрано. */
   removeAllOfChat(chatId: string): Promise<number>;
   /** Сколько неотправленных файлов и байт у человека во всех его чатах (для лимитов на загрузки). */
   unattachedTotals(ownerId: string): Promise<{ files: number; bytes: number }>;
-  /** Убирает непривязанные файлы, загруженные раньше `before`; возвращает, сколько убрано. */
+  /** Убирает непривязанные файлы, загруженные раньше `before`, тем же условным удалением; возвращает, сколько убрано. */
   removeUnattachedOlderThan(before: Date): Promise<number>;
 }
 

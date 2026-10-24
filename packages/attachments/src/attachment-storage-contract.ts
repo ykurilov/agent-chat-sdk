@@ -72,6 +72,75 @@ export function describeAttachmentStorageContract(createStorage: () => Attachmen
       await storage.remove(crypto.randomUUID());
     });
 
+    it("removeUnattached убирает только неприкреплённый файл и говорит, убрал ли; неизвестный и не-UUID — false", async () => {
+      const storage = await createStorage();
+      const free = record();
+      const sent = record();
+      for (const item of [free, sent]) await storage.save(item, bytes());
+      await storage.markAttached(sent.id);
+      expect(await storage.removeUnattached(free.id)).toBe(true);
+      expect(await storage.get(free.id)).toBeUndefined();
+      expect(await storage.readBytes(free.id)).toBeUndefined();
+      expect(await storage.removeUnattached(sent.id)).toBe(false);
+      expect((await storage.get(sent.id))?.attached).toBe(true);
+      expect([...(await storage.readBytes(sent.id))!]).toEqual([1, 2, 3]);
+      expect(await storage.removeUnattached(free.id)).toBe(false);
+      expect(await storage.removeUnattached("../../etc/passwd")).toBe(false);
+    });
+
+    // Отправка сообщения отмечает файл и читает запись: увидела attached — сообщение пишется со ссылкой на файл.
+    // Удаление или чистка, начатые в то же время, такой файл убрать уже не вправе; иначе — убирают целиком.
+    async function markedThenRead(storage: AttachmentStorage, id: string): Promise<boolean> {
+      await storage.markAttached(id);
+      return (await storage.get(id))?.attached === true;
+    }
+
+    async function expectIntactIfMarked(storage: AttachmentStorage, id: string, marked: boolean): Promise<void> {
+      if (marked) {
+        expect((await storage.get(id))?.attached).toBe(true);
+        expect([...((await storage.readBytes(id)) ?? [])]).toEqual([1, 2, 3]);
+      } else {
+        expect(await storage.get(id)).toBeUndefined();
+        expect(await storage.readBytes(id)).toBeUndefined();
+      }
+    }
+
+    it("removeUnattached одновременно с отметкой: отмеченный файл цел, иначе убран целиком", async () => {
+      const storage = await createStorage();
+      const items = Array.from({ length: 20 }, () => record());
+      for (const item of items) await storage.save(item, bytes());
+      const outcomes = await Promise.all(items.map(async (item) => {
+        const [marked, removed] = await Promise.all([markedThenRead(storage, item.id), storage.removeUnattached(item.id)]);
+        return { item, marked, removed };
+      }));
+      for (const { item, marked, removed } of outcomes) {
+        expect(removed).toBe(!marked);
+        await expectIntactIfMarked(storage, item.id, marked);
+      }
+    });
+
+    it("removeUnattachedOlderThan одновременно с отметкой: отмеченный файл цел, иначе убран целиком", async () => {
+      const storage = await createStorage();
+      const items = Array.from({ length: 20 }, () => record());
+      for (const item of items) await storage.save(item, bytes());
+      const [marks] = await Promise.all([
+        Promise.all(items.map((item) => markedThenRead(storage, item.id))),
+        storage.removeUnattachedOlderThan(new Date("2027-01-01T00:00:00.000Z")),
+      ]);
+      for (const [index, item] of items.entries()) await expectIntactIfMarked(storage, item.id, marks[index]!);
+    });
+
+    it("remove одновременно с отметкой: записи без байтов не остаётся", async () => {
+      const storage = await createStorage();
+      const items = Array.from({ length: 20 }, () => record());
+      for (const item of items) await storage.save(item, bytes());
+      await Promise.all(items.flatMap((item) => [storage.markAttached(item.id), storage.remove(item.id)]));
+      for (const item of items) {
+        const left = await storage.get(item.id);
+        expect(left === undefined ? undefined : [...((await storage.readBytes(item.id)) ?? [])]).toEqual(left && [1, 2, 3]);
+      }
+    });
+
     it("removeAllOfChat убирает все файлы этого чата, и прикреплённые тоже; чужие чаты целы; говорит, сколько убрал", async () => {
       const storage = await createStorage();
       const free = record({ chatId: "chat-1" });
@@ -124,6 +193,7 @@ export function describeAttachmentStorageContract(createStorage: () => Attachmen
         expect(await storage.readBytes(id)).toBeUndefined();
         await storage.remove(id);
         await storage.markAttached(id);
+        expect(await storage.removeUnattached(id)).toBe(false);
       }
     });
 

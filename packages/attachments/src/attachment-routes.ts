@@ -323,7 +323,9 @@ export function createAttachmentRoutes(options: {
       if (!record) return failure("not_found");
       if (method === "GET") return download(record);
       if (record.attached) return failure("attached");
-      await storage.remove(record.id);
+      // Сообщение могло отметить файл после чтения записи: тогда условное удаление его не тронет.
+      const removed = await storage.removeUnattached(record.id);
+      if (!removed && (await storage.get(record.id))) return failure("attached");
       return new Response(null, { status: 204 });
     },
   };

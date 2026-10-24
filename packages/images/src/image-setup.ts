@@ -62,6 +62,8 @@ export interface ImageStep {
   prompt?: string;
   /** Сайт подключения из настройки (свой прокси, поддельный провайдер): с него картинку можно скачать и по http. */
   trustedOrigin?: string;
+  /** Свой `fetch` приложения для скачивания картинки; нет — закреплённый `fetch` (download-image). */
+  downloadFetch?: typeof globalThis.fetch;
 }
 
 /** Как создаётся картинка одного назначения (или единственной модели). */
@@ -160,6 +162,7 @@ export function resolveImageSetups(choice: ImageModelChoice): ImageSetups {
       sizes,
       priceUsd: roundUsd(sizePriceUsd * qualityFactor),
       ...(provider.baseURL !== undefined && { trustedOrigin: new URL(provider.baseURL).origin }),
+      ...(choice.fetch && { downloadFetch: choice.fetch }),
       ...(providerSettings && { providerSettings }),
       ...(settings.transparentBackground && { outputFormat: "png" as const }),
     };

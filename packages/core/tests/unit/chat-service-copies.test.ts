@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { ANSWER_STALE_AFTER_MS, STALE_ANSWERS_SWEEP_EVERY_MS } from "../../src/agent-run/answer-liveness";
 import { createChatService } from "../../src/chat-service";
+import { ChatBusyError } from "../../src/running-answers/running-answer-registry";
 import { newStoredMessage } from "../../src/conversation/types";
 import type { UsageRecord } from "../../src/conversation/types";
 import { createInMemoryChatStorage } from "../../src/storage/in-memory-storage";
@@ -375,6 +376,57 @@ describe("доставка итогов фона при ходе на друго
     expect(messages.map((message) => message.role)).toEqual(["user", "assistant", "user", "assistant"]);
     // Итог дописан после законченного ответа, а не рядом с ним.
     expect(messages[2]!.parentId).toBe(messages[1]!.id);
+    await first.flush();
+    await second.flush();
+  });
+
+  it("удаление, пока ход идёт на соседней копии, — «занято»: чат, сообщения и аренда соседа целы, ход доходит до конца (аудит codex-2)", async () => {
+    const { storage } = await sharedStorage();
+    const first = serverCopy(storage);
+    const second = serverCopy(storage);
+    const reading = readAll(await first.sendMessage("anna", "c1", { id: "q1", role: "user", parts: [{ type: "text", text: "Сделай" }] }));
+    await vi.advanceTimersByTimeAsync(20_000);
+
+    await expect(second.deleteChat("anna", "c1")).rejects.toBeInstanceOf(ChatBusyError);
+    expect(await storage.getChat("c1")).not.toBeNull();
+    // Аренда соседа на месте: третий её не возьмёт.
+    expect(await storage.claimChatTurn?.("c1", "probe", 1_000)).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(80_000);
+    await reading;
+    expect((await storage.listMessages("c1")).map((message) => [message.role, message.status])).toEqual([
+      ["user", "complete"],
+      ["assistant", "complete"],
+    ]);
+    await second.deleteChat("anna", "c1");
+    expect(await storage.getChat("c1")).toBeNull();
+    await first.flush();
+    await second.flush();
+  });
+
+  it("сообщение на соседнюю копию, пока чат удаляется, — «занято»: ход не начинается в удаляемом чате (аудит codex-2)", async () => {
+    const { storage } = await sharedStorage();
+    let release!: () => void;
+    let reach!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const reached = new Promise<void>((resolve) => (reach = resolve));
+    const deleting: ChatStorage = {
+      ...storage,
+      deleteChat: async (chatId) => {
+        reach();
+        await gate;
+        await storage.deleteChat(chatId);
+      },
+    };
+    const first = serverCopy(storage);
+    const second = serverCopy(deleting);
+    const removal = second.deleteChat("anna", "c1");
+    await reached;
+    await expect(first.sendMessage("anna", "c1", { id: "q1", role: "user", parts: [{ type: "text", text: "Сделай" }] })).rejects.toBeInstanceOf(ChatBusyError);
+    release();
+    await removal;
+    expect(await storage.getChat("c1")).toBeNull();
+    expect(await storage.listMessages("c1")).toEqual([]);
     await first.flush();
     await second.flush();
   });

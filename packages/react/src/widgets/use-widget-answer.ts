@@ -2,6 +2,8 @@ import { useCallback, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import type { AgentChatMessage } from "../chat-types";
 import { fetchWithDeadline } from "../liveness/request-deadline";
+import { ownedBy } from "../chat-lifetime";
+import type { ChatOwned } from "../chat-lifetime";
 import { serverRefusalOf } from "../server-refusal";
 import type { ServerRefusal } from "../server-refusal";
 import type { SpendingInfo } from "../spending-status";
@@ -48,6 +50,8 @@ export interface WidgetAnswerState {
   widgetFailure: { id: string; kind: WidgetFailureKind; text?: string } | null;
   /** Ответ на виджет в пути или его продолжение ещё подключается: ход, который начнёт сервер, — свой. */
   answeringWidget: () => boolean;
+  /** Чат сменился: ответ прежнего чата больше не «в пути», его ошибка не видна. */
+  forgetChat: () => void;
 }
 
 /**
@@ -58,15 +62,17 @@ export interface WidgetAnswerState {
 export function useWidgetAnswer(deps: WidgetAnswerDeps): WidgetAnswerState {
   const depsRef = useRef(deps);
   depsRef.current = deps;
-  const answering = useRef(false);
+  /** Виджет, ответ на который в пути, и показ чата, где его дали. */
+  const answering = useRef<ChatOwned<string> | null>(null);
   const [widgetPendingId, setWidgetPendingId] = useState<string | null>(null);
   const [widgetFailure, setWidgetFailure] = useState<{ id: string; kind: WidgetFailureKind; text?: string } | null>(null);
 
   const answerWidget = useCallback(async (toolCallId: string, answer: unknown, onAccepted?: () => void): Promise<boolean> => {
-    if (answering.current) return false;
-    answering.current = true;
     const current = depsRef.current;
     const signal = current.chatSignal();
+    if (ownedBy(answering.current, signal) !== undefined) return false;
+    const pending = { lifetime: signal, value: toolCallId };
+    answering.current = pending;
     const fail = (kind: WidgetFailureKind, text?: string) => {
       if (!signal.aborted) setWidgetFailure({ id: toolCallId, kind, ...(text !== undefined && { text }) });
       return false;
@@ -87,6 +93,8 @@ export function useWidgetAnswer(deps: WidgetAnswerDeps): WidgetAnswerState {
       }
       // Приложение не пустило ход (или человека): его слова у виджета, а не «ответ не отправился».
       const refusedByApp = response.ok ? null : await serverRefusalOf(response);
+      // Ответ сервера пришёл, когда открыт уже другой чат (или тот же заново): он ничего не пишет на экран.
+      if (signal.aborted) return false;
       if (refusedByApp?.kind) {
         current.announceAppRefusal(refusedByApp);
         return fail("refused", refusedByApp.text);
@@ -113,8 +121,9 @@ export function useWidgetAnswer(deps: WidgetAnswerDeps): WidgetAnswerState {
       }
       if (!response.ok) return fail("connection");
       const resumed = await resumedOf(response);
+      if (signal.aborted) return true;
       current.setMessages((messages) => withWidgetAnswer(messages, toolCallId, answer, resumed));
-      if (!signal.aborted) onAccepted?.();
+      onAccepted?.();
       // Без продолжения события проверки ответа уже лежат в ответе: перечитать историю, они придут живыми. Канал
       // наблюдения может принести то же событие раньше или позже — учёт ленты считает каждое событие один раз.
       if (!resumed) {
@@ -132,14 +141,18 @@ export function useWidgetAnswer(deps: WidgetAnswerDeps): WidgetAnswerState {
       }
       return true;
     } finally {
-      answering.current = false;
+      if (answering.current === pending) answering.current = null;
       if (!signal.aborted) setWidgetPendingId(null);
     }
   }, []);
 
-  const answeringWidget = useCallback(() => answering.current, []);
+  const answeringWidget = useCallback(() => ownedBy(answering.current, depsRef.current.chatSignal()) !== undefined, []);
+  const forgetChat = useCallback(() => {
+    setWidgetPendingId(null);
+    setWidgetFailure(null);
+  }, []);
 
-  return { answerWidget, widgetPendingId, widgetFailure, answeringWidget };
+  return { answerWidget, widgetPendingId, widgetFailure, answeringWidget, forgetChat };
 }
 
 /** Тело успеха — как у ответа на подтверждение, `{ resumed }`; без него ход считается продолженным. */

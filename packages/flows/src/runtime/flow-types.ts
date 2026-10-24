@@ -352,7 +352,12 @@ export type FlowDeliveryOutcome =
   /** Повторить тот же текст; нет `afterMs` — по ряду 1 мин · 5 мин · 30 мин. */
   | { status: "retry"; afterMs?: number }
   /** Не доставлено окончательно: текст помечается недоставленным, в счётчик дня не идёт. */
-  | { status: "failed" };
+  | { status: "failed" }
+  /**
+   * Канал сломан и ждёт починки снаружи (например, отозван токен бота): ответ ждёт, попытка не тратится, сроков нет.
+   * Починили — `resumeDelivery`. Только для своей доставки (`attach({ deliver })`). С 0.81.
+   */
+  | { status: "await_repair" };
 
 /** Каналы приложения: служба чата на чат и, если нужно, своя доставка. */
 export interface FlowAttachment {
@@ -362,12 +367,27 @@ export interface FlowAttachment {
   deliver?: (message: FlowOutgoing) => Promise<FlowDeliveryOutcome>;
 }
 
-/** Исход доставки из каналов SDK (`createMessengers({ onAnswerDelivery })`). */
+/** Исход доставки из каналов SDK (`createMessengers({ onAnswerDelivery })`). Каналы SDK повторяют сами: `await_repair` нет. */
 export interface FlowDeliveryReport {
   chatId: string;
   messageId: string;
-  outcome: FlowDeliveryOutcome;
+  outcome: Exclude<FlowDeliveryOutcome, { status: "await_repair" }>;
 }
+
+/** Канал починили: отправить ответ, который ждал починки (`await_repair`). */
+export interface FlowResumeDeliveryInput {
+  ownerId: string;
+  chatId: string;
+  messageId: string;
+}
+
+/**
+ * `resumed` — отправка поставлена таймеру (сам `deliver` позже, не в этом вызове); `pending` — уже не ждёт починки
+ * (возобновлена раньше, идёт или ждёт повтора); `busy` — у чата живая аренда, повторить позже; `not_found` — такого
+ * ожидания у этого человека нет; `dropped` — ответ устарел (его нет в ветке или человек уже написал после него): снят без
+ * отправки и без засчитывания.
+ */
+export type FlowResumeDeliveryResult = "resumed" | "pending" | "busy" | "not_found" | "dropped";
 
 // ---------- Решение о входящем, пауза, конец ----------
 
@@ -649,8 +669,13 @@ export interface AgentFlowHandle {
   resume(input: { ownerId: string; chatId: string }): Promise<void>;
   /** Сотрудник ответил человеку: пауза продлевается на `staffSilenceHours`, его реплика — в контекст агента. */
   noteStaffReply(input: FlowStaffReply): Promise<void>;
-  /** Исход доставки ответа из каналов SDK (`onAnswerDelivery`). */
+  /** Исход доставки ответа из каналов SDK (`onAnswerDelivery`). `await_repair` здесь — `TypeError`. */
   reportDelivery(input: FlowDeliveryReport): Promise<void>;
+  /**
+   * Канал приложения починили: ответ, который ждал починки (`await_repair`), уходит в `deliver` с тем же `messageId`
+   * ближайшим обходом таймеров. Повтор вызова безопасен (`pending`). С 0.81.
+   */
+  resumeDelivery(input: FlowResumeDeliveryInput): Promise<FlowResumeDeliveryResult>;
   readRun(ownerId: string, chatId: string): Promise<FlowRunView | null>;
   chatsByState: ChatMigrator["chatsByState"];
   migrateChats: ChatMigrator["migrateChats"];

@@ -21,16 +21,23 @@ function interceptedStore(shared: TaskStore) {
   const hooks: Array<{ when(patch: TaskPatch): boolean; run(): Promise<void> }> = [];
   const ran: Array<Promise<void>> = [];
   let failMarkDelivered = 0;
+  const beforeWrite = async (patch: TaskPatch) => {
+    const index = hooks.findIndex((hook) => hook.when(patch));
+    if (index < 0) return;
+    const running = hooks.splice(index, 1)[0]!.run();
+    ran.push(running);
+    await running;
+  };
   const store: TaskStore = {
     ...shared,
     async update(ownerId, taskId, patch, when) {
-      const index = hooks.findIndex((hook) => hook.when(patch));
-      if (index >= 0) {
-        const running = hooks.splice(index, 1)[0]!.run();
-        ran.push(running);
-        await running;
-      }
+      await beforeWrite(patch);
       return shared.update(ownerId, taskId, patch, when);
+    },
+    // Продолжение после ответа человека пишется через предел мест — та же условная запись.
+    async admitWithinLimit(admission, maxActive) {
+      if ("resume" in admission) await beforeWrite(admission.resume.patch);
+      return shared.admitWithinLimit(admission, maxActive);
     },
     async markDelivered(taskIds, deliveryKey, at) {
       if (failMarkDelivered > 0) {

@@ -43,6 +43,7 @@ export function createPostgresMessengerStore(pool: Pool): ClosableMessengerStore
     and(eq(messengerConversations.messenger, key.messenger), eq(messengerConversations.botId, key.botId), eq(messengerConversations.externalChatId, key.externalChatId));
 
   return {
+    guarded: true,
     async saveLinkCode(code) {
       await db.insert(messengerLinkCodes).values({ codeHash: code.codeHash, userId: code.userId, messenger: code.messenger, expiresAt: date(code.expiresAt) });
     },
@@ -67,6 +68,16 @@ export function createPostgresMessengerStore(pool: Pool): ClosableMessengerStore
         .insert(messengerLinks)
         .values(values)
         .onConflictDoUpdate({ target: [messengerLinks.messenger, messengerLinks.botId, messengerLinks.externalUserId], set: values });
+    },
+    async saveLinkIfFree(link) {
+      const values = withoutNul({ ...link, username: link.username ?? null, linkedAt: date(link.linkedAt) });
+      // Чужую привязку условие не обновляет: строки в RETURNING нет — значит, аккаунт занят.
+      const [row] = await db
+        .insert(messengerLinks)
+        .values(values)
+        .onConflictDoUpdate({ target: [messengerLinks.messenger, messengerLinks.botId, messengerLinks.externalUserId], set: values, setWhere: eq(messengerLinks.userId, values.userId) })
+        .returning({ userId: messengerLinks.userId });
+      return row ? "saved" : "taken";
     },
     async findLink(messenger, botId, externalUserId) {
       const [row] = await db
@@ -143,8 +154,12 @@ export function createPostgresMessengerStore(pool: Pool): ClosableMessengerStore
         .returning({ key: messengerUpdates.key });
       return rows.length === 1;
     },
-    async finishUpdate(key, status, now) {
-      await db.update(messengerUpdates).set({ status, finishedAt: date(now), payload: null, holder: null, leaseUntil: null }).where(eq(messengerUpdates.key, key));
+    async finishUpdate(key, status, now, holder) {
+      const stillHeld = holder === undefined ? undefined : and(eq(messengerUpdates.holder, holder), eq(messengerUpdates.status, "received"));
+      await db
+        .update(messengerUpdates)
+        .set({ status, finishedAt: date(now), payload: null, holder: null, leaseUntil: null })
+        .where(and(eq(messengerUpdates.key, key), stillHeld));
     },
     async renewUpdates(keys, holder, leaseUntil) {
       if (keys.length === 0) return;

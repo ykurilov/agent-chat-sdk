@@ -129,4 +129,25 @@ describe("адреса экрана админа", () => {
     const read = await handler.fetch(new Request(`${ORIGIN}/api/mcp/servers`, { headers: { host: "app.example.com", "x-user": "boss" } }));
     expect(read.status).toBe(200);
   });
+
+  it("битая %-кодировка в адресе — 404 без сбоя сервера; не-админу и чужой странице — прежние 404 и 403", async () => {
+    const lines: string[] = [];
+    const setup = await setupMcp();
+    const handler = createMcpAdminHandler({
+      mcp: setup.mcp,
+      resolveUser: async (request) => {
+        const id = request.headers.get("x-user");
+        return id ? { id } : null;
+      },
+      logError: (line) => lines.push(line),
+    });
+    const ask = (user: string | null, method: string, origin: string) =>
+      handler.fetch(new Request(`${ORIGIN}/api/mcp/servers/%E0%A4%A`, { method, headers: { origin, host: "app.example.com", ...(user && { "x-user": user }) } }));
+    const broken = await ask("boss", "GET", ORIGIN);
+    expect(broken.status).toBe(404);
+    expect((await ask("boss", "DELETE", ORIGIN)).status).toBe(404);
+    expect(lines).toEqual([]);
+    expect((await ask("anna", "GET", ORIGIN)).status).toBe(404);
+    expect((await ask("boss", "DELETE", "https://evil.example.org")).status).toBe(403);
+  });
 });

@@ -70,6 +70,9 @@ export interface FlowChatPlacement {
   humanToday?: { at: string; count: number };
 }
 
+/** Срок записи о повторе доставки в таблице сроков. Законченный разговор берётся таймером только с этим сроком. */
+export const FLOW_DELIVERY_EXIT = "@delivery";
+
 /** Повтор доставки того же текста по ключу `messageId`, без нового хода модели. */
 export interface FlowPendingDelivery {
   messageId: string;
@@ -78,6 +81,35 @@ export interface FlowPendingDelivery {
   retryAt: string;
   /** Причины хода «пишет первым» — для `FlowOutgoing.reasons`. */
   reasons: string[];
+  /**
+   * Версия записи: своя у каждой отправки и каждого возобновления, даже при том же `attempt`. По ней `swapDelivery`
+   * отличает устаревшего писателя. С 0.81; записи до 0.81 её не имеют.
+   */
+  token?: string;
+  /** Канал ждёт починки снаружи (`await_repair`): срока нет, попытка не потрачена, отправит `resumeDelivery`. С 0.81. */
+  pausedAt?: string;
+  /** Возобновлено после починки (`resumeDelivery`): перед отправкой ответ проверяется на устаревание. С 0.81. */
+  resumedAt?: string;
+}
+
+/**
+ * Условная замена записи доставки (`swapDelivery`): одной операцией, только если запись — та, что прочитал вызывающий
+ * (`messageId`, `attempt`, `token`; `null` — записи нет).
+ */
+export interface SwapDeliveryInput {
+  expected: FlowPendingDelivery | null;
+  next: FlowPendingDelivery | null;
+  /** Срок чата вместе с записью: `null` — снять; нет поля — не трогать. Аренду не снимает. */
+  due?: FlowDueInput | null;
+  /**
+   * Взять аренду таймера на `owner` до `now + leaseMs`: только если она свободна (нет или кончилась к `now`), уже у
+   * `owner` или у `from` (аренда срабатывания, которое передаёт её отправке).
+   */
+  claim?: { owner: string; now: string; leaseMs: number; from?: string };
+  /** Писать, только если к этому моменту ни у кого нет живой аренды: идёт отправка — не мешать ей. */
+  freeAt?: string;
+  /** Писать, только если конец разговора всё ещё этот: `null` — не закончен. Нет поля — не сверять. */
+  endedAt?: string | null;
 }
 
 export interface PinFlowChatInput {
@@ -110,6 +142,11 @@ export interface RenewLeaseInput {
 export interface SetDueOptions {
   /** Не писать, если чат ждёт повтора доставки: у повтора свой срок, его не затереть. */
   unlessDelivery?: boolean;
+  /**
+   * Писать, только если таймер ещё в аренде у этой копии: копия, у которой аренду забрали (зависла дольше срока), чужой
+   * срок не переписывает. Хранилище приложения без этого условия такой гарантии не даёт.
+   */
+  leaseOwner?: string;
 }
 
 export interface LeaseDueInput {
@@ -209,6 +246,12 @@ export interface NoteSideTaskInput {
 }
 
 export interface FlowStore {
+  /**
+   * Хранилище исполняет условия ограды (с 0.81): `setDue(…, { leaseOwner })` пишет, только пока аренда у этой копии;
+   * `swapDelivery` — с `expected`, `claim`, `freeAt` и `endedAt` одной атомарной операцией; `leaseDue` не берёт живую аренду;
+   * `endChat` не снимает срок и аренду ждущей доставки. Без этого признака `createAgentFlow` не запускается.
+   */
+  readonly guarded: true;
   /** Закрепить версию за чатом. Чат уже закреплён — вернуть как есть, ничего не менять. */
   pinChat(input: PinFlowChatInput): Promise<FlowChatRecord>;
   getChat(chatId: string): Promise<FlowChatRecord | null>;
@@ -222,7 +265,10 @@ export interface FlowStore {
 
   /** `null` — таймеров нет. Снимает аренду. */
   setDue(chatId: string, due: FlowDueInput | null, options?: SetDueOptions): Promise<void>;
-  /** Взять в аренду наступившие таймеры, которые никто не держит; ранние — первыми. Законченные и стоящие на паузе — пропустить. */
+  /**
+   * Взять в аренду наступившие таймеры, которые никто не держит; ранние — первыми. Стоящие на паузе — пропустить;
+   * законченные — тоже, кроме срока повтора доставки (`FLOW_DELIVERY_EXIT`).
+   */
   leaseDue(input: LeaseDueInput): Promise<FlowChatRecord[]>;
   releaseLease(chatId: string, owner: string): Promise<void>;
   /** Продлить свою аренду до `now + leaseMs`. `false` — строка уже не наша: взяла другая копия или срок переписан. */
@@ -246,7 +292,10 @@ export interface FlowStore {
   /** Записать ещё одно; вернуть новый счёт. */
   addFirstMessage(ownerId: string, day: string): Promise<number>;
 
-  /** Разговор закончен: ставит время и причину, снимает таймер. Уже закончен — ничего не меняет. */
+  /**
+   * Разговор закончен: ставит время и причину, снимает таймер и аренду. Ждёт доставка — её срок и аренда остаются: идущую
+   * отправку не перебить, повтор после конца дойдёт. Уже закончен — ничего не меняет.
+   */
   endChat(chatId: string, input: { reason: FlowEndReason; at: string }): Promise<FlowChatRecord | null>;
   /**
    * Открыть законченный разговор заново: только если он всё ещё закончен в `endedAt` (что прочитал вызывающий). Снимает
@@ -258,6 +307,8 @@ export interface FlowStore {
   setWindowClosed(chatId: string, closed: boolean): Promise<void>;
   setDayClosed(chatId: string, day: string | null): Promise<void>;
   setDelivery(chatId: string, delivery: FlowPendingDelivery | null): Promise<void>;
+  /** Заменить запись доставки, если она та, что ждали (`SwapDeliveryInput`). `true` — заменил этот вызов. С 0.81. */
+  swapDelivery(chatId: string, input: SwapDeliveryInput): Promise<boolean>;
 
   /** Пояс человека (IANA); `null` — неизвестен. Общий для всех его чатов. */
   readTimeZone(ownerId: string): Promise<string | null>;

@@ -88,6 +88,9 @@ import { attachmentsClient } from "@ykurilov/agent-chat-attachments/react";
   Сбор текста останавливается, как только набран потолок символов. Текстовые логи с цветовыми кодами терминала принимаются как текст.
 - **Хранилище файлов** заменяемое (`AttachmentStorage`): из коробки `createDiskAttachmentStorage` и `createMemoryAttachmentStorage`.
   Своё (например, S3) проверяется общим набором `describeAttachmentStorageContract` из `@ykurilov/agent-chat-attachments/storage-contract`.
+  Неотправленный файл хранилище убирает только условно: `removeUnattached(id)` и `removeUnattachedOlderThan(before)` не трогают файл,
+  отметка которого (`markAttached`) уже записана, — проверка и удаление атомарны относительно отметки. Без `removeUnattached`
+  `createAttachments` не создаётся. Хранилище на диске даёт эту атомарность в пределах одного процесса сервера.
   Схема базы чата не меняется, миграции не нужны. Метод `removeAllOfChat(chatId)` удаляет все файлы чата: его вызывает удаление чата из списка чатов.
 - **Безопасность**: файл привязан к чату и владельцу, чужой и несуществующий файл отвечают одинаково (404). Адрес в хранилище — серверный UUID,
   имя файла в путь не попадает. Файлы отдаются с `nosniff` и `Content-Security-Policy: sandbox`. Ключи провайдеров в браузер не уходят.

@@ -22,6 +22,12 @@ export interface PolicyReply {
   rows?: CardButton[][];
 }
 
+/** Группа разговора: её границы получает и первый ход агента, начатый до сообщения группы. */
+export interface ConversationGroup {
+  allowedTools: readonly string[];
+  author: string;
+}
+
 export interface OpenedChat {
   chatId: string;
   /** Правило приложения попросило агента написать первым, и ход начался. */
@@ -77,7 +83,7 @@ export function createConversationPolicy(options: {
   }
 
   /** Новый чат для разговора по правилу приложения; он становится текущим. */
-  async function openChat(input: ConversationContext & { reason: ChatRequestReason; startPayload?: string }): Promise<OpenedChat> {
+  async function openChat(input: ConversationContext & { reason: ChatRequestReason; startPayload?: string; group?: ConversationGroup }): Promise<OpenedChat> {
     const { key, account, userId, reason } = input;
     const conversation = await store.getConversation(key);
     const currentChatId = conversation?.currentChatId;
@@ -96,7 +102,7 @@ export function createConversationPolicy(options: {
   }
 
   /** Текущий чат разговора; нет — первый по правилу приложения. */
-  async function currentChat(input: ConversationContext): Promise<OpenedChat> {
+  async function currentChat(input: ConversationContext & { group?: ConversationGroup }): Promise<OpenedChat> {
     const chatId = (await store.getConversation(input.key))?.currentChatId;
     return chatId ? { chatId, agentStarted: false } : openChat({ ...input, reason: "first" });
   }
@@ -110,8 +116,11 @@ export function createConversationPolicy(options: {
     await store.saveConversation({ ...key, type: "private", userId, currentChatId: chatId, blocked: false, active: true, createdAt: now, updatedAt: now });
   }
 
-  /** Агент пишет первым тем же путём, что ход после результата фона: служебное сообщение `conversation_started`. */
-  async function startAgent({ key, userId }: ConversationContext, chatId: string, instruction: string): Promise<boolean> {
+  /**
+   * Агент пишет первым тем же путём, что ход после результата фона: служебное сообщение `conversation_started`. В группе
+   * сообщение несёт её границы: сообщения группы в ветке ещё нет, а ответ уйдёт в группу.
+   */
+  async function startAgent({ key, userId, group }: ConversationContext & { group?: ConversationGroup }, chatId: string, instruction: string): Promise<boolean> {
     try {
       const result = await service.deliverNotices({
         ownerId: userId,
@@ -119,6 +128,7 @@ export function createConversationPolicy(options: {
         notices: [{ kind: "conversation_started", title: instruction }],
         wakeAgent: true,
         deliveryKey: `conversation_started:${key.messenger}:${key.botId}:${key.externalChatId}:${chatId}`,
+        ...(group && { channel: key.messenger, group: { allowedTools: [...group.allowedTools], author: group.author } }),
       });
       return result.turnStarted;
     } catch (error) {

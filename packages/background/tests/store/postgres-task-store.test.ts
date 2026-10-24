@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createPostgresChatStorage } from "../../../storage-postgres/src/postgres-storage";
 import { startTemporaryPostgres } from "../../../storage-postgres/tests/support/pglite-server";
 import type { TemporaryPostgres } from "../../../storage-postgres/tests/support/pglite-server";
+import { assertSafeToWipe } from "../../../storage-postgres/tests/support/wipe-guard";
 import { postgresTaskStore } from "../../src/postgres";
 import { describeTaskStoreContract, taskRecord } from "./task-store-contract";
 
@@ -33,9 +34,11 @@ describe("задачи в PostgreSQL (встроенная база pglite за 
     // В pglite блокировка миграций общая и ничего не исключает: вторая ручка открывается после миграции первой.
     const first = postgresTaskStore(pools[0]!);
     await first.countActive("nobody");
+    const second = postgresTaskStore(pools[1]!);
+    await second.countActive("nobody");
     return {
       first,
-      second: postgresTaskStore(pools[1]!),
+      second,
       async close() {
         for (const pool of pools) await pool.end();
       },
@@ -99,5 +102,32 @@ describe("задачи в PostgreSQL (встроенная база pglite за 
     await postgresTaskStore(pool).listForChat("u", "c");
     await pool.end();
     expect(await count()).toBe(before);
+  });
+});
+
+/**
+ * Настоящий PostgreSQL: pglite склеивает подключения в одно, а резервирование места двумя копиями проверяется только на
+ * нескольких. Включается переменной `AGENT_CHAT_TEST_POSTGRES_URL=postgres://localhost:5432/agent_chat_test`.
+ * Схема `agent_chat` в этой базе стирается, поэтому имя базы должно содержать `test` (см. `wipe-guard.ts`).
+ */
+const realPostgresUrl = process.env.AGENT_CHAT_TEST_POSTGRES_URL;
+
+describe.skipIf(!realPostgresUrl)("задачи в PostgreSQL (настоящий сервер)", () => {
+  if (realPostgresUrl) assertSafeToWipe(realPostgresUrl);
+
+  describeTaskStoreContract(async () => {
+    await query(realPostgresUrl!, "drop schema if exists agent_chat cascade");
+    const pools = [new pg.Pool({ connectionString: realPostgresUrl!, max: 4 }), new pg.Pool({ connectionString: realPostgresUrl!, max: 4 })];
+    const first = postgresTaskStore(pools[0]!);
+    await first.countActive("nobody");
+    const second = postgresTaskStore(pools[1]!);
+    await second.countActive("nobody");
+    return {
+      first,
+      second,
+      async close() {
+        for (const pool of pools) await pool.end();
+      },
+    };
   });
 });

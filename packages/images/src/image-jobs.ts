@@ -243,7 +243,7 @@ export function createImageJobs(options: ImageJobsOptions) {
     const output = input.setup.output;
     const file = await downloadGeneratedImage({
       url,
-      fetch: last.connection.fetch,
+      ...(last.downloadFetch && { fetch: last.downloadFetch }),
       maxImageBytes: options.maxImageBytes,
       ...(last.trustedOrigin !== undefined && { trustedOrigin: last.trustedOrigin }),
       ...(output && { transform: (bytes: Uint8Array, mediaType: string) => postprocessImage(bytes, mediaType, output) }),

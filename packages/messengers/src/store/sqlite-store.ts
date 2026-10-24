@@ -18,6 +18,7 @@ export function createSqliteMessengerStore(sqlite: Database.Database, migrations
     and(eq(messengerConversations.messenger, key.messenger), eq(messengerConversations.botId, key.botId), eq(messengerConversations.externalChatId, key.externalChatId));
 
   return {
+    guarded: true,
     async saveLinkCode(code) {
       db.insert(messengerLinkCodes).values({ codeHash: code.codeHash, userId: code.userId, messenger: code.messenger, expiresAt: ms(code.expiresAt) }).run();
     },
@@ -43,6 +44,17 @@ export function createSqliteMessengerStore(sqlite: Database.Database, migrations
         .values(values)
         .onConflictDoUpdate({ target: [messengerLinks.messenger, messengerLinks.botId, messengerLinks.externalUserId], set: values })
         .run();
+    },
+    async saveLinkIfFree(link) {
+      const values = { ...link, username: link.username ?? null, linkedAt: ms(link.linkedAt) };
+      // Чужую привязку условие не обновляет: строки в RETURNING нет — значит, аккаунт занят.
+      const row = db
+        .insert(messengerLinks)
+        .values(values)
+        .onConflictDoUpdate({ target: [messengerLinks.messenger, messengerLinks.botId, messengerLinks.externalUserId], set: values, setWhere: eq(messengerLinks.userId, values.userId) })
+        .returning({ userId: messengerLinks.userId })
+        .get();
+      return row ? "saved" : "taken";
     },
     async findLink(messenger, botId, externalUserId) {
       const row = db
@@ -113,8 +125,12 @@ export function createSqliteMessengerStore(sqlite: Database.Database, migrations
       const content = work && { messenger: work.messenger, botId: work.botId, payload: work.update, holder: work.holder, leaseUntil: ms(work.leaseUntil) };
       return db.insert(messengerUpdates).values({ key, status: "received", receivedAt: ms(now), ...content }).onConflictDoNothing().run().changes === 1;
     },
-    async finishUpdate(key, status, now) {
-      db.update(messengerUpdates).set({ status, finishedAt: ms(now), payload: null, holder: null, leaseUntil: null }).where(eq(messengerUpdates.key, key)).run();
+    async finishUpdate(key, status, now, holder) {
+      const stillHeld = holder === undefined ? undefined : and(eq(messengerUpdates.holder, holder), eq(messengerUpdates.status, "received"));
+      db.update(messengerUpdates)
+        .set({ status, finishedAt: ms(now), payload: null, holder: null, leaseUntil: null })
+        .where(and(eq(messengerUpdates.key, key), stillHeld))
+        .run();
     },
     async renewUpdates(keys, holder, leaseUntil) {
       if (keys.length === 0) return;

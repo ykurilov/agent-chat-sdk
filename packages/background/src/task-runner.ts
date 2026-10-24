@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { TurnRefusedError } from "@ykurilov/agent-chat-core";
 import type { BackgroundPort, TaskStatus } from "@ykurilov/agent-chat-core";
 import { createKeyedLock } from "./keyed-lock";
 import { isFinishedStatus, isRunningStatus, RUNNING_STATUSES } from "./store/task-store";
@@ -7,6 +8,10 @@ import type { TaskCondition, TaskPatch, TaskRecord, TaskStore } from "./types";
 
 /** Сколько раз задачу запускают заново после падений сервера; дальше — «прервана». */
 const MAX_ATTEMPTS = 3;
+
+/** Отказ ответу на подтверждение, когда все места человека заняты. */
+const TOO_MANY_TASKS_TO_RESUME = (max: number) =>
+  `Слишком много фоновых задач: одновременно идёт не больше ${max}. Ответ не принят, вопрос ждёт: ответьте снова, когда одна из задач закончится.`;
 
 /** Что можно отменить: задача идёт или ждёт решения человека. */
 const CANCELABLE_STATUSES = [...RUNNING_STATUSES, "awaiting_approval"] as const satisfies readonly TaskStatus[];
@@ -49,7 +54,18 @@ interface HeldLease {
 export interface TaskRunner {
   start(task: NewTask, maxRunningPerUser: number): Promise<{ status: "started"; taskId: string } | { status: "too_many_tasks" }>;
   cancel(ownerId: string, chatId: string, taskId: string, by: "human" | "agent"): Promise<"canceled" | "not_found" | "already_finished">;
-  answerApproval(ownerId: string, chatId: string, taskId: string, approvalId: string, decision: "allow" | "deny"): Promise<"resumed" | "not_found" | "stale">;
+  /**
+   * Ответ человека продолжает задачу с паузы и снова занимает место. Мест у человека нет — `TurnRefusedError` с кодом
+   * `too_many_tasks`: ничего не записано, вопрос ждёт, тот же ответ можно прислать, когда место освободится.
+   */
+  answerApproval(
+    ownerId: string,
+    chatId: string,
+    taskId: string,
+    approvalId: string,
+    decision: "allow" | "deny",
+    maxRunningPerUser: number,
+  ): Promise<"resumed" | "not_found" | "stale">;
   chatDeleted(ownerId: string, chatId: string): Promise<void>;
   /** Подобрать задачи, чья аренда истекла: хозяин пропал. */
   recoverExpired(): Promise<void>;
@@ -210,14 +226,14 @@ export function createTaskRunner(deps: {
 
   return {
     start(task, maxRunningPerUser) {
-      // По одному на человека: одновременные вызовы не обойдут предел.
+      // По одному на человека в этой копии; между копиями предел держит само хранилище (`admitWithinLimit`).
       return ownerLock(task.ownerId, async () => {
-        if ((await store.countActive(task.ownerId)) >= maxRunningPerUser) return { status: "too_many_tasks" as const };
         const plan = deps.plan({ ...task, id: "", status: "queued", attempt: 0, createdAt: "" });
         if (typeof plan === "string") throw new Error(plan);
         const createdAt = now();
         const id = randomUUID();
-        await store.create({ ...task, id, status: "queued", attempt: 0, createdAt, leaseOwner: me, leaseUntil: leaseUntil(createdAt) });
+        const record: TaskRecord = { ...task, id, status: "queued", attempt: 0, createdAt, leaseOwner: me, leaseUntil: leaseUntil(createdAt) };
+        if ((await store.admitWithinLimit({ create: record }, maxRunningPerUser)) === "no_slot") return { status: "too_many_tasks" as const };
         const claimed = await store.claim(id, me, leaseUntil(createdAt), createdAt);
         if (!claimed) throw new Error(`Задача ${id} не взята в работу сразу после создания`);
         launch(claimed, plan);
@@ -253,7 +269,7 @@ export function createTaskRunner(deps: {
       });
     },
 
-    answerApproval(ownerId, chatId, taskId, approvalId, decision) {
+    answerApproval(ownerId, chatId, taskId, approvalId, decision, maxRunningPerUser) {
       return taskLock(taskId, async () => {
         const task = await store.get(ownerId, taskId);
         const pending = task?.progress?.pendingApproval;
@@ -265,23 +281,36 @@ export function createTaskRunner(deps: {
         const { pendingApproval: _answered, ...progress } = task.progress!;
         const response = { type: "tool-approval-response" as const, approvalId, approved: decision === "allow" };
         // Продолжение по решению человека — не новая попытка: попытки считают только перезапуски после сбоев.
+        // Продолжение снова занимает место (пауза его отдала), поэтому идёт через тот же предел, что и запуск.
         // Условие по статусу и вопросу: ответ, пришедший сразу на две копии, продолжит задачу один раз, а пока
         // эта копия писала, другая могла ответить и помощник — задать новый вопрос.
-        const resumed = await store.update(
-          ownerId,
-          taskId,
+        const resumed = await store.admitWithinLimit(
           {
-            status: "running",
-            helperMessages: [...(task.helperMessages ?? []), { role: "tool", content: [response] }],
-            progress: { ...progress, status: "running" },
-            deliveredAt: undefined,
-            deliveryKey: undefined,
-            leaseOwner: me,
-            leaseUntil: leaseUntil(now()),
+            resume: {
+              ownerId,
+              taskId,
+              patch: {
+                status: "running",
+                helperMessages: [...(task.helperMessages ?? []), { role: "tool", content: [response] }],
+                progress: { ...progress, status: "running" },
+                deliveredAt: undefined,
+                deliveryKey: undefined,
+                leaseOwner: me,
+                leaseUntil: leaseUntil(now()),
+              },
+              when: { statuses: ["awaiting_approval"], pendingApprovalId: approvalId },
+            },
           },
-          { statuses: ["awaiting_approval"], pendingApprovalId: approvalId },
+          maxRunningPerUser,
         );
-        if (!resumed) return (await store.get(ownerId, taskId))?.status === "awaiting_approval" ? "stale" : "not_found";
+        if (resumed === null || resumed === "no_slot") {
+          const current = await store.get(ownerId, taskId);
+          if (current?.status !== "awaiting_approval") return "not_found";
+          if (current.progress?.pendingApproval?.approvalId !== approvalId) return "stale";
+          // Места нет: ничего не записано, вопрос ждёт. Тот же ответ примется, когда место освободится.
+          if (resumed === "no_slot") throw new TurnRefusedError({ code: "too_many_tasks", message: TOO_MANY_TASKS_TO_RESUME(maxRunningPerUser) });
+          return "stale";
+        }
         launch(resumed, plan);
         tasksChanged(ownerId, chatId);
         return "resumed";

@@ -1,6 +1,7 @@
 import { WebToolError } from "./web-tool-error";
 
 const notPublicMessage = "Адрес локальный или частный: такие страницы читать нельзя.";
+const unresolvedMessage = "Адрес не открылся: имя не разрешилось.";
 
 /** Определяет адреса имени. В приложении это DNS; в тестах подменяется. */
 export type HostResolver = (hostname: string) => Promise<string[]>;
@@ -34,21 +35,28 @@ export function assertPublicWebAddress(address: string): URL {
 }
 
 /**
- * Проверка по DNS для тех, кто ходит по адресу сам: имя разрешается, и если хоть один адрес частный
- * (или имя не разрешилось), оно отклоняется. Адрес-число уже проверен `assertPublicWebAddress`.
- * Между проверкой и запросом остаётся короткое окно: fetch разрешает имя ещё раз.
+ * Проверка по DNS перед запросом — для `fetch` приложения (свой прокси), который сам разрешает имя: если хоть один
+ * адрес частный (или имя не разрешилось), имя отклоняется. Адрес-число уже проверен `assertPublicWebAddress`.
+ * Между проверкой и запросом остаётся окно: такой `fetch` разрешает имя ещё раз. Закрепить ответ DNS за соединением
+ * может только сам `fetch`: встроенный — `createPinnedFetch`, у своего `fetch` приложения это его забота.
  */
 export async function assertResolvesPublic(url: URL, resolveHost: HostResolver): Promise<void> {
   const hostname = url.hostname.toLowerCase().replace(/\.$/, "");
   if (hostname.startsWith("[") || /^\d+\.\d+\.\d+\.\d+$/.test(hostname)) return;
+  await checkedAddresses(hostname, resolveHost, false);
+}
+
+/** Адреса имени по DNS; не разрешилось или (без `allowPrivateNetwork`) хоть один частный — `WebToolError` `bad_address`. */
+export async function checkedAddresses(hostname: string, resolveHost: HostResolver, allowPrivateNetwork: boolean): Promise<string[]> {
   let addresses: string[];
   try {
     addresses = await resolveHost(hostname);
   } catch {
-    throw new WebToolError("bad_address", "Адрес не открылся: имя не разрешилось.");
+    addresses = [];
   }
-  if (addresses.length === 0) throw new WebToolError("bad_address", "Адрес не открылся: имя не разрешилось.");
-  if (addresses.some(isPrivateAddress)) throw new WebToolError("bad_address", notPublicMessage);
+  if (addresses.length === 0) throw new WebToolError("bad_address", unresolvedMessage);
+  if (!allowPrivateNetwork && addresses.some(isPrivateAddress)) throw new WebToolError("bad_address", notPublicMessage);
+  return addresses;
 }
 
 /** Адрес из ответа DNS (без скобок). Всё, что не удалось разобрать, считается частным. */

@@ -53,6 +53,15 @@ export function createSqliteTaskStore(filePath: string, migrationsFolder: string
       when?.pendingApprovalId !== undefined ? sql`json_extract(${backgroundTasks.progress}, '$.pendingApproval.approvalId') = ${when.pendingApprovalId}` : undefined,
     );
 
+  function countActive(executor: Pick<typeof db, "select">, ownerId: string): number {
+    const row = executor
+      .select({ count: sql<number>`count(*)` })
+      .from(backgroundTasks)
+      .where(and(eq(backgroundTasks.ownerId, ownerId), isRunning))
+      .get();
+    return Number(row?.count ?? 0);
+  }
+
   async function get(ownerId: string, taskId: string): Promise<TaskRecord | null> {
     const row = db.select().from(backgroundTasks).where(owned(ownerId, taskId)).get();
     return row ? toRecord(row) : null;
@@ -82,12 +91,24 @@ export function createSqliteTaskStore(filePath: string, migrationsFolder: string
       return rows.map(toRecord);
     },
     async countActive(ownerId) {
-      const row = db
-        .select({ count: sql<number>`count(*)` })
-        .from(backgroundTasks)
-        .where(and(eq(backgroundTasks.ownerId, ownerId), isRunning))
-        .get();
-      return Number(row?.count ?? 0);
+      return countActive(db, ownerId);
+    },
+    async admitWithinLimit(admission, maxActive) {
+      // Транзакция на запись с самого начала (`immediate`): вторая копия на том же файле ждёт её конца и считает заново.
+      return db.transaction(
+        (tx) => {
+          if ("create" in admission) {
+            if (countActive(tx, admission.create.ownerId) >= maxActive) return "no_slot";
+            tx.insert(backgroundTasks).values(toColumns(admission.create) as Row).run();
+            return admission.create;
+          }
+          const { ownerId, taskId, patch, when } = admission.resume;
+          if (countActive(tx, ownerId) >= maxActive) return "no_slot";
+          const row = tx.update(backgroundTasks).set(toColumns(patch)).where(and(owned(ownerId, taskId), condition(when))).returning().get();
+          return row ? toRecord(row) : null;
+        },
+        { behavior: "immediate" },
+      );
     },
     async claim(taskId, leaseOwner, leaseUntil, now) {
       const nowMs = toMs(now)!;

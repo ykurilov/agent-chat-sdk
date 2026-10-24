@@ -31,6 +31,28 @@ export function taskRecord(overrides: Partial<TaskRecord> = {}): TaskRecord {
   };
 }
 
+/** Задача помощника на паузе: ждёт ответа человека на вопрос `approval-1`, место не занимает. */
+export function pausedRecord(overrides: Partial<TaskRecord> = {}): TaskRecord {
+  return taskRecord({
+    kind: "helper",
+    name: "researcher",
+    input: { task: "Найди цены" },
+    title: "Найди цены",
+    status: "awaiting_approval",
+    attempt: 1,
+    deliveredAt: at(60),
+    helperMessages: [{ role: "assistant", content: "шаг 1" }],
+    progress: {
+      task: "Найди цены",
+      steps: [],
+      text: "",
+      status: "awaiting_approval",
+      pendingApproval: { approvalId: "approval-1", toolName: "send_email", title: "Отправить письмо", input: { to: "boss@example.com" } },
+    },
+    ...overrides,
+  });
+}
+
 /** Общий контракт `TaskStore`: память, SQLite и Postgres ведут себя одинаково. */
 export function describeTaskStoreContract(open: () => Promise<SharedTaskStores>): void {
   async function withStores(check: (stores: SharedTaskStores) => Promise<void>): Promise<void> {
@@ -172,6 +194,59 @@ export function describeTaskStoreContract(open: () => Promise<SharedTaskStores>)
         }
         await first.create(taskRecord({ ownerId: "someone-else", status: "running" }));
         expect(await first.countActive("count-owner")).toBe(3);
+      }),
+    );
+
+    it("admitWithinLimit create: пишет задачу, только пока занято меньше предела; пауза и законченные места не занимают", () =>
+      withStores(async ({ first }) => {
+        for (const status of ["running", "awaiting_approval", "done"] as const) await first.create(taskRecord({ ownerId: "slot-owner", status }));
+        const second = taskRecord({ ownerId: "slot-owner" });
+        expect(await first.admitWithinLimit({ create: second }, 2)).toEqual(second);
+        expect(await first.get("slot-owner", second.id)).toEqual(second);
+        const third = taskRecord({ ownerId: "slot-owner" });
+        expect(await first.admitWithinLimit({ create: third }, 2)).toBe("no_slot");
+        expect(await first.get("slot-owner", third.id)).toBeNull();
+        expect(await first.admitWithinLimit({ create: taskRecord({ ownerId: "other-owner" }) }, 1)).toEqual(expect.objectContaining({ ownerId: "other-owner" }));
+      }),
+    );
+
+    it("admitWithinLimit resume: продолжение с паузы занимает место по тому же пределу; условие не выполнено — null", () =>
+      withStores(async ({ first }) => {
+        await first.create(taskRecord({ ownerId: "resume-owner", status: "running" }));
+        const paused = pausedRecord({ ownerId: "resume-owner" });
+        await first.create(paused);
+        const resume = (approvalId: string) => ({ resume: { ownerId: "resume-owner", taskId: paused.id, patch: { status: "running" as const }, when: { statuses: ["awaiting_approval" as const], pendingApprovalId: approvalId } } });
+        expect(await first.admitWithinLimit(resume("approval-1"), 1)).toBe("no_slot");
+        expect(await first.get("resume-owner", paused.id)).toEqual(paused);
+        expect(await first.admitWithinLimit(resume("approval-other"), 2)).toBeNull();
+        expect(await first.admitWithinLimit(resume("approval-1"), 2)).toMatchObject({ id: paused.id, status: "running" });
+        expect(await first.countActive("resume-owner")).toBe(2);
+        expect(await first.admitWithinLimit(resume("approval-1"), 3)).toBeNull();
+      }),
+    );
+
+    it("admitWithinLimit с двух ручек одновременно: последнее место достаётся одной записи", () =>
+      withStores(async ({ first, second }) => {
+        const results = await Promise.all(
+          [0, 1, 2, 3].map((n) => (n % 2 === 0 ? first : second).admitWithinLimit({ create: taskRecord({ ownerId: "race-owner", chatId: `chat-${n % 2}` }) }, 1)),
+        );
+        expect(results.filter((result) => result !== "no_slot")).toHaveLength(1);
+        expect(await first.countActive("race-owner")).toBe(1);
+      }),
+    );
+
+    it("admitWithinLimit: новая задача и продолжение с паузы на двух ручках одновременно — место одно", () =>
+      withStores(async ({ first, second }) => {
+        const paused = pausedRecord({ ownerId: "mixed-owner" });
+        await first.create(paused);
+        const when = { statuses: ["awaiting_approval" as const], pendingApprovalId: "approval-1" };
+        const results = await Promise.all([
+          first.admitWithinLimit({ create: taskRecord({ ownerId: "mixed-owner", chatId: "chat-new" }) }, 1),
+          second.admitWithinLimit({ resume: { ownerId: "mixed-owner", taskId: paused.id, patch: { status: "running" }, when } }, 1),
+          first.admitWithinLimit({ create: taskRecord({ ownerId: "mixed-owner", chatId: "chat-new-2" }) }, 1),
+        ]);
+        expect(results.filter((result) => result !== "no_slot")).toHaveLength(1);
+        expect(await first.countActive("mixed-owner")).toBe(1);
       }),
     );
 

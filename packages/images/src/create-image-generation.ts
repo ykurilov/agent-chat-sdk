@@ -98,6 +98,11 @@ export interface CreateImageGenerationOptions {
   maxImagesPerTurn?: number;
   /** Фоновый режим: поля для ответа модели о заказанной картинке (например, куда она ляжет). */
   onQueued?: (job: ImageJob) => Record<string, unknown> | void | Promise<Record<string, unknown> | void>;
+  /**
+   * Свой `fetch` приложения: запросы к провайдеру и скачивание картинок. Это граница доверия приложения: закрепить
+   * соединение за проверенным адресом (от подмены DNS) должен он сам (`createPinnedFetch` из
+   * `@ykurilov/agent-chat-web-tools/network`). Без него картинку со склада провайдера качает закреплённый `fetch`.
+   */
   fetch?: typeof globalThis.fetch;
   logError?: (message: string) => void;
   now?: () => Date;

@@ -41,6 +41,11 @@ export function createAccountLinking(deps: {
   logError?(error: unknown): void;
 }) {
   const { store, bots } = deps;
+  if (typeof store.saveLinkIfFree !== "function") {
+    throw new TypeError(
+      "Хранилище мессенджеров без saveLinkIfFree: с 0.81 привязка по коду идёт только через него. Добавьте в своё хранилище атомарное «сохранить, если аккаунт свободен или уже за этим пользователем» (saved | taken) — см. MessengerStore.",
+    );
+  }
   const textsOf = deps.textsOf ?? defaultTextsOf;
   const messengers = [...new Set(bots.map((bot) => bot.messenger))];
   const allowsOrigin = createRequestOriginCheck({
@@ -60,15 +65,14 @@ export function createAccountLinking(deps: {
 
   /**
    * Код → привязка. `taken` — аккаунт уже привязан к другому пользователю: чужой код его не переносит (код сгорает),
-   * сначала прежнюю привязку снимают в приложении.
+   * сначала прежнюю привязку снимают в приложении. Проверка «занят» и запись — одна операция хранилища: два кода
+   * разных людей одновременно не переписывают друг друга, `onLinked` получает только сохранённая привязка.
    */
   async function redeem(code: string, account: ExternalAccount): Promise<"linked" | "failed" | "taken"> {
     if (!isLinkCode(code)) return "failed";
     const now = new Date().toISOString();
     const claimed = await store.consumeLinkCode(hashLinkCode(code), account.messenger, now);
     if (!claimed) return "failed";
-    const previous = await store.findLink(account.messenger, account.botId, account.externalUserId);
-    if (previous && previous.userId !== claimed.userId) return "taken";
     const link: MessengerLink = {
       messenger: account.messenger,
       botId: account.botId,
@@ -78,7 +82,7 @@ export function createAccountLinking(deps: {
       ...(account.username !== undefined && { username: account.username }),
       linkedAt: now,
     };
-    await store.saveLink(link);
+    if ((await store.saveLinkIfFree(link)) === "taken") return "taken";
     await signal(deps.onLinked, link);
     return "linked";
   }

@@ -136,7 +136,9 @@ export function createMcpAdminHandler(options: McpAdminHandlerOptions): McpAdmin
         // Не-админ не должен узнать, что экран есть: 404 до любых других проверок.
         if (!user || !(await options.mcp.isAdmin(user.id))) return notFound();
         if (!isSafeMethod(request.method) && !allowsOrigin(request)) return json(403, { error: { kind: "forbidden_origin" } });
-        const segments = pathname.slice(basePath.length).split("/").filter(Boolean).map(decodeURIComponent);
+        const segments = pathSegments(pathname.slice(basePath.length));
+        // Битая кодировка (например, `%E0`): такого адреса нет.
+        if (!segments) return notFound();
         // Экран видит правки с других копий приложения сразу, а не через срок сверки.
         await options.mcp.sync();
         return await route(request, segments);
@@ -147,4 +149,13 @@ export function createMcpAdminHandler(options: McpAdminHandlerOptions): McpAdmin
       }
     },
   };
+}
+
+/** Части адреса после базы, раскодированные; битая %-кодировка — `null`. */
+function pathSegments(rest: string): string[] | null {
+  try {
+    return rest.split("/").filter(Boolean).map(decodeURIComponent);
+  } catch {
+    return null;
+  }
 }

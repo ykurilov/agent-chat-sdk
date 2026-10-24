@@ -36,6 +36,13 @@ async function start(background: ReturnType<typeof setup>["background"], period 
   return started.taskId as string;
 }
 
+describe("хранилище задач без admitWithinLimit", () => {
+  it("createBackgroundTasks не запускается: предел по отдельным подсчёту и записи не держался бы между копиями", () => {
+    const { admitWithinLimit: _dropped, ...old } = memoryTaskStore();
+    expect(() => createBackgroundTasks({ store: old as TaskStore })).toThrowError(/admitWithinLimit/);
+  });
+});
+
 describe("бегунок задач (T052)", () => {
   it("аренда 30 с, продление раз в 10 с, пока задача идёт", async () => {
     const { store, background } = setup();

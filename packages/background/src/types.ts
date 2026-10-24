@@ -43,6 +43,11 @@ export interface TaskCondition {
   pendingApprovalId?: string;
 }
 
+/** Что занимает место человека: новая задача или продолжение задачи с паузы (ответ на подтверждение). */
+export type TaskAdmission =
+  | { create: TaskRecord }
+  | { resume: { ownerId: string; taskId: string; patch: TaskPatch; when: TaskCondition } };
+
 /** Хранилище задач: память, SQLite, Postgres (контракт один). Каждая операция владельца проверяет сама. */
 export interface TaskStore {
   create(task: TaskRecord): Promise<void>;
@@ -52,6 +57,16 @@ export interface TaskStore {
   listForChat(ownerId: string, chatId: string): Promise<TaskRecord[]>;
   /** Сколько задач человека занимают место: `queued` и `running`. Задача на паузе (`awaiting_approval`) место не занимает (T055). */
   countActive(ownerId: string): Promise<number>;
+  /**
+   * Занимает место человека, только если у него занято меньше `maxActive` мест (как считает `countActive`): пишет новую
+   * задачу (`create`) или продолжает задачу с паузы условным обновлением (`resume`, условие — как у `update`). Подсчёт
+   * и запись — одно действие хранилища: копии сервера на одной базе вместе не превысят предел ни запусками, ни ответами
+   * на подтверждение. Итог — записанная задача; `"no_slot"` — места нет, ничего не записано; `null` — условие
+   * продолжения не выполнено.
+   * Без этого метода `createBackgroundTasks` не запускается: предел по отдельным подсчёту и записи держался бы только
+   * внутри одной копии.
+   */
+  admitWithinLimit(admission: TaskAdmission, maxActive: number): Promise<TaskRecord | "no_slot" | null>;
   /**
    * Берёт задачу в работу, если она свободна: ждёт запуска или аренда истекла. Два сервера не возьмут одну задачу.
    * `null` — не взяли.

@@ -1,3 +1,4 @@
+import { TurnRefusedError } from "@ykurilov/agent-chat-core";
 import type { AgentHelper, HelperProgress, RunHelperInput, RunHelperResult } from "@ykurilov/agent-chat-core";
 import type { ModelMessage } from "ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -54,9 +55,9 @@ function scriptedHelper() {
   return { calls, runHelper };
 }
 
-function setup(store: TaskStore = memoryTaskStore()) {
+function setup(store: TaskStore = memoryTaskStore(), maxRunningPerUser?: number) {
   const helper = scriptedHelper();
-  const background = createBackgroundTasks({ store });
+  const background = createBackgroundTasks({ store, ...(maxRunningPerUser !== undefined && { maxRunningPerUser }) });
   const port = createFakePort({ helpers: { researcher }, runHelper: helper.runHelper });
   background.attach(port);
   return { store, background, port, calls: helper.calls };
@@ -141,8 +142,8 @@ describe("фоновый помощник (T054)", () => {
 describe("пауза фонового помощника (T055)", () => {
   const pending = { approvalId: "approval-1", toolName: "send_email", title: "Отправить письмо", input: { to: "boss@example.com" } };
 
-  async function paused() {
-    const context = setup();
+  async function paused(maxRunningPerUser?: number) {
+    const context = setup(memoryTaskStore(), maxRunningPerUser);
     const { taskId } = await callTool(context.background.tools(toolsModel()), "helper_researcher", { task: "Найди цены" });
     await settle();
     await context.calls[0]!.step(1);
@@ -194,5 +195,79 @@ describe("пауза фонового помощника (T055)", () => {
     expect(await background.answerApproval("anna", "chat-1", "нет-такой", "approval-1", "allow")).toBe("not_found");
     expect(await background.answerApproval("anna", "chat-1", taskId, "approval-1", "allow")).toBe("resumed");
     expect(await background.answerApproval("anna", "chat-1", taskId, "approval-1", "allow")).toBe("not_found");
+  });
+
+  it("ответ на паузе при занятых местах: отказ too_many_tasks, вопрос ждёт; место освободилось — тот же ответ продолжает задачу один раз", async () => {
+    const { store, background, calls, taskId } = await paused(1);
+    // Пока задача ждала ответа, человек занял единственное место новой задачей.
+    const other = await callTool(background.tools(toolsModel({ chatId: "chat-2" })), "helper_researcher", { task: "Второе" });
+    expect(other.status).toBe("background");
+    await settle();
+    expect(calls).toHaveLength(2);
+
+    const refused = await background.answerApproval("anna", "chat-1", taskId, "approval-1", "allow").catch((error: unknown) => error);
+    expect(refused).toBeInstanceOf(TurnRefusedError);
+    expect(refused).toMatchObject({ code: "too_many_tasks", message: expect.stringContaining("1") });
+    await settle();
+    // Задача не потеряна и не продолжена: тот же вопрос ждёт, помощник не запускался, место одно.
+    expect(calls).toHaveLength(2);
+    expect(await store.get("anna", taskId)).toMatchObject({ status: "awaiting_approval", helperMessages: [message(1)], progress: { pendingApproval: pending } });
+    expect(await store.countActive("anna")).toBe(1);
+
+    calls[1]!.finish({ status: "done", text: "второе готово" });
+    await settle();
+    expect(await store.countActive("anna")).toBe(0);
+    expect(await background.answerApproval("anna", "chat-1", taskId, "approval-1", "allow")).toBe("resumed");
+    await settle();
+    expect(calls).toHaveLength(3);
+    expect(calls[2]!.priorMessages).toEqual([message(1), { role: "tool", content: [{ type: "tool-approval-response", approvalId: "approval-1", approved: true }] }]);
+    expect(await store.countActive("anna")).toBe(1);
+    await background.flush();
+  });
+
+  it("ответ и новый запуск одновременно при одном свободном месте: место получает кто-то один", async () => {
+    const { store, background, calls, taskId } = await paused(1);
+    const [answer, started] = await Promise.all([
+      background.answerApproval("anna", "chat-1", taskId, "approval-1", "deny").catch((error: unknown) => error),
+      callTool(background.tools(toolsModel({ chatId: "chat-2" })), "helper_researcher", { task: "Второе" }),
+    ]);
+    await settle();
+    const admitted = [answer === "resumed", started.status === "background"].filter(Boolean);
+    expect(admitted).toHaveLength(1);
+    expect(await store.countActive("anna")).toBe(1);
+    expect(calls).toHaveLength(2);
+    await background.flush();
+  });
+
+  it("задачу, чей ответ отклонён из-за предела, можно отменить", async () => {
+    const { store, background, taskId } = await paused(1);
+    await callTool(background.tools(toolsModel({ chatId: "chat-2" })), "helper_researcher", { task: "Второе" });
+    await settle();
+    await expect(background.answerApproval("anna", "chat-1", taskId, "approval-1", "allow")).rejects.toMatchObject({ code: "too_many_tasks" });
+    expect(await background.cancel("anna", "chat-1", taskId)).toBe("canceled");
+    expect(await store.get("anna", taskId)).toMatchObject({ status: "canceled" });
+    await background.flush();
+  });
+
+  it("подхват идущей задачи после падения копии место не досчитывает: задача продолжается, предел прежний", async () => {
+    const store = memoryTaskStore();
+    const first = setup(store, 1);
+    const { taskId } = await callTool(first.background.tools(toolsModel()), "helper_researcher", { task: "Найди цены" });
+    await settle();
+    await first.calls[0]!.step(1);
+    // Копия упала: аренда истекла, задача по-прежнему занимает своё место.
+    await store.update("anna", taskId, { leaseUntil: iso(-1) });
+    expect(await store.countActive("anna")).toBe(1);
+
+    const second = setup(store, 1);
+    await second.background.recover();
+    await settle();
+    expect(second.calls).toHaveLength(1);
+    expect(await store.get("anna", taskId)).toMatchObject({ status: "running", attempt: 2 });
+    expect(await store.countActive("anna")).toBe(1);
+    const refused = await callTool(second.background.tools(toolsModel({ chatId: "chat-2" })), "helper_researcher", { task: "Второе" });
+    expect(refused.status).toBe("failed");
+    expect(await store.countActive("anna")).toBe(1);
+    await second.background.flush();
   });
 });

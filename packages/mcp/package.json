@@ -1,6 +1,6 @@
 {
   "name": "@ykurilov/agent-chat-mcp",
-  "version": "0.80.1",
+  "version": "0.81.0",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,
@@ -54,8 +54,7 @@
     "@ykurilov/agent-chat-core": "workspace:*",
     "@ykurilov/agent-chat-web-tools": "workspace:*",
     "ai": "7.0.122",
-    "drizzle-orm": "^0.45.3",
-    "undici": "^7.30.0"
+    "drizzle-orm": "^0.45.3"
   },
   "peerDependencies": {
     "better-sqlite3": "^13.0.3",

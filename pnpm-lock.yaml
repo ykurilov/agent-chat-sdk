@@ -404,6 +404,9 @@ importers:
       '@ykurilov/agent-chat-core':
         specifier: workspace:*
         version: link:../core
+      '@ykurilov/agent-chat-web-tools':
+        specifier: workspace:*
+        version: link:../web-tools
       ai:
         specifier: 7.0.122
         version: 7.0.122(zod@4.6.5)
@@ -493,9 +496,6 @@ importers:
       drizzle-orm:
         specifier: ^0.45.3
         version: 0.45.3(@electric-sql/pglite@0.5.8)(@types/better-sqlite3@9.6.0)(@types/pg@8.23.1)(better-sqlite3@13.0.3)(pg@8.23.0)
-      undici:
-        specifier: ^7.30.0
-        version: 7.30.0
     devDependencies:
       '@ai-sdk/provider':
         specifier: 4.0.19
@@ -934,6 +934,9 @@ importers:
       ai:
         specifier: 7.0.122
         version: 7.0.122(zod@4.6.5)
+      undici:
+        specifier: ^7.30.0
+        version: 7.30.0
       zod:
         specifier: ^4.6.5
         version: 4.6.5

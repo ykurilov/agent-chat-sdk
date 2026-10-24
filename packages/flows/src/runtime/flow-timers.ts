@@ -2,20 +2,20 @@ import { randomUUID } from "node:crypto";
 import { ChatNotFoundError, SpendingLimitReachedError } from "@ykurilov/agent-chat-core";
 import type { AgentFlow } from "../format/flow-format";
 import type { FlowRun, Transition } from "../engine/flow-run";
-import { FLOW_STATE_KEY } from "../engine/flow-run";
 import { noteAgentAnswer, withNudgeStep, withoutUndeliveredTouch } from "../engine/run-updates";
 import { deadlineAt, flowDay, nextDayStartAfter } from "../engine/flow-days";
 import { stateById } from "../engine/flow-graph";
 import type { FirstWakeContext, FlowFirstReason } from "../engine/nudges";
 import { dayStartHoldUntil } from "../engine/nudges";
 import { deferredWake, dueReasons, endingWake, FLOW_FIRST_EXIT, nextFirstMessageAfter, nextWake, type FlowDue } from "../engine/timers";
-import type { FlowChatRecord, FlowStore } from "../store/flow-store";
+import { FLOW_DELIVERY_EXIT, type FlowChatRecord, type FlowDueInput, type FlowStore, type SetDueOptions } from "../store/flow-store";
 import type { FirstMessageRules, FlowPort, FlowTestClockReason, FlowTimers, FlowTimerSettings } from "./flow-types";
-import { advance, chainLimitMessage, chatRun, exactFirstText, storedRun, withPending, withReopen, type ChatFlowRun } from "./flow-events";
+import { advance, chainLimitMessage, chatRun, exactFirstText, withPending, withReopen, type ChatFlowRun } from "./flow-events";
 import { chatWriteBlock } from "./first-message-rules";
 import { FIRST_MESSAGE_RETRY_MS } from "./first-message-retry";
 import { firstReasonsNotice, silentMsOf } from "./first-reasons-notice";
-import { FLOW_DELIVERY_EXIT, type FlowDelivery } from "./flow-delivery";
+import type { FlowDelivery } from "./flow-delivery";
+import { holdLease, type HeldLease } from "./flow-lease";
 import { testChatOffset } from "./test-clock";
 import { withHeldHuman } from "./held-messages";
 
@@ -134,20 +134,19 @@ export function createFlowTimers(input: {
     return oneAtATime(request.chatId, () => rescheduleNow(request));
   }
 
-  /** Касание не дошло: сроки — по месту из состояния чата, не раньше отказа (часы сервера). */
-  async function recountAfterFailure(ownerId: string, chatId: string, failedAt: number): Promise<void> {
-    const { values } = await (await port({ ownerId, chatId })).getChatState(ownerId, chatId);
-    const run = storedRun(values[FLOW_STATE_KEY]);
-    if (run) await reschedule({ ownerId, chatId, run, branchHead: run.answerId ?? null, failedAt });
-  }
-
   async function rescheduleNow({ ownerId, chatId, run, branchHead, failedAt }: { ownerId: string; chatId: string; run: FlowRun; branchHead: string | null; failedAt?: number }): Promise<void> {
     const record = await store.getChat(chatId);
     if (!record) return;
+    const pending = record.delivery;
+    if (pending) {
+      // Ждёт доставка (и у законченного разговора): срок — её повтор, следующие считаются после неё; ждёт починки канала —
+      // сроков нет. Идёт сама отправка (живая аренда) — не мешать ей: срок запишет её итог.
+      const due = pending.pausedAt === undefined ? { at: pending.retryAt, exitId: FLOW_DELIVERY_EXIT, branchHead } : null;
+      await store.swapDelivery(chatId, { expected: pending, next: pending, due, freeAt: input.now().toISOString() });
+      return;
+    }
     // После конца разговора сроков нет.
-    if (record.endedAt !== null) return store.setDue(chatId, null);
-    // Ждёт повтор доставки: его срок остаётся, следующий считается после него.
-    if (record.delivery) return store.setDue(chatId, { at: record.delivery.retryAt, exitId: FLOW_DELIVERY_EXIT, branchHead });
+    if (record.endedAt !== null) return store.setDue(chatId, null, { unlessDelivery: true });
     const flow = await input.flowOf(record);
     const offset = run.timeOffset ?? 0;
     const at = input.now().getTime() + offset;
@@ -190,7 +189,7 @@ export function createFlowTimers(input: {
       });
     }
     if (applied) await input.onAppliedTransitions?.(applied);
-    await store.setDue(chatId, due && { ...due, branchHead: run.answerId ?? null });
+    await store.setDue(chatId, due && { ...due, branchHead: run.answerId ?? null }, { leaseOwner: owner, unlessDelivery: true });
   }
 
   /** Место ветки сменилось с начала тика: новый ответ или новое сообщение человека. */
@@ -212,28 +211,40 @@ export function createFlowTimers(input: {
     }
   }
 
-  async function fire(leased: FlowChatRecord, serverAt: number): Promise<void> {
-    let record = leased;
+  /**
+   * Срабатывание под арендой `lease`. Перед каждым внешним действием (доставка, «срок вышел», переход без хода, ход
+   * «пишет первым») аренда проверяется заново: забрала другая копия — эта молча выходит. Свои сроки пишутся с условием
+   * «аренда ещё моя». Это ограда от устаревшей копии, а не обещание «ровно один раз» для внешних действий.
+   */
+  async function fire(leased: FlowChatRecord, serverAt: number, lease: HeldLease): Promise<void> {
+    const record = leased;
     const { chatId, ownerId } = record;
+    // Свои сроки — пока аренда наша; появилась ждущая доставка — её срок не затирается (следующие пересчитает её итог).
+    const setDue = (due: FlowDueInput | null, options: SetDueOptions = {}) => store.setDue(chatId, due, { unlessDelivery: true, ...options, leaseOwner: owner });
+    const pending = record.delivery;
+    if (pending && input.delivery) {
+      // Ждёт починки канала: сроков нет, отправит `resumeDelivery`.
+      if (pending.pausedAt !== undefined) return store.setDue(chatId, null, { leaseOwner: owner });
+      // Пока ждёт повтор доставки, новых ходов нет: срок — его, даже если запись затёрли.
+      if (Date.parse(pending.retryAt) > serverAt) {
+        await store.setDue(chatId, { at: pending.retryAt, exitId: FLOW_DELIVERY_EXIT, branchHead: record.dueBranchHead }, { leaseOwner: owner });
+        return;
+      }
+      // Повтор доставки — тот же текст без хода (и у законченного разговора). Следующие сроки пересчитает его итог.
+      if (!(await lease.held())) return;
+      await input.delivery().retry(record, serverAt, owner);
+      return;
+    }
+    // Законченный разговор таймер берёт только ради доставки: других сроков после конца нет.
+    if (record.endedAt !== null) {
+      await setDue(null);
+      return;
+    }
     const flow = await input.flowOf(record);
     if (!flow) {
       logError(`[сценарий] чат=${chatId}: версии ${record.flowId}@${record.versionId} нет в хранилище, таймер снят`);
-      await store.setDue(chatId, null);
+      await setDue(null);
       return;
-    }
-    if (record.delivery && input.delivery) {
-      // Пока ждёт повтор доставки, новых ходов нет: срок — его, даже если запись затёрли.
-      if (Date.parse(record.delivery.retryAt) > serverAt) {
-        await store.setDue(chatId, { at: record.delivery.retryAt, exitId: FLOW_DELIVERY_EXIT, branchHead: record.dueBranchHead });
-        return;
-      }
-      // Повтор доставки — тот же текст без хода; пока он ждёт, другие сроки ждут его.
-      const outcome = await input.delivery().retry(record, serverAt);
-      const after = await store.getChat(chatId);
-      if (!after || after.endedAt !== null || after.delivery) return;
-      // Повторы кончились: касание не засчитано, следующий срок — от отказа, а не новым ходом в этом же тике.
-      if (outcome === "failed" || outcome === "window_closed") return recountAfterFailure(ownerId, chatId, serverAt);
-      record = after;
     }
     let chatPort: FlowPort;
     let values: Record<string, unknown>;
@@ -255,13 +266,14 @@ export function createFlowTimers(input: {
     // Срок считается заново по месту ветки: строка могла отстать (смена ветки, перенос правилами «писать первым»).
     const wake = nextWake(flow, run, at, timeZone, context);
     if (!wake || wake.at > at) {
-      await store.setDue(chatId, wake ? dueInput(wake, run.answerId ?? null, offset) : null);
+      await setDue(wake ? dueInput(wake, run.answerId ?? null, offset) : null);
       return;
     }
     const due = dueReasons(flow, run, at, timeZone, context);
     if (due.deadline) {
       // Срок закрывает разговор без хода модели; прощание — отдельным ходом по правилам «писать первым».
-      await store.setDue(chatId, null);
+      if (!(await lease.held())) return;
+      await setDue(null);
       // Момент самого срока: ближайшим сроком могло быть отложенное касание до него.
       const endAt = flow.schedule ? (deadlineAt(run, timeZone, flow.schedule) ?? wake.at) : wake.at;
       await input.onDeadline?.({ record, flow, run, at: endAt, timeZone });
@@ -270,7 +282,8 @@ export function createFlowTimers(input: {
       return;
     }
     if (due.giveUp) {
-      await store.setDue(chatId, null);
+      if (!(await lease.held())) return;
+      await setDue(null);
       await input.onGiveUp?.({ record, flow, run, at });
       fired(chatId, { kind: "give_up", stateId: run.state });
       return;
@@ -295,8 +308,9 @@ export function createFlowTimers(input: {
     // (`applyNow`). Отложенное сообщение (ночь, потолок, лимит, повтор хода) придёт вместе с переходом, как раньше.
     const keep = async (wakeAt: FlowDue | null, applyNow: boolean) => {
       const deferred = wakeAt && dueInput(wakeAt, run.answerId ?? null, offset);
+      if (moved && !(await lease.held())) return;
       if (moved) await keepForNextTurn(chatId, run, transitions[0]!, deferred, applyNow ? { record, flow, run: next, transitions, at } : null);
-      else await store.setDue(chatId, deferred);
+      else await setDue(deferred);
     };
     const defer = (retryAt: number | null) =>
       keep(deferredWake(flow, next, at, timeZone, context, { at: retryAt, exitId: moved && retryAt !== null ? due.exitId! : FLOW_FIRST_EXIT }), retryAt === null);
@@ -347,6 +361,7 @@ export function createFlowTimers(input: {
     const notice = undelivered ? { ...reasonsNotice, data: { ...(reasonsNotice.data as object), undelivered } } : reasonsNotice;
     const reply = moved ? exactFirstText(flow, next.state) : null;
     const delivery = input.delivery?.();
+    if (!(await lease.held())) return;
     const result = await chatPort.deliverNotices({
       ownerId,
       chatId,
@@ -377,14 +392,14 @@ export function createFlowTimers(input: {
     const { nudgeStep, nudgeStepOwn } = notice.data as { nudgeStep?: number; nudgeStepOwn?: boolean };
     const answered = nudgeStep === undefined ? noteAgentAnswer(next, at) : withNudgeStep(noteAgentAnswer(next, at), nudgeStep, nudgeStepOwn === true);
     const following = nextWake(flow, answered, at, timeZone, { pausedUntil: context.pausedUntil ?? null });
-    await store.setDue(chatId, following ? dueInput(following, result.messageId ?? null, offset) : null, { unlessDelivery: true });
+    await setDue(following ? dueInput(following, result.messageId ?? null, offset) : null, { unlessDelivery: true });
     fired(chatId, { kind: reasons[0]!.kind, stateId: next.state, ...(moved && { exitId: due.exitId! }), reasons });
     if (!delivery) {
       await firstMessages?.record({ ownerId, at, timeZone });
       return;
     }
-    const outcome = await delivery.afterFirstTurn({ ownerId, chatId, answer: result.answer, reasons, at, timeZone });
-    if (outcome === "failed" || outcome === "window_closed") await recountAfterFailure(ownerId, chatId, serverAt);
+    // Итог доставки сам пересчитает сроки: дошло — от ответа, не дошло — от отказа.
+    await delivery.afterFirstTurn({ ownerId, chatId, answer: result.answer, reasons, at, timeZone, endedAt: record.endedAt });
   }
 
   /** Продлить аренду; `false` — запись уже не наша (аренда кончилась и её взяла другая копия, или срок переписан). */
@@ -394,14 +409,11 @@ export function createFlowTimers(input: {
   async function fireLeased(record: FlowChatRecord, serverAt: number): Promise<void> {
     try {
       if (!(await renew(record.chatId))) return;
-      const heartbeat = setInterval(() => {
-        renew(record.chatId).catch((error) => logError(`[сценарий] чат=${record.chatId} аренда не продлена: ${errorText(error)}`));
-      }, leaseMs / 3);
-      heartbeat.unref?.();
+      const lease = holdLease({ store, chatId: record.chatId, owner, leaseMs, now: input.now, logError });
       try {
-        await fire(record, serverAt);
+        await fire(record, serverAt, lease);
       } finally {
-        clearInterval(heartbeat);
+        await lease.stop();
       }
     } catch (error) {
       // Аренда остаётся: повтор после её конца, не каждый тик.

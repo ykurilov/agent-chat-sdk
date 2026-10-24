@@ -1,10 +1,10 @@
 import Database from "better-sqlite3";
-import { and, asc, eq, inArray, isNull, lt, lte, ne, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, lt, lte, ne, or, sql, type AnyColumn, type SQL } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import type { StateMap } from "../engine/migrate-run";
-import type { FlowChatRecord, FlowStore, PendingFlowChange, SideTaskRecord } from "./flow-store";
-import { appliedInTime, byVersionAndState, compareText, migratePending, pendingAdded } from "./flow-store-shared";
+import { FLOW_DELIVERY_EXIT, type FlowChatRecord, type FlowPendingDelivery, type FlowStore, type PendingFlowChange, type SideTaskRecord } from "./flow-store";
+import { appliedInTime, byVersionAndState, compareText, migratePending, normalizedDelivery, pendingAdded } from "./flow-store-shared";
 import { FLOWS_MIGRATIONS_TABLE } from "./migration-settings";
 import { flowChats, flowClientCards, flowFirstMessages, flowPeople, flowSideTasks, flowVersions } from "./sqlite-schema";
 
@@ -61,14 +61,31 @@ function mappedStateSql(map: StateMap): SQL {
   return sql`case ${flowChats.stateId} ${sql.join(cases, sql` `)} else ${flowChats.stateId} end`;
 }
 
-/** Таймер наступил, никто его не держит, разговор идёт и не на паузе. Аренда до `lease_until` включительно ещё живая. */
+/** Аренды нет или она кончилась: до `lease_until` включительно она ещё живая. */
+const leaseFree = (now: number) => or(isNull(flowChats.leaseUntil), lt(flowChats.leaseUntil, now));
+
+/** Таймер наступил, никто его не держит, разговор идёт (законченный — только ради повтора доставки) и не на паузе. */
 const dueAndFree = (now: number) =>
   and(
     lte(flowChats.dueAt, now),
-    or(isNull(flowChats.leaseUntil), lt(flowChats.leaseUntil, now)),
-    isNull(flowChats.endedAt),
+    leaseFree(now),
+    or(isNull(flowChats.endedAt), eq(flowChats.dueExitId, FLOW_DELIVERY_EXIT)),
     or(isNull(flowChats.pausedUntil), lte(flowChats.pausedUntil, now)),
   );
+
+/** Запись доставки — та, что ждали: `messageId`, `attempt` и `token` (у записей до 0.81 его нет). */
+function deliveryIs(expected: FlowPendingDelivery | null): SQL | undefined {
+  if (expected === null) return isNull(flowChats.delivery);
+  const field = (name: string) => sql`json_extract(${flowChats.delivery}, ${`$.${name}`})`;
+  return and(
+    sql`${field("messageId")} = ${expected.messageId}`,
+    sql`${field("attempt")} = ${expected.attempt}`,
+    expected.token === undefined ? sql`${field("token")} is null` : sql`${field("token")} = ${expected.token}`,
+  );
+}
+
+/** Срок и аренда остаются, если ждёт доставка: у неё свой срок и, может быть, идущая отправка. */
+const unlessDeliveryWaits = (column: AnyColumn) => sql`case when ${flowChats.delivery} is null then null else ${column} end`;
 
 /**
  * Сценарии в файле SQLite. Схема приводится к последней миграции при открытии; файл может быть общим с хранилищем
@@ -85,6 +102,7 @@ export function createSqliteFlowStore(filePath: string, migrationsFolder: string
   const getChat = (chatId: string) => db.select().from(flowChats).where(eq(flowChats.chatId, chatId)).get();
 
   return {
+    guarded: true,
     async pinChat(input) {
       db.insert(flowChats)
         .values({
@@ -148,7 +166,13 @@ export function createSqliteFlowStore(filePath: string, migrationsFolder: string
           leaseUntil: null,
           leaseOwner: null,
         })
-        .where(and(eq(flowChats.chatId, chatId), options?.unlessDelivery ? isNull(flowChats.delivery) : undefined))
+        .where(
+          and(
+            eq(flowChats.chatId, chatId),
+            options?.unlessDelivery ? isNull(flowChats.delivery) : undefined,
+            options?.leaseOwner !== undefined ? eq(flowChats.leaseOwner, options.leaseOwner) : undefined,
+          ),
+        )
         .run();
     },
     async leaseDue({ now, owner, leaseMs, limit }) {
@@ -280,7 +304,15 @@ export function createSqliteFlowStore(filePath: string, migrationsFolder: string
 
     async endChat(chatId, { reason, at }) {
       db.update(flowChats)
-        .set({ endedAt: toMs(at), endReason: reason, dueAt: null, dueExitId: null, dueBranchHead: null, leaseUntil: null, leaseOwner: null })
+        .set({
+          endedAt: toMs(at),
+          endReason: reason,
+          dueAt: unlessDeliveryWaits(flowChats.dueAt),
+          dueExitId: unlessDeliveryWaits(flowChats.dueExitId),
+          dueBranchHead: unlessDeliveryWaits(flowChats.dueBranchHead),
+          leaseUntil: unlessDeliveryWaits(flowChats.leaseUntil),
+          leaseOwner: unlessDeliveryWaits(flowChats.leaseOwner),
+        })
         .where(and(eq(flowChats.chatId, chatId), isNull(flowChats.endedAt)))
         .run();
       const row = getChat(chatId);
@@ -311,8 +343,32 @@ export function createSqliteFlowStore(filePath: string, migrationsFolder: string
       db.update(flowChats).set({ dayClosedOn: day }).where(eq(flowChats.chatId, chatId)).run();
     },
     async setDelivery(chatId, delivery) {
-      const clean = delivery === null ? null : { ...delivery, retryAt: toIso(toMs(delivery.retryAt)) };
-      db.update(flowChats).set({ delivery: clean }).where(eq(flowChats.chatId, chatId)).run();
+      db.update(flowChats)
+        .set({ delivery: delivery && normalizedDelivery(delivery) })
+        .where(eq(flowChats.chatId, chatId))
+        .run();
+    },
+    async swapDelivery(chatId, { expected, next, due, claim, freeAt, endedAt }) {
+      const claimAt = claim && toMs(claim.now);
+      const swapped = db
+        .update(flowChats)
+        .set({
+          delivery: next && normalizedDelivery(next),
+          ...(due !== undefined && { dueAt: due ? toMs(due.at) : null, dueExitId: due?.exitId ?? null, dueBranchHead: due?.branchHead ?? null }),
+          ...(claim && { leaseOwner: claim.owner, leaseUntil: claimAt! + claim.leaseMs }),
+        })
+        .where(
+          and(
+            eq(flowChats.chatId, chatId),
+            deliveryIs(expected),
+            claim ? or(leaseFree(claimAt!), eq(flowChats.leaseOwner, claim.owner), claim.from !== undefined ? eq(flowChats.leaseOwner, claim.from) : undefined) : undefined,
+            freeAt !== undefined ? leaseFree(toMs(freeAt)) : undefined,
+            endedAt === undefined ? undefined : endedAt === null ? isNull(flowChats.endedAt) : eq(flowChats.endedAt, toMs(endedAt)),
+          ),
+        )
+        .returning({ chatId: flowChats.chatId })
+        .all();
+      return swapped.length > 0;
     },
 
     async readTimeZone(ownerId) {

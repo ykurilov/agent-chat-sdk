@@ -264,11 +264,23 @@ export interface PendingDelivery extends ConversationKey {
 
 /** Хранилище мессенджеров: память, SQLite, Postgres (контракт один). Времена — ISO 8601. */
 export interface MessengerStore {
+  /**
+   * Хранилище выполняет условия договора (с 0.81), а не пропускает их: `saveLinkIfFree` — одной атомарной операцией;
+   * `finishUpdate` с `holder`, `renewUpdates` и `releaseUpdate` — только для обновления, которое ещё за этим держателем;
+   * `acquireLease` не отдаёт живую аренду другому. Без признака `createMessengers` не запускается.
+   */
+  readonly guarded: true;
   // Привязка
   saveLinkCode(code: { codeHash: string; userId: string; messenger: MessengerName; expiresAt: string }): Promise<void>;
   /** Принимает код один раз: не истёк, не использован и выдан для этого мессенджера. `null` — код не подошёл (и не сгорел). */
   consumeLinkCode(codeHash: string, messenger: MessengerName, now: string): Promise<{ userId: string } | null>;
   saveLink(link: MessengerLink): Promise<void>;
+  /**
+   * Привязка одной атомарной операцией: аккаунт свободен или уже за этим же пользователем — запись сохраняется (имя и
+   * время обновляются), `saved`; аккаунт за другим пользователем — запись не тронута, `taken`. Привязка по коду идёт
+   * только через этот метод, поэтому он обязателен: без него `createMessengers` не запускается.
+   */
+  saveLinkIfFree(link: MessengerLink): Promise<"saved" | "taken">;
   findLink(messenger: MessengerName, botId: string, externalUserId: string): Promise<MessengerLink | null>;
   listLinks(userId: string): Promise<MessengerLink[]>;
   removeLinks(userId: string, messenger: MessengerName): Promise<void>;
@@ -294,8 +306,12 @@ export interface MessengerStore {
    * до `leaseUntil`: копия упала, не закончив, — его забирает `takeAbandonedUpdates`. Без `work` — только метка «было».
    */
   claimUpdate(key: string, now: string, work?: UpdateWork): Promise<boolean>;
-  /** Обработка закончена: обновление больше не забирается, содержимое не хранится. */
-  finishUpdate(key: string, status: Exclude<UpdateStatus, "received">, now: string): Promise<void>;
+  /**
+   * Обработка закончена: обновление больше не забирается, содержимое не хранится. С `holder` — только если обновление ещё
+   * в работе за ним: копия, у которой его забрали после срока аренды, чужую работу не заканчивает и содержимое не стирает.
+   * Без `holder` — без условия (метка «было» без содержимого).
+   */
+  finishUpdate(key: string, status: Exclude<UpdateStatus, "received">, now: string, holder?: string): Promise<void>;
   /** Держатель жив: названные обновления в работе, которые ещё за ним, остаются за ним до `leaseUntil`. */
   renewUpdates(keys: readonly string[], holder: string, leaseUntil: string): Promise<void>;
   /** Обработка сорвалась: обновление, если ещё за `holder`, свободно с `retryAt` — его заберёт любая копия. */

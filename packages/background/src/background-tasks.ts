@@ -40,6 +40,9 @@ export function createBackgroundTasks(options: BackgroundTasksOptions): Backgrou
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const leaseMs = options.leaseMs ?? DEFAULT_LEASE_MS;
   checkOptions(tools, maxRunningPerUser, timeoutMs, leaseMs);
+  if (typeof (store as Partial<TaskStore>).admitWithinLimit !== "function") {
+    throw new Error("Фоновые задачи: у хранилища задач нет admitWithinLimit — без него предел maxRunningPerUser не держится между копиями сервера");
+  }
 
   const leaseOwner = randomUUID();
   let port: BackgroundPort | undefined;
@@ -113,7 +116,7 @@ export function createBackgroundTasks(options: BackgroundTasksOptions): Backgrou
       return (await store.listForChat(ownerId, chatId)).map(viewOf);
     },
     cancel: (ownerId, chatId, taskId) => service.runner().cancel(ownerId, chatId, taskId, "human"),
-    answerApproval: (ownerId, chatId, taskId, approvalId, decision) => service.runner().answerApproval(ownerId, chatId, taskId, approvalId, decision),
+    answerApproval: (ownerId, chatId, taskId, approvalId, decision) => service.runner().answerApproval(ownerId, chatId, taskId, approvalId, decision, maxRunningPerUser),
     chatDeleted: (ownerId, chatId) => service.runner().chatDeleted(ownerId, chatId),
     async recover() {
       requirePort();

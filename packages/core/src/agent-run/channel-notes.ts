@@ -38,10 +38,25 @@ const isNoticeMessage = (message: Pick<AgentChatMessage, "parts">): boolean => m
 export const isHumanMessage = (message: Pick<AgentChatMessage, "role" | "parts">): boolean =>
   message.role === "user" && !isNoticeMessage(message) && !isStateMessage(message);
 
-/** Канал хода по ветке: отметка последнего сообщения человека (служебные сообщения сервера не в счёт). */
+const hasChannelPart = (message: Pick<AgentChatMessage, "parts">): boolean => message.parts.some((part) => part.type === CHANNEL_PART_TYPE);
+
+/**
+ * Канал хода по ветке: отметка последнего сообщения человека или служебного сообщения сервера с явной отметкой (агент
+ * пишет первым в группе). Служебные сообщения без отметки не в счёт; сообщение человека без отметки — веб. Отметки пишет
+ * только сервер: клиент их не задаёт.
+ */
 export function turnChannelOf(branch: readonly Pick<AgentChatMessage, "role" | "parts">[]): { channel: AgentChannel; group?: GroupTurn } {
-  const human = branch.findLast(isHumanMessage);
-  return human ? channelOfMessage(human) : { channel: "web" };
+  const source = branch.findLast((message) => isHumanMessage(message) || (message.role === "user" && isNoticeMessage(message) && hasChannelPart(message)));
+  return source ? channelOfMessage(source) : { channel: "web" };
+}
+
+/**
+ * Отметка группы, которую наследует производное сообщение (правка сообщения группы, поправка к групповому ходу): оно
+ * пишется из веба, но остаётся в границах группы — иначе следующий ход сервера в чате группы шёл бы как личный. Вне
+ * группы — `undefined`: правка и поправка из веба идут как веб, как раньше.
+ */
+export function inheritedGroupPart(scope: { channel: AgentChannel; group?: GroupTurn }): AgentChatMessage["parts"][number] | undefined {
+  return scope.group ? channelPart(scope.channel, scope.group) : undefined;
 }
 
 /**

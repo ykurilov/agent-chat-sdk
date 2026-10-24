@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { parseFlow, type AgentFlow } from "../../src/format";
-import type { FlowStore, PendingFlowChange, PinFlowChatInput } from "../../src/store/flow-store";
+import type { FlowPendingDelivery, FlowStore, PendingFlowChange, PinFlowChatInput } from "../../src/store/flow-store";
 
 /** Две ручки на одну базу: так копии сервера видят одни чаты. У памяти — одно и то же хранилище. */
 export interface SharedFlowStores {
@@ -322,6 +322,26 @@ export function describeFlowStoreContract(open: () => Promise<SharedFlowStores>)
           expect(await first.renewLease({ chatId: "нет-такого", owner: "copy-a", now: at(113), leaseMs: 60_000 })).toBe(false);
         }));
 
+      it("срок с условием «аренда моя» пишет только хозяин аренды (аудит kimi-3)", () =>
+        withStores(async ({ first, second }) => {
+          const input = chatInput();
+          await first.pinChat(input);
+          await first.setDue(input.chatId, { at: at(0), exitId: "x4", branchHead: null });
+          await first.leaseDue(lease(at(1), "copy-a"));
+          // Аренда «a» кончилась, строку взяла «b»: поздний срок «a» не пишется.
+          expect((await second.leaseDue(lease(at(70), "copy-b"))).map((chat) => chat.chatId)).toEqual([input.chatId]);
+          await first.setDue(input.chatId, { at: at(500), exitId: "x5", branchHead: null }, { leaseOwner: "copy-a" });
+          expect(await second.getChat(input.chatId)).toMatchObject({ dueAt: at(0), dueExitId: "x4" });
+          expect(await second.renewLease({ chatId: input.chatId, owner: "copy-b", now: at(71), leaseMs: 60_000 })).toBe(true);
+          await second.setDue(input.chatId, { at: at(900), exitId: "x6", branchHead: null }, { leaseOwner: "copy-b" });
+          expect(await first.getChat(input.chatId)).toMatchObject({ dueAt: at(900), dueExitId: "x6" });
+          // Срок снял аренду: условный срок больше не пишется, обычный — как раньше.
+          await first.setDue(input.chatId, { at: at(950), exitId: "x7", branchHead: null }, { leaseOwner: "copy-b" });
+          expect(await first.getChat(input.chatId)).toMatchObject({ dueAt: at(900) });
+          await first.setDue(input.chatId, { at: at(950), exitId: "x7", branchHead: null });
+          expect(await first.getChat(input.chatId)).toMatchObject({ dueAt: at(950), dueExitId: "x7" });
+        }));
+
       it("срок «если нет повтора доставки» не затирает срок повтора", () =>
         withStores(async ({ first, second }) => {
           const input = chatInput();
@@ -604,6 +624,140 @@ export function describeFlowStoreContract(open: () => Promise<SharedFlowStores>)
           expect(await first.getChat(input.chatId)).toMatchObject({ windowClosed: false, dayClosedOn: null, delivery: null });
           await first.setDelivery("нет-такого", delivery);
           expect(await first.getChat("нет-такого")).toBeNull();
+        }));
+    });
+
+    describe("повтор доставки: условная замена и законченный разговор (0.81)", () => {
+      const lease = (now: string, owner: string) => ({ now, owner, leaseMs: 60_000, limit: 10 });
+      const record = (token: string, extra: Partial<FlowPendingDelivery> = {}): FlowPendingDelivery => ({ messageId: "msg-5", attempt: 2, retryAt: at(60, 7), reasons: ["silence:1"], token, ...extra });
+      const due = (seconds: number) => ({ at: at(seconds), exitId: "@delivery", branchHead: "msg-5" });
+
+      it("хранилище объявляет, что исполняет условия ограды", () =>
+        withStores(async ({ first, second }) => {
+          expect(first.guarded).toBe(true);
+          expect(second.guarded).toBe(true);
+        }));
+
+      it("замена только с той записью, что прочитана: messageId, attempt и token; срок пишется вместе с ней", () =>
+        withStores(async ({ first, second }) => {
+          const input = chatInput();
+          await first.pinChat(input);
+          const paused = record("t-1", { pausedAt: at(30, 3), resumedAt: at(40, 9) });
+          expect(await first.swapDelivery(input.chatId, { expected: null, next: paused, due: due(60) })).toBe(true);
+          expect(await second.getChat(input.chatId)).toMatchObject({ delivery: paused, dueAt: at(60), dueExitId: "@delivery", dueBranchHead: "msg-5" });
+          // Ждали «записи нет», другой token при том же attempt, другой attempt или ответ — не та запись.
+          expect(await second.swapDelivery(input.chatId, { expected: null, next: record("t-x") })).toBe(false);
+          expect(await second.swapDelivery(input.chatId, { expected: record("t-0"), next: record("t-x") })).toBe(false);
+          expect(await second.swapDelivery(input.chatId, { expected: record("t-1", { attempt: 3 }), next: record("t-x") })).toBe(false);
+          expect(await second.swapDelivery(input.chatId, { expected: record("t-1", { messageId: "msg-6" }), next: record("t-x") })).toBe(false);
+          expect(await first.getChat(input.chatId)).toMatchObject({ delivery: paused });
+          // Без поля `due` срок не трогается; `null` — снимает.
+          expect(await second.swapDelivery(input.chatId, { expected: record("t-1"), next: record("t-2", { attempt: 3 }) })).toBe(true);
+          expect(await first.getChat(input.chatId)).toMatchObject({ delivery: { token: "t-2", attempt: 3 }, dueAt: at(60) });
+          expect(await first.swapDelivery(input.chatId, { expected: record("t-2", { attempt: 3 }), next: null, due: null })).toBe(true);
+          expect(await second.getChat(input.chatId)).toMatchObject({ delivery: null, dueAt: null, dueExitId: null });
+          expect(await first.swapDelivery("нет-такого", { expected: null, next: record("t-1") })).toBe(false);
+          expect(await first.getChat("нет-такого")).toBeNull();
+        }));
+
+      it("запись до 0.81 без token совпадает с ожиданием без token", () =>
+        withStores(async ({ first }) => {
+          const input = chatInput();
+          await first.pinChat(input);
+          await first.setDelivery(input.chatId, { messageId: "msg-5", attempt: 2, retryAt: at(60), reasons: [] });
+          expect(await first.swapDelivery(input.chatId, { expected: record("t-1"), next: record("t-2") })).toBe(false);
+          expect(await first.swapDelivery(input.chatId, { expected: { messageId: "msg-5", attempt: 2, retryAt: at(0), reasons: [] }, next: record("t-2") })).toBe(true);
+        }));
+
+      it("две копии меняют одну запись одновременно: заменяет одна", () =>
+        withStores(async ({ first, second }) => {
+          const input = chatInput();
+          await first.pinChat(input);
+          await first.swapDelivery(input.chatId, { expected: null, next: record("t-1") });
+          const results = await Promise.all([
+            first.swapDelivery(input.chatId, { expected: record("t-1"), next: record("t-a") }),
+            second.swapDelivery(input.chatId, { expected: record("t-1"), next: record("t-b") }),
+          ]);
+          expect(results.filter(Boolean)).toHaveLength(1);
+          expect((await first.getChat(input.chatId))?.delivery?.token).toBe(results[0] ? "t-a" : "t-b");
+        }));
+
+      it("взять аренду: свободную, свою или переданную срабатыванием (`from`); живую чужую — нет, запись не меняется", () =>
+        withStores(async ({ first, second }) => {
+          const input = chatInput();
+          await first.pinChat(input);
+          await first.swapDelivery(input.chatId, { expected: null, next: record("t-1"), due: due(0) });
+          expect(await first.leaseDue(lease(at(1), "timer-a"))).toHaveLength(1);
+          const claim = (owner: string, seconds: number, from?: string) => ({ owner, now: at(seconds), leaseMs: 60_000, ...(from && { from }) });
+          // Живая аренда срабатывания «a»: чужая отправка её не берёт.
+          expect(await second.swapDelivery(input.chatId, { expected: record("t-1"), next: record("t-2"), claim: claim("send-b", 10) })).toBe(false);
+          expect(await first.getChat(input.chatId)).toMatchObject({ delivery: { token: "t-1" } });
+          // Срабатывание «a» передаёт аренду своей отправке: держит отправка, а не «a».
+          expect(await first.swapDelivery(input.chatId, { expected: record("t-1"), next: record("t-2"), due: due(30), claim: claim("send-a", 10, "timer-a") })).toBe(true);
+          expect(await first.renewLease({ chatId: input.chatId, owner: "timer-a", now: at(11), leaseMs: 60_000 })).toBe(false);
+          expect(await second.renewLease({ chatId: input.chatId, owner: "send-a", now: at(11), leaseMs: 60_000 })).toBe(true);
+          // Срок пришёл, но аренда отправки живая: таймер чат не берёт.
+          expect(await second.leaseDue(lease(at(40), "timer-b"))).toEqual([]);
+          // Своя аренда берётся снова.
+          expect(await first.swapDelivery(input.chatId, { expected: record("t-2"), next: record("t-3"), claim: claim("send-a", 20) })).toBe(true);
+          // Отправка упала: после срока аренды запись берёт другая копия.
+          expect(await second.swapDelivery(input.chatId, { expected: record("t-3"), next: record("t-4"), claim: claim("send-b", 81, "timer-b") })).toBe(true);
+          expect(await second.renewLease({ chatId: input.chatId, owner: "send-b", now: at(82), leaseMs: 60_000 })).toBe(true);
+        }));
+
+      it("`endedAt`: пишет, только пока конец разговора тот же; `null` — не закончен", () =>
+        withStores(async ({ first, second }) => {
+          const input = chatInput();
+          await first.pinChat(input);
+          expect(await first.swapDelivery(input.chatId, { expected: null, next: record("t-1"), endedAt: null })).toBe(true);
+          await second.endChat(input.chatId, { reason: "switched", at: at(30) });
+          expect(await first.swapDelivery(input.chatId, { expected: record("t-1"), next: record("t-2"), endedAt: null })).toBe(false);
+          expect(await first.getChat(input.chatId)).toMatchObject({ delivery: { token: "t-1" } });
+          expect(await second.swapDelivery(input.chatId, { expected: record("t-1"), next: record("t-2"), endedAt: at(30) })).toBe(true);
+          expect(await first.swapDelivery(input.chatId, { expected: record("t-2"), next: null, endedAt: at(31) })).toBe(false);
+          expect(await first.swapDelivery(input.chatId, { expected: record("t-2"), next: null })).toBe(true);
+        }));
+
+      it("`freeAt`: при живой аренде запись не меняется; без аренды — меняется, срок ставится, аренда не снимается", () =>
+        withStores(async ({ first, second }) => {
+          const input = chatInput();
+          await first.pinChat(input);
+          await first.swapDelivery(input.chatId, { expected: null, next: record("t-1"), claim: { owner: "send-a", now: at(0), leaseMs: 60_000 } });
+          expect(await second.swapDelivery(input.chatId, { expected: record("t-1"), next: record("t-1"), due: due(60), freeAt: at(30) })).toBe(false);
+          expect(await first.getChat(input.chatId)).toMatchObject({ dueAt: null });
+          // Своё условие и срок не снимают аренду идущей отправки.
+          expect(await first.swapDelivery(input.chatId, { expected: record("t-1"), next: record("t-2"), due: due(60) })).toBe(true);
+          expect(await first.renewLease({ chatId: input.chatId, owner: "send-a", now: at(10), leaseMs: 60_000 })).toBe(true);
+          expect(await second.swapDelivery(input.chatId, { expected: record("t-2"), next: record("t-2"), due: due(120), freeAt: at(71) })).toBe(true);
+          expect(await first.getChat(input.chatId)).toMatchObject({ dueAt: at(120) });
+        }));
+
+      it("законченный разговор: срок повтора доставки таймер берёт, другие сроки — нет", () =>
+        withStores(async ({ first, second }) => {
+          const waiting = chatInput();
+          const other = chatInput();
+          for (const input of [waiting, other]) {
+            await first.pinChat(input);
+            await first.endChat(input.chatId, { reason: "deadline", at: at(1) });
+          }
+          await first.swapDelivery(waiting.chatId, { expected: null, next: record("t-1"), due: due(10) });
+          await first.setDue(other.chatId, { at: at(10), exitId: "x4", branchHead: null });
+          expect((await second.leaseDue(lease(at(60), "timer-a"))).map((chat) => chat.chatId)).toEqual([waiting.chatId]);
+        }));
+
+      it("конец при ждущей доставке: срок и аренда отправки остаются; без доставки — снимаются", () =>
+        withStores(async ({ first, second }) => {
+          const input = chatInput();
+          await first.pinChat(input);
+          await first.swapDelivery(input.chatId, { expected: null, next: record("t-1"), due: due(60), claim: { owner: "send-a", now: at(0), leaseMs: 60_000 } });
+          expect(await second.endChat(input.chatId, { reason: "deadline", at: at(5) })).toMatchObject({ endReason: "deadline", dueAt: at(60), dueExitId: "@delivery" });
+          expect(await first.renewLease({ chatId: input.chatId, owner: "send-a", now: at(10), leaseMs: 60_000 })).toBe(true);
+          const plain = chatInput();
+          await first.pinChat(plain);
+          await first.setDue(plain.chatId, { at: at(0), exitId: "x4", branchHead: null });
+          await first.leaseDue(lease(at(1), "timer-a"));
+          expect(await second.endChat(plain.chatId, { reason: "final", at: at(5) })).toMatchObject({ dueAt: null });
+          expect(await first.renewLease({ chatId: plain.chatId, owner: "timer-a", now: at(10), leaseMs: 60_000 })).toBe(false);
         }));
     });
 

@@ -67,6 +67,33 @@ describe.each(allChannels)("T074 группы на поддельной груп
     expect(await chat.service.listChats("anna")).toEqual([expect.objectContaining({ origin: chat.channel.messenger })]);
   });
 
+  it("агент пишет первым в группе (agentStarts): приветствие — групповой ход, без памяти и личных блоков плательщика (аудит codex-1)", async () => {
+    let real: RealChat | undefined;
+    real = chat = await startRealChat({
+      channel: await open(),
+      server: { agent: { instructions: "Ты помощник.", tools, contextBlocks: () => [{ key: "profile", text: "Профиль Анны: личное", private: true }] } },
+      messengers: {
+        groups: { allowedTools: ["search"] },
+        chatForConversation: async (request) => ({
+          chatId: (await (real as RealChat).service.createChat(request.userId, { origin: (real as RealChat).channel.messenger })).id,
+          agentStarts: "Поздоровайся с группой.",
+        }),
+      },
+    });
+    await real.link(anna, "anna");
+    await inGroup(real, anna, "/connect");
+    await inGroup(real, boris, "@test_bot привет", true);
+
+    expect(real.model.calls).toHaveLength(2);
+    for (const call of real.model.calls) {
+      const prompt = JSON.stringify(call.prompt);
+      expect(prompt).not.toContain(memoryOf("anna"));
+      expect(prompt).not.toContain("Профиль Анны");
+      expect((call.tools ?? []).map((tool) => tool.name)).toEqual(["search"]);
+    }
+    expect(groupTexts(real).slice(-2)).toEqual(["Ответ 1", "Ответ 2"]);
+  });
+
   it("подтверждение в группе нажимает только плательщик", async () => {
     chat = await groupChat(open, { allowedTools: ["remove"] });
     await inGroup(chat, anna, "/connect");

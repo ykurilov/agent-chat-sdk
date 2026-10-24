@@ -45,7 +45,10 @@ export function createChatMigrator(deps: ChatMigratorDeps): ChatMigrator {
     }
     const found = await store.getVersion(flowId, versionId);
     if (!found) throw new Error(`Версии ${versionId} сценария «${flowId}» нет в хранилище: передайте её сценарий в поле flow.`);
-    return { flow: found.flow };
+    // Сохранённая версия проходит те же проверки, что и новая: не сходится с подтверждениями приложения — чаты не трогаем.
+    const flow = deps.checkedFlow({ flowId, versionId, flow: found.flow });
+    if (!flow) throw new Error(`Сохранённая версия ${flowId}@${versionId} не прошла проверку: чаты не переведены.`);
+    return { flow };
   }
 
   /** Чаты сценария после отбора: закончившиеся и тестовые — только по просьбе, потом свой отбор приложения. */

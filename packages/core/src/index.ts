@@ -57,7 +57,7 @@ export type {
 export { createChatEvents } from "./chat-events/chat-events";
 export type { ChatEvent, ChatEvents, ChatTurnTrigger } from "./chat-events/chat-events";
 export { noticePartForModel, noticeText } from "./notices/notices-for-model";
-export { CHANNEL_PART_TYPE, turnOriginOf } from "./agent-run/channel-notes";
+export { CHANNEL_PART_TYPE, isHumanMessage, turnOriginOf } from "./agent-run/channel-notes";
 export type { BackgroundPort, BackgroundTasks, TaskStatus, TaskView } from "./background/background-tasks";
 
 export { deriveChatTitle, InvalidChatTitleError, normalizeChatTitle } from "./conversation/chat-title";
