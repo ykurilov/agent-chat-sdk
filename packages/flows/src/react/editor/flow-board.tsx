@@ -329,6 +329,9 @@ function Board({ editor, space }: { editor: FlowEditorController; space: BoardSp
       deleteKeyCode={null}
       selectionKeyCode={null}
       multiSelectionKeyCode={null}
+      panOnScroll
+      zoomOnScroll={false}
+      zoomOnPinch
       fitView
       fitViewOptions={{ padding: 0.15 }}
       minZoom={0.2}

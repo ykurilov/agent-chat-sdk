@@ -1,5 +1,11 @@
 # @ykurilov/agent-chat-reply-check
 
+## 0.79.1
+
+### Patch Changes
+
+- @ykurilov/agent-chat-core@0.79.1
+
 ## 0.79.0
 
 ### Patch Changes
