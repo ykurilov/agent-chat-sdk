@@ -1,4 +1,5 @@
 import type { ImageGenerationRequest, ImageProviderConnection, ImageProviderDescription } from "./image-catalog";
+import { providerFailureKind } from "./image-failure";
 import { ImageGenerationError } from "./image-generation-error";
 import { hideSecrets } from "./hide-secrets";
 
@@ -80,21 +81,24 @@ export const runwareProvider: ImageProviderDescription = {
     } catch (error) {
       if (request.abortSignal?.aborted) throw request.abortSignal.reason ?? error;
       if (timeout.signal.aborted) {
-        throw new ImageGenerationError(`Провайдер не ответил за ${Math.round(request.timeoutMs / 1000)} с`, { refusedBeforeWork: false });
+        throw new ImageGenerationError(`Провайдер не ответил за ${Math.round(request.timeoutMs / 1000)} с`, { refusedBeforeWork: false, kind: "transient" });
       }
-      throw new ImageGenerationError("Провайдер недоступен", { refusedBeforeWork: false });
+      throw new ImageGenerationError("Провайдер недоступен", { refusedBeforeWork: false, kind: "transient" });
     } finally {
       clearTimeout(timer);
     }
 
     const reason = errorsText(answer?.errors, connection);
+    const firstCode = answer?.errors?.find((error) => typeof error.code === "string")?.code;
+    const providerCode = typeof firstCode === "string" ? hideSecrets(firstCode, connection).slice(0, 100) : undefined;
+    const classification = { kind: providerFailureKind(response.status, providerCode, (answer?.errors ?? []).map((error) => typeof error.message === "string" ? error.message : "").join("; ")), ...(providerCode && { providerCode }) };
     if (response.status >= 400 && response.status < 500 && response.status !== 408) {
-      throw new ImageGenerationError(reason ?? `Провайдер отказал: ${response.status}`, { refusedBeforeWork: true });
+      throw new ImageGenerationError(reason ?? `Провайдер отказал: ${response.status}`, { refusedBeforeWork: true, ...classification });
     }
-    if (!response.ok) throw new ImageGenerationError(`Провайдер ответил ошибкой ${response.status}${reason ? `: ${reason}` : ""}`, { refusedBeforeWork: false });
+    if (!response.ok) throw new ImageGenerationError(`Провайдер ответил ошибкой ${response.status}${reason ? `: ${reason}` : ""}`, { refusedBeforeWork: false, ...classification });
     const image = answer?.data?.[0];
     if (!image || typeof image.imageURL !== "string") {
-      throw new ImageGenerationError(reason ?? "Провайдер не вернул картинку", { refusedBeforeWork: false });
+      throw new ImageGenerationError(reason ?? "Провайдер не вернул картинку", { refusedBeforeWork: false, ...classification });
     }
     const cost = typeof image.cost === "number" && Number.isFinite(image.cost) && image.cost >= 0 ? image.cost : undefined;
     return [{ url: image.imageURL, ...(cost !== undefined && { costUsd: cost }) }];

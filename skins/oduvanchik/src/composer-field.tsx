@@ -29,7 +29,9 @@ export function ComposerField(props: Props) {
   }, [addMenu]);
   const attachments = props.attachments;
   const hasContent = props.value.trim().length > 0 || (attachments?.items.length ?? 0) > 0 || (options.contextAttachments?.length ?? 0) > 0;
-  const canSend = !disabled && !props.busy && props.canSubmit && hasContent;
+  const steering = props.busy && props.canSteer !== undefined;
+  const stoppingOnly = props.busy && !steering;
+  const canSend = !disabled && (props.busy ? props.canSteer === true : props.canSubmit) && hasContent;
   function resizeField() {
     const element = field.current;
     if (!element) return;
@@ -42,8 +44,10 @@ export function ComposerField(props: Props) {
   useLayoutEffect(resizeField, [props.value, variant]);
   const submit = () => { if (canSend) props.onSubmit(); };
   const pickFile = (accept: string) => { if (controlsDisabled) return; if (files.current) files.current.accept = accept; files.current?.click(); setAddMenu(false); };
-  const send = <button type="button" className={`oduvanchik-field-send ${props.busy ? "oduvanchik-field-stop" : ""}`} aria-label={props.busy ? labels.stop : labels.send}
-    disabled={disabled || (!props.busy && !canSend)} onClick={props.busy ? props.onStop : submit}>{props.busy ? <SquareIcon size={15} weight="fill" aria-hidden /> : <ArrowUpIcon size={19} aria-hidden />}</button>;
+  const stop = <button type="button" className="oduvanchik-field-send oduvanchik-field-stop" aria-label={labels.stop}
+    disabled={disabled} onClick={props.onStop}><SquareIcon size={15} weight="fill" aria-hidden /></button>;
+  const send = <>{steering && stop}{stoppingOnly ? stop : <button type="button" className="oduvanchik-field-send" aria-label={labels.send}
+    disabled={!canSend} onClick={submit}><ArrowUpIcon size={19} aria-hidden /></button>}</>;
   return <div data-composer-variant={variant} className={`oduvanchik-field oduvanchik-field-${variant}${variant === "standard" && !attachments && !options.projects?.length && !options.context && !props.actions && !props.dialogButton ? " oduvanchik-field-inline" : ""}`} onKeyDown={(event) => { if (event.key === "Escape") setAddMenu(false); }}
     onDragOver={(event) => { if (!compact && attachments && !controlsDisabled) event.preventDefault(); }}
     onDrop={(event) => { if (compact || !attachments || controlsDisabled) return; event.preventDefault(); if (event.dataTransfer.files.length) attachments.onAddFiles(Array.from(event.dataTransfer.files)); }}>

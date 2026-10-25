@@ -88,6 +88,9 @@ export interface CreateImageGenerationOptions {
    * картинка приходит позже: во вложения (и `onLateImage`) или в `deliver`. Фоновые задачи лежат в `jobStore`.
    */
   mode?: "wait" | "background";
+  /** Фоновый режим: долговечное уведомление конечного сбоя, как у createImageQueue. */
+  onFailed?: import("./image-queue/create-image-queue").CreateImageQueueOptions["onFailed"];
+  failureRetryMs?: number;
   /** Фоновый режим: где лежат задачи; по умолчанию в памяти. `sqliteImageJobStore` или `postgresImageJobStore` — переживают перезапуск. */
   jobStore?: ImageJobStore;
   /** Фоновый режим: шаг проверки задачи у провайдера с очередью; по умолчанию 3000 мс. */
@@ -214,7 +217,7 @@ function checkNumbers(options: CreateImageGenerationOptions) {
   const limit = options.maxImagesPerTurn;
   if (limit !== undefined && !(Number.isInteger(limit) && limit >= 1)) throw new Error("Картинки: maxImagesPerTurn — целое число от 1");
   if (options.mode !== "background") {
-    const backgroundOnly = (["jobStore", "pollIntervalMs", "attempts", "onQueued"] as const).filter((name) => options[name] !== undefined);
+    const backgroundOnly = (["jobStore", "pollIntervalMs", "attempts", "onQueued", "onFailed", "failureRetryMs"] as const).filter((name) => options[name] !== undefined);
     if (backgroundOnly.length > 0) throw new Error(`Картинки: ${backgroundOnly.join(", ")} — только для mode: "background"`);
   }
 }
@@ -484,6 +487,8 @@ export function createImageGeneration(options: CreateImageGenerationOptions): Im
         ...(options.purposes && { purposes: options.purposes }),
         ...(options.fetch && { fetch: options.fetch }),
         deliver: receiveQueued,
+        ...(options.onFailed !== undefined && { onFailed: options.onFailed }),
+        ...(options.failureRetryMs !== undefined && { failureRetryMs: options.failureRetryMs }),
         ...(options.jobStore && { store: options.jobStore }),
         ...(options.spending && { spending: options.spending }),
         ...(options.pollIntervalMs !== undefined && { pollIntervalMs: options.pollIntervalMs }),

@@ -8,8 +8,10 @@ import { send, signIn } from "./support/chat";
 
 const pending = (page: import("@playwright/test").Page) => page.getByRole("log").locator("[data-steering-pending]");
 
+for (const skin of ["tandem", "default"] as const) {
+test.describe(`steering: ${skin}`, () => {
 test("поправка во время инструмента: пометка, затем ответ с её учётом; вызов инструмента остаётся", async ({ page }) => {
-  await signIn(page);
+  await signIn(page, "Анна", "/", skin);
   await send(page, "Запусти долгую проверку кнопки");
   const log = page.getByRole("log");
   await expect(log.getByRole("button", { name: /slow_check/ })).toBeVisible();
@@ -41,7 +43,7 @@ test("поправка во время инструмента: пометка, �
 });
 
 test("перезагрузка, пока поправка ждёт: она видна с пометкой, затем агент её берёт", async ({ page }) => {
-  await signIn(page);
+  await signIn(page, "Анна", "/", skin);
   await send(page, "Запусти долгую проверку кнопки");
   await expect(page.getByRole("log").getByRole("button", { name: /slow_check/ })).toBeVisible();
   await send(page, "Поправка: и крупнее");
@@ -53,3 +55,6 @@ test("перезагрузка, пока поправка ждёт: она ви�
   await expect(pending(page)).toHaveCount(0);
   await expect(log.getByText("Поправка: и крупнее", { exact: true })).toHaveCount(1);
 });
+
+});
+}

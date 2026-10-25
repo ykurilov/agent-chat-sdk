@@ -265,3 +265,6 @@ createImageGeneration({ attachments, env: process.env, catalog, model: "my-model
 Пример — `apps/demo` (в тестах Runware подменён; живьём — только при `RUNWARE_API_KEY`). Живая проверка: `IMAGES_LIVE_BATCH=1 pnpm test:live images`
 включает пачку из трёх картинок (стоит центы), без переменной идёт одна картинка, Sunburst с прозрачным фоном и по одной картинке
 каждого назначения KIE (нужен `KIE_API_KEY`, вместе около $0.06).
+
+
+Конечные сбои фоновой очереди: [сохраняемые события, классификация и восстановление](image-failure-events.md).

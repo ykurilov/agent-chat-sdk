@@ -43,15 +43,30 @@ describe("три вида поля Одуванчик", () => {
     fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter" });
     expect(props.onSubmit).toHaveBeenCalledOnce();
   });
-  it("во время ответа - Стоп; Enter не отправляет, фишки заблокированы даже при canSteer", () => {
+  it("без поддержки поправок во время ответа - Стоп; Enter не отправляет, фишки заблокированы", () => {
     const props = base();
-    render(<OduvanchikComposer {...props} busy canSteer options={{ variant: "extended" }} modelChoice={choice()} />);
+    render(<OduvanchikComposer {...props} busy options={{ variant: "extended" }} modelChoice={choice()} />);
     expect(screen.queryByRole("button", { name: "Отправить" })).toBeNull();
     fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter" });
     expect(props.onSubmit).not.toHaveBeenCalled();
     expect((screen.getByRole("button", { name: /Модель/ }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Остановить" }));
     expect(props.onStop).toHaveBeenCalledOnce();
+  });
+  it.each(["compact", "standard", "extended"] as const)("%s: поправка отправляется рядом со Стопом, настройки остаются заблокированы", (variant) => {
+    const props = base();
+    const { rerender } = render(<OduvanchikComposer {...props} busy canSteer canSubmit={false} options={{ variant }} modelChoice={choice()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Отправить" }));
+    fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter" });
+    expect(props.onSubmit).toHaveBeenCalledTimes(2);
+    fireEvent.click(screen.getByRole("button", { name: "Остановить" }));
+    expect(props.onStop).toHaveBeenCalledOnce();
+    if (variant === "extended") expect((screen.getByRole("button", { name: /Модель/ }) as HTMLButtonElement).disabled).toBe(true);
+    rerender(<OduvanchikComposer {...props} busy canSteer={false} options={{ variant }} />);
+    expect((screen.getByRole("button", { name: "Отправить" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter" });
+    expect(props.onSubmit).toHaveBeenCalledTimes(2);
+    expect((screen.getByRole("button", { name: "Остановить" }) as HTMLButtonElement).disabled).toBe(false);
   });
   it("меню ищет модели, выбор сохраняет совместимого провайдера, через меняет провайдера", () => {
     const change = vi.fn();

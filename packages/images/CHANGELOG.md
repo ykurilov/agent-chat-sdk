@@ -1,5 +1,33 @@
 # @ykurilov/agent-chat-images
 
+## 0.82.1
+
+### Patch Changes
+
+- @ykurilov/agent-chat-attachments@0.82.1
+  - @ykurilov/agent-chat-core@0.82.1
+  - @ykurilov/agent-chat-react@0.82.1
+  - @ykurilov/agent-chat-web-tools@0.82.1
+
+## 0.82.0
+
+### Minor Changes
+
+- 92ee0a2: Очередь картинок сообщает о конечном сбое через необязательный `onFailed(event, context)`. Событие сохраняется до callback и повторяется с тем же id после ошибки или перезапуска без новой генерации. Приёмник подтверждает событие успешным завершением; приложение записывает его идемпотентно по event.id и ограничивает платное восстановление отдельным сохранённым бюджетом.
+  
+  `ImageJob.failure` в get/list различает transient/content/limits/configuration/delivery/unknown. Повтор того же запроса с отказом содержания через queue.retry отклоняется без обращения к провайдеру; приложение скрывает кнопку. Старые явные safety-отказы распознаются по reason без массового создания событий. Окно позднего результата не является конечным сбоем.
+  
+  Как обновить приложение: новые параметры необязательны. Для встроенных SQLite/PostgreSQL хранилищ SQL-миграция не требуется. Свой ImageJobStore должен сохранять новые JSON-поля failure/failureNotification и не удалять active-задачи с неподтверждённым событием. Полный договор: docs/image-failure-events.md.
+  
+  Для worker событий добавлены необязательные `expectedJobId` и `expectedRun` в `queue.retry`. При смене выбранной задачи/запуска - null без обращения к провайдеру. Обычный ручной повтор не меняется; это CAS job/run, не транзакция с файлами приложения.
+
+### Patch Changes
+
+- @ykurilov/agent-chat-attachments@0.82.0
+  - @ykurilov/agent-chat-core@0.82.0
+  - @ykurilov/agent-chat-react@0.82.0
+  - @ykurilov/agent-chat-web-tools@0.82.0
+
 ## 0.81.0
 
 ### Minor Changes

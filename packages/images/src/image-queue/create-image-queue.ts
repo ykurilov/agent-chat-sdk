@@ -4,12 +4,14 @@ import { downloadGeneratedImage } from "../download-image";
 import type { DownloadedImage } from "../download-image";
 import { aspectRatios } from "../image-catalog";
 import type { AspectRatio, ImageCatalog, ImageGenerationRequest, ImageGenerationResult, ImageQuality, ImageSize, ImageTaskState } from "../image-catalog";
+import { canRetryImageFailure, providerFailureKind } from "../image-failure";
+import type { ImageFailure } from "../image-failure";
 import { ImageGenerationError } from "../image-generation-error";
 import { resolveImageSetups } from "../image-setup";
 import type { ImagePurpose, ImageSetup, ImageStep } from "../image-setup";
 import { postprocessImage } from "../postprocess-image";
 import type { ImageOutputOptions } from "../postprocess-image";
-import { ImageJobKeyTakenError, isOpenImageJob, memoryImageJobStore } from "./image-job-store";
+import { hasPendingImageFailure, ImageJobKeyTakenError, isOpenImageJob, memoryImageJobStore } from "./image-job-store";
 import type { ImageJobCharge, ImageJobFilter, ImageJobPatch, ImageJobRecord, ImageJobStatus, ImageJobStep, ImageJobStore, ImageJobTask } from "./image-job-store";
 import { createTurnCounter } from "./turn-counter";
 
@@ -60,6 +62,8 @@ export interface ImageJob {
   status: ImageJobStatus;
   /** Почему не получилась. */
   reason?: string;
+  /** Есть только у конечного сбоя; failed с lateUntil ещё не конечный. */
+  failure?: ImageFailure;
   /** Ответ приёмника. */
   result?: unknown;
   attempt: number;
@@ -68,6 +72,14 @@ export interface ImageJob {
   createdAt: string;
   updatedAt: string;
   finishedAt?: string;
+}
+
+/** Стабильное событие конечного сбоя одного запуска задачи. */
+export interface ImageFailureEvent {
+  id: string;
+  run: number;
+  job: ImageJob;
+  failure: ImageFailure;
 }
 
 /**
@@ -130,6 +142,15 @@ export interface CreateImageQueueOptions {
    * вытеснить: запись делать условной, по `context.isCurrent()`.
    */
   deliver(image: GeneratedImage, job: ImageJob, context: ImageDeliveryContext): unknown;
+  /**
+   * Конечный сбой уже сохранён. Записать durable-действие приложения по event.id и завершиться; генерацию здесь не
+   * запускать. Успех подтверждает событие, ошибка повторяет только callback, без заказов провайдеру. Доставка хотя бы
+   * один раз: после crash callback может повториться, используйте event.id как unique key. Проверяйте context.isCurrent
+   * перед записью и соблюдайте signal. Восстановления/платные повторы ограничивает бюджет приложения.
+   */
+  onFailed?: (event: ImageFailureEvent, context: ImageDeliveryContext) => void | Promise<void>;
+  /** Пауза повторной доставки события после ошибки callback/crash, по умолчанию 30 с. */
+  failureRetryMs?: number;
   /** Где лежат задачи; по умолчанию в памяти (до перезапуска). `sqliteImageJobStore` или `postgresImageJobStore` — переживают перезапуск. */
   store?: ImageJobStore;
   /** Расход в лимиты: запись на каждую оплаченную задачу провайдера и проверка лимита до заказа. */
@@ -185,8 +206,10 @@ export interface ImageQueue {
    * «Повторить» последнюю задачу места. Не получилась — новый запуск: идущая у провайдера задача проверяется, а не
    * заказывается заново; оплаченная, но не доставленная картинка скачивается с того же адреса. Задача идёт или уже
    * готова — она же, без нового заказа. Нет задачи — `null`.
+   * expectedJobId + expectedRun вместе: повторить только выбранный job/run; сменился — `null`.
+   * Это CAS записи запуска, не транзакция с файлами приложения и не запрет будущих заказов другого job.id.
    */
-  retry(input: { ownerId: string; key: string }): Promise<ImageJob | ImageOrderRefusal | null>;
+  retry(input: { ownerId: string; key: string; expectedJobId?: string; expectedRun?: number }): Promise<ImageJob | ImageOrderRefusal | null>;
   get(id: string): Promise<ImageJob | null>;
   /** По порядку создания. */
   list(filter: ImageJobFilter): Promise<ImageJob[]>;
@@ -199,10 +222,9 @@ export interface ImageQueue {
 }
 
 /** Запуск задачи этой копией сервера: опрос, деньги, доставка. */
-interface Runtime {
+interface JobRuntime {
   ownerId: string;
   chatId: string;
-  setup: ImageSetup;
   /** Бронь до записи задачи: цена того, что предстоит заказать. */
   reservedUsd: number;
   record?: ImageJobRecord;
@@ -220,7 +242,9 @@ interface Runtime {
   reorderOnDeliveryFailure: boolean;
 }
 
-type StepOutcome = { kind: "ready" } | { kind: "failed"; reason: string } | { kind: "refused"; reason: string } | { kind: "timeout" };
+interface Runtime extends JobRuntime { setup: ImageSetup; }
+
+type StepOutcome = { kind: "ready" } | { kind: "failed"; reason: string; failure?: ImageFailure } | { kind: "refused"; reason: string; failure?: ImageFailure } | { kind: "timeout" };
 
 /** Запуск закончен: вытеснен, «Повторить», чужая аренда или `stop()`. Дальше он ничего не заказывает и не пишет. */
 class RunEnded extends Error {
@@ -272,8 +296,15 @@ function markRecorded(record: ImageJobRecord, usageId: string): ImageJobPatch | 
   }));
   if (!found) return null;
   if (isOpen(record)) return { steps };
-  const left = hasUnrecorded(steps);
+  const left = hasUnrecorded(steps) || hasPendingImageFailure(record);
   return { steps, active: left, ...(!left && { leaseOwner: undefined, leaseUntil: undefined }) };
+}
+
+/** Старым задачам не создаём события; известный safety-marker остаётся виден в API. */
+function failureOf(record: ImageJobRecord): ImageFailure | undefined {
+  if (record.failure) return record.failure;
+  if (record.status !== "failed" || record.lateUntil !== undefined || !record.reason) return undefined;
+  return { kind: providerFailureKind(undefined, undefined, record.reason), reason: record.reason };
 }
 
 function view(record: ImageJobRecord): ImageJob {
@@ -290,6 +321,7 @@ function view(record: ImageJobRecord): ImageJob {
     ...(record.data !== undefined && { data: record.data }),
     status: record.status,
     ...(record.reason !== undefined && { reason: record.reason }),
+    ...(failureOf(record) !== undefined && { failure: structuredClone(failureOf(record)!) }),
     ...(record.result !== undefined && { result: record.result }),
     attempt: record.attempt,
     ...(record.lateUntil !== undefined && { lateUntil: record.lateUntil }),
@@ -302,7 +334,7 @@ function view(record: ImageJobRecord): ImageJob {
 const refused = (reason: string): ImageOrderRefusal => ({ status: "refused", reason });
 
 function checkOptions(options: CreateImageQueueOptions) {
-  const positive = ["pollIntervalMs", "attemptTimeoutMs", "latePollIntervalMs", "callTimeoutMs", "acceptWaitMs", "leaseMs", "forgetFinishedAfterMs", "maxImageBytes"] as const;
+  const positive = ["failureRetryMs", "pollIntervalMs", "attemptTimeoutMs", "latePollIntervalMs", "callTimeoutMs", "acceptWaitMs", "leaseMs", "forgetFinishedAfterMs", "maxImageBytes"] as const;
   for (const name of positive) {
     const value = options[name];
     if (value !== undefined && !(Number.isFinite(value) && value > 0)) throw new Error(`Картинки: ${name} — нужно число больше нуля`);
@@ -313,6 +345,7 @@ function checkOptions(options: CreateImageQueueOptions) {
   }
   const window = options.lateResultWindowMs;
   if (window !== undefined && !(Number.isFinite(window) && window >= 0)) throw new Error("Картинки: lateResultWindowMs — число не меньше нуля");
+  if (options.onFailed !== undefined && typeof options.onFailed !== "function") throw new TypeError("Картинки: onFailed — нужна функция");
   if (typeof options.deliver !== "function") throw new Error("Картинки: deliver — нужна функция-приёмник");
 }
 
@@ -335,6 +368,7 @@ export function createImageQueue(options: CreateImageQueueOptions): ImageQueue {
   const hide = setups.hideSecrets;
   const logError = (message: string) => options.logError?.(hide(message));
 
+  const failureRetryMs = options.failureRetryMs ?? 30_000;
   const pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
   const attemptTimeoutMs = options.attemptTimeoutMs ?? DEFAULT_ATTEMPT_TIMEOUT_MS;
   const attempts = options.attempts ?? 1;
@@ -351,8 +385,8 @@ export function createImageQueue(options: CreateImageQueueOptions): ImageQueue {
   /** Эта копия сервера: так помечена её аренда. */
   const me = crypto.randomUUID();
   /** Брони и запуски этой копии по порядку появления: проверка лимита видит тех, кто раньше. */
-  const runtimes = new Set<Runtime>();
-  const byJob = new Map<string, Runtime>();
+  const runtimes = new Set<JobRuntime>();
+  const byJob = new Map<string, JobRuntime>();
   const keyLocks = new Map<string, Promise<unknown>>();
   const retries = new Map<string, Promise<ImageJob | ImageOrderRefusal | null>>();
   const turns = createTurnCounter(options.maxImagesPerTurn);
@@ -378,7 +412,7 @@ export function createImageQueue(options: CreateImageQueueOptions): ImageQueue {
     });
   }
 
-  const throwIfEnded = (rt: Runtime) => {
+  const throwIfEnded = (rt: JobRuntime) => {
     if (rt.controller.signal.aborted) throw RUN_ENDED;
   };
 
@@ -418,7 +452,7 @@ export function createImageQueue(options: CreateImageQueueOptions): ImageQueue {
   }
 
   /** Запись запуска: по одной, только пока запуск свой (тот же номер и наша аренда). Чужой — запуск кончается. */
-  function write(rt: Runtime, patchOf: (record: ImageJobRecord) => ImageJobPatch | null): Promise<ImageJobRecord> {
+  function write(rt: JobRuntime, patchOf: (record: ImageJobRecord) => ImageJobPatch | null): Promise<ImageJobRecord> {
     const run = async () => {
       throwIfEnded(rt);
       const record = rt.record!;
@@ -488,7 +522,7 @@ export function createImageQueue(options: CreateImageQueueOptions): ImageQueue {
 
   const unrecorded = (record: ImageJobRecord) => record.steps.flatMap((step) => step.charges.filter((charge) => !charge.recorded));
 
-  async function recordCharges(rt: Runtime) {
+  async function recordCharges(rt: JobRuntime) {
     for (const charge of unrecorded(rt.record!)) {
       if (await insertUsage(rt.record!, charge)) await write(rt, (record) => markRecorded(record, charge.usageId));
     }
@@ -502,7 +536,7 @@ export function createImageQueue(options: CreateImageQueueOptions): ImageQueue {
       current = await updateJob(current!, (fresh) => markRecorded(fresh, charge.usageId), () => true);
       if (!current) return;
     }
-    await updateJob(current!, (fresh) => (isOpen(fresh) || (!fresh.active && fresh.leaseOwner === undefined) ? null : { active: hasUnrecorded(fresh.steps), leaseOwner: undefined, leaseUntil: undefined }), () => true);
+    await updateJob(current!, (fresh) => (isOpen(fresh) || (!fresh.active && fresh.leaseOwner === undefined) ? null : { active: hasUnrecorded(fresh.steps) || hasPendingImageFailure(fresh), leaseOwner: undefined, leaseUntil: undefined }), () => true);
   }
 
   /** Оплата ушедшей задачи шага: ценой провайдера, а без неё — ценой модели. */
@@ -536,31 +570,36 @@ export function createImageQueue(options: CreateImageQueueOptions): ImageQueue {
       (fresh) => {
         if (!isOpen(fresh)) return null;
         const steps = fresh.steps.map((step) => (step.task ? { ...withoutTask(step), charges: [...step.charges, chargeOf(step.task, step.task.priceUsd)] } : step));
-        return { status, reason, run: fresh.run + 1, steps, lateUntil: undefined, active: hasUnrecorded(steps), finishedAt: iso(nowMs()), leaseOwner: undefined, leaseUntil: undefined };
+        return { status, reason, failure: status === "failed" ? { kind: "configuration", reason: reason ?? "Настройка картинок сменилась" } : undefined, failureNotification: status === "failed" && options.onFailed ? { id: `image-failed:${fresh.id}:${fresh.run + 1}`, attempts: 0, nextAttemptAt: iso(nowMs()) } : undefined, run: fresh.run + 1, steps, lateUntil: undefined, active: hasUnrecorded(steps) || (status === "failed" && options.onFailed !== undefined), finishedAt: iso(nowMs()), leaseOwner: undefined, leaseUntil: undefined };
       },
       () => true,
     );
     if (!closed) return;
     byJob.get(record.id)?.controller.abort(RUN_ENDED);
     await settleClosed(closed);
+    if (status === "failed" && options.onFailed) {
+      const pending = await store.get(closed.id);
+      if (pending && hasPendingImageFailure(pending)) await claim(pending);
+    }
   }
 
-  function openUsd(rt: Runtime): number {
+  function openUsd(rt: JobRuntime): number {
     const record = rt.record;
     if (!record) return rt.reservedUsd;
-    if (!isOpen(record)) return 0;
+    if (!isOpen(record) || !("setup" in rt)) return 0;
+    const setup = (rt as Runtime).setup;
     const late = record.lateUntil !== undefined;
     const last = record.steps.length - 1;
     return record.steps.reduce((total, step, index) => {
       // «Повторить» после сбоя доставки: адрес снова не скачается — последний шаг закажется заново.
-      if (step.urls) return rt.reorderOnDeliveryFailure && index === last ? total + rt.setup.steps[index]!.priceUsd : total;
+      if (step.urls) return rt.reorderOnDeliveryFailure && index === last ? total + setup.steps[index]!.priceUsd : total;
       if (step.task) return total + step.task.priceUsd;
-      return late ? total : total + (rt.setup.steps[index]?.priceUsd ?? 0);
+      return late ? total : total + (setup.steps[index]?.priceUsd ?? 0);
     }, 0);
   }
 
   /** Заказанное и не оплаченное; `before` — только брони и запуски, появившиеся раньше него. */
-  function pendingUsd(ownerId: string, chatId: string, before?: Runtime): { user: number; chat: number } {
+  function pendingUsd(ownerId: string, chatId: string, before?: JobRuntime): { user: number; chat: number } {
     let user = 0;
     let chat = 0;
     for (const rt of runtimes) {
@@ -609,9 +648,10 @@ export function createImageQueue(options: CreateImageQueueOptions): ImageQueue {
   /** Отправка не удалась: отказ до работы — без оплаты; иначе ушла ли задача, неизвестно — по цене модели. */
   async function failedSend(rt: Runtime, index: number, error: unknown, wholeAttempt: boolean): Promise<StepOutcome> {
     throwIfEnded(rt);
+    const failure: ImageFailure = { kind: error instanceof ImageGenerationError ? error.kind : error instanceof CallTimedOut ? "transient" : "unknown", reason: error instanceof ImageGenerationError ? hide(error.reason) : error instanceof CallTimedOut ? error.message : "Провайдер не смог создать картинку", ...(error instanceof ImageGenerationError && error.providerCode && { providerCode: hide(error.providerCode) }) };
     if (error instanceof ImageGenerationError && error.refusedBeforeWork) {
       await write(rt, (record) => ({ steps: withStep(record.steps, index, withoutTask) }));
-      return { kind: "refused", reason: hide(error.reason) };
+      return { kind: "refused", reason: hide(error.reason), failure };
     }
     let reason: string;
     if (error instanceof ImageGenerationError) reason = hide(error.reason);
@@ -621,7 +661,7 @@ export function createImageQueue(options: CreateImageQueueOptions): ImageQueue {
       reason = "Провайдер не смог создать картинку";
     }
     await chargeTask(rt, index);
-    return { kind: "failed", reason };
+    return { kind: canRetryImageFailure(failure.kind) ? "failed" : "refused", reason, failure };
   }
 
   async function send(rt: Runtime, index: number): Promise<StepOutcome> {
@@ -682,7 +722,7 @@ export function createImageQueue(options: CreateImageQueueOptions): ImageQueue {
         throwIfEnded(rt);
         if (error instanceof ImageGenerationError) {
           await chargeTask(rt, index);
-          return { kind: "failed", reason: hide(error.reason) };
+          return { kind: canRetryImageFailure(error.kind) ? "failed" : "refused", reason: hide(error.reason), failure: { kind: error.kind, reason: hide(error.reason), ...(error.providerCode && { providerCode: hide(error.providerCode) }) } };
         }
         // Временный сбой или срок обращения: проверка повторится.
         continue;
@@ -694,24 +734,27 @@ export function createImageQueue(options: CreateImageQueueOptions): ImageQueue {
       }
       if (state.status === "failed") {
         await chargeTask(rt, index, state.costUsd);
-        return { kind: "failed", reason: hide(state.reason) };
+        return { kind: canRetryImageFailure(state.failureKind) ? "failed" : "refused", reason: hide(state.reason), failure: { kind: state.failureKind ?? "unknown", reason: hide(state.reason), ...(state.providerCode && { providerCode: hide(state.providerCode) }) } };
       }
     }
   }
 
   // --- запуск ---
 
-  async function finishFailed(rt: Runtime, reason: string, extra: ImageJobPatch = {}) {
+  async function finishFailed(rt: Runtime, reason: string, extra: ImageJobPatch = {}, failure: ImageFailure = { kind: "unknown", reason }) {
     await write(rt, (record) => ({
       status: "failed",
       reason,
       lateUntil: undefined,
       ...extra,
-      active: hasUnrecorded(record.steps),
+      failure,
+      failureNotification: options.onFailed ? { id: `image-failed:${record.id}:${record.run}`, attempts: 0, nextAttemptAt: iso(nowMs()) } : undefined,
+      active: hasUnrecorded(record.steps) || options.onFailed !== undefined,
       finishedAt: iso(nowMs()),
-      leaseOwner: undefined,
-      leaseUntil: undefined,
+      ...(options.onFailed ? {} : { leaseOwner: undefined, leaseUntil: undefined }),
     }));
+    // Заказ уже завершён; приём события не задерживает order().
+    rt.sent.resolve();
   }
 
   const nextAttempt = (rt: Runtime) => write(rt, (record) => ({ attempt: record.attempt + 1, attemptDeadline: iso(nowMs() + attemptTimeoutMs) }));
@@ -739,7 +782,7 @@ export function createImageQueue(options: CreateImageQueueOptions): ImageQueue {
         return true;
       }
       if (outcome.kind === "refused") {
-        await finishFailed(rt, outcome.reason);
+        await finishFailed(rt, outcome.reason, {}, outcome.failure);
         return false;
       }
       if (outcome.kind === "failed") {
@@ -747,13 +790,13 @@ export function createImageQueue(options: CreateImageQueueOptions): ImageQueue {
           await nextAttempt(rt);
           continue;
         }
-        await finishFailed(rt, outcome.reason);
+        await finishFailed(rt, outcome.reason, {}, outcome.failure);
         return false;
       }
       // Срок вышел, задача у провайдера ещё идёт.
       if (late) {
         await chargeTask(rt, index);
-        await finishFailed(rt, rt.record!.reason ?? timeoutReason);
+        await finishFailed(rt, rt.record!.reason ?? timeoutReason, {}, { kind: "transient", reason: rt.record!.reason ?? timeoutReason });
         return false;
       }
       if (rt.record!.attempt < attempts) {
@@ -766,7 +809,7 @@ export function createImageQueue(options: CreateImageQueueOptions): ImageQueue {
         continue;
       }
       await chargeTask(rt, index);
-      await finishFailed(rt, timeoutReason);
+      await finishFailed(rt, timeoutReason, {}, { kind: "transient", reason: timeoutReason });
       return false;
     }
   }
@@ -799,7 +842,7 @@ export function createImageQueue(options: CreateImageQueueOptions): ImageQueue {
         throwIfEnded(rt);
         if (attempt >= downloadAttempts) {
           if (rt.reorderOnDeliveryFailure) return "reorder";
-          await finishFailed(rt, error instanceof ImageGenerationError ? hide(error.reason) : "Картинка не скачалась", { deliveryFailed: true });
+          await finishFailed(rt, error instanceof ImageGenerationError ? hide(error.reason) : "Картинка не скачалась", { deliveryFailed: true }, { kind: error instanceof ImageGenerationError ? error.kind : "unknown", reason: error instanceof ImageGenerationError ? hide(error.reason) : "Картинка не скачалась" });
           return "done";
         }
         await sleep(pollIntervalMs, rt.controller.signal);
@@ -824,7 +867,7 @@ export function createImageQueue(options: CreateImageQueueOptions): ImageQueue {
     } catch (error) {
       throwIfEnded(rt);
       logError(`Картинки: приёмник не принял картинку задачи ${record.id}: ${errorText(error)}`);
-      await finishFailed(rt, "Приёмник не принял картинку", { deliveryFailed: true });
+      await finishFailed(rt, "Приёмник не принял картинку", { deliveryFailed: true }, { kind: "delivery", reason: "Приёмник не принял картинку" });
       return "done";
     }
     throwIfEnded(rt);
@@ -863,18 +906,63 @@ export function createImageQueue(options: CreateImageQueueOptions): ImageQueue {
     try {
       await recordCharges(rt);
       if (isOpen(rt.record!)) await generate(rt);
+      await notifyFailure(rt);
     } catch (error) {
       if (error !== RUN_ENDED && !rt.controller.signal.aborted) logError(`Картинки: задача ${rt.record?.id ?? ""} остановилась: ${errorText(error)}`);
     } finally {
-      rt.ended = true;
-      clearTimeout(rt.leaseTimer);
-      runtimes.delete(rt);
-      if (rt.record && byJob.get(rt.record.id) === rt) byJob.delete(rt.record.id);
-      rt.sent.resolve();
+      finishRuntime(rt);
     }
   }
 
-  function keepLease(rt: Runtime) {
+  function finishRuntime(rt: JobRuntime) {
+    rt.ended = true;
+    clearTimeout(rt.leaseTimer);
+    runtimes.delete(rt);
+    if (rt.record && byJob.get(rt.record.id) === rt) byJob.delete(rt.record.id);
+    rt.sent.resolve();
+  }
+
+  /** Эта же аренда и CAS запуска; отдельной очереди/таблицы для событий нет. */
+  async function notifyFailure(rt: JobRuntime) {
+    const record = rt.record!;
+    const notice = record.failureNotification;
+    if (!options.onFailed || !notice || notice.deliveredAt || record.status !== "failed" || !record.failure || record.lateUntil) return;
+    if (Date.parse(notice.nextAttemptAt) > nowMs()) return;
+    const reserved = await write(rt, (fresh) => ({ failureNotification: { ...fresh.failureNotification!, attempts: fresh.failureNotification!.attempts + 1, nextAttemptAt: iso(nowMs() + failureRetryMs) } }));
+    const id = notice.id;
+    const isCurrent = async () => {
+      if (rt.controller.signal.aborted) return false;
+      const fresh = await store.get(record.id);
+      const current = fresh?.status === "failed" && fresh.run === record.run && fresh.leaseOwner === me && Date.parse(fresh.leaseUntil ?? "") > nowMs() && fresh.failureNotification?.id === id && fresh.failureNotification.deliveredAt === undefined && !rt.controller.signal.aborted;
+      if (!current) rt.controller.abort(RUN_ENDED);
+      return current;
+    };
+    if (!(await isCurrent())) throw RUN_ENDED;
+    try {
+      await options.onFailed({ id, run: reserved.run, job: view(reserved), failure: structuredClone(reserved.failure!) }, { signal: rt.controller.signal, isCurrent });
+      if (!(await isCurrent())) throw RUN_ENDED;
+      await write(rt, (fresh) => ({ failureNotification: { ...fresh.failureNotification!, deliveredAt: iso(nowMs()) }, active: hasUnrecorded(fresh.steps), leaseOwner: undefined, leaseUntil: undefined }));
+    } catch {
+      throwIfEnded(rt);
+      logError(`Картинки: событие ${id} не принято, повторится без генерации`);
+      await write(rt, () => ({ active: true, leaseOwner: undefined, leaseUntil: undefined }));
+    }
+  }
+
+  function launchFailure(record: ImageJobRecord) {
+    const rt = newJobRuntime(record.ownerId, record.chatId, 0);
+    rt.record = record;
+    runtimes.add(rt);
+    byJob.set(record.id, rt);
+    keepLease(rt);
+    rt.done = (async () => {
+      try { await recordCharges(rt); await notifyFailure(rt); }
+      catch (error) { if (error !== RUN_ENDED && !rt.controller.signal.aborted) logError(`Картинки: событие ${record.id} остановилось, будет подобрано после аренды`); }
+      finally { finishRuntime(rt); }
+    })();
+  }
+
+  function keepLease(rt: JobRuntime) {
     const renew = () => {
       rt.leaseTimer = setTimeout(async () => {
         if (rt.ended || rt.controller.signal.aborted) return;
@@ -890,11 +978,13 @@ export function createImageQueue(options: CreateImageQueueOptions): ImageQueue {
     renew();
   }
 
-  function newRuntime(ownerId: string, chatId: string, setup: ImageSetup, reservedUsd: number): Runtime {
+  function newJobRuntime(ownerId: string, chatId: string, reservedUsd: number): JobRuntime {
     let resolve!: () => void;
     const promise = new Promise<void>((done) => (resolve = done));
-    return { ownerId, chatId, setup, reservedUsd, controller: new AbortController(), chain: Promise.resolve(), sent: { promise, resolve }, ended: false, checkNow: false, reorderOnDeliveryFailure: false };
+    return { ownerId, chatId, reservedUsd, controller: new AbortController(), chain: Promise.resolve(), sent: { promise, resolve }, ended: false, checkNow: false, reorderOnDeliveryFailure: false };
   }
+
+  function newRuntime(ownerId: string, chatId: string, setup: ImageSetup, reservedUsd: number): Runtime { return { ...newJobRuntime(ownerId, chatId, reservedUsd), setup }; }
 
   function launch(rt: Runtime, record: ImageJobRecord) {
     rt.record = record;
@@ -928,9 +1018,13 @@ export function createImageQueue(options: CreateImageQueueOptions): ImageQueue {
   /** Взять задачу из хранилища: аренда свободна или истекла. Закрытой — дописать расход, открытую — вести. */
   async function claim(record: ImageJobRecord) {
     if (stopped || byJob.has(record.id)) return;
+    if (!isOpen(record) && hasPendingImageFailure(record) && !hasUnrecorded(record.steps) && Date.parse(record.failureNotification!.nextAttemptAt) > nowMs()) return;
     const claimed = await store.update(record.id, { leaseOwner: me, leaseUntil: iso(nowMs() + leaseMs), updatedAt: iso(nowMs()) }, record.version);
     if (!claimed) return;
-    if (!isOpen(claimed)) return settleClosed(claimed);
+    if (!isOpen(claimed)) {
+      if (options.onFailed && hasPendingImageFailure(claimed) && Date.parse(claimed.failureNotification!.nextAttemptAt) <= nowMs()) return launchFailure(claimed);
+      return settleClosed(claimed);
+    }
     const setup = setupOf(claimed);
     if (!setup) return closeJob(claimed, "failed", `Настройка картинок сменилась: назначения «${claimed.purpose}» в ней больше нет`);
     const rt = newRuntime(claimed.ownerId, claimed.chatId, setup, 0);
@@ -1061,11 +1155,15 @@ export function createImageQueue(options: CreateImageQueueOptions): ImageQueue {
     }
   }
 
-  function retryJob(ownerId: string, key: string): Promise<ImageJob | ImageOrderRefusal | null> {
+  type RetryGuard = { expectedJobId?: string; expectedRun?: number };
+  const matchesRetry = (record: ImageJobRecord | null | undefined, guard: RetryGuard) => guard.expectedJobId === undefined || (record?.id === guard.expectedJobId && record.run === guard.expectedRun);
+
+  function retryJob(ownerId: string, key: string, guard: RetryGuard): Promise<ImageJob | ImageOrderRefusal | null> {
     return underKey(ownerId, key, async () => {
       const latest = (await store.list({ ownerId, key })).at(-1);
-      if (!latest) return null;
+      if (!latest || !matchesRetry(latest, guard)) return null;
       if (latest.status !== "failed") return view(latest);
+      if (failureOf(latest)?.kind === "content") return refused("Провайдер отклонил содержание: тот же запрос не повторяется; выберите разрешённую альтернативу");
       const setup = setupOf(latest);
       if (!setup) return refused(`назначения «${latest.purpose}» в настройке больше нет`);
       const remaining = latest.steps.reduce((total, step, index) => (step.urls ? total : total + (step.task?.priceUsd ?? setup.steps[index]!.priceUsd)), 0);
@@ -1081,6 +1179,7 @@ export function createImageQueue(options: CreateImageQueueOptions): ImageQueue {
         let revived: ImageJobRecord | null | "taken" = null;
         // Новый запуск — условной записью: из двух «Повторить» (и двух копий сервера) проходит один.
         while (current?.status === "failed") {
+          if (!matchesRetry(current, guard)) return null;
           if (stopped) return refused(QUEUE_STOPPED);
           const at = nowMs();
           revived = await reviveOrTaken(
@@ -1091,6 +1190,8 @@ export function createImageQueue(options: CreateImageQueueOptions): ImageQueue {
               attempt: 1,
               attemptDeadline: iso(at + attemptTimeoutMs),
               reason: undefined,
+              failure: undefined,
+              failureNotification: undefined,
               lateUntil: undefined,
               deliveryFailed: undefined,
               finishedAt: undefined,
@@ -1103,13 +1204,14 @@ export function createImageQueue(options: CreateImageQueueOptions): ImageQueue {
           );
           // Место заняла новая задача (заказ с другой копии сервера): «Повторить» отдаёт её.
           if (revived === "taken") {
+            if (guard.expectedJobId !== undefined) return null;
             const newest = (await store.list({ ownerId, key })).at(-1);
             return newest ? view(newest) : null;
           }
           if (revived) break;
           current = await store.get(latest.id);
         }
-        if (!revived) return current ? view(current) : null;
+        if (!revived) return current && matchesRetry(current, guard) ? view(current) : null;
         // stop() пришёл посреди «Повторить»: аренда отпускается, задачу продолжит следующий старт.
         if (stopped) {
           await updateJob(revived, (record) => (record.leaseOwner === me ? { leaseOwner: undefined, leaseUntil: undefined } : null), (record) => record.leaseOwner === me);
@@ -1162,12 +1264,14 @@ export function createImageQueue(options: CreateImageQueueOptions): ImageQueue {
 
   return {
     order,
-    retry({ ownerId, key }) {
+    retry({ ownerId, key, expectedJobId, expectedRun }) {
+      const guarded = expectedJobId !== undefined || expectedRun !== undefined;
+      if (guarded && (typeof expectedJobId !== "string" || expectedJobId.length === 0 || !Number.isInteger(expectedRun) || expectedRun! < 1)) return Promise.reject(new TypeError("Картинки: expectedJobId и expectedRun передаются вместе; run — целое число от 1"));
       if (stopped) return Promise.reject(new Error("Картинки: очередь остановлена (stop) — повтор не принимается"));
-      const flight = JSON.stringify([ownerId, key]);
+      const flight = JSON.stringify([ownerId, key, expectedJobId, expectedRun]);
       const running = retries.get(flight);
       if (running) return running;
-      const promise = retryJob(ownerId, key).finally(() => retries.delete(flight));
+      const promise = retryJob(ownerId, key, { expectedJobId, expectedRun }).finally(() => retries.delete(flight));
       retries.set(flight, promise);
       return promise;
     },

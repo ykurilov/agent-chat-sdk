@@ -1,4 +1,5 @@
 import type { ImageGenerationRequest, ImageGenerationResult, ImageProviderConnection, ImageProviderDescription, ImageTaskState } from "./image-catalog";
+import { providerFailureKind } from "./image-failure";
 import { ImageGenerationError } from "./image-generation-error";
 import { hideSecrets } from "./hide-secrets";
 import { waitForImageTask } from "./image-task-polling";
@@ -85,13 +86,13 @@ async function submit(request: ImageGenerationRequest, connection: ImageProvider
     answer = await readAnswer(response);
   } catch (error) {
     if (request.abortSignal?.aborted) throw request.abortSignal.reason ?? error;
-    throw new ImageGenerationError("Провайдер недоступен", { refusedBeforeWork: false });
+    throw new ImageGenerationError("Провайдер недоступен", { refusedBeforeWork: false, kind: "transient" });
   }
   const code = answerCode(response, answer);
   const taskId = answer?.data?.taskId;
   if (code === 200 && typeof taskId === "string" && taskId.length > 0) return taskId;
-  if (code >= 400 && code < 500 && code !== 408) throw new ImageGenerationError(reasonOf(code, answer, connection), { refusedBeforeWork: true });
-  throw new ImageGenerationError(`Провайдер ответил ошибкой: ${reasonOf(code, answer, connection)}`, { refusedBeforeWork: false });
+  if (code >= 400 && code < 500 && code !== 408) throw new ImageGenerationError(reasonOf(code, answer, connection), { refusedBeforeWork: true, kind: providerFailureKind(code, undefined, typeof answer?.msg === "string" ? answer.msg : "") });
+  throw new ImageGenerationError(`Провайдер ответил ошибкой: ${reasonOf(code, answer, connection)}`, { refusedBeforeWork: false, kind: providerFailureKind(code, undefined, typeof answer?.msg === "string" ? answer.msg : "") });
 }
 
 async function check(taskId: string, connection: ImageProviderConnection, abortSignal?: AbortSignal): Promise<ImageTaskState> {
@@ -104,7 +105,7 @@ async function check(taskId: string, connection: ImageProviderConnection, abortS
   if (code === UNKNOWN_TASK_CODE && !answer?.data) return { status: "failed", reason: "Задача не найдена у провайдера" };
   // Временный сбой: опрос повторит.
   if (code >= 500 || code === 408 || code === 429 || !answer) throw new Error(`KIE ответил ${code}`);
-  if (code !== 200) throw new ImageGenerationError(reasonOf(code, answer, connection), { refusedBeforeWork: false });
+  if (code !== 200) throw new ImageGenerationError(reasonOf(code, answer, connection), { refusedBeforeWork: false, kind: providerFailureKind(code, undefined, typeof answer?.msg === "string" ? answer.msg : "") });
 
   const data = answer.data ?? {};
   const costUsd = costOf(data.creditsConsumed);
@@ -117,7 +118,7 @@ async function check(taskId: string, connection: ImageProviderConnection, abortS
   }
   if (data.state === "fail") {
     const reason = [data.failCode, data.failMsg].filter((part) => (typeof part === "string" || typeof part === "number") && String(part).length > 0).join(": ");
-    return { status: "failed", reason: hideSecrets(reason || "Провайдер не смог создать картинку", connection).slice(0, MAX_REASON_LENGTH), ...(costUsd !== undefined && { costUsd }) };
+    return { status: "failed", failureKind: providerFailureKind(undefined, typeof data.failCode === "string" ? data.failCode : undefined, reason), ...(data.failCode !== undefined && { providerCode: hideSecrets(String(data.failCode), connection).slice(0, 100) }), reason: hideSecrets(reason || "Провайдер не смог создать картинку", connection).slice(0, MAX_REASON_LENGTH), ...(costUsd !== undefined && { costUsd }) };
   }
   return { status: "pending" };
 }
@@ -141,7 +142,7 @@ export const kieProvider: ImageProviderDescription = {
       ...(request.abortSignal && { abortSignal: request.abortSignal }),
     });
     if (outcome.status === "ready") return outcome.results;
-    if (outcome.status === "failed") throw new ImageGenerationError(outcome.reason, { refusedBeforeWork: false });
+    if (outcome.status === "failed") throw new ImageGenerationError(outcome.reason, { refusedBeforeWork: false, kind: outcome.failureKind, providerCode: outcome.providerCode });
     throw new ImageGenerationError(`Провайдер не ответил за ${Math.round(request.timeoutMs / 1000)} с`, { refusedBeforeWork: false });
   },
 };

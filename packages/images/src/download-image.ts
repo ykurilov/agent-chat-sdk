@@ -1,3 +1,4 @@
+import type { ImageFailureKind } from "./image-failure";
 import { detectFileKind } from "@ykurilov/agent-chat-attachments";
 import { dnsHostResolver, sharedPinnedFetch, WebToolError } from "@ykurilov/agent-chat-web-tools/network";
 import type { HostResolver } from "@ykurilov/agent-chat-web-tools/network";
@@ -42,7 +43,7 @@ export interface DownloadedImage {
   height?: number;
 }
 
-const failure = (reason: string) => new ImageGenerationError(reason, { refusedBeforeWork: false });
+const failure = (reason: string, kind: ImageFailureKind = "unknown") => new ImageGenerationError(reason, { refusedBeforeWork: false, kind });
 const megabytes = (bytes: number) => `${Math.round((bytes / (1024 * 1024)) * 10) / 10} МБ`;
 
 /** Тело ответа, но не больше `maxBytes`: на пределе чтение обрывается, файл не копится в памяти дальше. */
@@ -75,9 +76,9 @@ function checkedAddress(url: string, base: URL | undefined, trustedOrigin: strin
   try {
     address = new URL(url, base);
   } catch {
-    throw failure("Картинка не скачалась: неверный адрес");
+    throw failure("Картинка не скачалась: неверный адрес", "configuration");
   }
-  if (!isAllowedImageAddress(address, trustedOrigin)) throw failure("Картинка не скачалась: неверный адрес");
+  if (!isAllowedImageAddress(address, trustedOrigin)) throw failure("Картинка не скачалась: неверный адрес", "configuration");
   return address;
 }
 
@@ -119,7 +120,7 @@ export async function downloadGeneratedImage(input: DownloadGeneratedImageInput)
   let bytes: Uint8Array | null;
   try {
     const response = await fetchImage(input, address, signal);
-    if (!response.ok) throw failure(`Картинка не скачалась: ${response.status}`);
+    if (!response.ok) throw failure(`Картинка не скачалась: ${response.status}`, response.status === 408 || response.status === 429 || response.status >= 500 ? "transient" : "configuration");
     const declared = Number(response.headers.get("content-length"));
     if (Number.isFinite(declared) && declared > input.maxImageBytes) throw failure(`Картинка больше ${megabytes(input.maxImageBytes)}`);
     bytes = await readWithin(response, input.maxImageBytes);
@@ -127,8 +128,8 @@ export async function downloadGeneratedImage(input: DownloadGeneratedImageInput)
     if (input.abortSignal?.aborted) throw input.abortSignal.reason ?? error;
     if (error instanceof ImageGenerationError) throw error;
     // Имя склада указало во внутреннюю сеть или не разрешилось — проверка при соединении.
-    if (error instanceof WebToolError && error.kind === "bad_address") throw failure("Картинка не скачалась: неверный адрес");
-    throw failure(timeout.signal.aborted ? "Картинка не скачалась: не успела" : "Картинка не скачалась");
+    if (error instanceof WebToolError && error.kind === "bad_address") throw failure("Картинка не скачалась: неверный адрес", "configuration");
+    throw failure(timeout.signal.aborted ? "Картинка не скачалась: не успела" : "Картинка не скачалась", "transient");
   } finally {
     clearTimeout(timer);
   }

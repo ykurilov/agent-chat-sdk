@@ -9,8 +9,10 @@ import { expectInsideViewport, expectNoHorizontalOverflow } from "./support/scre
 
 test.use({ viewport: { width: 320, height: 640 } });
 
+for (const skin of ["tandem", "default"] as const) {
+test.describe(`steering: ${skin}`, () => {
 test("320 px: во время ответа «Остановить» и «Отправить» в экране, страница не шире экрана", async ({ page }) => {
-  await signIn(page);
+  await signIn(page, "Анна", "/", skin);
   await send(page, "Дай длинный ответ");
   await expect(lastAnswer(page)).toContainText("Абзац 2:");
   await page.getByRole("textbox", { name: "Сообщение" }).fill("Поправка: короче");
@@ -22,3 +24,6 @@ test("320 px: во время ответа «Остановить» и «Отп�
   await page.getByRole("button", { name: "Остановить" }).tap();
   await expect(page.getByRole("button", { name: "Голосовой режим" })).toBeVisible();
 });
+
+});
+}

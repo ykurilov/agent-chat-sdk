@@ -106,7 +106,7 @@ describe("провайдер KIE: состояние задачи", () => {
     });
 
     kie.states[1] = { state: "fail", failMsg: "Content blocked", credits: 0 };
-    expect(await queue.check("task-1", connection(kie.fetch))).toEqual({ status: "failed", reason: expect.stringContaining("Content blocked"), costUsd: 0 });
+    expect(await queue.check("task-1", connection(kie.fetch))).toEqual({ status: "failed", failureKind: "unknown", providerCode: "500", reason: expect.stringContaining("Content blocked"), costUsd: 0 });
   });
 
   it("неизвестная задача — провал «не найдена»; сбой сети и 5xx — обычная ошибка (опрос повторит)", async () => {

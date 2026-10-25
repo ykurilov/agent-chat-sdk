@@ -1,3 +1,4 @@
+import type { ImageFailure } from "../image-failure";
 import type { AspectRatio } from "../image-catalog";
 
 /**
@@ -58,9 +59,12 @@ export interface ImageJobRecord {
   data?: unknown;
   status: ImageJobStatus;
   reason?: string;
+  failure?: ImageFailure;
+  /** Outbox terminal failure: active до подтверждения; callback может повториться. */
+  failureNotification?: { id: string; attempts: number; nextAttemptAt: string; deliveredAt?: string };
   /** Ответ приёмника (JSON). */
   result?: unknown;
-  /** У задачи есть работа: опрос, позднее окно или незаписанный расход. Такие задачи подбирает старт сервера. */
+  /** У задачи есть работа: опрос, позднее окно, незаписанный расход или неподтверждённое событие. Такие задачи подбирает старт сервера. */
   active: boolean;
   /** Номер запуска: «Повторить» начинает новый, прежний больше ничего не делает. */
   run: number;
@@ -93,6 +97,9 @@ export interface ImageJobFilter {
 
 /** У задачи ещё идёт работа с провайдером: генерация или позднее окно. Открытая на место (`ownerId` + `key`) — одна. */
 export const isOpenImageJob = (job: Pick<ImageJobRecord, "status" | "lateUntil">) => job.status === "generating" || job.lateUntil !== undefined;
+
+/** Долговечное уведомление ещё не подтверждено приложением. */
+export const hasPendingImageFailure = (job: Pick<ImageJobRecord, "failureNotification">) => job.failureNotification !== undefined && job.failureNotification.deliveredAt === undefined;
 
 /** На это место (`ownerId` + `key`) уже есть открытая задача: вторую база не пускает, даже с двух копий сервера. */
 export class ImageJobKeyTakenError extends Error {

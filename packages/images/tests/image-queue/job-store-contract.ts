@@ -41,6 +41,21 @@ export function describeImageJobStoreContract(name: string, fresh: () => Promise
       await store.close?.();
     });
 
+    it("непринятое событие сбоя сохраняется после reopen, не удаляется чисткой, ack допускает чистку", async () => {
+      const { store, reopen } = await fresh();
+      const failure = { kind: "content" as const, reason: "safety_violations=[sexual]", providerCode: "providerBadRequest" };
+      const failureNotification = { id: "image-failed:job-1:1", attempts: 1, nextAttemptAt: "2026-10-05T10:05:00.000Z" };
+      await store.insert(jobRecord({ status: "failed", active: true, failure, failureNotification, leaseOwner: undefined, leaseUntil: undefined, finishedAt: "2026-10-05T10:00:00.000Z" }));
+      const next = await reopen();
+      try {
+        expect(await next.get("job-1")).toMatchObject({ failure, failureNotification });
+        expect((await next.listResumable("2026-10-05T10:06:00.000Z")).map((job) => job.id)).toEqual(["job-1"]);
+        expect(await next.deleteFinishedBefore("2099-01-01T00:00:00.000Z")).toBe(0);
+        await next.update("job-1", { active: false, failureNotification: { ...failureNotification, deliveredAt: "2026-10-05T10:06:00.000Z" } }, 1);
+        expect(await next.deleteFinishedBefore("2099-01-01T00:00:00.000Z")).toBe(1);
+      } finally { await next.close?.(); await store.close?.(); }
+    });
+
     it("пустые необязательные поля не появляются как null", async () => {
       const { store } = await fresh();
       const { turnId: _turn, group: _group, data: _data, leaseOwner: _owner, leaseUntil: _until, ...bare } = jobRecord();

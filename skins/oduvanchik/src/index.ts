@@ -56,6 +56,7 @@ export const oduvanchikSkin: ChatSkin & ChatListSkin & AgentPanelSkin = {
   ServiceLine: OduvanchikServiceLine,
   ChatNotFound: OduvanchikChatNotFound,
   Composer: OduvanchikComposer,
+  steering: true,
   ChatWorkspace: OduvanchikChatWorkspace,
   ChatList: OduvanchikChatList,
   AgentPanelLauncher: OduvanchikAgentPanelLauncher,

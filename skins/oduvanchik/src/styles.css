@@ -251,3 +251,6 @@
    must switch label and fill together, including the first frame after max. */
 .oduvanchik-chat .yk-chat-progress,
 .oduvanchik-chat .yk-chat-progress__label { transition: none; }
+
+/* Send and Stop share the trailing row while accepting a correction. */
+.oduvanchik-field-send + .oduvanchik-field-send { margin-left: 4px; }

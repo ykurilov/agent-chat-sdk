@@ -50,6 +50,10 @@ import { tandemSkin } from "@ykurilov/agent-chat-skin-tandem";
 
 Для нового чата экспортируется `OduvanchikWelcome` с большой сферой: приложение передаёт `title`, `description`, `suggestions: [{ label, category? }]` и `onPick`. Это дополнительная композиция, SDK не вставляет её автоматически в пустую ленту. Сфера отдельно - `OduvanchikSphere`.
 
+## Поправки во время ответа
+
+Скин поддерживает `ChatSkin.steering`: при доступном серверном праве `steer` поле принимает поправки, а кнопки отправки и остановки видны одновременно во всех трёх вариантах поля. Реплика с ожидающей поправкой показывает `labels.steeringPending`; после применения пометка исчезает. Модель и вложения во время хода не переключаются. `steering={false}` у `AgentChat` выключает эту возможность.
+
 ## Редактор сценария
 
 С 0.78.0 вход `@ykurilov/agent-chat-skin-oduvanchik/flows` экспортирует `oduvanchikFlowEditorSkin` и тип `OduvanchikFlowEditorSkin`. Это полный договор `FlowEditorSkin` v1, включая все дополнительные части. Подключите `@ykurilov/agent-chat-flows` той же версии SDK: это optional peer, который не требуется обычному `/chat` или корневому скину.

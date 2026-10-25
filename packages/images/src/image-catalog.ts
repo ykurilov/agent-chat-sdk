@@ -1,3 +1,4 @@
+import type { ImageFailureKind } from "./image-failure";
 import { kieProvider } from "./kie-provider";
 import { runwareProvider } from "./runware-provider";
 
@@ -70,7 +71,7 @@ export interface ImageGenerationResult {
 export type ImageTaskState =
   | { status: "pending" }
   | { status: "ready"; results: ImageGenerationResult[] }
-  | { status: "failed"; reason: string; costUsd?: number };
+  | { status: "failed"; reason: string; costUsd?: number; failureKind?: ImageFailureKind; providerCode?: string };
 
 /**
  * Очередь провайдера (KIE и подобные): задача отправляется и проверяется отдельно. Так генерация переживает срок

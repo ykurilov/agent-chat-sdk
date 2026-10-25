@@ -32,4 +32,5 @@ export type { ImageUsage } from "./images-usage";
 export { ImageJobKeyTakenError, isOpenImageJob, memoryImageJobStore } from "./image-queue/image-job-store";
 export type { ImageJobCharge, ImageJobFilter, ImageJobPatch, ImageJobRecord, ImageJobStatus, ImageJobStep, ImageJobStore, ImageJobTask } from "./image-queue/image-job-store";
 export { createImageQueue } from "./image-queue/create-image-queue";
-export type { CreateImageQueueOptions, GeneratedImage, ImageDeliveryContext, ImageJob, ImageOrder, ImageOrderRefusal, ImageQueue, ImageQueuePurpose } from "./image-queue/create-image-queue";
+export type { ImageFailure, ImageFailureKind } from "./image-failure";
+export type { ImageFailureEvent, CreateImageQueueOptions, GeneratedImage, ImageDeliveryContext, ImageJob, ImageOrder, ImageOrderRefusal, ImageQueue, ImageQueuePurpose } from "./image-queue/create-image-queue";
