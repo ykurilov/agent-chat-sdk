@@ -15,6 +15,7 @@ import type { TurnRequestContext } from "../page-context/page-context";
 import { ChatDataTooLargeError } from "./chat-data";
 import type { ChatDataFilter } from "./chat-data";
 import { WidgetNotPendingError, createChatService } from "../chat-service";
+import { ChatBusyError } from "../running-answers/running-answer-registry";
 import type { ChatService } from "../chat-service";
 import { AnswerEditError } from "../conversation/edit-answer-parts";
 import { extendCatalog } from "../models/catalog-changes";
@@ -414,7 +415,7 @@ export function describeChatStorageContract(
         expect(answer.parts.find((part) => (part as { toolCallId?: string }).toolCallId === "w1")).toMatchObject({ state: "output-available", output: { выбрано: "Про" } });
       });
 
-      it("две копии одновременно отвечают на один виджет: принят ровно один ответ, второй — WidgetNotPendingError (20 повторов)", async () => {
+      it("две копии отвечают на один виджет: принят один, второй уже не pending или не владеет арендой (20 повторов)", async () => {
         const storage = await createStorage();
         const [first, second] = [widgetService(storage), widgetService(storage)];
         for (let round = 0; round < 20; round++) {
@@ -429,7 +430,11 @@ export function describeChatStorageContract(
           );
           const accepted = results.flatMap((result, index) => (result.status === "fulfilled" ? [answers[index]!] : []));
           expect(accepted).toHaveLength(1);
-          expect(results.find((result) => result.status === "rejected")).toMatchObject({ reason: expect.any(WidgetNotPendingError) });
+          const rejected = results.find((result) => result.status === "rejected");
+          expect(rejected).toBeDefined();
+          // При распределённой аренде проигравший может узнать о занятости до чужого CAS решения.
+          expect(rejected?.reason instanceof WidgetNotPendingError ||
+            (storage.claimChatTurn !== undefined && storage.releaseChatTurn !== undefined && rejected?.reason instanceof ChatBusyError)).toBe(true);
           // Ход мог кончиться раньше подписки (`subscribe` → null): тогда ждём записанный ответ.
           const stream = await accepted[0]!.service.subscribe("anna", chat.id);
           if (stream) await drain(stream);
@@ -532,6 +537,9 @@ export function describeChatStorageContract(
       /** Давно: ответ, созданный тогда и без знака жизни, молчит дольше любого порога. */
       const longAgo = (second: number) => `2000-01-01T00:00:${String(second).padStart(2, "0")}.000Z`;
       const minute = 60_000;
+
+
+
       const silent = (storage: ChatStorage, filter: { silentForMs: number; chatId?: string }) =>
         storage.listSilentAnswerIds!(filter).then((ids) => ids.sort());
 
@@ -1716,6 +1724,49 @@ export function describeChatStorageContract(
       }
 
       const minute = 60_000;
+
+      it("первый insert ответа, resume и знак жизни тоже ограждены держателем аренды", async (context) => {
+        const storage = await leaseStorage(context);
+        const old = { expectedTurnHolder: "copy-a" };
+        const current = { expectedTurnHolder: "copy-b" };
+        await storage.claimChatTurn(chatInput.id, "copy-b", minute);
+        const fresh = newStoredMessage({ id: "guarded-first", chatId: chatInput.id, role: "assistant", status: "streaming", parts: [] });
+        const insert: (message: StoredMessage, guard?: typeof old) => Promise<void> = storage.insertMessage.bind(storage);
+        await expect(insert(fresh, old)).rejects.toThrow();
+        expect(await storage.getMessage(fresh.id)).toBeNull();
+        await insert(fresh, current);
+        if (storage.markAnswerAlive) {
+          await expect(storage.markAnswerAlive(fresh.id, old)).rejects.toThrow();
+          await storage.markAnswerAlive(fresh.id, current);
+        }
+        const waiting = newStoredMessage({ id: "guarded-waiting", chatId: chatInput.id, role: "assistant", status: "awaiting_approval", parts: [] });
+        await storage.insertMessage(waiting);
+        await expect(storage.updateAwaitingMessage(waiting.id, { parts: [], status: "streaming", ...old })).rejects.toThrow();
+        expect((await storage.getMessage(waiting.id))?.status).toBe("awaiting_approval");
+        await storage.updateAwaitingMessage(waiting.id, { parts: [], status: "streaming", ...current });
+        expect((await storage.getMessage(waiting.id))?.status).toBe("streaming");
+        expect(await storage.getMessage(waiting.id)).not.toHaveProperty("expectedTurnHolder");
+      });
+
+
+      for (const method of ["stream", "finish"] as const) {
+      it(`${method}: старый держатель не пишет после передачи аренды, новый держатель пишет`, async (context) => {
+        const storage = await leaseStorage(context);
+        const id = "fenced-answer";
+        await storage.insertMessage(newStoredMessage({ id, chatId: chatInput.id, role: "assistant", parts: [], status: "streaming" }));
+        await storage.claimChatTurn(chatInput.id, "copy-a", minute);
+        await storage.releaseChatTurn(chatInput.id, "copy-a");
+        await storage.claimChatTurn(chatInput.id, "copy-b", minute);
+        const parts: StoredMessage["parts"] = [{ type: "text", text: "late A", state: "done" }];
+        const write = (holder: string) => method === "stream"
+          ? storage.updateStreamingMessage(id, { parts, ...{ expectedTurnHolder: holder } })
+          : storage.finishMessage(id, { status: "complete", parts, ...{ expectedTurnHolder: holder } });
+        await expect(write("copy-a")).rejects.toThrow();
+        expect((await storage.getMessage(id))?.parts).toEqual([]);
+        await write("copy-b");
+        expect((await storage.getMessage(id))?.parts).toEqual(parts);
+      });
+      }
 
       it("свободный чат берётся; чужая аренда — false; своя продлевается; снятая своя — свободна, чужое снятие не действует", async (context) => {
         const storage = await leaseStorage(context);

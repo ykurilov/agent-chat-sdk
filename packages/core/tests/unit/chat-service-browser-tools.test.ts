@@ -133,8 +133,9 @@ describe("браузерные инструменты в службе чата",
     await readUntil(reader, "data-browser-call");
     await vi.advanceTimersByTimeAsync(3000);
     const rest = readRest(reader);
-    await vi.runAllTimersAsync();
+    await vi.advanceTimersByTimeAsync(0);
     const chunks = await rest;
+    await service.flush();
     expect(chunks.find((chunk) => chunk.type === "tool-output-error")).toMatchObject({ errorText: "Страница не ответила за 3 с" });
     expect(finalStatus(chunks)).toBe("complete");
     await expect(service.answerBrowserCall("anna", chat.id, "c1", { tabId: "tab-1", output: "поздно" })).rejects.toBeInstanceOf(BrowserCallNotPendingError);

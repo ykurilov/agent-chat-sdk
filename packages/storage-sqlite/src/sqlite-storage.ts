@@ -10,6 +10,7 @@ import {
   DuplicateMessageError,
   isOptimizationBlocked,
   mergeChatData,
+  ChatTurnLeaseLostError,
   MessageAlreadyFinishedError,
   MessageNotAwaitingError,
   revertRefusal,
@@ -191,20 +192,35 @@ export function createSqliteChatStorage(options: { filePath: string }): SqliteCh
   /** Знак жизни в колонку `alive_at`: SQLite живёт на одной машине с сервером, время — по её часам. */
   const aliveAtColumn = (alive: AnswerAliveMark | undefined) => (alive ? { aliveAt: aliveAtByLocalClock(alive) } : {});
 
+  function assertTurnHolder(tx: Pick<typeof db, "select">, chatId: string, holder: string | undefined, messageId: string): void {
+    if (holder === undefined) return;
+    const row = tx.select({ chatId: chatTurnLeases.chatId }).from(chatTurnLeases)
+      .where(and(eq(chatTurnLeases.chatId, chatId), eq(chatTurnLeases.holder, holder), sql`${chatTurnLeases.until} > ${Date.now()}`)).get();
+    if (!row) throw new ChatTurnLeaseLostError(messageId);
+  }
+
+  /** Проверка владельца входит в ту же атомарную запись SQLite. */
+  function turnLeaseCondition(holder: string | undefined) {
+    if (holder === undefined) return undefined;
+    return sql`exists (select 1 from ${chatTurnLeases} where ${chatTurnLeases.chatId} = ${messages.chatId} and ${chatTurnLeases.holder} = ${holder} and ${chatTurnLeases.until} > ${Date.now()})`;
+  }
+
   /** Пишет в идущий ответ; отличает «нет такого» от «уже в конечном состоянии». */
-  function updateStreaming(messageId: string, { alive, ...values }: Partial<typeof messages.$inferInsert> & { alive?: AnswerAliveMark }): void {
+  function updateStreaming(messageId: string, { alive, expectedTurnHolder, ...values }: Partial<typeof messages.$inferInsert> & { alive?: AnswerAliveMark; expectedTurnHolder?: string }): void {
     const result = db
       .update(messages)
       .set({ ...values, ...aliveAtColumn(alive) })
-      .where(and(eq(messages.id, messageId), eq(messages.status, "streaming")))
+      .where(and(eq(messages.id, messageId), eq(messages.status, "streaming"), turnLeaseCondition(expectedTurnHolder)))
       .run();
     if (result.changes > 0) return;
-    const existing = db.select({ id: messages.id }).from(messages).where(eq(messages.id, messageId)).get();
+    const existing = db.select({ id: messages.id, status: messages.status }).from(messages).where(eq(messages.id, messageId)).get();
     if (!existing) throw new Error(`Сообщения ${messageId} нет`);
+    if (expectedTurnHolder !== undefined && existing.status === "streaming") throw new ChatTurnLeaseLostError(messageId);
     throw new MessageAlreadyFinishedError(messageId);
   }
 
   return {
+    guardedTurnWrites: true,
     async createChat({ createdAt, ...input }) {
       const at = createdAt ?? new Date().toISOString();
       const row = chatRow({ ...input, createdAt: at, updatedAt: at });
@@ -458,9 +474,10 @@ export function createSqliteChatStorage(options: { filePath: string }): SqliteCh
       return rows.map((row) => ({ ...row, parts: JSON.parse(row.parts) as StoredMessage["parts"] }));
     },
 
-    async insertMessage(message) {
+    async insertMessage(message, guard) {
       try {
         db.transaction((tx) => {
+          assertTurnHolder(tx, message.chatId, guard?.expectedTurnHolder, message.id);
           const nextSeq = sql<number>`(select coalesce(max(${messages.seq}), 0) + 1 from ${messages})`;
           const { alive, ...stored } = message;
           tx.insert(messages).values({ ...stored, ...aliveAtColumn(alive), seq: nextSeq }).run();
@@ -474,7 +491,7 @@ export function createSqliteChatStorage(options: { filePath: string }): SqliteCh
 
     updateStreamingMessage: async (messageId, patch) => updateStreaming(messageId, patch),
 
-    markAnswerAlive: async (messageId) => updateStreaming(messageId, { alive: "now" }),
+    markAnswerAlive: async (messageId, guard) => updateStreaming(messageId, { alive: "now", ...guard }),
 
     finishMessage: async (messageId, final) => updateStreaming(messageId, { ...final, ...(final.afterTurn === "pending" && { alive: "now" as const }) }),
 
@@ -482,9 +499,10 @@ export function createSqliteChatStorage(options: { filePath: string }): SqliteCh
       // Чтение, сравнение частей и запись — одна транзакция с блокировкой записи: другая копия не вклинится между ними.
       db.transaction(
         (tx) => {
-          const existing = tx.select({ status: messages.status, parts: messages.parts }).from(messages).where(eq(messages.id, messageId)).get();
+          const existing = tx.select({ status: messages.status, parts: messages.parts, chatId: messages.chatId }).from(messages).where(eq(messages.id, messageId)).get();
           if (!existing) throw new Error(`Сообщения ${messageId} нет`);
           if (existing.status !== "awaiting_approval") throw new MessageNotAwaitingError(messageId);
+          assertTurnHolder(tx, existing.chatId, patch.expectedTurnHolder, messageId);
           if (patch.expectedParts && !sameMessageParts(existing.parts, patch.expectedParts)) throw new MessageNotAwaitingError(messageId);
           tx.update(messages)
             .set({ parts: patch.parts, ...(patch.status && { status: patch.status }), ...aliveAtColumn(patch.alive) })

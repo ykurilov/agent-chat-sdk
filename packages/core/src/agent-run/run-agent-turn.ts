@@ -36,7 +36,7 @@ import { createProviderOutages, isProviderOutage } from "../provider-errors/prov
 import type { ProviderOutageKind, ProviderOutages } from "../provider-errors/provider-outages";
 import type { LongTermMemory } from "../memory/long-term-memory";
 import type { ModelSilenceLimits } from "../provider-errors/model-silence";
-import { MessageAlreadyFinishedError } from "../storage/chat-storage";
+import { ChatTurnLeaseLostError, MessageAlreadyFinishedError } from "../storage/chat-storage";
 import type { ChatStorage, FinishedMessagePatch } from "../storage/chat-storage";
 import { createAnswerSaver } from "./answer-saver";
 import { environmentSecrets } from "../text/scrub-secrets";
@@ -298,6 +298,8 @@ export interface AgentTurnInput {
    */
   browserTools?: { descriptions: ToolSet; pending: PendingBrowserCalls; timeoutMs: number; tabId?: string };
   abortSignal: AbortSignal;
+  /** Утрата поколения аренды отличается от остановки человеком: старый ход не завершает ответ записью. */
+  leaseSignal?: AbortSignal;
   /**
    * Продолжение ответа: новые куски дописываются в то же сообщение. После подтверждения `message` — сообщение
    * с отмеченными решениями (уже в хранилище), `usage` — расход, накопленный до паузы. После «Повторить» `message` —
@@ -481,7 +483,7 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
   const takeover = new AbortController();
   // Служба останавливается: нового захода нет, ход остановлен (`newAttemptAllowed`).
   const noNewAttempts = new AbortController();
-  const input: AgentTurnInput = { ...turnInput, abortSignal: AbortSignal.any([turnInput.abortSignal, takeover.signal, noNewAttempts.signal]) };
+  const input: AgentTurnInput = { ...turnInput, abortSignal: AbortSignal.any([turnInput.abortSignal, takeover.signal, noNewAttempts.signal, ...(turnInput.leaseSignal ? [turnInput.leaseSignal] : [])]) };
   const { storage, messageId, modelId, resume } = input;
   const logError = input.logError ?? console.error;
   const startedAt = new Date().toISOString();
@@ -558,6 +560,9 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
     resume?.message,
     thoughtTitles && ((parts) => withThoughtTitles(parts, thoughtTitles.titles(), new Set(thoughtTitles.askedKeys()))),
   );
+  const onLeaseLost = () => { takeover.abort(); saver.stop(); };
+  if (input.leaseSignal?.aborted) onLeaseLost();
+  else input.leaseSignal?.addEventListener("abort", onLeaseLost, {once: true});
   emitTitles = (titles) => {
     const metadata: ChatMessageMetadata = { thoughtTitles: titles };
     saver.observe({ type: "message-metadata", messageMetadata: metadata });
@@ -1068,8 +1073,9 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
       if (!input.abortSignal.aborted && errors.length === 0) await thoughtTitles.settle(input.thoughtTitles!.settleMs ?? THOUGHT_TITLES_SETTLE_MS);
       thoughtTitles.close();
     }
-    const savedParts = await saver.finish();
+    const savedParts = await saver.finish(takeover.signal);
     const reasoningDurationsMs = timer.finalize();
+    if (input.leaseSignal?.aborted) return await finishTakenOverTurn(reasoningDurationsMs);
     const failed = input.abortSignal.aborted || errors.length > 0;
     // Закрытие побеждает паузу: в закрытом чате ответить на запрос нельзя, поэтому ход не ждёт человека.
     const closing = !failed && pendingHumanInput(savedParts, input.waitingWidgets).length > 0 && (closure !== undefined || (await chatClosedNow()));
@@ -1147,13 +1153,14 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
           logError,
         );
       } catch (failure) {
-        if (!(failure instanceof MessageAlreadyFinishedError)) throw failure;
+        if (!(failure instanceof MessageAlreadyFinishedError) && !(failure instanceof ChatTurnLeaseLostError)) throw failure;
         takeover.abort();
       }
     }
     // Дело инструмента сделано при любом итоге: чат закрывается и после «Стопа», сбоя и перехвата хода.
     if (closure) await applyChatClosure(closure);
-    if (takeover.signal.aborted) return await finishTakenOverTurn(reasoningDurationsMs);
+    // Успешная атомарная конечная запись уже решила исход: последующая утрата аренды не отменяет её commit.
+    if (takeover.signal.aborted && !finished) return await finishTakenOverTurn(reasoningDurationsMs);
     if (!finished) {
       // База так и не приняла конечную запись: ответ остаётся идущим, со всеми частями и расходом по шагам, если запись
       // прошла. Ход его бросает — ответ помечен брошенным: восстановление любой копии (`recoverInterruptedAnswers` и
@@ -1247,9 +1254,11 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
     async function finishTakenOverTurn(reasoningDurationsMs: Record<string, number>): Promise<void> {
       turnUsage.closeAttempt();
       const usage = messageUsage();
-      if (input.ownerId && usage) {
+      // После потери аренды не начинаем новые обращения к недоступной БД: recovery учтёт сохранённый снимок.
+      if (input.ownerId && usage && !input.leaseSignal?.aborted) {
         const taken = await storage.getMessage(messageId).then(
-          (closed) => [closed?.usage ?? {}],
+          // Потеря аренды ещё не значит, что чужая копия закрыла ответ. Идущий снимок учтёт recovery.
+          (closed) => closed?.status === "streaming" ? null : [closed?.usage ?? {}],
           (failure: unknown) => {
             // Неизвестно, что учла другая копия: лучше недосчитать, чем задвоить.
             logError(`Расход перехваченного ответа ${messageId} не записан: ${failure instanceof Error ? failure.message : "неизвестная ошибка"}`);
@@ -1280,6 +1289,7 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
   } finally {
     // Исключение в любом месте хода не оставляет таймеров записи и знака жизни.
     saver.stop();
+    input.leaseSignal?.removeEventListener("abort", onLeaseLost);
     thoughtTitles?.close();
     input.flushers?.delete(saver.flush);
   }
@@ -2085,6 +2095,11 @@ async function finishWithRetries(
       return true;
     } catch (caught) {
       failure = caught;
+    }
+    if (failure instanceof ChatTurnLeaseLostError) {
+      // После неизвестного результата предыдущей записи разрешено только чтение её итога, без новой записи.
+      if (attempt > 0 && await isOurFinal(storage, messageId, final).catch(() => false)) return true;
+      throw failure;
     }
     if (failure instanceof MessageAlreadyFinishedError) {
       if (attempt === 0) throw failure;

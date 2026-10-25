@@ -121,6 +121,7 @@ export {
   ChatAlreadyExistsError,
   DuplicateChatSubjectError,
   DuplicateMessageError,
+  ChatTurnLeaseLostError,
   MessageAlreadyFinishedError,
   MessageNotAwaitingError,
   RELEASED_ANSWER_ALIVE_AT,
@@ -133,6 +134,7 @@ export type { ChatDataFilter, ChatDataFilterValue } from "./storage/chat-data";
 export { migratePostgresSchema } from "./storage/postgres-migrations";
 export type { PostgresMigrationConnection, PostgresMigrationOptions } from "./storage/postgres-migrations";
 export type {
+  ChatTurnWriteGuard,
   AwaitingMessagePatch,
   ChatListOptions,
   ChatStorage,

@@ -153,3 +153,29 @@ describe("сохранение ответа: сразу после резуль�
     saver.stop();
   });
 });
+
+
+describe("сохранение намерения вызова", () => {
+  it("сбой записи не считается сохранённым вызовом, включая позднего ожидающего", async () => {
+    const { storage } = recordingStorage();
+    storage.updateStreamingMessage = async () => { throw new Error("database unavailable"); };
+    const saver = createAnswerSaver(storage, "a1", () => ({}), () => null, () => {});
+    const first = saver.whenCallSaved("c1").then(() => "saved", () => "refused");
+    saver.observe({ type: "start", messageId: "a1" });
+    saver.observe({ type: "start-step" });
+    saver.observe({ type: "tool-input-available", toolCallId: "c1", toolName: "effect", input: {} });
+    try {
+      expect(await first).toBe("refused");
+      await expect(saver.whenCallSaved("c1")).rejects.toThrow();
+    } finally { saver.stop(); }
+  });
+
+  it("остановка saver не выдаёт неподтверждённую запись за сохранённую", async () => {
+    const { storage } = recordingStorage();
+    const saver = createAnswerSaver(storage, "a1", () => ({}), () => null, () => {});
+    const result = saver.whenCallSaved("c1").then(() => "saved", () => "refused");
+    saver.stop();
+    expect(await result).toBe("refused");
+    await expect(saver.whenCallSaved("c2")).rejects.toThrow();
+  });
+});

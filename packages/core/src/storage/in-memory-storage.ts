@@ -9,6 +9,7 @@ import {
   ChatAlreadyExistsError,
   DuplicateChatSubjectError,
   DuplicateMessageError,
+  ChatTurnLeaseLostError,
   MessageAlreadyFinishedError,
   MessageNotAwaitingError,
   sameMessageParts,
@@ -56,6 +57,12 @@ export function createInMemoryChatStorage(): ChatStorage {
   /** Долгая память: у каждого человека свои записи; у скрытых оригиналов слияния есть `mergedInto`. */
   const memoryNotes = new Map<string, Map<string, StoredNote>>();
   const optimizationRuns = new Map<string, MemoryOptimizationRun[]>();
+
+  function assertTurnHolder(chatId: string, holder: string | undefined, messageId: string): void {
+    if (holder === undefined) return;
+    const lease = turnLeases.get(chatId);
+    if (!lease || lease.holder !== holder || lease.until <= Date.now()) throw new ChatTurnLeaseLostError(messageId);
+  }
 
   function streamingMessage(messageId: string): StoredMessage {
     const message = messages.get(messageId);
@@ -170,6 +177,7 @@ export function createInMemoryChatStorage(): ChatStorage {
   }
 
   return {
+    guardedTurnWrites: true,
     async createChat({ createdAt, ...input }) {
       const at = createdAt ?? new Date().toISOString();
       const chat: Chat = withChatData(withoutUndefined({ ...structuredClone(input), createdAt: at, updatedAt: at }));
@@ -313,7 +321,8 @@ export function createInMemoryChatStorage(): ChatStorage {
       }));
     },
 
-    async insertMessage(message) {
+    async insertMessage(message, guard) {
+      assertTurnHolder(message.chatId, guard?.expectedTurnHolder, message.id);
       if (messages.has(message.id)) throw new DuplicateMessageError(message.id);
       // Как внешний ключ в базе: сообщение без чата не пишется.
       const chat = chats.get(message.chatId);
@@ -326,19 +335,23 @@ export function createInMemoryChatStorage(): ChatStorage {
 
     async updateStreamingMessage(messageId, patch) {
       const message = streamingMessage(messageId);
-      const { alive, ...rest } = structuredClone(patch);
+      assertTurnHolder(message.chatId, patch.expectedTurnHolder, messageId);
+      const { alive, expectedTurnHolder: _holder, ...rest } = structuredClone(patch);
       messages.set(messageId, { ...message, ...rest });
       if (alive) aliveAt.set(messageId, aliveAtByLocalClock(alive));
     },
 
-    async markAnswerAlive(messageId) {
-      streamingMessage(messageId);
+    async markAnswerAlive(messageId, guard) {
+      const message = streamingMessage(messageId);
+      assertTurnHolder(message.chatId, guard?.expectedTurnHolder, messageId);
       aliveAt.set(messageId, aliveAtByLocalClock("now"));
     },
 
     async finishMessage(messageId, final) {
       const message = streamingMessage(messageId);
-      messages.set(messageId, { ...message, ...structuredClone(final) });
+      assertTurnHolder(message.chatId, final.expectedTurnHolder, messageId);
+      const { expectedTurnHolder: _holder, ...stored } = structuredClone(final);
+      messages.set(messageId, { ...message, ...stored });
       if (final.afterTurn === "pending") aliveAt.set(messageId, aliveAtByLocalClock("now"));
     },
 
@@ -346,6 +359,7 @@ export function createInMemoryChatStorage(): ChatStorage {
       const message = messages.get(messageId);
       if (!message) throw new Error(`Сообщения ${messageId} нет`);
       if (message.status !== "awaiting_approval") throw new MessageNotAwaitingError(messageId);
+      assertTurnHolder(message.chatId, patch.expectedTurnHolder, messageId);
       if (patch.expectedParts && !sameMessageParts(message.parts, patch.expectedParts)) throw new MessageNotAwaitingError(messageId);
       messages.set(messageId, {
         ...message,

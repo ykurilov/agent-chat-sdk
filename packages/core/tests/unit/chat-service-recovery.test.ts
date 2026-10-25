@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createChatService } from "../../src/chat-service";
 import { newStoredMessage } from "../../src/conversation/types";
 import type { AnswerStatus, StoredMessage, UsageRecord } from "../../src/conversation/types";
@@ -178,4 +178,21 @@ describe("служба чата: восстановление после пер�
     expect(written[1]).toMatchObject({ messageId: "a1", inputTokens: 900, cachedInputTokens: 400, outputTokens: 30, reasoningTokens: 5, estimated: true });
     expect((await storage.getMessage("a1"))?.usage).toEqual(whole);
   });
+});
+
+
+it("брошенный ответ восстанавливается без забытого startup-вызова, здоровое ожидание подтверждения сохраняется", async () => {
+  vi.useFakeTimers();
+  const { storage, service } = await setup();
+  try {
+    await storage.insertMessage(answer("orphan", "c1", "streaming", "Успело сохраниться"));
+    await storage.insertMessage(answer("approval", "c2", "awaiting_approval", "Ждёт человека"));
+    await vi.advanceTimersByTimeAsync(5000);
+    expect((await storage.getMessage("orphan"))?.status).toBe("interrupted");
+    expect((await storage.getMessage("approval"))?.status).toBe("awaiting_approval");
+    await service.flush();
+    const scans = vi.spyOn(storage, "listSilentAnswerIds");
+    await vi.advanceTimersByTimeAsync(20000);
+    expect(scans).not.toHaveBeenCalled();
+  } finally { await service.flush(); vi.useRealTimers(); }
 });

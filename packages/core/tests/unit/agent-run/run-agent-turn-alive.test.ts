@@ -116,7 +116,20 @@ describe("runAgentTurn: идущий ответ отмечает «жив» (FR-
         await storage.updateStreamingMessage(messageId, patch);
       },
     };
-    void readAll(startTurn(hanging, callThenAnswer(), { tools: slowTool(60_000), toolTimeout: { forTool: () => Infinity } })).catch(() => {});
+    const streamingText = new MockLanguageModelV4({ doStream: async () => ({
+      stream: new ReadableStream<LanguageModelV4StreamPart>({ start(controller) {
+        controller.enqueue(streamStart);
+        controller.enqueue({ type: "text-start", id: "text" });
+        controller.enqueue({ type: "text-delta", id: "text", delta: "Работаю" });
+        setTimeout(() => {
+          controller.enqueue({ type: "text-end", id: "text" });
+          controller.enqueue(finishPart());
+          controller.close();
+        }, 60_000);
+      } }),
+    }) });
+    // A hung text snapshot keeps the stream alive; a hung tool intent must instead refuse execution.
+    void readAll(startTurn(hanging, streamingText)).catch(() => {});
     await vi.advanceTimersByTimeAsync(1_000);
     expect(writes).toBe(1);
     const timers = vi.spyOn(globalThis, "setTimeout");

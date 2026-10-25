@@ -37,8 +37,11 @@ export interface SpendingLimitStateRecord {
   version: number;
 }
 
+/** Условие записи ответа: тот же неповторяющийся держатель и ещё живая аренда чата, атомарно с записью. Не данные сообщения. */
+export interface ChatTurnWriteGuard { expectedTurnHolder?: string; }
+
 export type StreamingMessagePatch = Pick<StoredMessage, "parts"> &
-  Partial<Pick<StoredMessage, "usage" | "reasoningDurationsMs" | "alive">>;
+  Partial<Pick<StoredMessage, "usage" | "reasoningDurationsMs" | "alive">> & ChatTurnWriteGuard;
 
 /**
  * `providerId` — только если ответил запасной провайдер, а не выбранный при вставке. `afterTurn` — состояние хука итога
@@ -46,7 +49,7 @@ export type StreamingMessagePatch = Pick<StoredMessage, "parts"> &
  */
 export type FinishedMessagePatch = { status: FinalAnswerStatus } & Partial<
   Pick<StoredMessage, "parts" | "usage" | "reasoningDurationsMs" | "error" | "providerId">
-> & { afterTurn?: AfterTurnState };
+> & { afterTurn?: AfterTurnState } & ChatTurnWriteGuard;
 
 /** Новый чат. `createdAt` задан — и создание, и обновление чата получают эту дату; нет — время записи. */
 export interface NewChatInput {
@@ -85,7 +88,7 @@ export type ImportedChat = Pick<Chat, "id" | "ownerId" | "modelId" | "providerId
   Partial<Pick<Chat, "reasoning" | "title" | "subjectKey" | "data" | "subjectData">>;
 
 /** Правка ответа, который ждёт подтверждения: новые части и, если ожидание кончилось, новый статус. */
-export interface AwaitingMessagePatch {
+export interface AwaitingMessagePatch extends ChatTurnWriteGuard {
   parts: StoredMessage["parts"];
   /** Не указан — ответ остаётся ждущим. `streaming` — ход продолжается, `complete` — ожидание закрыто без продолжения. */
   status?: "streaming" | "complete";
@@ -113,6 +116,8 @@ export interface MessagePartsLink extends MessageLink {
 
 /** Хранилище чатов. Владельца не проверяет — это делает ядро до вызова. */
 export interface ChatStorage {
+  /** Адаптер атомарно исполняет ChatTurnWriteGuard у всех записей ответа; обязателен при наличии аренд. */
+  readonly guardedTurnWrites?: true;
   /** Повтор `subjectKey` у того же владельца — `DuplicateChatSubjectError`, чат не записан. */
   createChat(input: NewChatInput): Promise<Chat>;
   getChat(chatId: string): Promise<Chat | null>;
@@ -187,7 +192,7 @@ export interface ChatStorage {
    */
   listMessagePartsOfTypes?(chatId: string, types: readonly string[]): Promise<MessagePartsLink[]>;
   /** Новое сообщение; в той же операции обновляет `updatedAt` чата. */
-  insertMessage(message: StoredMessage): Promise<void>;
+  insertMessage(message: StoredMessage, guard?: ChatTurnWriteGuard): Promise<void>;
   /** Дописать идущий ответ. Только пока status = 'streaming'. */
   updateStreamingMessage(messageId: string, patch: StreamingMessagePatch): Promise<void>;
   /**
@@ -195,7 +200,7 @@ export interface ChatStorage {
    * status = 'streaming', иначе `MessageAlreadyFinishedError`. Необязательный: без него ход пишет знак полной записью
    * ответа (`updateStreamingMessage`).
    */
-  markAnswerAlive?(messageId: string): Promise<void>;
+  markAnswerAlive?(messageId: string, guard?: ChatTurnWriteGuard): Promise<void>;
   /** Перевести ответ в конечное состояние. Только из 'streaming'. */
   finishMessage(messageId: string, final: FinishedMessagePatch): Promise<void>;
   /**
@@ -422,6 +427,14 @@ export class DuplicateChatSubjectError extends Error {
   ) {
     super(`У владельца ${ownerId} уже есть чат с ключом ${subjectKey}`);
     this.name = "DuplicateChatSubjectError";
+  }
+}
+
+/** Запись ответа отклонена: поколение аренды сменилось или её срок истёк. */
+export class ChatTurnLeaseLostError extends Error {
+  constructor(readonly messageId: string) {
+    super(`Запись ответа ${messageId} отклонена: аренда хода утрачена`);
+    this.name = "ChatTurnLeaseLostError";
   }
 }
 

@@ -168,3 +168,200 @@ describe("снятие аренды не обгоняет следующий з�
     expect(await storage.claimChatTurn!(chat.id, "копия B", CHAT_TURN_LEASE_MS)).toBe(true);
   });
 });
+
+
+describe("потеря аренды останавливает владельца", () => {
+  it.each(["taken", "database error"])("продление %s: уведомление ровно один раз, позднее продление не возвращает владение", async (kind) => {
+    const memory = createInMemoryChatStorage();
+    let renew = false;
+    const lost = vi.fn();
+    const storage: ChatStorage = { ...memory, claimChatTurn: async (...args) => {
+      if (!renew) return memory.claimChatTurn!(...args);
+      if (kind === "database error") throw new Error("connection lost");
+      return false;
+    } };
+    const leases = createChatTurnLeases({ storage, holder: "A", logError: () => {}, ...{ onLost: lost } });
+    await leases.enter("chat");
+    renew = true;
+    try {
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(lost).toHaveBeenCalledWith("chat");
+      await vi.advanceTimersByTimeAsync(15000);
+      expect(lost).toHaveBeenCalledTimes(1);
+      await expect(leases.enter("chat")).rejects.toBeInstanceOf(ChatBusyError);
+    } finally { await leases.releaseAll(); }
+  });
+});
+
+
+it("зависшее продление не держит старого владельца живым после истечения аренды", async () => {
+  const memory = createInMemoryChatStorage();
+  const lost = vi.fn();
+  let renew = false;
+  let releaseRenew!: (kept: boolean) => void;
+  const pending = new Promise<boolean>((resolve) => { releaseRenew = resolve; });
+  const storage: ChatStorage = { ...memory, claimChatTurn: (...args) => renew ? pending : memory.claimChatTurn!(...args) };
+  const leases = createChatTurnLeases({ storage, holder: "A", logError: () => {}, ...{ onLost: lost } });
+  await leases.enter("chat");
+  renew = true;
+  try {
+    await vi.advanceTimersByTimeAsync(CHAT_TURN_LEASE_MS + 1);
+    expect(lost).toHaveBeenCalledWith("chat");
+    releaseRenew(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(lost).toHaveBeenCalledTimes(1);
+    await expect(leases.enter("chat")).rejects.toBeInstanceOf(ChatBusyError);
+  } finally { releaseRenew(true); await leases.releaseAll(); }
+});
+
+it("служба передаёт потерю аренды модели и больше не пишет ответ от старой копии", async () => {
+  const memory = createInMemoryChatStorage();
+  let renew = false;
+  let lost = false;
+  let abortSeen = false;
+  let close = () => {};
+  const afterLoss: string[] = [];
+  const storage: ChatStorage = {
+    ...memory,
+    claimChatTurn: async (...args) => {
+      if (renew) { lost = true; return false; }
+      return memory.claimChatTurn!(...args);
+    },
+    updateStreamingMessage: async (...args) => { if (lost) afterLoss.push("stream"); return memory.updateStreamingMessage(...args); },
+    finishMessage: async (...args) => { if (lost) afterLoss.push("finish"); return memory.finishMessage(...args); },
+    markAnswerAlive: async (...args) => { if (lost) afterLoss.push("alive"); return memory.markAnswerAlive!(...args); },
+  };
+  const model = new MockLanguageModelV4({
+    doStream: async ({ abortSignal }) => ({ stream: new ReadableStream({
+      start(controller) {
+        close = () => { try { controller.close(); } catch {} };
+        controller.enqueue({ type: "stream-start", warnings: [] });
+        controller.enqueue({ type: "text-start", id: "t" });
+        controller.enqueue({ type: "text-delta", id: "t", delta: "Начало" });
+        abortSignal?.addEventListener("abort", () => { abortSeen = true; controller.error(abortSignal.reason); }, { once: true });
+      },
+    }) }),
+    doGenerate: async () => generateResult("сводка", { output: 20 }),
+  });
+  const { service } = noticeService(model, { storage });
+  const chat = await service.createChat("anna");
+  const reading = readAll(await service.sendMessage("anna", chat.id, userMessage("lease-human", "Привет")));
+  await vi.advanceTimersByTimeAsync(0);
+  renew = true;
+  try {
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(abortSeen).toBe(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(afterLoss).toEqual([]);
+  } finally { close(); await reading; await service.flush(); }
+});
+
+
+it("новый захват тем же процессом получает другой fence-token: старый callback не владеет новым ходом", async () => {
+  const memory=createInMemoryChatStorage();
+  const tokens:string[]=[];
+  const storage:ChatStorage={...memory,claimChatTurn:async(chatId,holder,ms)=>{
+    tokens.push(holder);
+    return memory.claimChatTurn!(chatId,holder,ms);
+  }};
+  const leases=createChatTurnLeases({storage,holder:"same-process",logError:()=>{}});
+  await leases.enter("chat");
+  const first=tokens.at(-1);
+  leases.leave("chat");
+  await leases.enter("chat");
+  try{expect(tokens.at(-1)).not.toBe(first);}finally{leases.leave("chat");await leases.releaseAll();}
+});
+
+
+it("просроченное подтверждение не возрождается первым отложенным heartbeat после паузы event loop", async()=>{
+  const memory=createInMemoryChatStorage();const lost=vi.fn();const claim=vi.fn(memory.claimChatTurn!.bind(memory));
+  const leases=createChatTurnLeases({storage:{...memory,claimChatTurn:claim},holder:"A",logError:()=>{},...{onLost:lost}});
+  await leases.enter("chat");
+  vi.setSystemTime(Date.now()+CHAT_TURN_LEASE_MS+1);
+  try{
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(lost).toHaveBeenCalledWith("chat");
+    expect(claim).toHaveBeenCalledTimes(1);
+  }finally{await leases.releaseAll();}
+});
+
+it("раннее срабатывание таймера не отменяет ещё действующее подтверждение аренды", async () => {
+  vi.useRealTimers();
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  const memory = createInMemoryChatStorage();
+  const lost = vi.fn();
+  const leases = createChatTurnLeases({ storage: memory, holder: "early-timer", logError: () => {}, onLost: lost });
+  await leases.enter("chat");
+  try {
+    // Timeout wakeups advance, while the actual wall-clock deadline has not elapsed.
+    await vi.advanceTimersByTimeAsync(CHAT_TURN_LEASE_MS * 2);
+    expect(lost).not.toHaveBeenCalled();
+    expect(leases.signal("chat")?.aborted).toBe(false);
+  } finally { await leases.releaseAll(); }
+});
+
+it("утраченное поколение с зависшим renewal не блокирует shutdown и повторный вход; поздняя очистка не стирает новое", async () => {
+  const memory = createInMemoryChatStorage();
+  let hang = false;
+  let releaseRenew!: () => void;
+  const gate = new Promise<void>((resolve) => { releaseRenew = resolve; });
+  const tokens: string[] = [];
+  const storage: ChatStorage = { ...memory, claimChatTurn: async (...args) => {
+    tokens.push(args[1]);
+    if (hang) await gate;
+    return memory.claimChatTurn!(...args);
+  } };
+  const leases = createChatTurnLeases({ storage, holder: "same-process", logError: () => {} });
+  await leases.enter("lost-chat");
+  const old = leases.holder("lost-chat");
+  hang = true;
+  await vi.advanceTimersByTimeAsync(CHAT_TURN_LEASE_MS + 1);
+  expect(leases.signal("lost-chat")?.aborted).toBe(true);
+  leases.leave("lost-chat");
+  let flushed = false;
+  const flushing = leases.releaseAll().then(() => { flushed = true; });
+  let reentered = false;
+  let entering: Promise<void> | undefined;
+  try {
+    await vi.advanceTimersByTimeAsync(0);
+    expect(flushed).toBe(true);
+    hang = false;
+    entering = leases.enter("lost-chat").then(() => { reentered = true; });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(reentered).toBe(true);
+    expect(leases.holder("lost-chat")).not.toBe(old);
+    releaseRenew();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(leases.signal("lost-chat")?.aborted).toBe(false);
+    expect(await memory.claimChatTurn!("lost-chat", "other-copy", CHAT_TURN_LEASE_MS)).toBe(false);
+  } finally {
+    hang = false;
+    releaseRenew();
+    await flushing;
+    await entering;
+    leases.leave("lost-chat");
+    await leases.releaseAll();
+  }
+});
+
+it("shutdown начался до потери аренды: зависшее продление ждётся только до подтверждённого срока", async () => {
+  const memory = createInMemoryChatStorage();
+  let hang = false;
+  let finishRenew!: () => void;
+  const pending = new Promise<void>((resolve) => { finishRenew = resolve; });
+  const leases = createChatTurnLeases({ storage: { ...memory, claimChatTurn: async (...args) => {
+    if (hang) await pending;
+    return memory.claimChatTurn!(...args);
+  } }, holder: "shutdown", logError: () => {} });
+  await leases.enter("chat");
+  hang = true;
+  await vi.advanceTimersByTimeAsync(5000);
+  let finished = false;
+  const flushing = leases.releaseAll().then(() => { finished = true; });
+  try {
+    await vi.advanceTimersByTimeAsync(0);
+    expect(finished).toBe(false);
+    await vi.advanceTimersByTimeAsync(CHAT_TURN_LEASE_MS);
+    expect(finished).toBe(true);
+  } finally { finishRenew(); await flushing; }
+});

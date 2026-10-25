@@ -12,7 +12,7 @@ export const ANSWER_ALIVE_EVERY_MS = 5_000;
 export const ANSWER_STALE_AFTER_MS = 3 * ANSWER_ALIVE_EVERY_MS;
 
 /**
- * Как часто служба ищет брошенные ответы после первого `recoverInterruptedAnswers`. Вместе с порогом это окно, когда
+ * Как часто служба ищет брошенные ответы: обход включён при создании службы до `flush`. Вместе с порогом это окно, когда
  * ответ упавшей копии ещё выглядит идущим: 15–20 с. Запрос дешёвый — по частичному индексу идущих ответов.
  */
 export const STALE_ANSWERS_SWEEP_EVERY_MS = 5_000;

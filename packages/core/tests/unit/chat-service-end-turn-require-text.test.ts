@@ -63,12 +63,25 @@ describe("endTurn requireText", () => {
   });
 
   it("uses accepted stream text even when intermediate storage writes fail", async () => {
-    const { model, service, storage } = setup([turn("Сохранено.")]);
-    vi.spyOn(storage, "updateStreamingMessage").mockRejectedValue(new Error("temporary write failure"));
+    const { model, service, storage, save } = setup([turn("Сохранено.")]);
+    const write = storage.updateStreamingMessage.bind(storage);
+    let failedTextWrites = 0;
+    let intentSaved = false;
+    vi.spyOn(storage, "updateStreamingMessage").mockImplementation(async (id, patch) => {
+      if (intentSaved) {
+        failedTextWrites += 1;
+        throw new Error("temporary intermediate write failure");
+      }
+      // Сначала сохраняем намерение действия. Сбои последующих снимков не отменяют принятый текст.
+      await write(id, patch);
+      intentSaved = patch.parts?.some((part) => "toolCallId" in part) ?? false;
+    });
     const chat = await service.createChat("anna");
     const chunks = await readAll(await service.sendMessage("anna", chat.id, userMessage("u1", "Сохрани")));
     expect(model.doStreamCalls).toHaveLength(1);
     expect(textOf(chunks)).toBe("Сохранено.");
+    expect(failedTextWrites).toBeGreaterThan(0);
+    expect(save.execute).toHaveBeenCalledOnce();
   });
 
   it("explicit output text remains supported with requireText", async () => {

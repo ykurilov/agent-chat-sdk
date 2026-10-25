@@ -24,13 +24,13 @@ const nudging = (json: Record<string, any>) => {
   json.schedule = { dayStart: "09:00", nightFrom: "21:00", nudges: { afterSilence: [{ amount: 15, unit: "min" }] } };
 };
 
-/** Ход модели «идёт» 5 секунд: часы двигаются при каждом вызове. */
+/** Ход модели «идёт» 5 секунд вместе с heartbeat, а не прыжком Date мимо таймеров продления. */
 function slowModel(copy: TimerChat, onCall?: (calls: number) => void) {
   const original = copy.model.doStream;
   let calls = 0;
   copy.model.doStream = async (options) => {
     calls += 1;
-    vi.setSystemTime(Date.now() + 5_000);
+    await vi.advanceTimersByTimeAsync(5_000);
     onCall?.(calls);
     return original(options);
   };
@@ -38,6 +38,7 @@ function slowModel(copy: TimerChat, onCall?: (calls: number) => void) {
 
 describe("таймеры: обход дольше аренды", () => {
   it("50 касаний, медленный ход, вторая копия тикает посреди обхода — каждому человеку ровно одно касание", async () => {
+    vi.useFakeTimers({ now: new Date(msk(14, 10)) });
     const store = memoryFlowStore();
     const storage = createInMemoryChatStorage();
     const sent: FlowOutgoing[] = [];
@@ -76,6 +77,7 @@ describe("таймеры: обход дольше аренды", () => {
     for (const message of sent) touches.set(message.chatId, (touches.get(message.chatId) ?? 0) + 1);
     expect([...touches.entries()].filter(([, count]) => count !== 1)).toEqual([]);
     expect(touches.size).toBe(50);
+    for (const copy of copies) expect(copy.logError.mock.calls.flat().filter(message => message.includes("Аренда хода чата"))).toEqual([]);
     // Вторая копия действительно тикала посреди обхода и забрала то, до чего первая не дошла.
     expect(secondTick).toBeDefined();
     expect(second.model.doStreamCalls.length).toBeGreaterThan(0);

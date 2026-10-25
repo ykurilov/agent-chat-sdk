@@ -1,7 +1,7 @@
 import { readUIMessageStream } from "ai";
 import type { UIMessageChunk } from "ai";
 import type { AgentChatMessage, TokenUsage } from "../conversation/types";
-import { MessageAlreadyFinishedError } from "../storage/chat-storage";
+import { ChatTurnLeaseLostError, MessageAlreadyFinishedError } from "../storage/chat-storage";
 import type { ChatStorage } from "../storage/chat-storage";
 import { ANSWER_ALIVE_EVERY_MS } from "./answer-liveness";
 
@@ -15,9 +15,9 @@ export const SAVE_INTERVAL_MS = 500;
 const isFinalToolResult = (chunk: UIMessageChunk): boolean =>
   chunk.type === "tool-output-error" || (chunk.type === "tool-output-available" && !chunk.preliminary);
 
-/** Вызовы инструментов в частях ответа. */
+/** Только вызовы с полным вводом: сохранённый input-streaming ещё не разрешает действие. */
 const callIdsOf = (parts: AgentChatMessage["parts"]): string[] =>
-  parts.flatMap((part) => ("toolCallId" in part && typeof part.toolCallId === "string" ? [part.toolCallId] : []));
+  parts.flatMap((part) => ("toolCallId" in part && typeof part.toolCallId === "string" && "state" in part && typeof part.state === "string" && part.state !== "input-streaming" ? [part.toolCallId] : []));
 
 export type AnswerSaver = ReturnType<typeof createAnswerSaver>;
 
@@ -69,13 +69,25 @@ export function createAnswerSaver(
   let released = false;
   // Вызовы, уже отправленные в хранилище, и кто ждёт записи своего вызова.
   const writtenCalls = new Set(callIdsOf(latest));
-  const callWaiters = new Map<string, Array<() => void>>();
+  const callWaiters = new Map<string, Array<{ resolve: () => void; reject: (error: Error) => void }>>();
+  const failedCalls = new Map<string, Error>();
+  const callNotSaved = () => new Error("Действие не выполнено: вызов инструмента не записан в хранилище");
 
-  /** Запись с этими частями кончилась (и сбоем тоже: инструмент не ждёт базу, которая не пишет). */
-  function callsWritten(parts: AgentChatMessage["parts"]): void {
-    for (const id of callIdsOf(parts)) {
+  /** Только подтверждённая запись открывает выполнение инструмента. */
+  function callsWritten(ids: readonly string[]): void {
+    for (const id of ids) {
       writtenCalls.add(id);
-      for (const release of callWaiters.get(id) ?? []) release();
+      for (const waiter of callWaiters.get(id) ?? []) waiter.resolve();
+      callWaiters.delete(id);
+    }
+  }
+
+  function callsFailed(ids: readonly string[]): void {
+    for (const id of ids) {
+      if (writtenCalls.has(id)) continue;
+      const error = failedCalls.get(id) ?? callNotSaved();
+      failedCalls.set(id, error);
+      for (const waiter of callWaiters.get(id) ?? []) waiter.reject(error);
       callWaiters.delete(id);
     }
   }
@@ -86,6 +98,8 @@ export function createAnswerSaver(
     lastWriteAt = Date.now();
     lastSignAt = lastWriteAt;
     const parts = decorateParts(latest);
+    // Метки берутся до await: сборщик может за время записи дописать новые части или закончить аргументы.
+    const completeCalls = callIdsOf(parts);
     try {
       await storage.updateStreamingMessage(messageId, {
         parts,
@@ -93,11 +107,13 @@ export function createAnswerSaver(
         usage: usage(),
         alive: released ? "released" : "now",
       });
+      callsWritten(completeCalls);
     } catch (failure) {
+      callsFailed(completeCalls);
       noteFailure(failure);
     }
+    // Попытка записи завершена; сбой не открывает вызовы. Следующее изменение и конечная запись повторят снимок.
     savedChanges = Math.max(savedChanges, writtenChanges);
-    callsWritten(parts);
   }
 
   /** Знак жизни без записи всего ответа: в тишине ответ не меняется. */
@@ -112,7 +128,7 @@ export function createAnswerSaver(
 
   function noteFailure(failure: unknown): void {
     // Ответ закрыла другая копия, сочтя брошенным: писать больше некуда (FR-060).
-    if (failure instanceof MessageAlreadyFinishedError) {
+    if ((failure instanceof MessageAlreadyFinishedError || failure instanceof ChatTurnLeaseLostError)) {
       stop();
       onTakenOver();
     }
@@ -121,7 +137,7 @@ export function createAnswerSaver(
 
   function stop(): void {
     closed = true;
-    for (const waiters of callWaiters.values()) for (const release of waiters) release();
+    for (const waiters of callWaiters.values()) for (const waiter of waiters) waiter.reject(callNotSaved());
     callWaiters.clear();
     clearTimeout(timer);
     timer = undefined;
@@ -244,10 +260,13 @@ export function createAnswerSaver(
       push(chunk);
       if ((isFinalToolResult(chunk) || chunk.type === "tool-input-available") && !closed) void settleAssembly().then(writeNow);
     },
-    /** Ждёт, пока начатый вызов попадёт в хранилище; записи больше не будет (ход кончен, ответ закрыт) — сразу. */
+    /** Ждёт подтверждённую запись; сбой или остановка до неё — отказ, включая позднего ожидающего. */
     whenCallSaved(toolCallId: string): Promise<void> {
-      if (closed || writtenCalls.has(toolCallId)) return Promise.resolve();
-      return new Promise<void>((resolve) => callWaiters.set(toolCallId, [...(callWaiters.get(toolCallId) ?? []), resolve]));
+      const failure = failedCalls.get(toolCallId);
+      if (failure) return Promise.reject(failure);
+      if (writtenCalls.has(toolCallId)) return Promise.resolve();
+      if (closed) return Promise.reject(callNotSaved());
+      return new Promise<void>((resolve, reject) => callWaiters.set(toolCallId, [...(callWaiters.get(toolCallId) ?? []), { resolve, reject }]));
     },
     /**
      * Стирает части ответа с номера `keep`: сборка начинается заново с оставшихся, запись — сразу, без окна: упади
@@ -295,11 +314,21 @@ export function createAnswerSaver(
       return latest;
     },
     /** Ждёт сборку и идущую запись; возвращает итоговые части — их запишет конечная запись хода. */
-    async finish(): Promise<AgentChatMessage["parts"]> {
+    async finish(lostOwnership?: AbortSignal): Promise<AgentChatMessage["parts"]> {
       stop();
       feed.close();
       await assembling.catch(() => {});
-      await writing;
+      // Обычная остановка ждёт запись. Утративший аренду ход не держит завершение на зависшей БД:
+      // позднюю запись всё равно проверяет атомарная ограда хранилища.
+      if (writing && lostOwnership) {
+        const pending = writing;
+        await new Promise<void>((resolve, reject) => {
+          const done = () => { lostOwnership.removeEventListener("abort", done); resolve(); };
+          if (lostOwnership.aborted) return done();
+          lostOwnership.addEventListener("abort", done, { once: true });
+          pending.then(done, (error: unknown) => { lostOwnership.removeEventListener("abort", done); reject(error); });
+        });
+      } else await writing;
       return latest;
     },
     /** Ход кончился, в том числе исключением: таймеров записи и знака жизни больше нет. */

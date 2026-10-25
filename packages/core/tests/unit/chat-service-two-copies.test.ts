@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { ApprovalNotPendingError } from "../../src/chat-service";
+import { ChatBusyError } from "../../src/running-answers/running-answer-registry";
 import type { ChatStorage } from "../../src/storage/chat-storage";
 import { readAll } from "./support/mock-model";
 import { CHOICE_INPUT, answerAndFinish, ask, lastAnswer, removeTool, step, toolPart, userMessage, widgetCall, widgetChat } from "./support/widget-chat";
@@ -12,13 +13,13 @@ import { CHOICE_INPUT, answerAndFinish, ask, lastAnswer, removeTool, step, toolP
 const removeCall = { type: "tool-call" as const, toolCallId: "r1", toolName: "remove", input: JSON.stringify({ path: "a" }) };
 
 /** Хранилище второй копии: её первый вызов `method` ждёт `release()`; `reached` — она дошла до него. */
-function heldStorage(storage: ChatStorage, method: "updateAwaitingMessage" | "insertMessage" = "updateAwaitingMessage") {
+function heldStorage(storage: ChatStorage, method: "updateAwaitingMessage" | "insertMessage" | "claimChatTurn" = "updateAwaitingMessage") {
   let release!: () => void;
   let reach!: () => void;
   const gate = new Promise<void>((resolve) => (release = resolve));
   const reached = new Promise<void>((resolve) => (reach = resolve));
   let held = false;
-  const original = storage[method].bind(storage) as (...args: unknown[]) => Promise<void>;
+  const original = storage[method]!.bind(storage) as (...args: unknown[]) => Promise<void>;
   const copy: ChatStorage = {
     ...storage,
     [method]: async (...args: unknown[]) => {
@@ -80,7 +81,8 @@ describe("новое сообщение, пока другая копия отв
     const { service, storage, build } = widgetChat([step(widgetCall("w1", "ask_choice", CHOICE_INPUT))]);
     const { chat } = await ask(service);
     const waitingId = (await lastAnswer(service, chat.id)).id;
-    const second = heldStorage(storage, "insertMessage");
+    // Пока новая копия ещё не получила аренду, прежняя успевает закончить виджет.
+    const second = heldStorage(storage, "claimChatTurn");
     const sending = build(second.copy).sendMessage("anna", chat.id, userMessage("u2", "а ещё вопрос"));
     await second.reached;
     expect(await answerAndFinish(service, chat.id, "w1", { выбрано: "Про" })).toEqual({ resumed: true });
@@ -92,6 +94,26 @@ describe("новое сообщение, пока другая копия отв
     expect(toolPart(answered, "w1")).toMatchObject({ state: "output-available", output: { выбрано: "Про" } });
     expect(messages.some((message) => message.id === "u2")).toBe(true);
     expect(messages.at(-1)?.role).toBe("assistant");
+  });
+
+  it("новое сообщение уже держит аренду: последний ответ на виджет не запускается без своего поколения", async () => {
+    const { service, storage, build } = widgetChat([step(widgetCall("w1", "ask_choice", CHOICE_INPUT))]);
+    const { chat } = await ask(service);
+    const waiting = await lastAnswer(service, chat.id);
+    const storedBefore = await storage.getMessage(waiting.id);
+    const second = heldStorage(storage, "insertMessage");
+    const sending = build(second.copy).sendMessage("anna", chat.id, userMessage("u2", "а ещё вопрос"));
+    await second.reached;
+    try {
+      await expect(answerAndFinish(service, chat.id, "w1", { выбрано: "Про" })).rejects.toBeInstanceOf(ChatBusyError);
+      const unchanged = await storage.getMessage(waiting.id);
+      expect(unchanged?.status).toBe("awaiting_approval");
+      expect(unchanged?.parts).toEqual(storedBefore?.parts);
+    } finally { second.release(); }
+    await readAll(await sending);
+    const { messages } = await service.getHistory("anna", chat.id);
+    expect(messages.filter(message => message.id === "u2")).toHaveLength(1);
+    expect(messages.at(-1)?.metadata?.status).toBe("complete");
   });
 
   it("другая вкладка ответила на виджет, а подтверждение ещё ждёт: ответ на виджет остаётся, запрос закрыт отказом", async () => {

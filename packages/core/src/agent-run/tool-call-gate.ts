@@ -2,7 +2,7 @@ import type { ToolSet } from "ai";
 import { LAST_STEP_TOOL_REFUSAL } from "./last-step";
 import { isAsyncGeneratorFunction } from "./sequential-tools";
 
-/** Дольше этого вызов записи не ждёт: база тормозит — инструмент всё равно идёт, а запись догонит. */
+/** Предел ожидания подтверждённой записи: по сроку — отказ, инструмент не выполняется. */
 export const CALL_SAVE_WAIT_MS = 5_000;
 
 export interface ToolCallGate {
@@ -34,20 +34,28 @@ export function gateToolCalls(tools: ToolSet | undefined, gate: ToolCallGate): T
     const refuseIfClosed = () => {
       if (gate.closed()) throw new Error(LAST_STEP_TOOL_REFUSAL);
     };
+    const readyToExecute = (callOptions: CallOptions) => {
+      refuseIfClosed();
+      callOptions.abortSignal?.throwIfAborted();
+    };
     const saved = (callOptions: CallOptions) => (gate.callSaved ? withinWait(gate.callSaved(callOptions.toolCallId)) : Promise.resolve());
     gated[name] = {
       ...original,
       execute: isAsyncGeneratorFunction(gate.kindsFrom?.[name]?.execute ?? execute)
         ? (input: unknown, callOptions: CallOptions) => {
-            refuseIfClosed();
+            readyToExecute(callOptions);
             return (async function* () {
               await saved(callOptions);
+              readyToExecute(callOptions);
               yield* execute(input, callOptions) as AsyncIterable<unknown>;
             })();
           }
         : (input: unknown, callOptions: CallOptions) => {
-            refuseIfClosed();
-            return saved(callOptions).then(() => execute(input, callOptions));
+            readyToExecute(callOptions);
+            return saved(callOptions).then(() => {
+              readyToExecute(callOptions);
+              return execute(input, callOptions);
+            });
           },
     } as typeof original;
   }
@@ -61,6 +69,7 @@ export function gateToolApproval<Approval extends (...args: never[]) => unknown>
 
 function withinWait(saved: Promise<void>): Promise<void> {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const cap = new Promise<void>((resolve) => (timer = setTimeout(resolve, CALL_SAVE_WAIT_MS)));
-  return Promise.race([saved.catch(() => {}), cap]).finally(() => clearTimeout(timer));
+  const refusal = () => new Error("Действие не выполнено: хранилище не подтвердило запись вызова инструмента");
+  const cap = new Promise<void>((_resolve, reject) => (timer = setTimeout(() => reject(refusal()), CALL_SAVE_WAIT_MS)));
+  return Promise.race([saved, cap]).catch(() => { throw refusal(); }).finally(() => clearTimeout(timer));
 }

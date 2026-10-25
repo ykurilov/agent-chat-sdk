@@ -117,6 +117,7 @@ import { recordSpentTokens, usageMinusJournaled } from "./usage/record-usage";
 import { ChatBusyError, createRunningAnswerRegistry } from "./running-answers/running-answer-registry";
 import { BURST_BUSY_RETRY_MS, BURST_HOLD_MS, BURST_HOLD_RENEW_MS, BURST_PART_TYPE, BURST_PENDING_GRACE_MS, BURST_SWEEP_LIMIT, burstPart, burstText, burstToAnswer, burstVerdict, createBurstWaits, isBurstPending, resolveQuietMs } from "./bursts/message-bursts";
 import { createChatTurnLeases } from "./chat-turn-lease";
+import { guardedTurnStorage } from "./chat-turn-storage";
 import { createTurnSteering, isCorrection, steerPart } from "./steering/turn-steering";
 import type { SteeringTurn } from "./steering/turn-steering";
 import type { RunningAnswerRegistry } from "./running-answers/running-answer-registry";
@@ -128,7 +129,7 @@ import type { TurnGateInput, TurnPass } from "./turn-hooks/turn-gate";
 import type { SpendingLimits, SpendingStatus } from "./spending/spending-limits";
 import { CHAT_DATA_MAX_BYTES, assertChatData, assertChatDataFilter, assertChatDataPatch, chatDataOfInput } from "./storage/chat-data";
 import type { ChatDataFilter } from "./storage/chat-data";
-import { MessageAlreadyFinishedError, MessageNotAwaitingError } from "./storage/chat-storage";
+import { ChatTurnLeaseLostError, MessageAlreadyFinishedError, MessageNotAwaitingError } from "./storage/chat-storage";
 import type { AwaitingMessagePatch, ChatStorage, ChatSubjectFilter, StoredPendingBurst } from "./storage/chat-storage";
 import { createAfterTurn } from "./turn-hooks/after-turn";
 import { TurnRefusedError, validateAppEvent } from "./turn-hooks/turn-hooks";
@@ -1516,15 +1517,33 @@ export function createChatService(input: ChatServiceOptions): ChatService {
   /** Аренда хода чата в хранилище: один ход за раз на чат и между копиями сервера. */
   /** Эта копия службы: держатель аренд хода и записей ждущих пачек. */
   const copyId = crypto.randomUUID();
-  const turnLeases = createChatTurnLeases({ storage, holder: copyId, logError });
+  if (storage.claimChatTurn && storage.releaseChatTurn && storage.guardedTurnWrites !== true) {
+    throw new TypeError("ChatStorage с арендой хода должен поддержать guardedTurnWrites и атомарный ChatTurnWriteGuard. См. docs/turn-durability.md");
+  }
+  const turnLeases = createChatTurnLeases({ storage, holder: copyId, logError, onLost: (chatId) => { registry.abort(chatId); widgetChecks.get(chatId)?.abort(); } });
+  /** Частичное решение можно записать без аренды; запуск продолжения требует собственного поколения. */
+  function ownedTurnSignal(chatId: string): AbortSignal | undefined {
+    const signal = turnLeases.signal(chatId);
+    if (storage.claimChatTurn && storage.releaseChatTurn && (!turnLeases.holder(chatId) || !signal || signal.aborted)) {
+      throw new ChatBusyError(chatId);
+    }
+    return signal;
+  }
+  function turnStorage(chatId: string): ChatStorage {
+    const signal = turnLeases.signal(chatId);
+    const holder = turnLeases.holder(chatId);
+    return signal && holder !== undefined ? guardedTurnStorage(storage, {holder, signal, onLost: () => turnLeases.invalidate(chatId, holder)}) : storage;
+  }
   /** Обходы ждущих пачек в пути: остановка службы ждёт их. */
   const burstSweeps = new Set<Promise<void>>();
   /** Запись сообщений пачки по чатам — по очереди вызовов: порядок в истории тот, в каком они пришли. */
   const burstWrites = new Map<string, Promise<unknown>>();
   // Очереди инструментов «по одному» по чатам: живут, пока в них есть вызовы (FR-057).
   const chatToolQueues = new Map<string, ToolQueue>();
-  /** Проверка брошенных ответов раз в `STALE_ANSWERS_SWEEP_EVERY_MS`: идёт после `recoverInterruptedAnswers`, до `flush`. */
+  /** Проверка брошенных ответов раз в `STALE_ANSWERS_SWEEP_EVERY_MS`: включена по умолчанию, до `flush`. */
   let staleSweep: StaleSweep | null = null;
+  // Повтор пачек остаётся явной startup-операцией; автоматический обход сам не начинает ходов.
+  let recoverBurstsOnSweep = false;
   /** Продолжающийся после подтверждения ответ, каким он был до продолжения: его куски дописываются на клиенте. */
   const resumeBases = new Map<string, AgentChatMessage>();
   const compaction = createCompactionService({
@@ -1637,7 +1656,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
       if (OPEN_CHAT_ACTIONS.has(input.action)) await assertStillOpen(chatId);
       else await carryLegacyClosure(chatId);
       return start(pass);
-    }, input.action === "widget" || input.action === "approval" ? "optional" : "required");
+    }, input.action === "widget" || input.action === "approval" ? false : "required");
   }
 
   /** Готовый ответ хода для `deliverNotices({ awaitAnswer })`: текст, как в итоге хода (`TurnResult.text`), части для человека и статус. */
@@ -2166,12 +2185,11 @@ export function createChatService(input: ChatServiceOptions): ChatService {
 
   /**
    * Держит чат занятым, пока ход запускается и ещё не попал в реестр. @throws ChatBusyError и когда ход ведёт другая
-   * копия. `lease: "optional"` — для ответа на ждущий ответ: его единственность стережёт условная запись в хранилище,
-   * а чужая аренда (другая копия как раз записывает сообщение или ответ) — не повод отказать.
+   * копия. При `false` проверка ждущего ввода идёт без аренды: продолжение возьмёт её непосредственно перед записью.
    */
-  async function whileStarting<T>(chatId: string, start: () => Promise<T>, lease: "required" | "optional" = "required"): Promise<T> {
+  async function whileStarting<T>(chatId: string, start: () => Promise<T>, lease: "required" | "optional" | false = "required"): Promise<T> {
     if (closing || starting.has(chatId) || registry.isRunning(chatId)) throw new ChatBusyError(chatId);
-    return holdingChat(chatId, start, { lease });
+    return holdingChat(chatId, start, lease === false ? {} : { lease });
   }
 
   /**
@@ -2197,10 +2215,32 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     }
   }
 
+  /** Проверки ввода не занимают аренду; только переход к исполнению берёт своё поколение до CAS. */
+  async function withAwaitingLease<T>(chatId: string, work: (ensure: () => Promise<void>) => Promise<T>): Promise<T> {
+    let leased = false;
+    try {
+      return await work(async () => {
+        if (!leased) {
+          await turnLeases.enter(chatId);
+          leased = true;
+        }
+      });
+    } catch (error) {
+      if (error instanceof ChatTurnLeaseLostError) throw new ChatBusyError(chatId);
+      throw error;
+    } finally {
+      if (leased && registry.isRunning(chatId)) void registry.finished(chatId).finally(() => turnLeases.leave(chatId));
+      else if (leased) turnLeases.leave(chatId);
+    }
+  }
+
   async function leasedWork<T>(chatId: string, work: () => Promise<T>, lease: "required" | "optional"): Promise<T> {
     const leased = await turnLeases.enter(chatId, { optional: lease === "optional" });
     try {
       return await work();
+    } catch (error) {
+      if (error instanceof ChatTurnLeaseLostError) throw new ChatBusyError(chatId);
+      throw error;
     } finally {
       // Начатый ход держит аренду до конца; его продолжение (поправки) входит в неё же. Шёл без аренды — снимать нечего.
       if (leased && registry.isRunning(chatId)) void registry.finished(chatId).finally(() => turnLeases.leave(chatId));
@@ -2293,12 +2333,24 @@ export function createChatService(input: ChatServiceOptions): ChatService {
    * не затирается. `build` бросает, если ответ этой копии на свежих частях уже не нужен.
    * @returns записанное сообщение. @throws MessageNotAwaitingError ответ больше не ждёт.
    */
-  async function writeToWaiting(waiting: StoredMessage, build: (current: StoredMessage) => AwaitingMessagePatch): Promise<StoredMessage> {
+  async function writeToWaiting(waiting: StoredMessage, build: (current: StoredMessage) => AwaitingMessagePatch, beforeResume?: () => Promise<void>): Promise<StoredMessage> {
     let current = waiting;
+    if (beforeResume) {
+      // Проверка приложения могла ждать: уже принятое другой копией решение узнаём до захвата аренды.
+      const fresh = await storage.getMessage(waiting.id);
+      if (fresh?.status !== "awaiting_approval") throw new MessageNotAwaitingError(waiting.id);
+      current = fresh;
+    }
     for (let attempt = 1; ; attempt++) {
       const patch = build(current);
       try {
-        await storage.updateAwaitingMessage(current.id, { ...patch, expectedParts: current.parts });
+        if (patch.status === "streaming" && beforeResume) {
+          await beforeResume();
+          ownedTurnSignal(current.chatId);
+          // Пока проверялось приложение, другая копия могла выбрать иную ветку.
+          if (!(await currentBranch(current.chatId)).some((message) => message.id === current.id)) throw new MessageNotAwaitingError(current.id);
+        }
+        await turnStorage(current.chatId).updateAwaitingMessage(current.id, { ...patch, expectedParts: current.parts });
         return { ...current, parts: patch.parts, ...(patch.status && { status: patch.status }) };
       } catch (error) {
         if (!(error instanceof MessageNotAwaitingError) || attempt >= WAITING_WRITE_ATTEMPTS) throw error;
@@ -2424,6 +2476,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
       onStarted?: (turn: { answerId: string; finished: Promise<void> }) => void;
     },
   ): Promise<ReadableStream<UIMessageChunk> | null> {
+    ownedTurnSignal(chatId);
     const chat = await ownChat(userId, chatId);
     const stateBefore = launch.stateBefore ?? foldAppState(branch);
     // Канал и группа — по отметке последнего сообщения человека: так же идут и продолжения (подтверждение, «Повторить»).
@@ -2457,6 +2510,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     chatToolQueues.set(chatId, toolQueue);
     const turnThoughtTitles = await thoughtTitlesForTurn(chat.ownerId, chatId, answerId, branch);
     const limits = turnLimits.forModel(model.modelId);
+    const leaseSignal = ownedTurnSignal(chatId);
     const liveTurn = liveTurns.begin(limits.timeoutMs);
     let started: { finished: Promise<void> };
     // Приём поправок открывается, когда ход уже в реестре: отказ реестра не трогает приём идущего хода.
@@ -2466,7 +2520,8 @@ export function createChatService(input: ChatServiceOptions): ChatService {
         // «Стоп» человека — через реестр; срок хода и остановка службы — через свой сигнал хода.
         const abortSignal = AbortSignal.any([stopSignal, liveTurn.signal]);
         return runAgentTurn({
-          storage,
+          storage: turnStorage(chatId),
+          ...(leaseSignal && {leaseSignal}),
           now,
           liveDemos: input.agent.liveDemos === true,
           hiddenStateKey,
@@ -3766,7 +3821,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     async answerApproval(userId, chatId, approvalId, answer, page) {
       const chat = await ownChat(userId, chatId);
       await assertChatRules(userId, chat, { open: true });
-      return startingTurn({ userId, chat, action: "approval" }, async () => {
+      return startingTurn({ userId, chat, action: "approval" }, () => withAwaitingLease(chatId, async (ensureResumeLease) => {
         const branch = await currentBranch(chatId);
         const waiting = branch.at(-1);
         if (waiting?.status !== "awaiting_approval") throw new ApprovalNotPendingError(approvalId);
@@ -3779,7 +3834,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
             const parts = recordDecision(current.parts, approvalId, decisionOf(answer === "always" && !offersAlways(asked) ? "allow" : answer));
             if (!parts) throw new ApprovalNotPendingError(approvalId);
             return resumingPatch(userId, chatId, parts);
-          });
+          }, ensureResumeLease);
         } catch (error) {
           if (error instanceof MessageNotAwaitingError) throw new ApprovalNotPendingError(approvalId);
           throw error;
@@ -3796,18 +3851,18 @@ export function createChatService(input: ChatServiceOptions): ChatService {
         } catch (error) {
           resumeBases.delete(chatId);
           // Ход не начался, инструмент не выполнялся; но вызов с решением и без результата сломал бы историю чата.
-          await storage.finishMessage(waiting.id, { status: "interrupted", parts: denyPendingApprovals(parts, INTERRUPTED_REASON) });
+          await turnStorage(chatId).finishMessage(waiting.id, { status: "interrupted", parts: denyPendingApprovals(parts, INTERRUPTED_REASON) });
           throw error;
         }
         return { resumed: true };
-      }, unlessResumed);
+      }), unlessResumed);
     },
 
     async answerWidget({ chatId, ownerId, toolCallId, answer, page }) {
       return loggingWidgetRefusal(chatId, toolCallId, async () => {
         const chat = await ownChat(ownerId, chatId);
         await assertChatRules(ownerId, chat, { open: true });
-        return startingTurn({ userId: ownerId, chat, action: "widget" }, async () => {
+        return startingTurn({ userId: ownerId, chat, action: "widget" }, () => withAwaitingLease(chatId, async (ensureResumeLease) => {
           const branch = await currentBranch(chatId);
           const waiting = branch.at(-1);
           const call = waiting?.status === "awaiting_approval" ? pendingWidgetCall(waiting.parts, toolCallId, widgets.waiting) : undefined;
@@ -3834,7 +3889,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
             resuming = await writeToWaiting(waiting, (current) => {
               if (!pendingWidgetCall(current.parts, toolCallId, widgets.waiting)) throw new WidgetNotPendingError(toolCallId);
               return resumingPatch(ownerId, chatId, [...recordWidgetAnswer(current.parts, toolCallId, byApp.output), ...announced]);
-            });
+            }, ensureResumeLease);
           } catch (error) {
             if (error instanceof MessageNotAwaitingError) throw new WidgetNotPendingError(toolCallId);
             throw error;
@@ -3859,11 +3914,11 @@ export function createChatService(input: ChatServiceOptions): ChatService {
             await launchTurn(ownerId, chatId, [...branch.slice(0, -1), resuming], { parentId: waiting.parentId ?? "", resume: resuming, page, action: "widget", announced });
           } catch (error) {
             resumeBases.delete(chatId);
-            await storage.finishMessage(waiting.id, { status: "interrupted", parts: denyPendingApprovals(parts, INTERRUPTED_REASON) });
+            await turnStorage(chatId).finishMessage(waiting.id, { status: "interrupted", parts: denyPendingApprovals(parts, INTERRUPTED_REASON) });
             throw error;
           }
           return { resumed: true };
-        }, unlessResumed);
+        }), unlessResumed);
       });
     },
 
@@ -3898,6 +3953,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     },
 
     async recoverInterruptedAnswers(recoverOptions) {
+      recoverBurstsOnSweep = true;
       // Хуки итога, ждущие с прошлого запуска, — до прерывания: прерванные сейчас получат свой хук сами.
       await afterTurn?.recoverPending(liveAnswerIds);
       // Задачи фона восстанавливаются вместе с ответами.
@@ -3986,17 +4042,9 @@ export function createChatService(input: ChatServiceOptions): ChatService {
 
   };
 
-  /** `soleServer` — копия одна: чужих живых ответов нет, идущие ответы не этого процесса прерываются сразу. */
-  async function recoverAnswersOnStart(soleServer: boolean): Promise<number> {
-      if (!storage.listSilentAnswerIds) {
-        // Хранилище не знает знака жизни: прерываются все идущие ответы, как до FR-060; копия сервера должна быть одна.
-        logError(
-          "Хранилище без listSilentAnswerIds и знака жизни ответа: при старте прерваны все идущие ответы, проверки брошенных ответов нет. С несколькими копиями сервера на одной базе так нельзя — обновите хранилище (FR-060).",
-        );
-        return interruptAnswers(await storage.listStreamingMessageIds());
-      }
-      // Регулярная проверка запускается до первой: если та упала, а встраивающий поймал ошибку и работает дальше,
-      // брошенные ответы всё равно закроются.
+  /** Безопасный по знакам жизни обход включён сам: он закрывает брошенное, но не продолжает модель. */
+  function startStaleSweep(): void {
+    if (!storage.listSilentAnswerIds) return;
       if (!staleSweep) {
         const sweep: StaleSweep = { stopped: false };
         staleSweep = sweep;
@@ -4004,7 +4052,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
           if (sweep.stopped) return;
           sweep.timer = setTimeout(() => {
             // Ждущие хуки итога — той же проверкой: брошенный упавшей копией доделывается, когда его срок с запасом вышел.
-            sweep.running = Promise.all([recoverStaleAnswers(), afterTurn?.recoverPending(liveAnswerIds), sweepingBursts({ abandonedBefore: now().toISOString() })])
+            sweep.running = Promise.all([recoverStaleAnswers(), afterTurn?.recoverPending(liveAnswerIds), ...(recoverBurstsOnSweep ? [sweepingBursts({ abandonedBefore: now().toISOString() })] : [])])
               .then(() => undefined)
               .catch((failure: unknown) =>
                 logError(`Проверка брошенных ответов не удалась: ${failure instanceof Error ? failure.message : "неизвестная ошибка"}`),
@@ -4019,6 +4067,20 @@ export function createChatService(input: ChatServiceOptions): ChatService {
         };
         next();
       }
+  }
+
+  /** `soleServer` — копия одна: чужих живых ответов нет, идущие ответы не этого процесса прерываются сразу. */
+  async function recoverAnswersOnStart(soleServer: boolean): Promise<number> {
+      if (!storage.listSilentAnswerIds) {
+        // Хранилище не знает знака жизни: прерываются все идущие ответы, как до FR-060; копия сервера должна быть одна.
+        logError(
+          "Хранилище без listSilentAnswerIds и знака жизни ответа: при старте прерваны все идущие ответы, проверки брошенных ответов нет. С несколькими копиями сервера на одной базе так нельзя — обновите хранилище (FR-060).",
+        );
+        return interruptAnswers(await storage.listStreamingMessageIds());
+      }
+      // Регулярная проверка запускается до первой: если та упала, а встраивающий поймал ошибку и работает дальше,
+      // брошенные ответы всё равно закроются.
+      startStaleSweep();
       if (!soleServer) return recoverStaleAnswers();
       // Других копий нет: аренды хода в базе — от упавшего прошлого запуска, чаты свободны сразу, а не через срок аренды.
       await turnLeases.clearForeign();
@@ -4205,6 +4267,8 @@ export function createChatService(input: ChatServiceOptions): ChatService {
       throw error;
     }
   });
+  if (storage.listSilentAnswerIds) startStaleSweep();
+  else logError("Автоматическое восстановление ответов недоступно: у хранилища нет listSilentAnswerIds. Обновите адаптер; для единственной копии сервера явно вызовите recoverInterruptedAnswers при запуске.");
   return service;
 
   function isDetachedAnswer(last: StoredMessage | undefined, runningId: string | null): boolean {

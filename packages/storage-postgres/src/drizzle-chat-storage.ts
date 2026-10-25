@@ -8,6 +8,7 @@ import {
   DuplicateMessageError,
   isOptimizationBlocked,
   mergeChatData,
+  ChatTurnLeaseLostError,
   MessageAlreadyFinishedError,
   MessageNotAwaitingError,
   RELEASED_ANSWER_ALIVE_AT,
@@ -57,24 +58,39 @@ function aliveAtColumn(alive: AnswerAliveMark | undefined): { aliveAt?: SQL<stri
 
 /** Запросы хранилища; соединением и миграциями занимается вызывающий. */
 export function createDrizzleChatStorage(db: ChatDatabase): ChatStorage {
+  /** Ограда входит в ту же запись; PostgreSQL держит строку аренды до её commit. */
+  function turnLeaseCondition(holder: string | undefined) {
+    if (holder === undefined) return undefined;
+    return sql`exists (select 1 from ${chatTurnLeases} where ${chatTurnLeases.chatId} = ${messages.chatId} and ${chatTurnLeases.holder} = ${holder} and ${chatTurnLeases.until} > clock_timestamp() for update)`;
+  }
+
   /** Пишет в идущий ответ; отличает «нет такого» от «уже в конечном состоянии». */
   async function updateStreaming(
     messageId: string,
-    { alive, ...values }: Partial<typeof messages.$inferInsert> & { alive?: AnswerAliveMark },
+    { alive, expectedTurnHolder, ...values }: Partial<typeof messages.$inferInsert> & { alive?: AnswerAliveMark; expectedTurnHolder?: string },
   ): Promise<void> {
     const updated = await db
       .update(messages)
       .set({ ...values, ...aliveAtColumn(alive) })
-      .where(and(eq(messages.id, messageId), eq(messages.status, "streaming")))
+      .where(and(eq(messages.id, messageId), eq(messages.status, "streaming"), turnLeaseCondition(expectedTurnHolder)))
       .returning({ id: messages.id });
     if (updated.length > 0) return;
-    const [existing] = await db.select({ id: messages.id }).from(messages).where(eq(messages.id, messageId));
+    const [existing] = await db.select({ id: messages.id, status: messages.status }).from(messages).where(eq(messages.id, messageId));
     if (!existing) throw new Error(`Сообщения ${messageId} нет`);
+    if (expectedTurnHolder !== undefined && existing.status === "streaming") throw new ChatTurnLeaseLostError(messageId);
     throw new MessageAlreadyFinishedError(messageId);
   }
 
   /** Запросы в транзакции или без неё: транзакция Drizzle умеет то же, что и база. */
   type Executor = ChatDatabase;
+
+  async function assertTurnHolder(tx: Executor, chatId: string, holder: string | undefined, messageId: string): Promise<void> {
+    if (holder === undefined) return;
+    const rows = await tx.select({ chatId: chatTurnLeases.chatId }).from(chatTurnLeases)
+      .where(and(eq(chatTurnLeases.chatId, chatId), eq(chatTurnLeases.holder, holder), sql`${chatTurnLeases.until} > clock_timestamp()`)).for("update");
+    if (rows.length === 0) throw new ChatTurnLeaseLostError(messageId);
+  }
+
 
   /** Записи человека пишутся по одному: замок держится до конца транзакции. Без него две вставки видят одинаковый список и обе проходят проверку. */
   async function lockMemoryNotes(tx: Executor, ownerId: string): Promise<void> {
@@ -133,6 +149,7 @@ export function createDrizzleChatStorage(db: ChatDatabase): ChatStorage {
   }
 
   return {
+    guardedTurnWrites: true,
     async createChat({ createdAt, ...input }) {
       const at = createdAt ?? new Date().toISOString();
       const row = chatRow({ ...input, createdAt: at, updatedAt: at });
@@ -384,9 +401,10 @@ export function createDrizzleChatStorage(db: ChatDatabase): ChatStorage {
       return rows.map((row) => ({ ...row, parts: (typeof row.parts === "string" ? JSON.parse(row.parts) : row.parts) as StoredMessage["parts"] }));
     },
 
-    async insertMessage(message) {
+    async insertMessage(message, guard) {
       try {
         await db.transaction(async (tx) => {
+          await assertTurnHolder(tx, message.chatId, guard?.expectedTurnHolder, message.id);
           const { alive, ...stored } = message;
           await tx.insert(messages).values({ ...stored, ...aliveAtColumn(alive) });
           await tx.update(chats).set({ updatedAt: message.createdAt }).where(eq(chats.id, message.chatId));
@@ -399,7 +417,7 @@ export function createDrizzleChatStorage(db: ChatDatabase): ChatStorage {
 
     updateStreamingMessage: (messageId, patch) => updateStreaming(messageId, patch),
 
-    markAnswerAlive: (messageId) => updateStreaming(messageId, { alive: "now" }),
+    markAnswerAlive: (messageId, guard) => updateStreaming(messageId, { alive: "now", ...guard }),
 
     finishMessage: (messageId, final) => updateStreaming(messageId, { ...final, ...(final.afterTurn === "pending" && { alive: "now" as const }) }),
 
@@ -407,12 +425,13 @@ export function createDrizzleChatStorage(db: ChatDatabase): ChatStorage {
       // Строка заперта до конца транзакции: другая копия сервера не запишет между сравнением частей и записью.
       await db.transaction(async (tx) => {
         const [existing] = await tx
-          .select({ status: messages.status, parts: messages.parts })
+          .select({ status: messages.status, parts: messages.parts, chatId: messages.chatId })
           .from(messages)
           .where(eq(messages.id, messageId))
           .for("update");
         if (!existing) throw new Error(`Сообщения ${messageId} нет`);
         if (existing.status !== "awaiting_approval") throw new MessageNotAwaitingError(messageId);
+        await assertTurnHolder(tx, existing.chatId, patch.expectedTurnHolder, messageId);
         if (patch.expectedParts && !sameMessageParts(existing.parts, patch.expectedParts)) throw new MessageNotAwaitingError(messageId);
         await tx
           .update(messages)
