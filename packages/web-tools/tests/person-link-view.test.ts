@@ -143,6 +143,25 @@ describe("person_link_view: адреса", () => {
     await expect(view("https://sveta-nails.apps.example.com/")).resolves.toBeDefined();
   });
 
+  it("eval: присланный localhost отклонён как локальный, а не как отсутствующий в словах человека", async () => {
+    await personSays("Вот ссылка: http://localhost:3000/p/arina-bday — глянь, как тебе?");
+    await expect(view("http://localhost:3000/p/arina-bday")).rejects.toThrow(/Отказ:.*локальный или частный/);
+    expect(shots).toEqual([]);
+    expect(pages).toEqual([]);
+  });
+
+  it("полный публичный URL с адресом-числом тоже распознаётся в словах человека", async () => {
+    await personSays("Вот страница https://8.8.8.8/app");
+    await expect(view("https://8.8.8.8/app")).resolves.toMatchObject({ pageUrl: "https://8.8.8.8/app" });
+    expect(shots).toEqual(["https://8.8.8.8/app"]);
+  });
+
+  it("eval: неоднозначные «точка дефис» не дают агенту право угадывать другой адрес", async () => {
+    await personSays("sveta точка дефис nails точка apps точка example точка com");
+    await expect(view("https://sveta-nails.apps.example.com", { appDomains: ["apps.example.com"] })).rejects.toThrow(/не присылал/);
+    expect(shots).toEqual([]);
+  });
+
   it("чужой адрес и другой путь — отказ без обращения к службе", async () => {
     await personSays("Мой сайт https://studio.example.com/app");
     await expect(view("https://evil.example.com/")).rejects.toThrow(/не присылал/);
@@ -226,6 +245,29 @@ describe("person_link_view: не больше трёх за разговор", (
     ]);
     await expect(view("https://d.example.com", { turnId: turn })).rejects.toThrow(/уже 3/);
     expect(shots).toHaveLength(2);
+  });
+
+  it("eval: сохранённое намерение третьего вызова не считается уже выполненным просмотром", async () => {
+    await personSays("Мой сайт https://sveta-nails.apps.example.com");
+    await insert("assistant", [1, 2].map((n) => ({
+      type: `tool-${PERSON_LINK_TOOL}`, toolCallId: `view-${n}`, state: "output-available",
+      input: { url: "https://sveta-nails.apps.example.com" }, output: {},
+    })));
+    const turn = await insert("assistant", [{
+      type: `tool-${PERSON_LINK_TOOL}`, toolCallId: "view-3", state: "input-available",
+      input: { url: "https://sveta-nails.apps.example.com" },
+    }]);
+    const current = toolFor(seesImages, "openai", turn)!;
+    await expect(current.execute!({ url: "https://sveta-nails.apps.example.com" } as never,
+      { ...executeOptions(), toolCallId: "view-3" })).resolves.toBeDefined();
+    expect(shots).toHaveLength(1);
+    await insert("assistant", [{
+      type: `tool-${PERSON_LINK_TOOL}`, toolCallId: "view-4", state: "input-available",
+      input: { url: "https://sveta-nails.apps.example.com" },
+    }]);
+    await expect(current.execute!({ url: "https://sveta-nails.apps.example.com" } as never,
+      { ...executeOptions(), toolCallId: "view-4" })).rejects.toThrow(/уже 3/);
+    expect(shots).toHaveLength(1);
   });
 
   it("просмотры брошенной ветки в лимит не входят", async () => {

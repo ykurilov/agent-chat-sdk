@@ -1,5 +1,16 @@
 # @ykurilov/agent-chat-skin-tandem
 
+## 0.83.3
+
+### Patch Changes
+
+- @ykurilov/agent-chat-mcp@0.83.3
+  - @ykurilov/agent-chat-sandbox@0.83.3
+  - @ykurilov/agent-chat-flows@0.83.3
+  - @ykurilov/agent-chat-messengers@0.83.3
+  - @ykurilov/agent-chat-react@0.83.3
+  - @ykurilov/agent-chat-skills@0.83.3
+
 ## 0.83.2
 
 ### Patch Changes

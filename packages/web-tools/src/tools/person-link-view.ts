@@ -124,7 +124,7 @@ export function createPersonLinkTool(options: PersonLinkOptions): PersonLinkTool
           const shortName = requested !== "" && !requested.includes("/") && isAppNameHost(requested, domains, person);
           if (!requested || (!sent.has(requested) && !shortName))
             throw new WebToolError("bad_address", `${REFUSAL} этот адрес человек в разговоре не присылал. Смотри только ссылки, которые он сам прислал.`);
-          const stored = storedViewIds(messages);
+          const stored = storedViewIds(messages, executeOptions.toolCallId);
           const turn = model.turnId ?? chatId;
           const inTurn = [...(running.get(turn) ?? [])].filter((id) => !stored.has(id));
           if (stored.size + inTurn.length >= maxPerChat)
@@ -175,7 +175,7 @@ function remember(running: Map<string, Set<string>>, turn: string, toolCallId: s
 }
 
 /** Просмотры, уже записанные в разговоре: вызовы инструмента, кроме отказов. */
-function storedViewIds(messages: StoredMessage[]): Set<string> {
+function storedViewIds(messages: StoredMessage[], pendingCallId: string): Set<string> {
   const ids = new Set<string>();
   for (const message of messages) {
     if (message.role !== "assistant") continue;
@@ -183,15 +183,19 @@ function storedViewIds(messages: StoredMessage[]): Set<string> {
       if (part.type !== `tool-${PERSON_LINK_TOOL}` || !part.toolCallId) continue;
       if (part.state === "output-error" && part.errorText?.includes(REFUSAL)) continue;
       if (part.state === "input-streaming") continue;
+      // Ядро сохраняет намерение до execute: текущий input-available ещё не занял просмотр.
+      // Остальные записи и уже законченный вызов с тем же id продолжают считаться.
+      if (part.toolCallId === pendingCallId && part.state === "input-available") continue;
       ids.add(part.toolCallId);
     }
   }
   return ids;
 }
 
-// Адрес с протоколом или голое имя сайта: «https://site.ru/app», «site.ru», «www.site.ru/page». Почта — не адрес:
-// ни домен после «@» («ivan@gmail.com» → не «gmail.com»), ни часть до него («ivan.petrov@…» → не «ivan.petrov»).
-const ADDRESS = /(?<![\p{L}\p{N}@._%+-])(?:https?:\/\/)?(?:[\p{L}\p{N}-]+\.)+[\p{L}]{2,}(?!\.?[\p{L}\p{N}@_%+-])(?::\d+)?(?:[/?#][^\s<>"'«»]*)?/giu;
+// Адрес с протоколом или голое имя сайта: «https://site.ru/app», «site.ru», «www.site.ru/page».
+// Полный http(s) URL распознаётся и без доменной зоны; безопасность хоста проверяет общий веб-инструмент.
+// Почта — не адрес: ни домен после «@» («ivan@gmail.com» → не «gmail.com»), ни часть до него («ivan.petrov@…» → не «ivan.petrov»).
+const ADDRESS = /(?<![\p{L}\p{N}@._%+-])(?:https?:\/\/[^\s<>"'«»]+|(?:[\p{L}\p{N}-]+\.)+[\p{L}]{2,}(?!\.?[\p{L}\p{N}@_%+-])(?::\d+)?(?:[/?#][^\s<>"'«»]*)?)/giu;
 
 /** Слова человека: текстовые части его сообщений. Служебные сообщения лежат в других частях и сюда не попадают. */
 function personTexts(messages: StoredMessage[]): string[] {
