@@ -10,7 +10,7 @@ export const deepseek41FlashProfile: ModelProfile = {
   // Запрет хозяев ниже сохранён по ранним замерам (docs/research/openrouter-tool-images.md);
   // проверка обычного маршрута 1017 не заменяет отдельного замера каждого хозяина.
   toolResultImageProviders: ["deepseek", "together", "fireworks", "openrouter"],
-  reasoning: { replayPastTurns: true, levels: ["off", "on"], defaultLevel: "on" },
+  reasoning: { replayPastTurns: true, levels: ["off", "low", "high", "max"], defaultLevel: "high" },
   // Запрет стоит всегда, а не только при картинке: запрос одинаков в каждом ходе, кэш и выбранный хозяин не теряются.
   providerOptions: { openrouter: { provider: { ignore: ["deepinfra", "open-inference", "phala", "sail-research", "venice"] } } },
   // В словаре модели есть склеенный токен «?\n\n». Together по умолчанию хвост не режет и изредка (≈1 ответ из 1400)

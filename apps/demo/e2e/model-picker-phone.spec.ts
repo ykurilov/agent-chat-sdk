@@ -26,7 +26,7 @@ test("поле ввода с выбором модели помещается в
   await list.getByRole("menuitemradio", { name: "GPT 6 Luna · OpenRouter", exact: true }).tap();
 
   await expect(modelButton(page)).toHaveAccessibleName("Модель: GPT 6 Luna · OpenRouter");
-  await expect(reasoningButton(page)).toHaveAccessibleName("Рассуждения: Средний");
+  await expect(reasoningButton(page)).toHaveAccessibleName("Рассуждения: Высокий");
   await expectNoHorizontalOverflow(page);
 
   await send(page, "Кто отвечает?");

@@ -10,12 +10,12 @@ import { chooseModel, chooseReasoning, lastAnswer, modelButton, reasoningButton,
  * тестам, которые входят тем же демо-пользователем и ждут выбор по умолчанию.
  */
 
-test("выбор по умолчанию: DeepSeek 4.1 Flash у DeepSeek, уровни «Выкл» и «Вкл», выбран «Вкл»", async ({ page }) => {
+test("выбор по умолчанию: DeepSeek 4.1 Flash у DeepSeek, три силы и выключение, выбран «Высокий»", async ({ page }) => {
   await signIn(page);
 
   await expect(modelButton(page)).toHaveAccessibleName("Модель: DeepSeek 4.1 Flash, DeepSeek");
-  await expect(reasoningButton(page)).toHaveAccessibleName("Рассуждения: Вкл");
-  expect(await reasoningLevelNames(page)).toEqual(["Выкл", "Вкл"]);
+  await expect(reasoningButton(page)).toHaveAccessibleName("Рассуждения: Высокий");
+  expect(await reasoningLevelNames(page)).toEqual(["Выкл", "Низкий", "Высокий", "Максимум"]);
 });
 
 test("меню с подменю по провайдерам: у каждого провайдера свои модели", async ({ page }) => {
@@ -31,6 +31,7 @@ test("меню с подменю по провайдерам: у каждого 
 
 test("уровни рассуждений меняются вместе с моделью: у GLM нет «Выкл», у GPT пять уровней", async ({ page }) => {
   await signIn(page);
+  await chooseReasoning(page, "Выкл");
 
   await chooseModel(page, "Fireworks", "GLM 5.3 Flash");
   await expect(modelButton(page)).toHaveAccessibleName("Модель: GLM 5.3 Flash, Fireworks");
@@ -42,8 +43,8 @@ test("уровни рассуждений меняются вместе с мо�
   expect(await reasoningLevelNames(page)).toEqual(["Выкл", "Низкий", "Средний", "Высокий", "Максимум"]);
 
   await chooseModel(page, "DeepSeek", "DeepSeek 4.1 Flash");
-  await expect(reasoningButton(page)).toHaveAccessibleName("Рассуждения: Вкл");
-  expect(await reasoningLevelNames(page)).toEqual(["Выкл", "Вкл"]);
+  await expect(reasoningButton(page)).toHaveAccessibleName("Рассуждения: Высокий");
+  expect(await reasoningLevelNames(page)).toEqual(["Выкл", "Низкий", "Высокий", "Максимум"]);
 });
 
 test("ответ приходит от выбранной пары и с выбранным уровнем", async ({ page }) => {
@@ -81,7 +82,8 @@ test("выбор сохраняется и без вопроса: перезаг
   await page.reload();
 
   await expect(modelButton(page)).toHaveAccessibleName("Модель: Gemini 3.8 Flash, OpenRouter");
-  await expect(reasoningButton(page)).toHaveAccessibleName("Рассуждения: Средний");
+  // high допустим у обеих моделей и сохраняется при смене пары.
+  await expect(reasoningButton(page)).toHaveAccessibleName("Рассуждения: Высокий");
 });
 
 test("отказ сервера: выбор возвращается назад и под полем видно причину", async ({ page }) => {
@@ -92,4 +94,24 @@ test("отказ сервера: выбор возвращается назад 
 
   await expect(modelButton(page)).toHaveAccessibleName("Модель: DeepSeek 4.1 Flash, DeepSeek");
   await expect(page.getByRole("status").filter({ hasText: "Не удалось сменить модель" })).toBeVisible();
+});
+
+
+test("Flash1017: low/high/max сохраняются после reload и доходят до OpenRouter", async ({ page }) => {
+  await signIn(page);
+  const routeSaved = page.waitForResponse((response) => response.url().includes("/model") && response.request().method() === "PUT");
+  await chooseModel(page, "OpenRouter", "DeepSeek 4.1 Flash");
+  expect((await routeSaved).ok()).toBe(true);
+  for (const [label, effort] of [["Низкий", "low"], ["Высокий", "high"], ["Максимум", "max"]]) {
+    const saved = page.waitForResponse((response) => response.url().includes("/model") && response.request().method() === "PUT"
+      && response.request().postDataJSON()?.reasoning === effort);
+    await chooseReasoning(page, label!);
+    expect((await saved).ok()).toBe(true);
+    await page.reload();
+    await expect(reasoningButton(page)).toHaveAccessibleName(`Рассуждения: ${label}`);
+    await send(page, "Кто отвечает?");
+    await expect(lastAnswer(page)).toHaveAttribute("data-status", "complete");
+    await expect(lastAnswer(page)).toContainText("deepseek/deepseek-v4.1-flash-1017");
+    await expect(lastAnswer(page)).toContainText(`"effort":"${effort}"`);
+  }
 });

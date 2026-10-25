@@ -1,3 +1,4 @@
+import { isDeepSeekFlash1017 } from "./deepseek-effort";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import type { JSONValue, LanguageModelV4Middleware } from "@ai-sdk/provider";
 import { wrapLanguageModel } from "ai";
@@ -223,10 +224,14 @@ function maxPriceField(maxPrice: OpenRouterMaxPrice): Record<string, number> {
 
 const openrouterBase: Omit<ProviderDescription, "id" | "displayName" | "createLanguageModel" | "generationUsage" | "requestOptions"> = {
   apiKeyEnv: "OPENROUTER_API_KEY",
-  reasoningRequest: (level, { profile, maxOutputTokens }) => {
+  reasoningRequest: (level, { profile, providerModelId, maxOutputTokens }) => {
     const summary = profile.reasoning.encrypted ? { summary: "concise" } : {};
     if (level === "off") return { providerOptions: { openrouter: { reasoning: { enabled: false } } } };
     if (level === "on") return { providerOptions: { openrouter: { reasoning: { enabled: true, ...summary } } } };
+    // OpenRouter Flash1017 заявляет max/high/low/none; xhigh у DeepSeek не означает max.
+    if (level === "max" && isDeepSeekFlash1017(providerModelId)) {
+      return { providerOptions: { openrouter: { reasoning: { effort: "max", ...summary } } } };
+    }
     // Модель держит жёсткий бюджет: число вместо effort. У effort OpenRouter сам считает бюджет как долю max_tokens
     // (xhigh — 95 %), и ответу почти ничего не остаётся; наш бюджет оставляет ответу запас. `effort` и `max_tokens`
     // вместе OpenRouter не принимает.

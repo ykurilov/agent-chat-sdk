@@ -1,5 +1,15 @@
 # @ykurilov/agent-chat-images
 
+## 0.83.2
+
+### Patch Changes
+
+- Updated dependencies [f63dea9]
+  - @ykurilov/agent-chat-core@0.83.2
+  - @ykurilov/agent-chat-attachments@0.83.2
+  - @ykurilov/agent-chat-web-tools@0.83.2
+  - @ykurilov/agent-chat-react@0.83.2
+
 ## 0.83.1
 
 ### Patch Changes

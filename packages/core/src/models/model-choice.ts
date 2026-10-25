@@ -74,10 +74,13 @@ export function validateModelChoice(
     if (choice.reasoning !== undefined) throw new InvalidModelChoiceError(`У модели «${profile.id}» нет уровней рассуждений`);
     return { modelId: profile.id, providerId: provider.id };
   }
-  if (choice.reasoning !== undefined && !levels.some((level) => level === choice.reasoning)) {
+  // Flash1017: прежнее on означает default high; сохраняем маршрут старой настройки и старого чата.
+  const reasoning = choice.reasoning === "on" && profile.id === "deepseek-4.1-flash"
+    && !levels.includes("on") && levels.includes("high") ? "high" : choice.reasoning;
+  if (reasoning !== undefined && !levels.some((level) => level === reasoning)) {
     throw new InvalidModelChoiceError(`У модели «${profile.id}» нет уровня «${choice.reasoning}»`);
   }
-  return { modelId: profile.id, providerId: provider.id, reasoning: effectiveReasoningLevel(profile, choice.reasoning)! };
+  return { modelId: profile.id, providerId: provider.id, reasoning: effectiveReasoningLevel(profile, reasoning)! };
 }
 
 /**

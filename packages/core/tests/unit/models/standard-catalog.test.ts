@@ -5,8 +5,8 @@ import { standardCatalog } from "../../../src/models/standard-catalog";
 const expected = {
   "deepseek-4.1-flash": {
     displayName: "DeepSeek 4.1 Flash",
-    levels: ["off", "on"],
-    defaultLevel: "on",
+    levels: ["off", "low", "high", "max"],
+    defaultLevel: "high",
     encrypted: false,
     providers: {
       deepseek: "deepseek-flash",

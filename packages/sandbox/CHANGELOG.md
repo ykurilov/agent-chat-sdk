@@ -1,5 +1,14 @@
 # @ykurilov/agent-chat-sandbox
 
+## 0.83.2
+
+### Patch Changes
+
+- Updated dependencies [f63dea9]
+  - @ykurilov/agent-chat-core@0.83.2
+  - @ykurilov/agent-chat-server@0.83.2
+  - @ykurilov/agent-chat-react@0.83.2
+
 ## 0.83.1
 
 ### Patch Changes

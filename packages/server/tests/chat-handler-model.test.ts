@@ -32,10 +32,20 @@ describe("PUT /:chatId/model", () => {
     const chatId = await chat.createChat();
     const response = await put(chat, chatId, { modelId: "deepseek-4.1-flash", providerId: "deepseek" });
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ modelId: "deepseek-4.1-flash", providerId: "deepseek", reasoning: "on" });
+    expect(await response.json()).toEqual({ modelId: "deepseek-4.1-flash", providerId: "deepseek", reasoning: "high" });
 
     const history = (await (await chat.call("GET", `/${chatId}`)).json()) as { chat: Record<string, unknown> };
-    expect(history.chat).toMatchObject({ modelId: "deepseek-4.1-flash", providerId: "deepseek", reasoning: "on" });
+    expect(history.chat).toMatchObject({ modelId: "deepseek-4.1-flash", providerId: "deepseek", reasoning: "high" });
+  });
+
+  it.each(["low", "high", "max", "on"] as const)("новый уровень и legacy %s сохраняются канонически", async (reasoning) => {
+    const chat = createTestChat(withDeepseek);
+    const chatId = await chat.createChat();
+    const response = await put(chat, chatId, { modelId: "deepseek-4.1-flash", providerId: "deepseek", reasoning });
+    expect(response.status).toBe(200);
+    const wanted = reasoning === "on" ? "high" : reasoning;
+    expect(await response.json()).toMatchObject({ providerId: "deepseek", reasoning: wanted });
+    expect(await chat.storage.getChat(chatId)).toMatchObject({ providerId: "deepseek", reasoning: wanted });
   });
 
   it("уровень из тела сохраняется", async () => {
@@ -48,7 +58,7 @@ describe("PUT /:chatId/model", () => {
   it.each([
     ["модели нет", { modelId: "нет", providerId: "mock" }],
     ["провайдер не даёт модель", { modelId: mockModelId, providerId: "deepseek" }],
-    ["уровня нет у модели", { modelId: "deepseek-4.1-flash", providerId: "deepseek", reasoning: "max" }],
+    ["уровня нет у модели", { modelId: "deepseek-4.1-flash", providerId: "deepseek", reasoning: "medium" }],
     ["тело без модели", { providerId: "mock" }],
     ["поля не строки", { modelId: 1, providerId: {} }],
     ["уровень не строка", { modelId: mockModelId, providerId: "mock", reasoning: 5 }],

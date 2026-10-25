@@ -1,6 +1,7 @@
 import { createTogetherAI } from "@ai-sdk/togetherai";
 import type { ProviderConnection, ProviderDescription, ProviderOptionsByProvider } from "../model-catalog";
 import { checkedConnection, connectable, connectionField, hiddenField, silenceField } from "./provider-connection";
+import { isDeepSeekFlash1017 } from "./deepseek-effort";
 import { sdkReasoningRequest } from "./sdk-reasoning";
 import { withToolResultImages } from "./tool-result-images";
 
@@ -8,8 +9,7 @@ import { withToolResultImages } from "./tool-result-images";
  * Together AI (`api.together.xyz`), совместим с OpenAI.
  * - Рассуждения приходят полем `reasoning_content` (и в потоке, и целым ответом); пакет провайдера
  *   читает его как рассуждение и возвращает модели в том же поле.
- * - Уровень рассуждения не задаётся: у модели один режим по умолчанию.
- *   Выключить рассуждения можно полем `reasoning: { enabled: false }`; ядро этого не делает.
+ * - Сила рассуждений идёт через общий reasoning; Flash1017 max — через reasoningEffort, без понижения до xhigh.
  * - Кэш начала запроса Together ведёт сам, ключа кэша и привязки к сессии у него нет.
  *   Кэшируется неизменный префикс, поэтому инструкция и инструменты идут первыми.
  *   Прочитанное из кэша приходит в `usage.prompt_tokens_details.cached_tokens`.
@@ -26,7 +26,9 @@ export function createTogetherProvider(connectionOptions: ProviderConnection = {
     apiKeyEnv: "TOGETHER_API_KEY",
     createLanguageModel: (providerModelId, apiKey, options) =>
       createTogetherAI({ apiKey, fetch: withToolResultImages(options?.fetch), ...connection })(providerModelId),
-    reasoningRequest: (level) => sdkReasoningRequest(level),
+    reasoningRequest: (level, { providerModelId }) => level === "max" && isDeepSeekFlash1017(providerModelId)
+      ? { providerOptions: { togetherai: { reasoningEffort: "max" } } }
+      : sdkReasoningRequest(level),
     samplingRequest: ({ minP }): ProviderOptionsByProvider => (minP === undefined ? {} : { togetherai: { min_p: minP } }),
     requestOptions: () => ({}),
     toolResultImages: true,

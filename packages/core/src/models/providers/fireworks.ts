@@ -1,6 +1,7 @@
 import { createFireworks } from "@ai-sdk/fireworks";
 import type { ProviderConnection, ProviderDescription } from "../model-catalog";
 import { checkedConnection, connectable, connectionField, hiddenField, silenceField } from "./provider-connection";
+import { isDeepSeekFlash1017 } from "./deepseek-effort";
 import { sdkReasoningRequest } from "./sdk-reasoning";
 import { withToolResultImages } from "./tool-result-images";
 import { sessionHeaderValue } from "./session-header";
@@ -14,7 +15,9 @@ export function createFireworksProvider(connectionOptions: ProviderConnection = 
     apiKeyEnv: "FIREWORKS_API_KEY",
     createLanguageModel: (providerModelId, apiKey, options) =>
       createFireworks({ apiKey, fetch: withToolResultImages(options?.fetch), ...connection })(providerModelId),
-    reasoningRequest: (level) => sdkReasoningRequest(level),
+    reasoningRequest: (level, { providerModelId }) => level === "max" && isDeepSeekFlash1017(providerModelId)
+      ? { providerOptions: { fireworks: { reasoningEffort: "max" } } }
+      : sdkReasoningRequest(level),
     requestOptions: ({ chatId }) => ({
       providerOptions: {
         fireworks: { promptCacheKey: chatId, reasoningHistory: "preserved" },

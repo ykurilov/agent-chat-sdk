@@ -1,5 +1,13 @@
 # @ykurilov/agent-chat-core
 
+## 0.83.2
+
+### Patch Changes
+
+- f63dea9: DeepSeek Flash1017 предлагает low/high/max с default high и сохраняет off. Старый on в сохранённом чате и defaultChoice принимается как high без смены маршрута. На точных id OpenRouter/Fireworks/Together максимальная ступень передаётся как max, не понижается через xhigh; остальные модели сохраняют прежнее преобразование.
+  
+  Как обновить приложение: обновите все пакеты одной версией, стандартному каталогу override не нужен. Уберите статический providerOptions effort, если он перекрывает выбор пользователя. Новых env и SQL-миграций нет; подробнее docs/deepseek-flash-effort.md.
+
 ## 0.83.1
 
 No changes in this release.
