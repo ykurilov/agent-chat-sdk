@@ -1,6 +1,6 @@
 {
   "name": "@ykurilov/agent-chat-skills",
-  "version": "0.83.0",
+  "version": "0.83.1",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,

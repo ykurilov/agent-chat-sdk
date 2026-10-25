@@ -19,7 +19,7 @@ export function OduvanchikMessageEditor({ value, onValueChange, onSave, onCancel
   return (
     <div className="flex flex-col items-end gap-2 pb-6">
       {attachments && <OduvanchikMessageAttachments attachments={attachments} />}
-      <div className="ml-auto w-full max-w-[75%] rounded-[18px] border border-[var(--action)] bg-[var(--surface-raised)] p-2 shadow-[var(--shadow-xs)] outline outline-2 outline-offset-2 outline-[var(--focus-ring)]">
+      <div className="oduvanchik-message-editor ml-auto w-full max-w-[75%] rounded-[18px] border border-[var(--border-strong)] bg-[var(--surface-raised)] p-2 shadow-[var(--shadow-xs)]">
         <textarea
           ref={fieldRef}
           value={value}

@@ -43,6 +43,8 @@
 .oduvanchik-composer textarea { font-size: 15px; line-height: 1.5; color: var(--yk-text); background: transparent; }
 .oduvanchik-composer textarea::placeholder { color: var(--yk-muted); }
 .oduvanchik-composer textarea:focus { outline: none; }
+.oduvanchik-message-editor:focus-within { border-color: var(--yk-accent); box-shadow: 0 0 0 3px var(--yk-accent-soft); }
+.oduvanchik-message-editor textarea:focus { outline: none; }
 .oduvanchik-composer [data-slot="composer"] { border-radius: 16px; }
 .oduvanchik-chat [data-work-live] { height: auto; min-height: 28px; }
 @media (max-width: 640px) {
