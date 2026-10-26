@@ -1,6 +1,9 @@
 import SwiftUI
 import AgentChatClient
 import YKDesign
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// UI state belongs to this screen; transport, cursor and durable commands belong to AgentChatClient.
 @MainActor @Observable public final class AgentChatScreenModel {
@@ -71,8 +74,9 @@ public struct AgentChatView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var selection: String?
     private let responderName: String
-    public init(client: AgentChatClient, responderName: String = "Агент") {
-        _model = State(initialValue: AgentChatScreenModel(client: client)); self.responderName = responderName
+    private let speechRecognizer: (any AgentChatSpeechRecognizer)?
+    public init(client: AgentChatClient, responderName: String = "Агент", speechRecognizer: (any AgentChatSpeechRecognizer)? = nil) {
+        _model = State(initialValue: AgentChatScreenModel(client: client)); self.responderName = responderName; self.speechRecognizer = speechRecognizer
     }
     public var body: some View {
         NavigationSplitView {
@@ -106,7 +110,14 @@ public struct AgentChatView: View {
                                 }
                                 if let error = snapshot.turn.error { Text(error).ykText(.small).foregroundStyle(YKColorRole.danger.color) }
                             }.padding(.horizontal, AgentChatMetrics.columnPadding).padding(.vertical, YKTokens.Space.s4)
-                        }.onChange(of: snapshot.cursor) { _, _ in
+                        }
+                        .scrollDismissesKeyboard(.interactively)
+                        .simultaneousGesture(TapGesture().onEnded {
+                            #if canImport(UIKit)
+                            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                            #endif
+                        })
+                        .onChange(of: snapshot.cursor) { _, _ in
                             if let id = snapshot.timeline.last?.id { proxy.scrollTo(id, anchor: .bottom) }
                         }
                     }
@@ -174,7 +185,7 @@ public struct AgentChatView: View {
         }.frame(maxWidth: .infinity, alignment: message.role == "user" ? .trailing : .leading)
     }
     private var composer: some View {
-        AgentChatComposer(text: Binding(get: { model.draft }, set: { model.editDraft($0, chatId: selection) }), placeholder: "Сообщение", onStop: model.state.snapshot?.turn.status == "running" ? { Task { await model.stop() } } : nil, enabled: !model.submitting && model.state.snapshot?.conversation.execution.kind != "model", stopEnabled: model.state.snapshot?.turn.stopRequested != true && model.state.snapshot?.conversation.connection != "offline" && model.state.network == .connected) {
+        AgentChatComposer(text: Binding(get: { model.draft }, set: { model.editDraft($0, chatId: selection) }), placeholder: "Сообщение", onStop: model.state.snapshot?.turn.status == "running" ? { Task { await model.stop() } } : nil, enabled: !model.submitting && model.state.snapshot?.conversation.execution.kind != "model", stopEnabled: model.state.snapshot?.turn.stopRequested != true && model.state.snapshot?.conversation.connection != "offline" && model.state.network == .connected, speechRecognizer: speechRecognizer, speechContextId: selection) {
             Task { await model.send() }
         }.padding(YKTokens.Space.s4)
             .disabled(model.loadingDraft || selection == nil || selection != model.state.selectedChatId)

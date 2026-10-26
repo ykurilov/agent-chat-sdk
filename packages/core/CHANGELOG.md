@@ -1,5 +1,15 @@
 # @ykurilov/agent-chat-core
 
+## 0.86.0
+
+### Minor Changes
+
+- ae9467a: В Swift-пакете AgentChatOduvanchik строка ввода принимает необязательный распознаватель речи приложения. Пока человек говорит, неподтверждённый текст виден курсивом; подтверждённые фрагменты добавляются к черновику. Запись и дорасшифровка блокируют отправку, отмена сохраняет подтверждённый текст. Готовый AgentChatView скрывает клавиатуру тапом по ленте.
+  
+  ### Как обновить приложение
+  
+  Для голосового ввода обновить Swift-источник SDK до тега этой версии и реализовать `AgentChatSpeechRecognizer` из AgentChatOduvanchik: `start() throws -> AsyncStream<AgentChatSpeechEvent>`, `finish()`, `cancel()`, все на MainActor. Передать его в `speechRecognizer` у AgentChatComposer или AgentChatView. В самостоятельном composer также передать `speechContextId: chatId`. Подробный договор final/partial и освобождения микрофона описан в docs/external-native.md. Распознавание остаётся за приложением; SDK не вызывает поставщиков. Без голосового ввода обновление ничего не требует. Обязательных env и SQL-миграций нет; npm-код выполнения не менялся.
+
 ## 0.85.0
 
 ### Minor Changes
