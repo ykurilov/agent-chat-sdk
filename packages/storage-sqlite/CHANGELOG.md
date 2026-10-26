@@ -1,5 +1,25 @@
 # @ykurilov/agent-chat-storage-sqlite
 
+## 0.84.0
+
+### Minor Changes
+
+- 5e90be0: Добавлен opt-in первый срез бесед с внешним исполнителем: текст сохраняется до отправки, недоступный исполнитель получает очередь после восстановления, ответ и разрешения приходят через сохранённый журнал. Исходный clientMessageId проверяется при повторе. Новые публичные входы core/external, server/external и storage-sqlite/external не меняют прежний ChatService.
+  
+  В checkout SDK добавлены локальные SPM-продукты AgentChatClient и AgentChatOduvanchik для iOS 17/macOS 14: история, поток, отдельные разрешения, «Стоп», переподключение и очередь на устройстве. Канонический YKDesign подключается отдельно по локальному пути. Переносимого публичного SPM URL пока нет.
+  
+  ### Как обновить приложение
+  
+  1. Старые приложения не требуют изменений. Для внешнего исполнителя в серверном composition root подключите новые /external входы, создайте SQLite conversation store, сервис и fetch handler. Существующее ChatStorage не заменяйте.
+  2. При старте provision разрешённых бесед и service.start; при завершении await service.close до store.close. Адаптер обязан подтверждать async sink после записи, поддерживать reconcile и отдельный stopTurn. Полный договор - docs/external-native.md.
+  3. В Xcode подключите локальный SDK package и канонический YKDesign, передайте endpoint, accountID, cacheURL и credential closure в AgentChatClient. Авторизация, список разрешённых привязок и политика кеша остаются приложению.
+  4. Проверьте недоступного исполнителя, повтор одного clientMessageId, переподключение, разрешение и остановку. Не включайте kind:model: встроенный нативный модельный исполнитель отложен. Перед production подтвердите на Мосте поиск исходного ID при неопределённой отправке; без доказательства SDK не повторяет внешнее действие.
+
+### Patch Changes
+
+- Updated dependencies [5e90be0]
+  - @ykurilov/agent-chat-core@0.84.0
+
 ## 0.83.3
 
 ### Patch Changes

@@ -1,6 +1,6 @@
 {
   "name": "@ykurilov/agent-chat-core",
-  "version": "0.83.3",
+  "version": "0.84.0",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,
@@ -25,6 +25,11 @@
       "@ykurilov/agent-chat-source": "./src/storage/storage-contract.ts",
       "types": "./dist/types/storage/storage-contract.d.ts",
       "import": "./dist/storage-contract.js"
+    },
+    "./external": {
+      "@ykurilov/agent-chat-source": "./src/external.ts",
+      "types": "./dist/types/external.d.ts",
+      "import": "./dist/external.js"
     }
   },
   "engines": {

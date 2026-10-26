@@ -14,3 +14,9 @@ packages/*/THIRD_PARTY_NOTICES.md
 
 # Хвосты sed -i на macOS
 *-E
+
+# Swift Package Manager
+.build/
+.swiftpm/
+# Libraries resolve into the host app's SPM lockfile.
+/Package.resolved

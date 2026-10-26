@@ -1,6 +1,6 @@
 {
   "name": "@ykurilov/agent-chat-storage-sqlite",
-  "version": "0.83.3",
+  "version": "0.84.0",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,
@@ -15,6 +15,11 @@
       "@ykurilov/agent-chat-source": "./src/index.ts",
       "types": "./dist/types/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./external": {
+      "@ykurilov/agent-chat-source": "./src/external.ts",
+      "types": "./dist/types/external.d.ts",
+      "import": "./dist/external.js"
     }
   },
   "engines": {

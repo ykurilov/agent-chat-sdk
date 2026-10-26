@@ -1,6 +1,6 @@
 {
   "name": "@ykurilov/agent-chat-server",
-  "version": "0.83.3",
+  "version": "0.84.0",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,
@@ -29,6 +29,11 @@
       "@ykurilov/agent-chat-source": "./src/node.ts",
       "types": "./dist/types/node.d.ts",
       "import": "./dist/node.js"
+    },
+    "./external": {
+      "@ykurilov/agent-chat-source": "./src/external.ts",
+      "types": "./dist/types/external.d.ts",
+      "import": "./dist/external.js"
     }
   },
   "engines": {
