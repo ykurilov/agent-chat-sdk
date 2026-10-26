@@ -84,7 +84,7 @@ export function createExternalChatHandler(options:ExternalChatHandlerOptions) {
         const kind=error instanceof Error?error.message:"internal";
         if(kind==="not_found")return json({error:{kind}},404);
         if(kind==="body_too_large")return json({error:{kind}},413);
-        if(["busy","message_id_conflict","command_id_conflict","permission_not_pending","executor_offline","executor_not_supported"].includes(kind))return json({error:{kind}},409);
+        if(["busy","message_id_conflict","command_id_conflict","permission_not_pending","executor_offline","executor_not_supported"].includes(kind))return json({error:{kind,...(kind==="busy"&&{code:"external_conversation_busy"})}},409);
         if(kind.startsWith("invalid_")||error instanceof SyntaxError||error instanceof URIError)return json({error:{kind:"invalid"}},400);
         options.logError?.(error);return json({error:{kind:"internal"}},500);
       }

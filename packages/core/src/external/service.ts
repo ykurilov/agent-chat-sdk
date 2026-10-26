@@ -1,3 +1,4 @@
+import { ExternalConversationBusyError } from "./types";
 import { randomUUID } from "node:crypto";
 import { conversationView } from "./store";
 import { isExternalDispatchRejected } from "./types";
@@ -34,7 +35,11 @@ export function createExternalConversationService(options:ExternalConversationOp
   };
   const messageChanged=(s:ConversationState,m:ConversationMessage)=>{m.revision++;emit(s,{type:"message",message:m});};
   const permissionChanged=(s:ConversationState,p:ConversationPermission)=>{p.revision++;emit(s,{type:"permission",permission:p});};
-  const statusChanged=(s:ConversationState)=>emit(s,{type:"status",connection:s.connection,turn:s.turn});
+  const statusChanged=(s:ConversationState)=>{
+    const previous=s.events.findLast(e=>e.type==="status");
+    if(previous?.type==="status"&&previous.connection===s.connection&&JSON.stringify(previous.turn)===JSON.stringify(s.turn))return;
+    emit(s,{type:"status",connection:s.connection,turn:s.turn});
+  };
   const guarded=<T>(id:string,a:Active,change:(s:ConversationState)=>T)=>store.transaction(a.ownerId,id,s=>{ownLease(s,a);return change(s);});
   async function bounded<T>(work:Promise<T>):Promise<T> {
     let timer:ReturnType<typeof setTimeout>|undefined;
@@ -43,8 +48,9 @@ export function createExternalConversationService(options:ExternalConversationOp
   }
   function upsertPermission(s:ConversationState,request:ExternalPermissionRequest) {
     const old=s.permissions.find(p=>p.id===request.id);
-    if(old){if(old.status==="resolved")return;const next={...old,...structuredClone(request)};if(JSON.stringify(old)!==JSON.stringify(next)){Object.assign(old,next);permissionChanged(s,old);}return;}
-    const p:ConversationPermission={...structuredClone(request),revision:0,status:"open"};s.permissions.push(p);permissionChanged(s,p);
+    if(old){if(old.status==="resolved")return;const next={...old,...structuredClone(request),createdAt:old.createdAt,sequence:old.sequence};if(JSON.stringify(old)!==JSON.stringify(next)){Object.assign(old,next);permissionChanged(s,old);}return;}
+    if(request.createdAt!==undefined&&!Number.isFinite(Date.parse(request.createdAt)))throw Error("invalid_permission_time");
+    const p:ConversationPermission={...structuredClone(request),createdAt:request.createdAt??new Date(now()).toISOString(),sequence:s.cursor+1,revision:0,status:"open"};s.permissions.push(p);permissionChanged(s,p);
   }
   async function ingest(id:string,a:Active,event:ExternalConversationEvent) {
     await guarded(id,a,s=>{
@@ -61,7 +67,7 @@ export function createExternalConversationService(options:ExternalConversationOp
             // Ordered one-to-one matching within the new epoch, never text-only set deduplication.
             m=s.messages.find(m=>m.role===role&&m.text===incoming.text&&Math.abs(Date.parse(m.createdAt)-Date.parse(incoming.createdAt))<=2000&&!m.aliases.some(x=>x.epoch===s.epoch));
           }
-          if(!m){m={id:incoming.id,role,text:"",createdAt:incoming.createdAt,revision:0,status:complete?"complete":"streaming",aliases:[]};s.messages.push(m);}
+          if(!m){m={id:incoming.id,role,text:"",createdAt:incoming.createdAt,sequence:s.cursor+1,revision:0,status:complete?"complete":"streaming",aliases:[]};s.messages.push(m);}
           if(m.role!==role)throw Error("external_message_identity_conflict");
           if(m.delivery&&m.text!==incoming.text)throw Error("external_message_identity_conflict");
           const before=JSON.stringify(m);
@@ -70,8 +76,8 @@ export function createExternalConversationService(options:ExternalConversationOp
           else m.aliases.push({id:incoming.id,...(s.epoch&&{epoch:s.epoch})});
           // A replay of an older cumulative prefix cannot truncate a newer saved answer.
           if(!m.text.startsWith(incoming.text)||incoming.text.length>=m.text.length)m.text=incoming.text;
-          if(complete){m.createdAt=incoming.createdAt;m.status="complete";if(role==="user")m.delivery="sent";}
-          else if(m.status!=="complete")m.status="streaming";
+          if(complete){m.createdAt=incoming.createdAt;if(m.status==="streaming")m.status="complete";if(role==="user")m.delivery="sent";}
+          // Late deltas retain stopped/error/unknown terminal state; separate source segments use new IDs.
           if(before!==JSON.stringify(m)||m.revision===0)messageChanged(s,m);
           break;
         }
@@ -83,7 +89,17 @@ export function createExternalConversationService(options:ExternalConversationOp
           statusChanged(s);break;
         }
         case "permission_requested":upsertPermission(s,event.request);break;
-        case "permission_resolved":{const p=s.permissions.find(p=>p.id===event.requestId);if(p&&p.status!=="resolved"){p.status="resolved";permissionChanged(s,p);}break;}
+        case "permission_resolved":{
+          const p=s.permissions.find(p=>p.id===event.requestId);
+          if(p){
+            if(event.decision&&!["allow","deny"].includes(event.decision.behavior))throw Error("invalid_permission_resolution");
+            const before=JSON.stringify(p);
+            p.status="resolved";
+            // A later unknown close must not erase a previously observed source decision.
+            if(event.decision)p.resolution=structuredClone(event.decision);
+            if(before!==JSON.stringify(p))permissionChanged(s,p);
+          }break;
+        }
         case "permissions_snapshot":{
           const ids=new Set(event.requests.map(r=>r.id));
           for(const p of s.permissions)if(p.status!=="resolved"&&!ids.has(p.id)){p.status="resolved";permissionChanged(s,p);}
@@ -127,7 +143,7 @@ export function createExternalConversationService(options:ExternalConversationOp
       if(closed)throw Error("service_closed");
       const a:Active={ownerId,executor,holder:randomUUID(),tail:Promise.resolve(),off:()=>{},lost:false,decisions:new Map(),ready:false,nextReconcileAt:0,reconcileFailures:0};
       await store.transaction(ownerId,id,s=>{
-        if(s.lease&&s.lease.expiresAt>now())throw Error("busy");
+        if(s.lease&&s.lease.expiresAt>now())throw new ExternalConversationBusyError();
         s.lease={holder:a.holder,expiresAt:now()+leaseMs};
         for(const m of s.messages)if(m.delivery==="sending"){m.delivery="unknown";messageChanged(s,m);}
       });
@@ -243,7 +259,7 @@ export function createExternalConversationService(options:ExternalConversationOp
         if(s.definition.execution.kind!=="external")throw Error("executor_not_supported");
         const old=s.messages.find(m=>m.id===input.clientMessageId);
         if(old){if(old.role!=="user"||old.text!==input.text)throw Error("message_id_conflict");return {messageId:old.id,delivery:old.delivery??"sent"};}
-        const m:ConversationMessage={id:input.clientMessageId,role:"user",text:input.text,createdAt:new Date(now()).toISOString(),revision:0,delivery:"queued",status:"complete",aliases:[]};s.messages.push(m);messageChanged(s,m);return {messageId:m.id,delivery:m.delivery!};
+        const m:ConversationMessage={id:input.clientMessageId,role:"user",text:input.text,createdAt:new Date(now()).toISOString(),sequence:s.cursor+1,revision:0,delivery:"queued",status:"complete",aliases:[]};s.messages.push(m);messageChanged(s,m);return {messageId:m.id,delivery:m.delivery!};
       });
       const a=active.get(id);if(a)scheduleDrain(id,a);
       return receipt;

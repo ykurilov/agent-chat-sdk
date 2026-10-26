@@ -2,7 +2,7 @@ import Foundation
 
 /// SSE parser shared by tests and URLSession transport. A frame can contain multiple data lines.
 public struct SSEParser: Sendable {
-    public struct Frame: Sendable { public let event: String; public let id: String?; public let data: String }
+    public struct Frame: Sendable { public let event: String; public let id: String?; public let data: String; public init(event: String, id: String? = nil, data: String) { self.event = event; self.id = id; self.data = data } }
     private var event = "message"
     private var id: String?
     private var data: [String] = []

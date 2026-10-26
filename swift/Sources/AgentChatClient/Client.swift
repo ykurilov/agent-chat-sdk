@@ -54,7 +54,7 @@ public actor AgentChatClient {
         result.pending = cache.outbox
         if let id = selected, var snapshot = cache.snapshots[id] {
             for command in cache.outbox where command.chatId == id && command.kind == "message" && !snapshot.messages.contains(where: { $0.id == command.id }) {
-                snapshot.messages.append(ChatMessage(id: command.id, role: "user", text: command.text ?? "", createdAt: command.createdAt ?? "", delivery: command.error == nil ? (command.delivery ?? "queued") : "refused"))
+                snapshot.messages.append(ChatMessage(id: command.id, role: "user", text: command.text ?? "", createdAt: command.createdAt ?? "", delivery: command.error == nil ? (command.delivery ?? "queued") : "refused", isLocalEcho: true))
             }
             for command in cache.outbox where command.chatId == id && command.kind == "permission" && command.error == nil {
                 if let index = snapshot.permissions.firstIndex(where: { $0.id == command.permissionId && $0.status == "open" }) { snapshot.permissions[index].status = "responding" }

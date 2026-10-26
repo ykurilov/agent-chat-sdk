@@ -21,3 +21,20 @@ describe("SQLite external conversations",()=>{
  }finally{store.close();}
  });
 });
+
+describe("permission projection persistence",()=>{
+ it("restores first position and actual source answer after SQLite reopen",async()=>{
+  const dir=mkdtempSync(join(tmpdir(),"permission-projection-"));const path=join(dir,"state.sqlite");let store=createSqliteConversationStore(path);
+  let sink:(event:import("@ykurilov/agent-chat-core/external").ExternalConversationEvent)=>Promise<void>=async()=>{};
+  let service=createExternalConversationService({store,resolveExecutor:()=>({status:()=>"idle",send:async()=>{},stopTurn:async()=>{},respondToPermission:async()=>{},onConversation:f=>{sink=f;return()=>{};},reconcile:async()=>{await sink({type:"permissions_snapshot",requests:[]});}})});
+  try{
+   await service.ensureConversation(d);await service.start("owner","main");
+   await sink({type:"permission_requested",request:{id:"p",name:"Read",kind:"tool",createdAt:"2026-10-26T10:00:00.000Z"}});
+   await sink({type:"permission_resolved",requestId:"p",decision:{behavior:"allow",selectedActionId:"once",updatedInput:{path:"/dummy"}}});
+   const before=await service.snapshot("owner","main");expect(before.permissions[0]).toMatchObject({sequence:1,resolution:{behavior:"allow"}});
+   await service.close();store.close();store=createSqliteConversationStore(path);
+   service=createExternalConversationService({store,resolveExecutor:()=>{throw Error("offline");}});
+   expect(await service.snapshot("owner","main")).toEqual(before);
+  }finally{await service.close();store.close();rmSync(dir,{recursive:true,force:true});}
+ });
+});

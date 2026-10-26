@@ -22,7 +22,7 @@ import XCTest
             return object["acknowledged"] as? Bool == true
         }
         let state = await client.state()
-        XCTAssertTrue(state.snapshot?.messages.contains(where: { $0.id == id }) == true)
+        XCTAssertTrue(state.snapshot?.messages.contains(where: { $0.id == id && $0.isLocalEcho }) == true)
         await client.disconnect()
         let restored = try AgentChatClient(endpoint: endpoint, accountID: "fixture", cacheURL: cache, credential: { "fixture-only" })
         let pending = await restored.state().pending

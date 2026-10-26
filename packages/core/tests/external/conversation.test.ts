@@ -208,3 +208,59 @@ it("a stable id in a rebuilt epoch still consumes its one-to-one match",async()=
     const after=await f.service.snapshot("yuri","main");expect(after.messages.find(m=>m.id==="a")?.text).toBe("Повтор");expect(after.messages.find(m=>m.id==="b")?.text).toBe("Повтор с продолжением");
   }finally{await f.service.close();}
 });
+
+describe("native timeline metadata and replay",()=>{
+  it("keeps first position and time, actual external resolution and intent distinct",async()=>{
+    const f=fixture();await f.service.ensureConversation(definition);await f.service.start("yuri","main");
+    try {
+      await f.emit({type:"delta",id:"a",textSoFar:"Перед вопросом"});
+      await f.emit({type:"permission_requested",request:{id:"p",name:"Read",kind:"tool"}});
+      await f.emit({type:"delta",id:"b",textSoFar:"После вопроса"});
+      const before=await f.service.snapshot("yuri","main");
+      const p=before.permissions[0] as any;
+      expect(Date.parse(p.createdAt)).not.toBeNaN();
+      expect((before.messages[0] as any).sequence).toBeLessThan(p.sequence);
+      expect(p.sequence).toBeLessThan((before.messages[1] as any).sequence);
+      await f.emit({type:"permission_requested",request:{id:"p",name:"Read",kind:"tool"}});
+      await f.emit({type:"permission_resolved",requestId:"p",decision:{behavior:"deny",selectedActionId:"no",message:"Не сейчас"}} as any);
+      const after=(await f.service.snapshot("yuri","main")).permissions[0] as any;
+      expect(after).toMatchObject({sequence:p.sequence,createdAt:p.createdAt,status:"resolved",resolution:{behavior:"deny",selectedActionId:"no",message:"Не сейчас"}});
+      expect(after.decision).toBeUndefined();
+      const cursor=(await f.service.snapshot("yuri","main")).cursor;
+      await f.emit({type:"permission_resolved",requestId:"p",decision:{behavior:"deny",selectedActionId:"no",message:"Не сейчас"}} as any);
+      expect((await f.service.snapshot("yuri","main")).cursor).toBe(cursor);
+      await f.emit({type:"permission_requested",request:{id:"unknown",name:"Read",kind:"tool"}});
+      await f.emit({type:"permissions_snapshot",requests:[]});
+      expect((await f.service.snapshot("yuri","main")).permissions.at(-1)).toMatchObject({status:"resolved"});
+      expect(((await f.service.snapshot("yuri","main")).permissions.at(-1) as any).resolution).toBeUndefined();
+    }finally{await f.service.close();}
+  });
+  it("replay and late deltas do not turn a stopped answer into complete or streaming",async()=>{
+    const f=fixture();await f.service.ensureConversation(definition);await f.service.start("yuri","main");
+    try{
+      await f.emit({type:"turn_started"});await f.emit({type:"delta",id:"a",textSoFar:"Часть ответа"});
+      await f.emit({type:"turn_ended",outcome:"canceled"});
+      await f.emit({type:"delta",id:"a",textSoFar:"Часть ответа"});
+      expect((await f.service.snapshot("yuri","main")).messages[0]?.status).toBe("stopped");
+      await f.emit({type:"message",message:{id:"a",role:"assistant",text:"Часть ответа",createdAt:"2026-10-26T00:00:00Z"}});
+      expect((await f.service.snapshot("yuri","main")).messages[0]?.status).toBe("stopped");
+    }finally{await f.service.close();}
+  });
+  it("same status does not create repeated identical journal entries",async()=>{
+    const f=fixture();await f.service.ensureConversation(definition);await f.service.start("yuri","main");
+    const other=createExternalConversationService({store:f.store,resolveExecutor:()=>f.executor});
+    try{
+      await f.emit({type:"turn_ended",outcome:"completed"});const first=await f.service.snapshot("yuri","main");
+      await f.emit({type:"turn_ended",outcome:"completed"});
+      expect((await f.service.snapshot("yuri","main")).cursor).toBe(first.cursor);
+
+    }finally{await other.close();await f.service.close();}
+  });
+});
+
+it("another service exposes machine-readable ownership busy code",async()=>{
+ const f=fixture();await f.service.ensureConversation(definition);await f.service.start("yuri","main");
+ const other=createExternalConversationService({store:f.store,resolveExecutor:()=>f.executor});
+ try{await expect(other.start("yuri","main")).rejects.toMatchObject({code:"external_conversation_busy"});}
+ finally{await other.close();await f.service.close();}
+});

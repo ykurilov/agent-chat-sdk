@@ -17,6 +17,7 @@ let package = Package(
     targets: [
         .target(name: "AgentChatClient", path: "swift/Sources/AgentChatClient"),
         .target(name: "AgentChatOduvanchik", dependencies: ["AgentChatClient", .product(name: "YKDesign", package: "YKDesign")], path: "swift/Sources/AgentChatOduvanchik"),
+        .testTarget(name: "AgentChatOduvanchikTests", dependencies: ["AgentChatOduvanchik", "AgentChatClient"], path: "swift/Tests/AgentChatOduvanchikTests"),
         .testTarget(name: "AgentChatClientTests", dependencies: ["AgentChatClient"], path: "swift/Tests/AgentChatClientTests"),
     ]
 )

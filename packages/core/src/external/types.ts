@@ -9,20 +9,24 @@ export interface ConversationDefinition {
 export interface ConversationMessage {
   id: string; role: "user" | "assistant" | "system"; text: string; createdAt: string; revision: number;
   delivery?: DeliveryStatus;
+  /** First committed position in this conversation; absent in pre-0.85 records. */
+  sequence?: number;
   status: "complete" | "streaming" | "stopped" | "error" | "unknown";
   aliases: Array<{id:string; epoch?:string}>;
 }
 export interface ExternalPermissionRequest {
-  id: string; name: string; kind: string; title?: string; description?: string;
+  id: string; name: string; kind: string; title?: string; description?: string; createdAt?: string;
   input?: Record<string, unknown>;
   actions?: Array<{id:string;label:string;behavior:"allow"|"deny"}>;
 }
 export interface PermissionDecision { actionId?: string; behavior?: "allow" | "deny"; answers?: Record<string,string> }
 export type ExternalPermissionResponse =
   | {behavior:"allow";selectedActionId?:string;updatedInput?:Record<string,unknown>}
-  | {behavior:"deny";selectedActionId?:string};
+  | {behavior:"deny";selectedActionId?:string;message?:string};
 export interface ConversationPermission extends ExternalPermissionRequest {
   revision: number; status: "open" | "responding" | "resolved"; decision?: PermissionDecision;
+  /** Actual source resolution, distinct from a submitted SDK intent. Absence means unknown. */
+  resolution?: ExternalPermissionResponse; sequence?: number;
 }
 export interface ExternalMessage {id:string;role:"user"|"manager"|"assistant"|"system";text:string;createdAt:string}
 export type ExternalConversationEvent =
@@ -32,7 +36,7 @@ export type ExternalConversationEvent =
  | {type:"turn_ended";outcome:"completed"|"canceled"|"failed"|"unknown";error?:string}
  | {type:"status";manager:ConnectionStatus}
  | {type:"permission_requested";request:ExternalPermissionRequest}
- | {type:"permission_resolved";requestId:string}
+ | {type:"permission_resolved";requestId:string;decision?:ExternalPermissionResponse}
  | {type:"permissions_snapshot";requests:ExternalPermissionRequest[]}
  /** Required before a rebuilt replay; epoch is stable across restart of the bridge. */
  | {type:"history_reset";epoch:string};
@@ -77,4 +81,10 @@ export interface ConversationStore {
   list(ownerId:string):Promise<ConversationView[]>;
   read(ownerId:string,chatId:string):Promise<ConversationState>;
   transaction<T>(ownerId:string,chatId:string,change:(state:ConversationState)=>T):Promise<T>;
+}
+
+/** Another service currently owns the conversation. Message stays compatible with 0.84. */
+export class ExternalConversationBusyError extends Error {
+  readonly code = "external_conversation_busy" as const;
+  constructor() { super("busy"); this.name = "ExternalConversationBusyError"; }
 }
