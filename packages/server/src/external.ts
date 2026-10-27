@@ -45,8 +45,8 @@ export function createExternalChatHandler(options:ExternalChatHandlerOptions) {
           const page=await service.events(user.id,id,after);
           if(page.reset)return json({version:1,reset:true},409);
           if(!request.headers.get("accept")?.includes("text/event-stream"))return json(page);
-          let dispose=()=>{};
-          let cursor=after,closed=false,timer:ReturnType<typeof setTimeout>|undefined;
+          let dispose=()=>{}, wake=()=>{};
+          let cursor=after,closed=false,polling=false,pullAgain=false,timer:ReturnType<typeof setTimeout>|undefined;
           const encoder=new TextEncoder();let lastPing=Date.now();
           const stream=new ReadableStream<Uint8Array>({
             start(controller){
@@ -56,20 +56,29 @@ export function createExternalChatHandler(options:ExternalChatHandlerOptions) {
               dispose=()=>request.signal.removeEventListener("abort",abort);
               const poll=async()=>{
                 if(closed)return;
+                if(polling){pullAgain=true;return;}
+                if((controller.desiredSize??1)<=0)return;
+                polling=true;
                 try {
-                  if((controller.desiredSize??1)<=0){timer=setTimeout(()=>void poll(),options.pollMs??200);return;}
                   const next=await service.events(user.id,id,cursor);
                   if(closed)return;
                   if(next.reset){controller.enqueue(encoder.encode('event: reset\ndata: {"version":1,"reset":true}\n\n'));finish();return;}
                   for(const event of next.events){if((controller.desiredSize??1)<=0)break;controller.enqueue(encoder.encode(`id: ${event.seq}\nevent: change\ndata: ${JSON.stringify(event)}\n\n`));cursor=event.seq;}
                   if(Date.now()-lastPing>=(options.heartbeatMs??10_000)){controller.enqueue(encoder.encode(": heartbeat\n\n"));lastPing=Date.now();}
-                  timer=setTimeout(()=>void poll(),options.pollMs??200);
+                  // cursor is the committed high-water mark, even when a service
+                  // returns only part of the backlog. Pull wakes a full byte queue;
+                  // only an idle/caught-up feed waits for the next live poll.
+                  if(cursor<next.cursor&&next.events.length>0){pullAgain=true;}
+                  else timer=setTimeout(()=>{timer=undefined;void poll();},options.pollMs??200);
                 }catch(error){options.logError?.(error);finish();}
+                finally {polling=false;if(pullAgain&&!closed&&!timer){pullAgain=false;queueMicrotask(()=>void poll());}}
               };
+              wake=()=>{if(!timer)void poll();};
               if(request.signal.aborted)finish();else {controller.enqueue(encoder.encode(": connected\n\n"));void poll();}
             },
+            pull(){wake();},
             cancel(){closed=true;clearTimeout(timer);dispose();},
-          });
+          },new ByteLengthQueuingStrategy({highWaterMark:256*1024}));
           return new Response(stream,{headers:{"content-type":"text/event-stream","cache-control":"no-cache, no-transform","x-accel-buffering":"no","x-content-type-options":"nosniff"}});
         }
         if(request.method==="POST"){

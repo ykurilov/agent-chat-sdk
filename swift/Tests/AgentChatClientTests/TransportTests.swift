@@ -2,6 +2,46 @@ import XCTest
 @testable import AgentChatClient
 
 @MainActor final class TransportTests: XCTestCase {
+    func testCatchupPublishesBatchesAndLiveAnswerStillStreams() async throws {
+        guard let root = ProcessInfo.processInfo.environment["AGENT_CHAT_TEST_ENDPOINT"], let endpoint = URL(string: root) else { throw XCTSkip("Requires local fixture") }
+        let cache = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathComponent("state.json")
+        defer { try? FileManager.default.removeItem(at: cache.deletingLastPathComponent()) }
+        func control(_ path: String) async throws {
+            var url = URLComponents(url: endpoint, resolvingAgainstBaseURL: false)!; url.path = "/fixture/" + path
+            _ = try await URLSession.shared.data(from: url.url!)
+        }
+        try await control("hold-events")
+        let client = try AgentChatClient(endpoint: endpoint, accountID: "fixture", cacheURL: cache, credential: { "fixture-only" })
+        await client.openConversation("catchup")
+        try await until { await client.state().snapshot?.conversation.id == "catchup" }
+        var counts: [Int] = [], live: [String] = []
+        let updates = await client.updates()
+        let observer = Task {
+            for await state in updates {
+                if let snapshot = state.snapshot, snapshot.conversation.id == "catchup" {
+                    counts.append(snapshot.messages.filter { $0.id.hasPrefix("catchup-") && $0.role == "user" }.count)
+                    if let text = snapshot.messages.first(where: { $0.id == "catchup-live" })?.text, live.last != text { live.append(text) }
+                }
+            }
+        }
+        defer { observer.cancel() }
+        try await control("catchup-burst"); try await control("release-events")
+        try await client.setDraft("Typed during catch-up", chatId: "catchup")
+        try await until { await client.state().snapshot?.messages.filter { $0.role == "user" }.count == 100 }
+        try await until { counts.contains(100) }
+        print("CATCHUP_PUBLICATIONS", counts.filter { $0 > 0 }.count)
+        XCTAssertLessThan(counts.filter { $0 > 0 }.count, 10, "Catch-up must not publish each event")
+        let draft = await client.draft(chatId: "catchup")
+        XCTAssertEqual(draft, "Typed during catch-up")
+        let saved = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(contentsOf: cache)) as? [String: Any])
+        let snapshots = try XCTUnwrap(saved["snapshots"] as? [String: [String: Any]])
+        XCTAssertEqual((snapshots["catchup"]?["messages"] as? [Any])?.count, 100, "Published cursor must be durable")
+        try await control("catchup-live")
+        try await until { await client.state().snapshot?.messages.last?.text == "Live answer done" }
+        try await until { live.last == "Live answer done" }
+        XCTAssertEqual(live, ["Live", "Live answer", "Live answer done"])
+        await client.disconnect()
+    }
     func testAcknowledgedTextRemainsOnDeviceUntilProjectionArrives() async throws {
         guard let root = ProcessInfo.processInfo.environment["AGENT_CHAT_TEST_ENDPOINT"], let endpoint = URL(string: root) else { throw XCTSkip("Requires local fixture") }
         let cache = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathComponent("state.json")

@@ -249,26 +249,39 @@ public actor AgentChatClient {
                 guard generation == current else { return }
                 network = .connected; error = nil; publish(); delay = 1
                 startUploads(); Task { await drainOutbox() }
-                var parser = SSEParser()
-                // Parse bytes ourselves: preserve blank SSE frame delimiters across arbitrary chunks.
-                var lineBytes: [UInt8] = []
-                for try await byte in bytes {
-                    guard byte == 10 else {
-                        lineBytes.append(byte)
-                        if lineBytes.count > 2_000_000 { throw ChatClientError.invalidResponse }
-                        continue
-                    }
-                    if lineBytes.last == 13 { lineBytes.removeLast() }
-                    guard let line = String(bytes: lineBytes, encoding: .utf8) else { throw ChatClientError.invalidResponse }
-                    lineBytes.removeAll(keepingCapacity: true)
+                let (feed, continuation) = AsyncThrowingStream<[ChatFeedEvent], any Error>.makeStream(bufferingPolicy: .bufferingOldest(8))
+                let batcher = ChatFeedBatcher(continuation)
+                let reader = Task {
+                    do {
+                        var parser = SSEParser()
+                        // Preserve blank frame delimiters across arbitrary chunks.
+                        var lineBytes: [UInt8] = []
+                        for try await byte in bytes {
+                            guard byte == 10 else {
+                                lineBytes.append(byte)
+                                if lineBytes.count > 2_000_000 { throw ChatClientError.invalidResponse }
+                                continue
+                            }
+                            if lineBytes.last == 13 { lineBytes.removeLast() }
+                            guard let line = String(bytes: lineBytes, encoding: .utf8) else { throw ChatClientError.invalidResponse }
+                            lineBytes.removeAll(keepingCapacity: true)
+                            try Task.checkCancellation()
+                            guard let frame = try parser.consume(line) else { continue }
+                            if frame.event == "reset" { throw ChatClientError.cursorReset }
+                            guard frame.event == "change" else { throw ChatClientError.unsupportedVersion }
+                            let event = try JSONDecoder().decode(ChatFeedEvent.self, from: Data(frame.data.utf8))
+                            await batcher.append(event, byteCount: frame.data.utf8.count)
+                        }
+                        await batcher.finish()
+                    } catch { await batcher.finish(error) }
+                }
+                continuation.onTermination = { _ in reader.cancel(); Task { await batcher.cancel() } }
+                defer { reader.cancel(); Task { await batcher.cancel() } }
+                for try await batch in feed {
                     try Task.checkCancellation()
-                    guard generation == current else { return }
-                    guard let frame = try parser.consume(line) else { continue }
-                    if frame.event == "reset" { throw ChatClientError.cursorReset }
-                    guard frame.event == "change" else { throw ChatClientError.unsupportedVersion }
-                    let event = try JSONDecoder().decode(ChatFeedEvent.self, from: Data(frame.data.utf8))
+                    guard generation == current, !disconnected else { return }
                     guard var nextSnapshot = cache.snapshots[id] else { throw ChatClientError.cursorReset }
-                    try ChatReducer.apply(event, to: &nextSnapshot)
+                    for event in batch { try ChatReducer.apply(event, to: &nextSnapshot) }
                     var next = cache; next.snapshots[id] = nextSnapshot
                     removeConfirmed(from: &next, snapshot: nextSnapshot)
                     try commit(next); publish()

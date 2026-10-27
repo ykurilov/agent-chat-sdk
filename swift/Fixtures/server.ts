@@ -42,15 +42,31 @@ const executor:ExternalExecutor={
 };
 let offlineSink:(event:ExternalConversationEvent)=>Promise<void>=async()=>{};
 const offlineExecutor:ExternalExecutor={status:()=>"offline",onConversation:listener=>{offlineSink=listener;return()=>{};},reconcile:async()=>{await offlineSink({type:"permissions_snapshot",requests:[]});await offlineSink({type:"status",manager:"offline"});},send:async()=>{throw Error("offline must not send");},stopTurn:async()=>{},respondToPermission:async()=>{}};
-const service=createExternalConversationService({store:createMemoryConversationStore(),attachments,resolveExecutor:d=>d.execution.id==="files-models"?fileExecutor:d.execution.id==="offline-cache"?offlineExecutor:executor,pollMs:100});
+let catchupSink:(event:ExternalConversationEvent)=>Promise<void>=async()=>{};
+const catchupExecutor:ExternalExecutor={status:()=>"offline",onConversation:listener=>{catchupSink=listener;return()=>{};},reconcile:async()=>{},send:async()=>{throw Error("offline must not send");},stopTurn:async()=>{},respondToPermission:async()=>{}};
+const service=createExternalConversationService({store:createMemoryConversationStore(),attachments,resolveExecutor:d=>d.execution.id==="catchup"?catchupExecutor:d.execution.id==="files-models"?fileExecutor:d.execution.id==="offline-cache"?offlineExecutor:executor,pollMs:100});
 await service.ensureConversation({id:"main",ownerId:"fixture",title:"Главный",pinned:true,execution:{kind:"external",id:"fixture"}});
 await service.start("fixture","main");
 await service.ensureConversation({id:"offline-cache",ownerId:"fixture",title:"Офлайн",execution:{kind:"external",id:"offline-cache"}});await service.start("fixture","offline-cache");
 await service.ensureConversation({id:"files-models",ownerId:"fixture",title:"Files",execution:{kind:"external",id:"files-models"}});await service.start("fixture","files-models");
+await service.ensureConversation({id:"catchup",ownerId:"fixture",title:"Catch-up",execution:{kind:"external",id:"catchup"}});await service.start("fixture","catchup");
 const handler=createExternalChatHandler({service,attachments,resolveUser:r=>r.headers.get("authorization")==="Bearer fixture-only"?{id:"fixture"}:null,pollMs:20});
 const port=Number(process.env.AGENT_CHAT_FIXTURE_PORT??9139);
 const server=createServer(async(req,res)=>{
   const abort=new AbortController();res.once("close",()=>abort.abort());
+  if(req.url==="/fixture/catchup-burst"){
+    for(let i=0;i<100;i++)await service.send("fixture","catchup",{clientMessageId:"catchup-"+i,text:"Cached message "+i});
+    res.end("ok");return;
+  }
+  if(req.url==="/fixture/catchup-live"){
+    await catchupSink({type:"turn_started"});
+    for(const text of ["Live","Live answer","Live answer done"]){
+      await catchupSink({type:"delta",id:"catchup-live",textSoFar:text});
+      await new Promise(resolve=>setTimeout(resolve,100));
+    }
+    await catchupSink({type:"turn_ended",outcome:"completed"});
+    res.end("ok");return;
+  }
   if(req.url==="/fixture/reject-files-twice"){rejectFiles=2;res.end("ok");return;}
   if(req.method==="POST"&&req.url==="/api/conversations/files-models/messages"&&rejectFiles>0){rejectFiles--;let body="";for await(const chunk of req)body+=chunk;for(const id of JSON.parse(body).attachmentIds??[])await attachmentStorage.removeUnattached(id);res.writeHead(404,{"content-type":"application/json"});res.end(JSON.stringify({error:{code:"attachment_expired"}}));return;}
   if(req.url==="/fixture/hold-file-delete"){fileDeleteGate=new Promise<void>(resolve=>{releaseFileDelete=resolve;});fileDeletes=0;res.end("ok");return;}
