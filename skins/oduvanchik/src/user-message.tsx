@@ -1,4 +1,5 @@
-import { Button, Tooltip } from "@tandem/ui";
+import { Tooltip } from "./primitives/tooltip";
+import { Button } from "@tandem/ui";
 import { UserMessageShell } from "./primitives/user-message";
 import type { ChatSkin } from "@ykurilov/agent-chat-react";
 import { useChatLabels } from "@ykurilov/agent-chat-react";

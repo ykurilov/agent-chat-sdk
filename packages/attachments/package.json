@@ -1,6 +1,6 @@
 {
   "name": "@ykurilov/agent-chat-attachments",
-  "version": "0.87.7",
+  "version": "0.87.8",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,
@@ -49,7 +49,7 @@
     "unpdf": "^1.8.1"
   },
   "peerDependencies": {
-    "react": "^19.3.0",
+    "react": "~19.0.1 || ~19.1.2 || ^19.2.1",
     "@ykurilov/agent-chat-react": "workspace:^"
   },
   "devDependencies": {

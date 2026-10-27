@@ -575,3 +575,37 @@ describe("хуки панели вне AgentPanelProvider", () => {
     expect(() => render(<AgentPanel skin={stubPanelSkin} />)).toThrow(/AgentPanelProvider/);
   });
 });
+
+
+describe("application composer commands", () => {
+  it("returns from a closed list to the same chat/draft and focuses on every request", async () => {
+    const server = twoChats();
+    renderPanel(server);
+    await openPanel();
+    const original = field();
+    fireEvent.change(original, { target: { value: "My pending edit" } });
+    await openList();
+    act(() => controls!.setOpen(false));
+    act(() => controls!.focusComposer());
+    expect(isOpen()).toBe(true);
+    expect(panelFrame().getAttribute("data-list-open")).toBe("false");
+    expect(field()).toBe(original);
+    expect(field().value).toBe("My pending edit");
+    expect(document.activeElement).toBe(original);
+    screen.getByText("Page button").focus();
+    act(() => controls!.focusComposer());
+    expect(document.activeElement).toBe(original);
+    expect(server.requests.filter((r) => r.method === "POST" && r.path === "/api/chat")).toHaveLength(0);
+  });
+
+  it("showChat closes the list without stealing focus from the application", async () => {
+    renderPanel(twoChats());
+    await openPanel();
+    await openList();
+    const pageButton = screen.getByText("Page button");
+    pageButton.focus();
+    act(() => controls!.showChat());
+    expect(panelFrame().getAttribute("data-list-open")).toBe("false");
+    expect(document.activeElement).toBe(pageButton);
+  });
+});

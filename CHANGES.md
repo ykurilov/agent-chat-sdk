@@ -1,5 +1,11 @@
 # Что нового по версиям
 
+## 0.87.8
+
+Панель: публичные `showChat()` и `focusComposer()` вместо клика по разметке. Одуванчик: готовый `/embedded.css` без Tailwind в хосте и глобального сброса страницы. React/React DOM 19.0.1, 19.1.2 или 19.2.1+; optional Vitest 3.2/4/5.
+
+**Как обновить приложение:** обновить установленные пакеты SDK вместе; обработчик «Изменить с ИИ…» перевести на `useAgentPanel().focusComposer()`. Импорт `/styles.css` заменить на `/embedded.css`, убрать Tailwind/глобальный CSS Тандема и обходные стили, добавленные только ради панели. Собственное оформление приложения сохранить. [Подключение](docs/getting-started.md#панель-агента-в-приложении).
+
 Коротко и простыми словами. Подробности и шаги обновления — в журналах пакетов: [core](packages/core/CHANGELOG.md),
 [server](packages/server/CHANGELOG.md), [react](packages/react/CHANGELOG.md), [voice](packages/voice/CHANGELOG.md),
 [voice-dialog](packages/voice-dialog/CHANGELOG.md), [attachments](packages/attachments/CHANGELOG.md), [limits](packages/limits/CHANGELOG.md),

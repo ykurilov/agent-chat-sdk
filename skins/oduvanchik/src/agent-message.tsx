@@ -1,4 +1,5 @@
-import { Badge, Button, Tooltip } from "@tandem/ui";
+import { Tooltip } from "./primitives/tooltip";
+import { Badge, Button } from "@tandem/ui";
 import type { ChatSkin, MessageActionView } from "@ykurilov/agent-chat-react";
 import { useChatLabels } from "@ykurilov/agent-chat-react";
 import { Check, Copy, Pencil, RefreshCw, RotateCcw } from "./icons";

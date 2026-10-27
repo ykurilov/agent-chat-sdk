@@ -23,6 +23,8 @@ export interface AgentPanelSkin {
    */
   AgentPanel: ComponentType<{
     open: boolean;
+    /** Monotonic request to focus the composer when open and the list is closed. Optional for existing skins. */
+    focusRequest?: number;
     mode: "overlay" | "push";
     /** Ширина на широком экране, px. */
     width: number;

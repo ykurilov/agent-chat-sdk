@@ -1,6 +1,6 @@
 {
   "name": "@ykurilov/agent-chat-react",
-  "version": "0.87.7",
+  "version": "0.87.8",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,
@@ -43,7 +43,7 @@
     "virtua": "0.52.8"
   },
   "peerDependencies": {
-    "react": "^19.3.0"
+    "react": "~19.0.1 || ~19.1.2 || ^19.2.1"
   },
   "devDependencies": {
     "@testing-library/react": "^16.3.3",

@@ -1,6 +1,6 @@
 {
   "name": "@ykurilov/agent-chat-memory",
-  "version": "0.87.7",
+  "version": "0.87.8",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,

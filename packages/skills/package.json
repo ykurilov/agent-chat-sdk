@@ -1,6 +1,6 @@
 {
   "name": "@ykurilov/agent-chat-skills",
-  "version": "0.87.7",
+  "version": "0.87.8",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,
@@ -63,7 +63,7 @@
   "peerDependencies": {
     "better-sqlite3": "^13.0.3",
     "pg": "^8.23.0",
-    "react": "^19.3.0"
+    "react": "~19.0.1 || ~19.1.2 || ^19.2.1"
   },
   "peerDependenciesMeta": {
     "better-sqlite3": {

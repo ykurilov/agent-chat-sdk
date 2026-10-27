@@ -192,6 +192,7 @@ export function OduvanchikMediaViewer({ items, index, onIndexChange, onClose }: 
   return (
     <div
       ref={dialogRef}
+      data-agent-chat-oduvanchik=""
       role="dialog"
       aria-modal="true"
       aria-label={name}

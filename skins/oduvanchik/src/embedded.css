@@ -1,0 +1,6 @@
+/* Precompiled by the SDK. The host does not need Tailwind. */
+@import "tailwindcss" source(none);
+@import "./styles.css";
+@source ".";
+@source "../node_modules/@tandem/ui/dist";
+@source "../node_modules/@ykurilov/ds-react/dist";

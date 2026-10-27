@@ -41,6 +41,7 @@ export function AgentPanel({ skin, ...chatProps }: AgentPanelProps) {
       <skin.AgentPanelLauncher open={controls.open} busy={controls.busy} onToggle={controls.toggle} buttonRef={launcherRef} />
       <skin.AgentPanel
         open={controls.open}
+        focusRequest={view.focusRequest}
         mode={controls.mode}
         width={controls.width}
         title={activeChatTitle(list, labels)}

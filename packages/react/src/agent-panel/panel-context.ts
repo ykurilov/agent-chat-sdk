@@ -8,6 +8,10 @@ export interface AgentPanelControls {
   open: boolean;
   setOpen(open: boolean): void;
   toggle(): void;
+  /** Open the panel on its current chat without replacing its draft or conversation. */
+  showChat(): void;
+  /** Open the current chat, dismiss the chat list and focus its composer; repeatable while open. */
+  focusComposer(): void;
   /** Открыть панель на чате; чужой или удалённый — «Чат не найден», список — по кнопке «Чаты». */
   openChat(chatId: string): void;
   /** Новый (или пустой) чат и готовый текст в поле ввода. `false` — не создался (список открыт с ошибкой). */
@@ -34,6 +38,7 @@ export interface PanelView {
   /** Ключ открытого чата: меняется вместе с чатом и с новым готовым текстом. */
   chatKey: string;
   initialDraft: string | undefined;
+  focusRequest: number;
   setBusy(busy: boolean): void;
   launcherRef: RefObject<HTMLButtonElement | null>;
   bridge: AppBridgeControl["bridge"];

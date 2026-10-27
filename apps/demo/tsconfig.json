@@ -1,4 +1,16 @@
 {
   "extends": "../../tsconfig.base.json",
-  "include": ["src", "server", "shared", "e2e", "skin-gallery", "flow-test-chat", "vite.config.ts", "playwright.config.ts"]
+  "include": [
+    "src",
+    "server",
+    "shared",
+    "e2e",
+    "skin-gallery",
+    "flow-test-chat",
+    "vite.config.ts",
+    "playwright.config.ts",
+    "tests/embedding",
+    "embedding.vite.config.ts",
+    "playwright.embedding.config.ts"
+  ]
 }

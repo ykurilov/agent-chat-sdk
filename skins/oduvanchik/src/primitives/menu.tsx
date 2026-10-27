@@ -18,6 +18,7 @@ export const MenuContent = React.forwardRef<
   // Radix портирует его в body, то есть за пределы ловушки фокуса этой панели.
   <DropdownMenu.Portal container={container ?? undefined}>
     <DropdownMenu.Content
+      data-agent-chat-oduvanchik=""
       ref={ref}
       sideOffset={sideOffset}
       align={align}
@@ -76,6 +77,7 @@ export const MenuSubContent = React.forwardRef<
 >(({ className, sideOffset = 6, container, ...props }, ref) => (
   <DropdownMenu.Portal container={container ?? undefined}>
     <DropdownMenu.SubContent
+      data-agent-chat-oduvanchik=""
       ref={ref}
       sideOffset={sideOffset}
       className={cn(

@@ -1,6 +1,6 @@
 {
   "name": "@ykurilov/agent-chat-skin-tandem",
-  "version": "0.87.7",
+  "version": "0.87.8",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,
@@ -71,7 +71,7 @@
     "micromark-extension-gfm": "^3.0.0"
   },
   "peerDependencies": {
-    "react": "^19.3.0",
+    "react": "~19.0.1 || ~19.1.2 || ^19.2.1",
     "@ykurilov/agent-chat-messengers": "workspace:^",
     "@ykurilov/agent-chat-sandbox": "workspace:^",
     "@ykurilov/agent-chat-flows": "workspace:^",

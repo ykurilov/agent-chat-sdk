@@ -49,6 +49,7 @@ export function AgentPanelProvider({ api, userKey, browserTools, mode = "overlay
   const list = useChatList({ api, rememberKey: panelChatKey(api, userKey), ...(fetch && { fetch }) });
   const [listOpen, setListOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [focusRequest, setFocusRequest] = useState(0);
   /** Готовый текст для поля ввода; `chatId: null` — привяжется к чату, который откроет `openNewChat`. */
   const [draft, setDraft] = useState<{ text: string; nonce: number; chatId: string | null } | null>(null);
   const draftCount = useRef(0);
@@ -94,6 +95,14 @@ export function AgentPanelProvider({ api, userKey, browserTools, mode = "overlay
     },
     [refresh],
   );
+  const showChat = useCallback(() => {
+    setOpen(true);
+    setListOpen(false);
+  }, [setOpen]);
+  const focusComposer = useCallback(() => {
+    showChat();
+    setFocusRequest((request) => request + 1);
+  }, [showChat]);
   const toggle = useCallback(() => setOpen(!open), [open, setOpen]);
   const openChat = useCallback(
     (chatId: string) => {
@@ -130,8 +139,8 @@ export function AgentPanelProvider({ api, userKey, browserTools, mode = "overlay
   }, [deleteRequest, listOpen, setOpen]);
 
   const controls = useMemo<AgentPanelControls>(
-    () => ({ open, setOpen, toggle, openChat, openNewChat, pageInset, mode, width, busy: chatBusy }),
-    [chatBusy, mode, open, openChat, openNewChat, pageInset, setOpen, toggle, width],
+    () => ({ open, setOpen, toggle, showChat, focusComposer, openChat, openNewChat, pageInset, mode, width, busy: chatBusy }),
+    [chatBusy, mode, open, openChat, openNewChat, pageInset, setOpen, toggle, showChat, focusComposer, width],
   );
   const view: PanelView = {
     api,
@@ -144,6 +153,7 @@ export function AgentPanelProvider({ api, userKey, browserTools, mode = "overlay
     escape,
     chatKey: boundDraft ? `draft:${boundDraft.nonce}:${activeChatId}` : `chat:${activeChatId}`,
     initialDraft: boundDraft?.text,
+    focusRequest,
     setBusy,
     launcherRef,
     bridge: userBridge,

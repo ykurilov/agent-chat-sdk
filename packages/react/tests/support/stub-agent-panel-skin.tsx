@@ -18,14 +18,18 @@ export const stubAgentPanelSkin: AgentPanelSkin = {
       </button>
     );
   },
-  AgentPanel: function StubPanel({ open, mode, width, title, listOpen, onListOpenChange, onClose, onEscape, children, list }) {
+  AgentPanel: function StubPanel({ open, focusRequest = 0, mode, width, title, listOpen, onListOpenChange, onClose, onEscape, children, list }) {
     const labels = useChatLabels();
     const frame = useRef<HTMLElement>(null);
     const wasOpen = useRef(open);
+    const lastFocusRequest = useRef(0);
     useEffect(() => {
-      if (open && !wasOpen.current) frame.current?.querySelector("textarea")?.focus();
+      if (open && !listOpen && (!wasOpen.current || lastFocusRequest.current !== focusRequest)) {
+        const field = frame.current?.querySelector("textarea");
+        if (field) { field.focus(); lastFocusRequest.current = focusRequest; }
+      }
       wasOpen.current = open;
-    }, [open]);
+    }, [open, listOpen, focusRequest, children]);
     return (
       <aside
         ref={frame}

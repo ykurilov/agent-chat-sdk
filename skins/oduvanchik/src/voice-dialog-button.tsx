@@ -1,4 +1,5 @@
-import { Button, Tooltip } from "@tandem/ui";
+import { Tooltip } from "./primitives/tooltip";
+import { Button } from "@tandem/ui";
 import type { VoiceDialogView } from "@ykurilov/agent-chat-react";
 import { useChatLabels } from "@ykurilov/agent-chat-react";
 import { AudioLines } from "./icons";

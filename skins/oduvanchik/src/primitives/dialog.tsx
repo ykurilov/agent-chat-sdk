@@ -23,8 +23,9 @@ export const DialogContent = React.forwardRef<
   const labels = useTandemLabels("dialog", overrides)
   return (
     <DialogPrimitive.Portal>
-      <DialogPrimitive.Overlay className="tandem-overlay fixed inset-0 z-50 bg-[color-mix(in_srgb,var(--foreground)_45%,transparent)]" />
+      <DialogPrimitive.Overlay data-agent-chat-oduvanchik="" className="tandem-overlay fixed inset-0 z-50 bg-[color-mix(in_srgb,var(--foreground)_45%,transparent)]" />
       <DialogPrimitive.Content
+      data-agent-chat-oduvanchik=""
         ref={ref}
         className={cn(
           "fixed z-50 border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow-lg)]",

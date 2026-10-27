@@ -39,6 +39,7 @@ export function TandemAgentPanelLauncher({ open, busy, onToggle, buttonRef }: Co
  */
 export function TandemAgentPanel({
   open,
+  focusRequest = 0,
   mode,
   width,
   title,
@@ -52,10 +53,17 @@ export function TandemAgentPanel({
   const labels = useChatLabels();
   const panelRef = useRef<HTMLElement>(null);
   const wasOpen = useRef(open);
+  const lastFocusRequest = useRef(0);
   useEffect(() => {
-    if (open && !wasOpen.current) panelRef.current?.querySelector<HTMLElement>("textarea")?.focus();
+    if (open && !listOpen && (!wasOpen.current || lastFocusRequest.current !== focusRequest)) {
+      const field = panelRef.current?.querySelector<HTMLTextAreaElement>("textarea:not(:disabled)");
+      if (field) {
+        field.focus();
+        lastFocusRequest.current = focusRequest;
+      }
+    }
     wasOpen.current = open;
-  }, [open]);
+  }, [open, listOpen, focusRequest, children]);
 
   // Список закрылся (Esc, выбор чата), а фокус был в нём и пропал — вернуть его в поле ввода: следующий Esc дойдёт до панели.
   const wasListOpen = useRef(listOpen);
