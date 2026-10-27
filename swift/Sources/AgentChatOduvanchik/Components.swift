@@ -140,9 +140,11 @@ public struct AgentChatComposer: View {
     /// Change when switching conversations to discard unconfirmed speech from the old chat.
     let speechContextId: String?
     @State private var dictation = AgentChatDictation()
+    @State private var reservedInputHeight: CGFloat = 0
     @FocusState private var isFocused: Bool
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.isEnabled) private var inheritedEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     public init(text: Binding<String>, placeholder: String, onStop: (() -> Void)? = nil, enabled: Bool = true, stopEnabled: Bool = true, speechRecognizer: (any AgentChatSpeechRecognizer)? = nil, speechContextId: String? = nil, onSend: @escaping () -> Void) {
         _text = text
@@ -151,7 +153,7 @@ public struct AgentChatComposer: View {
         self.speechRecognizer = speechRecognizer; self.speechContextId = speechContextId
     }
 
-    private var canSend: Bool { inheritedEnabled && enabled && !dictation.isActive && !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    private var canSend: Bool { inheritedEnabled && enabled && !dictation.isSendPending && (dictation.isActive || !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
     private var recognizerId: ObjectIdentifier? { speechRecognizer.map { ObjectIdentifier($0) } }
 
     public var body: some View {
@@ -173,7 +175,16 @@ public struct AgentChatComposer: View {
                             .accessibilityLabel(Text("Промежуточный текст: \(dictation.partialText)"))
                             .accessibilityIdentifier("dictation-partial")
                     }
-                }.padding(.vertical, 10)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                .background(GeometryReader { geometry in
+                    Color.clear.preference(key: DictationInputHeight.self, value: geometry.size.height)
+                })
+                .frame(minHeight: dictation.isActive ? reservedInputHeight : nil, alignment: .topLeading)
+                .animation(reduceMotion ? nil : .ykOut(duration: 0.15), value: reservedInputHeight)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("dictation-input-area")
+                .padding(.vertical, 10)
                 if let onStop {
                     YKIconButton(.stop, label: "Остановить", variant: .secondary, size: .md, iconWeight: .fill, action: onStop)
                         .accessibilityIdentifier("stop").disabled(!stopEnabled)
@@ -181,13 +192,22 @@ public struct AgentChatComposer: View {
                 if let speechRecognizer {
                     YKIconButton(dictation.isActive ? .stop : .microphone, label: dictation.isActive ? "Закончить диктовку" : "Начать диктовку", variant: .secondary, size: .md) {
                         if dictation.isActive { dictation.finish() }
-                        else { dictation.start(using: speechRecognizer) { fragment in text = AgentChatDictation.appending(fragment, to: text) } }
+                        else { dictation.start(using: speechRecognizer) { fragment in text = dictation.appendFinal(fragment, to: text) } }
                     }
                     .accessibilityIdentifier("dictation-microphone")
                     .accessibilityValue(Text(dictation.phase == .listening ? "Слушаю" : dictation.phase == .finishing ? "Дорасшифровываю" : ""))
                     .disabled(!enabled || dictation.phase == .finishing)
                 }
-                Button { if canSend { onSend() } } label: {
+                if dictation.isActive {
+                    YKIconButton(.x, label: "Отменить диктовку", variant: .secondary, size: .md) { dictation.cancel() }
+                        .accessibilityIdentifier("dictation-cancel")
+                }
+                Button {
+                    guard canSend else { return }
+                    if dictation.isActive {
+                        dictation.finishAndSend(draft: { text }) { onSend() }
+                    } else { onSend() }
+                } label: {
                     YKIcon(.arrowUp, size: 18)
                         .foregroundStyle(YKColorRole.onInk.color)
                         .frame(width: AgentChatMetrics.sendButtonSide, height: AgentChatMetrics.sendButtonSide)
@@ -196,16 +216,7 @@ public struct AgentChatComposer: View {
                 }
                 .buttonStyle(.plain).disabled(!canSend)
                 .accessibilityLabel(Text("Отправить")).accessibilityIdentifier("send")
-            }
-            if dictation.isActive {
-                HStack {
-                    Text(dictation.phase == .listening ? "Слушаю…" : "Дорасшифровываю…")
-                        .ykText(.small).foregroundStyle(YKColorRole.muted.color)
-                        .accessibilityIdentifier("dictation-status")
-                    Spacer()
-                    Button("Отменить диктовку") { dictation.cancel() }.buttonStyle(.yk(.link, size: .sm))
-                        .accessibilityIdentifier("dictation-cancel")
-                }
+                .accessibilityValue(Text(dictation.isSendPending ? "Ожидание окончания распознавания" : ""))
             }
             if case .failed(let message) = dictation.phase {
                 Text(message).ykText(.small).foregroundStyle(YKColorRole.danger.color)
@@ -215,6 +226,10 @@ public struct AgentChatComposer: View {
         .padding(.leading, YKTokens.Space.s5)
         .padding([.trailing, .vertical], YKTokens.Space.s2)
         .background(YKColorRole.surface2.color, in: RoundedRectangle(cornerRadius: AgentChatMetrics.composerRadius, style: .continuous))
+        .onPreferenceChange(DictationInputHeight.self) { height in
+            if dictation.isActive, height > reservedInputHeight { reservedInputHeight = height }
+        }
+        .onChange(of: dictation.isActive) { _, active in if !active { reservedInputHeight = 0 } }
         .onDisappear { dictation.cancel() }
         .onChange(of: inheritedEnabled) { _, enabled in if !enabled { dictation.cancel() } }
         .onChange(of: scenePhase) { _, phase in if phase == .background { dictation.cancel() } }
@@ -282,4 +297,9 @@ public struct AgentChatApprovalCard: View {
             .buttonStyle(.yk(option.isPrimary ? .primary : .secondary, size: .lg))
         }
     }
+}
+
+private struct DictationInputHeight: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }

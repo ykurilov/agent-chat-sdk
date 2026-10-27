@@ -31,6 +31,9 @@ public enum AgentChatDictationPhase: Sendable, Equatable {
 @MainActor @Observable public final class AgentChatDictation {
     public private(set) var phase: AgentChatDictationPhase = .idle
     public private(set) var partialText = ""
+    public private(set) var isSendPending = false
+    @ObservationIgnored private var sendAfterFinish: (@MainActor () -> Void)?
+    @ObservationIgnored private var lastFinalDraft: String?
     public var isActive: Bool { phase == .listening || phase == .finishing }
     @ObservationIgnored private var recognizer: (any AgentChatSpeechRecognizer)?
     @ObservationIgnored private var task: Task<Void, Never>?
@@ -53,8 +56,8 @@ public enum AgentChatDictationPhase: Sendable, Equatable {
                     switch event {
                     case .partial(let text): partialText = text
                     case .final(let text):
-                        partialText = ""
                         if !text.isEmpty { onFinal(text) }
+                        partialText = ""
                     case .finished:
                         complete(session: session, error: nil)
                         return
@@ -77,11 +80,30 @@ public enum AgentChatDictationPhase: Sendable, Equatable {
         recognizer?.finish()
     }
 
+    /// Waits for all final fragments and exactly one successful terminal event.
+    /// Reads the final draft only after finished; empty drafts never send.
+    public func finishAndSend(draft: @escaping @MainActor () -> String, onSend: @escaping @MainActor () -> Void) {
+        guard isActive, !isSendPending else { return }
+        isSendPending = true
+        sendAfterFinish = { if !draft().trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { onSend() } }
+        finish()
+    }
+
+    /// Separators inside a continuous recognition session belong to the provider.
+    /// A keyboard edit breaks continuity and starts a new draft/session boundary.
+    public func appendFinal(_ fragment: String, to draft: String) -> String {
+        guard !fragment.isEmpty else { return draft }
+        let next = Self.appending(fragment, to: draft, separating: lastFinalDraft != draft)
+        lastFinalDraft = next
+        return next
+    }
+
     public func cancel() {
         generation = UUID()
         task?.cancel(); task = nil
         let source = recognizer; recognizer = nil
         partialText = ""; phase = .idle
+        sendAfterFinish = nil; isSendPending = false; lastFinalDraft = nil
         source?.cancel()
     }
 
@@ -90,15 +112,20 @@ public enum AgentChatDictationPhase: Sendable, Equatable {
         generation = UUID()
         let source = recognizer; recognizer = nil
         task = nil; partialText = ""
+        let send = error == nil ? sendAfterFinish : nil
+        sendAfterFinish = nil; isSendPending = false; lastFinalDraft = nil
         if let error {
             phase = .failed(error.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Не удалось распознать речь" : error)
             source?.cancel()
         } else { phase = .idle }
+        send?()
     }
 
-    /// Read the draft at the time of each final event, preserving keyboard edits.
-    public static func appending(_ fragment: String, to draft: String) -> String {
+    /// Literal concatenation by default. Only the first fragment at a session or
+    /// keyboard boundary uses separating=true. Prefer appendFinal for a session.
+    public static func appending(_ fragment: String, to draft: String, separating: Bool = false) -> String {
         guard !fragment.isEmpty else { return draft }
+        guard separating else { return draft + fragment }
         guard let last = draft.last, let first = fragment.first,
               !last.isWhitespace, !first.isWhitespace,
               !".,!?;:…)]}».".contains(first) else { return draft + fragment }
