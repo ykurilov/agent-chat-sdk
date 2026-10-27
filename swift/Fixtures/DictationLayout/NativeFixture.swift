@@ -3,9 +3,11 @@ import UIKit
 import AgentChatOduvanchik
 @MainActor @Observable final class SpeechFixture: AgentChatSpeechRecognizer {
     var events: AsyncStream<AgentChatSpeechEvent>.Continuation?
+    var finalOnFinish: String?
     func start() throws -> AsyncStream<AgentChatSpeechEvent> {let p=AsyncStream<AgentChatSpeechEvent>.makeStream();events=p.continuation;return p.stream}
-    func finish() {events?.yield(.finished);events?.finish()}
-    func cancel() {events?.finish()}
+    func finish() {if let finalOnFinish {events?.yield(.final(finalOnFinish));self.finalOnFinish=nil};events?.yield(.finished);events?.finish()}
+    func phrase(){finalOnFinish="Привет, менеджер";events?.yield(.partial("Привет, менеджер"))}
+    func cancel() {finalOnFinish=nil;events?.finish()}
     func grow() {Task {let words=[" ещё"," несколько"," слов"," растут"," постепенно"," без"," скачков"," текста"," и"," переноса"," подтверждённой"," строки"]
         var tail="";for word in words {tail+=word;events?.yield(.partial(tail));try? await Task.sleep(for:.milliseconds(220))};events?.yield(.final(tail));events?.yield(.finished);events?.finish()}}
 }
@@ -56,6 +58,11 @@ import AgentChatOduvanchik
             applyKeyboardEdit(view,"X")
         }
     }
+    func caretInMiddle(){
+        func descendants(_ v:UIView)->[UIView]{[v]+v.subviews.flatMap(descendants)}
+        let views=UIApplication.shared.connectedScenes.compactMap{$0 as? UIWindowScene}.flatMap(\.windows).flatMap(descendants)
+        if let view=views.first(where:{$0.accessibilityIdentifier=="composer"}) as? UITextView {view.becomeFirstResponder();view.selectedRange=NSRange(location:5,length:0)}
+    }
     func selectWord(){
         func descendants(_ v:UIView)->[UIView]{[v]+v.subviews.flatMap(descendants)}
         let views=UIApplication.shared.connectedScenes.compactMap{$0 as? UIWindowScene}.flatMap(\.windows).flatMap(descendants)
@@ -92,6 +99,7 @@ import AgentChatOduvanchik
             HStack {Button("English"){draft="hello world"};Button("Select"){probe.selectWord()};Button("Foo"){source.events?.yield(.partial("foo"))};Button("Foobar"){source.events?.yield(.partial("foobar"))}}
             HStack {Button("Marked"){probe.markComposition()};Button("Disable"){enabled.toggle()};Button("Switch"){context="other";draft="chat B"};Button("Late"){probe.lateComposition()}}
             HStack {Button("Rapid"){probe.rapidWord()};Button("Hello"){source.events?.yield(.partial("hello"))};Button("Transient"){probe.transientSelectAll()};Button("BurstClear"){probe.burstThenClear{draft=""}}}
+            HStack {Button("Phrase"){source.phrase()};Button("Caret"){probe.caretInMiddle()}}
             AgentChatComposer(text:$draft,placeholder:"Сообщение",enabled:enabled,speechRecognizer:source,speechContextId:context) {draft=""}.padding()
             Spacer()
         }.preferredColorScheme(ProcessInfo.processInfo.arguments.last=="dark" ? .dark:.light).task{probe.start()}

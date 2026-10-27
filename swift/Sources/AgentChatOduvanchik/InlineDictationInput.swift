@@ -100,6 +100,7 @@ private struct InlineTextEditor: UIViewRepresentable {
             coordinator.scheduleReconciliation()
             return
         }
+        let previousConfirmedText = coordinator.confirmedText
         coordinator.confirmedText = draftSnapshot
         coordinator.pendingNativeDrafts.removeAll()
         if view.markedTextRange != nil { return }
@@ -115,7 +116,13 @@ private struct InlineTextEditor: UIViewRepresentable {
             if confirmed < rendered.length { view.textStorage.addAttribute(.foregroundColor, value: mutedColor, range: NSRange(location: confirmed, length: rendered.length - confirmed)) }
             view.textStorage.endEditing()
         }
-        let location = min(selection.location, confirmed)
+        // A final appends to the confirmed prefix without changing the visible
+        // partial text. Follow that append only when the caret was at the old end;
+        // an intentional interior caret or selection remains where the user put it.
+        let previousEnd = (previousConfirmedText as NSString).length
+        let followsAppend = selection.length == 0 && selection.location == previousEnd
+            && confirmed > previousEnd && draftSnapshot.hasPrefix(previousConfirmedText)
+        let location = followsAppend ? confirmed : min(selection.location, confirmed)
         view.selectedRange = NSRange(location: location, length: min(selection.length, confirmed - location))
         view.font = font; view.typingAttributes = attributes
         view.placeholder.font = font; view.placeholder.textColor = mutedColor

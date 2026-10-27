@@ -1,6 +1,6 @@
 {
   "name": "@ykurilov/agent-chat-skin-tandem",
-  "version": "0.87.1",
+  "version": "0.87.2",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,

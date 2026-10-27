@@ -1,5 +1,33 @@
 import XCTest
 @MainActor final class NativeUITests:XCTestCase {
+    func testFinalSpeechFollowsEndCaretAndPreservesManualSelection() throws {
+        let app=XCUIApplication()
+        for theme in ["light","dark"] {
+            app.launchArguments=[theme];app.launch()
+            let field=app.textViews["composer"]
+            XCTAssertTrue(field.waitForExistence(timeout:15))
+            for prefix in ["","Вопрос:"] {
+                app.buttons["Empty"].tap();field.tap()
+                if !prefix.isEmpty {field.typeText(prefix)}
+                app.buttons["dictation-microphone"].tap();app.buttons["Phrase"].tap()
+                let expected=prefix.isEmpty ? "Привет, менеджер":prefix+" Привет, менеджер"
+                XCTAssertEqual(field.value as? String,expected)
+                // Stop flushes final before finished, just like a recognizer completing speech.
+                app.buttons["dictation-microphone"].tap()
+                field.typeText("!")
+                XCTAssertEqual(field.value as? String,expected+"!","Typing after Stop must follow finalized speech")
+            }
+            app.buttons["English"].tap();field.tap()
+            app.buttons["dictation-microphone"].tap();app.buttons["Phrase"].tap();app.buttons["Caret"].tap()
+            app.buttons["dictation-microphone"].tap();field.typeText("!")
+            XCTAssertEqual(field.value as? String,"hello! world Привет, менеджер")
+            app.buttons["English"].tap();field.tap()
+            app.buttons["dictation-microphone"].tap();app.buttons["Phrase"].tap();app.buttons["Select"].tap()
+            app.buttons["dictation-microphone"].tap();field.typeText("earth")
+            XCTAssertEqual(field.value as? String,"hello earth Привет, менеджер")
+            app.terminate()
+        }
+    }
     func testInlineTextWidthPrefixAndAnimationBothThemes() throws {
         let app=XCUIApplication()
         for theme in ["light","dark"] {

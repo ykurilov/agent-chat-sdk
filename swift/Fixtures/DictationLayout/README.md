@@ -5,3 +5,5 @@
 UI-тест проверяет светлую и тёмную тему: preview/final/subword, ведущий разделитель и скрытую подсказку, замену выделенного слова при обновлении partial. CADisplayLink измеряет ширину редактора, локальные координаты подтверждённого префикса и покадровую высоту. Рост в несколько строк должен давать промежуточные кадры вместо скачка на всю строку. Для видео используйте simctl io <свой simulator-id> recordVideo; чужие симуляторы не затрагивайте.
 
 Быстрые правки за один цикл событий воспроизводят договор клавиатуры: shouldChangeTextIn → insertText при разрешении → textViewDidChange. Низкоуровневый insertText сам по себе не используется как замена этому договору. Отдельный typeText в XCTest проверяет настоящий клавиатурный путь, включая несколько последовательных букв.
+
+Caret regression: `testFinalSpeechFollowsEndCaretAndPreservesManualSelection` flushes a final through the microphone Stop action, then uses real XCUI keyboard input for empty/prefixed drafts and intentional interior caret/selection, in both themes.
