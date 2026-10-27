@@ -89,10 +89,11 @@ public struct AgentChatView: View {
     @State private var selection: String?
     private let responderName: String
     private let speechRecognizer: (any AgentChatSpeechRecognizer)?
+    private let modelPickerInComposer: Bool
     private let showReasoningPicker: Bool
     private let modelChangeWarning: String?
-    public init(client: AgentChatClient, responderName: String = "Агент", speechRecognizer: (any AgentChatSpeechRecognizer)? = nil, attachmentsEnabled: Bool = false, showReasoningPicker: Bool = false, modelChangeWarning: String? = "Первый ответ после смены модели может быть дороже и медленнее: обновляется кэш разговора.") {
-        _model = State(initialValue: AgentChatScreenModel(client: client, attachmentsEnabled: attachmentsEnabled)); self.responderName = responderName; self.speechRecognizer = speechRecognizer; self.showReasoningPicker = showReasoningPicker; self.modelChangeWarning = modelChangeWarning
+    public init(client: AgentChatClient, responderName: String = "Агент", speechRecognizer: (any AgentChatSpeechRecognizer)? = nil, attachmentsEnabled: Bool = false, modelPickerInComposer: Bool = false, showReasoningPicker: Bool = false, modelChangeWarning: String? = "Первый ответ после смены модели может быть дороже и медленнее: обновляется кэш разговора.") {
+        _model = State(initialValue: AgentChatScreenModel(client: client, attachmentsEnabled: attachmentsEnabled)); self.responderName = responderName; self.speechRecognizer = speechRecognizer; self.modelPickerInComposer = modelPickerInComposer; self.showReasoningPicker = showReasoningPicker; self.modelChangeWarning = modelChangeWarning
     }
     public var body: some View {
         NavigationSplitView {
@@ -107,7 +108,7 @@ public struct AgentChatView: View {
         } detail: {
             VStack(spacing: 0) {
                 AgentChatHeader(model.state.snapshot?.conversation.title ?? "Чат", status: executorStatus, statusKind: executorStatusKind) {
-                    if let state = model.state.snapshot?.modelState {
+                    if !modelPickerInComposer, let state = model.state.snapshot?.modelState {
                         AgentChatModelPicker(state: state, enabled: !model.changingModel && model.state.network == .connected && model.state.snapshot?.turn.status != "running" && model.state.snapshot?.conversation.connection != "offline", showReasoning: showReasoningPicker, warning: modelChangeWarning) { choice in Task { await model.setModel(choice) } }
                     }
                 } subtitle: { AgentChatResponderLabel(responderName) }
@@ -203,8 +204,14 @@ public struct AgentChatView: View {
             }
         }.frame(maxWidth: .infinity, alignment: message.role == "user" ? .trailing : .leading)
     }
+    private var composerModelSelection: AgentChatComposerModelSelection? {
+        guard modelPickerInComposer, let state = model.state.snapshot?.modelState else { return nil }
+        return AgentChatComposerModelSelection(state: state, enabled: !model.changingModel && model.state.network == .connected && model.state.snapshot?.turn.status != "running" && model.state.snapshot?.conversation.connection != "offline", showReasoning: showReasoningPicker, warning: modelChangeWarning) { choice in
+            Task { await model.setModel(choice) }
+        }
+    }
     private var composer: some View {
-        AgentChatComposer(text: Binding(get: { model.draft }, set: { model.editDraft($0, chatId: selection) }), placeholder: "Сообщение", onStop: model.state.snapshot?.turn.status == "running" ? { Task { await model.stop() } } : nil, enabled: !model.submitting && model.state.snapshot?.conversation.execution.kind != "model", stopEnabled: model.state.snapshot?.turn.stopRequested != true && model.state.snapshot?.conversation.connection != "offline" && model.state.network == .connected, speechRecognizer: speechRecognizer, speechContextId: selection, attachmentController: model.attachments) {
+        AgentChatComposer(text: Binding(get: { model.draft }, set: { model.editDraft($0, chatId: selection) }), placeholder: "Сообщение", onStop: model.state.snapshot?.turn.status == "running" ? { Task { await model.stop() } } : nil, enabled: !model.submitting && model.state.snapshot?.conversation.execution.kind != "model", stopEnabled: model.state.snapshot?.turn.stopRequested != true && model.state.snapshot?.conversation.connection != "offline" && model.state.network == .connected, speechRecognizer: speechRecognizer, speechContextId: selection, attachmentController: model.attachments, modelSelection: composerModelSelection) {
             Task { await model.send() }
         }.padding(YKTokens.Space.s4)
             .disabled(model.loadingDraft || selection == nil || selection != model.state.selectedChatId)

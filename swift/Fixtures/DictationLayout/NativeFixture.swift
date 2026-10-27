@@ -114,12 +114,20 @@ private struct HistoryAnchor:UIViewRepresentable {
     func makeUIView(context:Context)->UIView {let view=UIView();view.accessibilityIdentifier="history-probe";return view}
     func updateUIView(_ view:UIView,context:Context) {}
 }
+@MainActor @Observable final class ModelFixture {
+    var state=ChatExecutorModelState(revision:"fixture",models:[ChatExecutorModel(id:"opus",label:"Opus 5.5"),ChatExecutorModel(id:"flash",label:"Flash")],selected:ChatExecutorModelChoice(id:"opus",reasoning:"high"))
+    var changes=0
+    func select(_ choice:ChatExecutorModelChoice) {changes+=1;state.selected=choice}
+}
 @main struct NativeFixture:App {
     @State private var source=SpeechFixture()
     @State private var probe=LayoutProbe()
     @State private var draft="Набрано"
     @State private var enabled=true
     @State private var context="main"
+    @State private var model=ModelFixture()
+    private var controls:Bool {ProcessInfo.processInfo.arguments.contains("controls")}
+    private var modelSelection:AgentChatComposerModelSelection? {controls ? AgentChatComposerModelSelection(state:model.state,warning:"Первый ответ дороже и медленнее."){model.select($0)}:nil}
     private let attachments=AgentChatAttachmentController(client:try! AgentChatClient(endpoint:URL(string:"http://127.0.0.1:1/api/conversations")!,accountID:"fixture",cacheURL:FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)){"fixture-only"},chatId:"main")
     private var fullscreen:Bool {ProcessInfo.processInfo.arguments.contains("fullscreen")}
     var body:some Scene {WindowGroup {
@@ -127,7 +135,8 @@ private struct HistoryAnchor:UIViewRepresentable {
         if fullscreen {
             VStack(spacing:0) {
                 Text("Главный агент").font(.headline).padding()
-                HStack {Button("Reset metrics"){probe.reset()};Button("Stream"){source.screenStream()};Button("Clear"){draft=""}}
+                if controls {Text("\(model.changes):\(model.state.selected.id)").accessibilityIdentifier("model-events").font(.caption2)}
+                HStack {Button("Reset metrics"){probe.reset()};Button("Stream"){source.screenStream()};Button("Clear"){draft=""};if controls {Button("Text"){draft="Проверяем новую раскладку композера."}}}
                 Text(probe.report).font(.caption2).lineLimit(1).frame(height:12).accessibilityIdentifier("fixture-metrics")
                 ScrollView {
                     VStack(alignment:.leading,spacing:20) {
@@ -136,7 +145,7 @@ private struct HistoryAnchor:UIViewRepresentable {
                     }.frame(maxWidth:.infinity,alignment:.leading)
                 }.defaultScrollAnchor(.bottom)
             }.safeAreaInset(edge:.bottom,spacing:0) {
-                AgentChatComposer(text:$draft,placeholder:"Сообщение менеджеру",onStop:{},enabled:enabled,speechRecognizer:source,speechContextId:context,attachmentController:attachments){draft=""}.padding(.horizontal,12).padding(.vertical,8)
+                AgentChatComposer(text:$draft,placeholder:"Сообщение менеджеру",onStop:controls ? nil:{},enabled:enabled,speechRecognizer:source,speechContextId:context,attachmentController:attachments,modelSelection:modelSelection){draft=""}.padding(.horizontal,12).padding(.vertical,8)
             }
         } else {
         VStack {

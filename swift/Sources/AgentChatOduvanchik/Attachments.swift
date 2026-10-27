@@ -118,7 +118,7 @@ public struct AgentChatAttachmentButton: View {
             }
             #endif
             Button("Из Файлов") { showFiles = true }
-        } label: { YKIcon(.paperclip, size: 21).foregroundStyle(YKColorRole.text.color).frame(width: 40, height: 40) }
+        } label: { YKIcon(.plus, size: 21).foregroundStyle(YKColorRole.text.color).frame(width: 40, height: 40) }
         .accessibilityLabel("Прикрепить").accessibilityIdentifier("attach")
         .fileImporter(isPresented: $showFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
             switch result { case .success(let urls): Task { for url in urls { await controller.addFile(url) } }; case .failure: controller.error = "Файлы не выбраны" }

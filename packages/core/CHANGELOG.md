@@ -1,5 +1,9 @@
 # @ykurilov/agent-chat-core
 
+## 0.87.4
+
+No changes in this release.
+
 ## 0.87.3
 
 ### Patch Changes

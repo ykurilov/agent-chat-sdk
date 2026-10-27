@@ -1,4 +1,5 @@
 import SwiftUI
+import AgentChatClient
 import YKDesign
 
 /// Шапка беседы: слева кнопка (список чатов), название чата, под ним — кто отвечает, справа — состояние.
@@ -140,6 +141,7 @@ public struct AgentChatComposer: View {
     /// Change when switching conversations to discard unconfirmed speech from the old chat.
     let speechContextId: String?
     let attachmentController: AgentChatAttachmentController?
+    let modelSelection: AgentChatComposerModelSelection?
     @State private var dictation = AgentChatDictation()
     @FocusState private var isFocused: Bool
     @State private var inlineFocused = false
@@ -147,11 +149,11 @@ public struct AgentChatComposer: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.isEnabled) private var inheritedEnabled
 
-    public init(text: Binding<String>, placeholder: String, onStop: (() -> Void)? = nil, enabled: Bool = true, stopEnabled: Bool = true, speechRecognizer: (any AgentChatSpeechRecognizer)? = nil, speechContextId: String? = nil, attachmentController: AgentChatAttachmentController? = nil, onSend: @escaping () -> Void) {
+    public init(text: Binding<String>, placeholder: String, onStop: (() -> Void)? = nil, enabled: Bool = true, stopEnabled: Bool = true, speechRecognizer: (any AgentChatSpeechRecognizer)? = nil, speechContextId: String? = nil, attachmentController: AgentChatAttachmentController? = nil, modelSelection: AgentChatComposerModelSelection? = nil, onSend: @escaping () -> Void) {
         _text = text
         self.placeholder = placeholder; self.onStop = onStop; self.onSend = onSend
         self.enabled = enabled; self.stopEnabled = stopEnabled
-        self.speechRecognizer = speechRecognizer; self.speechContextId = speechContextId; self.attachmentController = attachmentController
+        self.speechRecognizer = speechRecognizer; self.speechContextId = speechContextId; self.attachmentController = attachmentController; self.modelSelection = modelSelection
     }
 
     private var canSend: Bool { inheritedEnabled && enabled && (attachmentController?.isReady ?? true) && !dictation.isSendPending && (dictation.isActive || !(attachmentController?.files.isEmpty ?? true) || !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
@@ -188,15 +190,18 @@ public struct AgentChatComposer: View {
                 .padding(.vertical, 10)
             HStack(alignment: .bottom, spacing: YKTokens.Space.s2 - 2) {
                 if let attachmentController { AgentChatAttachmentButton(controller: attachmentController).disabled(!enabled || dictation.isSendPending) }
+                if let modelSelection {
+                    AgentChatModelPicker(state: modelSelection.state, enabled: enabled && !dictation.isActive && modelSelection.enabled, showReasoning: modelSelection.showReasoning, warning: modelSelection.warning, presentation: .composer, onChange: modelSelection.onChange)
+                        .layoutPriority(-1)
+                }
+                Spacer(minLength: YKTokens.Space.s2)
                 if let onStop {
                     YKIconButton(.stop, label: "Остановить", variant: .secondary, size: .md, iconWeight: .fill, action: onStop)
                         .accessibilityIdentifier("stop").disabled(!stopEnabled)
                 }
-                Spacer(minLength: 0)
-                if speechRecognizer != nil {
+                if speechRecognizer != nil && dictation.isActive {
                     YKIconButton(.x, label: "Отменить диктовку", variant: .secondary, size: .md) { dictation.cancel() }
                         .accessibilityIdentifier("dictation-cancel")
-                        .opacity(dictation.isActive ? 1 : 0).allowsHitTesting(dictation.isActive).accessibilityHidden(!dictation.isActive)
                 }
                 if let speechRecognizer {
                     YKIconButton(dictation.isActive ? .stop : .microphone, label: dictation.isActive ? "Закончить диктовку" : "Начать диктовку", variant: .secondary, size: .md) {
@@ -214,12 +219,11 @@ public struct AgentChatComposer: View {
                     } else { onSend() }
                 } label: {
                     YKIcon(.arrowUp, size: 18)
-                        .foregroundStyle(YKColorRole.onInk.color)
+                        .foregroundStyle(canSend ? YKColorRole.onInk.color : YKColorRole.muted.color)
                         .frame(width: AgentChatMetrics.sendButtonSide, height: AgentChatMetrics.sendButtonSide)
-                        .background(YKColorRole.ink.color, in: Circle())
-                        .opacity(canSend ? 1 : 0.25)
+                        .background(canSend ? YKColorRole.ink.color : YKColorRole.border.color, in: Circle())
                 }
-                .buttonStyle(.plain).disabled(!canSend)
+                .buttonStyle(AgentChatSendButtonStyle()).disabled(!canSend)
                 .accessibilityLabel(Text("Отправить")).accessibilityIdentifier("send")
                 .accessibilityValue(Text(dictation.isSendPending ? "Ожидание окончания распознавания" : ""))
             }
@@ -304,4 +308,12 @@ public struct AgentChatApprovalCard: View {
 private struct DictationInputHeight: PreferenceKey {
     static let defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+// Apply the explicit enabled/disabled palette once. PlainButtonStyle additionally dims
+// a disabled label, which makes the muted arrow unreadable on its circle.
+private struct AgentChatSendButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.opacity(configuration.isPressed ? 0.8 : 1)
+    }
 }

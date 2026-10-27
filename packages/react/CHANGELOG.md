@@ -1,5 +1,9 @@
 # @ykurilov/agent-chat-react
 
+## 0.87.4
+
+No changes in this release.
+
 ## 0.87.3
 
 No changes in this release.

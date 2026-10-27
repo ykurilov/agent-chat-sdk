@@ -1,9 +1,56 @@
 import XCTest
 @MainActor final class NativeUITests:XCTestCase {
+    func testComposerControlsAndModelSelectionBothThemes() throws {
+        let app=XCUIApplication()
+        for theme in ["light","dark"] {
+            app.launchArguments=[theme,"fullscreen","controls"];app.launch()
+            let field=app.textViews["composer"],send=app.buttons["send"],mic=app.buttons["dictation-microphone"],picker=app.buttons["executor-model"]
+            XCTAssertTrue(field.waitForExistence(timeout:15))
+            app.buttons["Clear"].tap()
+            XCTAssertFalse(send.isEnabled)
+            XCTAssertFalse(app.buttons["dictation-cancel"].exists)
+            XCTAssertLessThan(abs(send.frame.minX-mic.frame.maxX),8)
+            XCTAssertEqual(picker.value as? String,"Opus 5.5 High")
+            XCTAssertGreaterThan(field.frame.width/app.frame.width,0.8)
+            func shot(_ state:String) {let image=XCTAttachment(screenshot:app.screenshot());image.name="controls-"+theme+"-"+state;image.lifetime = .keepAlways;add(image)}
+            shot("empty")
+            app.buttons["Text"].tap();XCTAssertTrue(send.isEnabled);shot("text")
+            let width=field.frame.width
+            mic.tap()
+            expectation(for:NSPredicate {_,_ in field.frame.height>100},evaluatedWith:field);waitForExpectations(timeout:4)
+            XCTAssertTrue(app.buttons["dictation-cancel"].isHittable)
+            XCTAssertFalse(picker.isEnabled)
+            XCTAssertLessThan(abs(send.frame.minX-mic.frame.maxX),8)
+            XCTAssertEqual(field.frame.width,width,accuracy:0.5)
+            app.buttons["Stream"].tap()
+            expectation(for:NSPredicate(format:"value CONTAINS %@","Сегодня"),evaluatedWith:field);waitForExpectations(timeout:3)
+            shot("dictation")
+            app.buttons["dictation-cancel"].tap()
+            XCTAssertEqual(field.value as? String,"Проверяем новую раскладку композера.")
+            picker.tap();app.buttons["Flash"].tap()
+            XCTAssertEqual(picker.value as? String,"Opus 5.5 High","Source changes only after confirmation")
+            let confirmation=app.sheets.firstMatch
+            XCTAssertTrue(confirmation.waitForExistence(timeout:3))
+            let confirm=confirmation.buttons["Сменить"]
+            XCTAssertTrue(confirm.isHittable)
+            shot("before-confirm")
+            confirm.tap()
+            shot("after-confirm")
+            expectation(for:NSPredicate(format:"label == %@","1:flash"),evaluatedWith:app.staticTexts["model-events"]);waitForExpectations(timeout:3)
+            print("MODEL_CALLBACK",theme,app.staticTexts["model-events"].label)
+            expectation(for:NSPredicate(format:"value == %@","Flash"),evaluatedWith:picker);waitForExpectations(timeout:3)
+            picker.tap();app.buttons["Opus 5.5"].tap()
+            XCTAssertTrue(confirmation.waitForExistence(timeout:3))
+            confirmation.buttons["Отмена"].tap()
+            XCTAssertEqual(app.staticTexts["model-events"].label,"1:flash","Cancel must not dispatch another choice")
+            XCTAssertEqual(picker.value as? String,"Flash")
+            app.terminate()
+        }
+    }
     func testFullScreenComposerUsesFullWidthAndKeepsScreenStable() throws {
         let app=XCUIApplication()
         for theme in ["light","dark"] {
-            app.launchArguments=[theme,"fullscreen"];app.launch()
+            app.launchArguments=[theme,"fullscreen","controls"];app.launch()
             let field=app.textViews["composer"]
             XCTAssertTrue(field.waitForExistence(timeout:15))
             XCTAssertGreaterThan(field.frame.width/app.frame.width,0.8,"Controls must not consume the text column")
