@@ -183,13 +183,20 @@ public struct AgentChatComposer: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: YKTokens.Space.s2) {
             if let attachmentController { AgentChatDraftAttachments(controller: attachmentController) }
+            dictationInput
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 10)
             HStack(alignment: .bottom, spacing: YKTokens.Space.s2 - 2) {
-                dictationInput
-                    .padding(.vertical, 10)
                 if let attachmentController { AgentChatAttachmentButton(controller: attachmentController).disabled(!enabled || dictation.isSendPending) }
                 if let onStop {
                     YKIconButton(.stop, label: "Остановить", variant: .secondary, size: .md, iconWeight: .fill, action: onStop)
                         .accessibilityIdentifier("stop").disabled(!stopEnabled)
+                }
+                Spacer(minLength: 0)
+                if speechRecognizer != nil {
+                    YKIconButton(.x, label: "Отменить диктовку", variant: .secondary, size: .md) { dictation.cancel() }
+                        .accessibilityIdentifier("dictation-cancel")
+                        .opacity(dictation.isActive ? 1 : 0).allowsHitTesting(dictation.isActive).accessibilityHidden(!dictation.isActive)
                 }
                 if let speechRecognizer {
                     YKIconButton(dictation.isActive ? .stop : .microphone, label: dictation.isActive ? "Закончить диктовку" : "Начать диктовку", variant: .secondary, size: .md) {
@@ -199,11 +206,6 @@ public struct AgentChatComposer: View {
                     .accessibilityIdentifier("dictation-microphone")
                     .accessibilityValue(Text(dictation.phase == .listening ? "Слушаю" : dictation.phase == .finishing ? "Дорасшифровываю" : ""))
                     .disabled(!enabled || dictation.phase == .finishing)
-                }
-                if speechRecognizer != nil {
-                    YKIconButton(.x, label: "Отменить диктовку", variant: .secondary, size: .md) { dictation.cancel() }
-                        .accessibilityIdentifier("dictation-cancel")
-                        .opacity(dictation.isActive ? 1 : 0).allowsHitTesting(dictation.isActive).accessibilityHidden(!dictation.isActive)
                 }
                 Button {
                     guard canSend else { return }

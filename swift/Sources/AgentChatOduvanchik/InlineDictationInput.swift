@@ -25,14 +25,34 @@ struct AgentChatInlineDictationInput: View {
                          placeholder: placeholder, fontSize: fontSize, enabled: enabled, onNeedsProjection: onNeedsProjection,
                          textColor: UIColor(YKColorRole.text.color), mutedColor: UIColor(YKColorRole.muted.color),
                          accentColor: UIColor(YKColorRole.accent.color)) { natural in
-            let next = active ? max(reservedHeight, natural) : natural
-            if active, next > reservedHeight { reservedHeight = next }
+            let next = max(reservedHeight, natural)
             guard abs(next - height) > 0.25 else { return }
-            withAnimation(reduceMotion ? nil : .ykOut(duration: 0.18)) { height = next }
+            animateHeight(to: next)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: height, alignment: .topLeading)
-        .onChange(of: active) { _, value in reservedHeight = value ? height : 0 }
+        .onChange(of: active) { _, value in
+            if value {
+                // Open the bounded viewport once. A bottom-anchored composer must
+                // not push the conversation upward on each dictated line.
+                let line = UIFont.systemFont(ofSize: fontSize).lineHeight
+                    + YKTextMetrics.lineSpacing(YKTokens.Text.body, size: fontSize)
+                reservedHeight = max(height, ceil(line * 6))
+                animateHeight(to: reservedHeight)
+            } else { releaseEmptyReservation() }
+        }
+        .onChange(of: draftSnapshot) { _, _ in releaseEmptyReservation() }
+    }
+    private func releaseEmptyReservation() {
+        guard !active, draftSnapshot.isEmpty else { return }
+        reservedHeight = 0
+        animateHeight(to: ceil(UIFont.systemFont(ofSize: fontSize).lineHeight))
+    }
+    private func animateHeight(to target: CGFloat) {
+        // Keep the design-system easing, but allow a full viewport opening more
+        // time than a single-line adjustment so its first frames do not jump.
+        let duration = max(0.18, Double(abs(target - height)) / 200)
+        withAnimation(reduceMotion ? nil : .ykOut(duration: duration)) { height = target }
     }
 }
 

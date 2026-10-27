@@ -1,5 +1,35 @@
 import XCTest
 @MainActor final class NativeUITests:XCTestCase {
+    func testFullScreenComposerUsesFullWidthAndKeepsScreenStable() throws {
+        let app=XCUIApplication()
+        for theme in ["light","dark"] {
+            app.launchArguments=[theme,"fullscreen"];app.launch()
+            let field=app.textViews["composer"]
+            XCTAssertTrue(field.waitForExistence(timeout:15))
+            XCTAssertGreaterThan(field.frame.width/app.frame.width,0.8,"Controls must not consume the text column")
+            app.buttons["dictation-microphone"].tap()
+            expectation(for:NSPredicate {_,_ in
+                guard let data=app.staticTexts["fixture-metrics"].label.data(using:.utf8),let value=try? JSONDecoder().decode([String:Double].self,from:data) else{return false}
+                return (value["editorHeight"] ?? 0)>100 && (value["steadyFrames"] ?? 0)>=12
+            },evaluatedWith:field);waitForExpectations(timeout:4)
+            // Wait for the one opening transition, then measure the entire screen during speech and final.
+            app.buttons["Reset metrics"].tap();app.buttons["Stream"].tap()
+            expectation(for:NSPredicate(format:"value ENDSWITH %@","диктовки."),evaluatedWith:field);waitForExpectations(timeout:10)
+            expectation(for:NSPredicate(format:"hittable == false"),evaluatedWith:app.buttons["dictation-cancel"]);waitForExpectations(timeout:5)
+            let data=try XCTUnwrap(app.staticTexts["fixture-metrics"].label.data(using:.utf8))
+            let metrics=try JSONDecoder().decode([String:Double].self,from:data)
+            print("SCREEN_METRICS \(theme) \(String(data:data,encoding:.utf8)!)")
+            XCTAssertGreaterThan(metrics["historySamples"]!,20)
+            XCTAssertGreaterThan(metrics["prefixSamples"]!,20)
+            XCTAssertGreaterThan(metrics["widthRatio"]!,0.8)
+            for key in ["widthRange","heightRange","globalYRange","globalPrefixXRange","globalPrefixYRange","historyYRange"] {XCTAssertLessThan(metrics[key]!,0.5,key)}
+            XCTAssertGreaterThanOrEqual(app.buttons["send"].frame.minY,field.frame.maxY,"Actions belong below the editor")
+            let shot=XCTAttachment(screenshot:app.screenshot());shot.name="fullscreen-"+theme;shot.lifetime = .keepAlways;add(shot)
+            app.buttons["Clear"].tap()
+            expectation(for:NSPredicate {_,_ in field.frame.height<50},evaluatedWith:field);waitForExpectations(timeout:3)
+            app.terminate()
+        }
+    }
     func testFinalSpeechFollowsEndCaretAndPreservesManualSelection() throws {
         let app=XCUIApplication()
         for theme in ["light","dark"] {
