@@ -1,6 +1,6 @@
 {
   "name": "@ykurilov/agent-chat-limits",
-  "version": "0.87.0",
+  "version": "0.87.1",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,

@@ -141,11 +141,11 @@ public struct AgentChatComposer: View {
     let speechContextId: String?
     let attachmentController: AgentChatAttachmentController?
     @State private var dictation = AgentChatDictation()
-    @State private var reservedInputHeight: CGFloat = 0
     @FocusState private var isFocused: Bool
+    @State private var inlineFocused = false
+    @State private var nativeProjectionRevision = 0
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.isEnabled) private var inheritedEnabled
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     public init(text: Binding<String>, placeholder: String, onStop: (() -> Void)? = nil, enabled: Bool = true, stopEnabled: Bool = true, speechRecognizer: (any AgentChatSpeechRecognizer)? = nil, speechContextId: String? = nil, attachmentController: AgentChatAttachmentController? = nil, onSend: @escaping () -> Void) {
         _text = text
@@ -157,36 +157,35 @@ public struct AgentChatComposer: View {
     private var canSend: Bool { inheritedEnabled && enabled && (attachmentController?.isReady ?? true) && !dictation.isSendPending && (dictation.isActive || !(attachmentController?.files.isEmpty ?? true) || !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
     private var recognizerId: ObjectIdentifier? { speechRecognizer.map { ObjectIdentifier($0) } }
 
+    @ViewBuilder private var dictationInput: some View {
+        #if canImport(UIKit)
+        let _ = nativeProjectionRevision
+        let draftSnapshot = text
+        if speechRecognizer != nil {
+            AgentChatInlineDictationInput(text: $text, focused: $inlineFocused, draftSnapshot: draftSnapshot, displayText: dictation.previewDraft(draftSnapshot), placeholder: placeholder, active: dictation.isActive, enabled: enabled && inheritedEnabled, onNeedsProjection: { nativeProjectionRevision &+= 1 })
+                .id(speechContextId)
+        } else {
+            plainInput
+        }
+        #else
+        VStack(alignment: .leading, spacing: YKTokens.Space.s1) {
+            plainInput
+            if !dictation.partialText.isEmpty { Text(dictation.partialText).ykText(.body).foregroundStyle(YKColorRole.muted.color) }
+        }
+        #endif
+    }
+    private var plainInput: some View {
+        TextField(text: $text, axis: .vertical) { Text(placeholder) }
+            .ykText(.body).foregroundStyle(YKColorRole.text.color).tint(YKColorRole.accent.color)
+            .lineLimit(1...6).focused($isFocused).accessibilityIdentifier("composer").disabled(!enabled)
+    }
+
     public var body: some View {
         VStack(alignment: .leading, spacing: YKTokens.Space.s2) {
             if let attachmentController { AgentChatDraftAttachments(controller: attachmentController) }
             HStack(alignment: .bottom, spacing: YKTokens.Space.s2 - 2) {
-                VStack(alignment: .leading, spacing: YKTokens.Space.s1) {
-                    TextField(text: $text, axis: .vertical) { Text(placeholder) }
-                        .ykText(.body)
-                        .foregroundStyle(YKColorRole.text.color)
-                        .tint(YKColorRole.accent.color)
-                        .lineLimit(1...6)
-                        .focused($isFocused)
-                        .accessibilityIdentifier("composer")
-                        .disabled(!enabled)
-                    if !dictation.partialText.isEmpty {
-                        Text(dictation.partialText).italic().ykText(.body)
-                            .foregroundStyle(YKColorRole.muted.color)
-                            .lineLimit(1...6)
-                            .accessibilityLabel(Text("Промежуточный текст: \(dictation.partialText)"))
-                            .accessibilityIdentifier("dictation-partial")
-                    }
-                }
-                .fixedSize(horizontal: false, vertical: true)
-                .background(GeometryReader { geometry in
-                    Color.clear.preference(key: DictationInputHeight.self, value: geometry.size.height)
-                })
-                .frame(minHeight: dictation.isActive ? reservedInputHeight : nil, alignment: .topLeading)
-                .animation(reduceMotion ? nil : .ykOut(duration: 0.15), value: reservedInputHeight)
-                .accessibilityElement(children: .contain)
-                .accessibilityIdentifier("dictation-input-area")
-                .padding(.vertical, 10)
+                dictationInput
+                    .padding(.vertical, 10)
                 if let attachmentController { AgentChatAttachmentButton(controller: attachmentController).disabled(!enabled || dictation.isSendPending) }
                 if let onStop {
                     YKIconButton(.stop, label: "Остановить", variant: .secondary, size: .md, iconWeight: .fill, action: onStop)
@@ -201,9 +200,10 @@ public struct AgentChatComposer: View {
                     .accessibilityValue(Text(dictation.phase == .listening ? "Слушаю" : dictation.phase == .finishing ? "Дорасшифровываю" : ""))
                     .disabled(!enabled || dictation.phase == .finishing)
                 }
-                if dictation.isActive {
+                if speechRecognizer != nil {
                     YKIconButton(.x, label: "Отменить диктовку", variant: .secondary, size: .md) { dictation.cancel() }
                         .accessibilityIdentifier("dictation-cancel")
+                        .opacity(dictation.isActive ? 1 : 0).allowsHitTesting(dictation.isActive).accessibilityHidden(!dictation.isActive)
                 }
                 Button {
                     guard canSend else { return }
@@ -229,10 +229,6 @@ public struct AgentChatComposer: View {
         .padding(.leading, YKTokens.Space.s5)
         .padding([.trailing, .vertical], YKTokens.Space.s2)
         .background(YKColorRole.surface2.color, in: RoundedRectangle(cornerRadius: AgentChatMetrics.composerRadius, style: .continuous))
-        .onPreferenceChange(DictationInputHeight.self) { height in
-            if dictation.isActive, height > reservedInputHeight { reservedInputHeight = height }
-        }
-        .onChange(of: dictation.isActive) { _, active in if !active { reservedInputHeight = 0 } }
         .task(id: attachmentController?.chatId) { await attachmentController?.observe() }
         .onDisappear { dictation.cancel() }
         .onChange(of: inheritedEnabled) { _, enabled in if !enabled { dictation.cancel() } }

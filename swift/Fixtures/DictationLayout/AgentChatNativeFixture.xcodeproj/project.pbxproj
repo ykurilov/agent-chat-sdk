@@ -1,0 +1,39 @@
+// !$*UTF8*$!
+{
+ archiveVersion = 1; classes = {}; objectVersion = 56;
+ objects = {
+ A00000000000000000000001 = {isa=PBXProject; attributes={LastUpgradeCheck=1600;}; buildConfigurationList=A00000000000000000000010; compatibilityVersion="Xcode 14.0"; developmentRegion=ru; hasScannedForEncodings=0; knownRegions=(ru,Base); mainGroup=A00000000000000000000002; productRefGroup=A00000000000000000000003; projectDirPath=""; projectRoot=""; targets=(A00000000000000000000004,A00000000000000000000030); packageReferences=(A00000000000000000000020);};
+ A00000000000000000000002 = {isa=PBXGroup; children=(A00000000000000000000005,A00000000000000000000031,A00000000000000000000003); sourceTree="<group>";};
+ A00000000000000000000003 = {isa=PBXGroup; children=(A00000000000000000000006,A00000000000000000000032); name=Products; sourceTree="<group>";};
+ A00000000000000000000004 = {isa=PBXNativeTarget; buildConfigurationList=A00000000000000000000011; buildPhases=(A00000000000000000000007,A00000000000000000000008); buildRules=(); dependencies=(); name=AgentChatNativeFixture; packageProductDependencies=(A00000000000000000000021,A00000000000000000000022); productName=AgentChatNativeFixture; productReference=A00000000000000000000006; productType="com.apple.product-type.application";};
+ A00000000000000000000005 = {isa=PBXFileReference; lastKnownFileType=sourcecode.swift; path=NativeFixture.swift; sourceTree="<group>";};
+ A00000000000000000000006 = {isa=PBXFileReference; explicitFileType=wrapper.application; includeInIndex=0; path=AgentChatNativeFixture.app; sourceTree=BUILT_PRODUCTS_DIR;};
+ A00000000000000000000007 = {isa=PBXSourcesBuildPhase; buildActionMask=2147483647; files=(A00000000000000000000009); runOnlyForDeploymentPostprocessing=0;};
+ A00000000000000000000008 = {isa=PBXFrameworksBuildPhase; buildActionMask=2147483647; files=(A00000000000000000000023,A00000000000000000000024); runOnlyForDeploymentPostprocessing=0;};
+ A00000000000000000000009 = {isa=PBXBuildFile; fileRef=A00000000000000000000005;};
+ A00000000000000000000010 = {isa=XCConfigurationList; buildConfigurations=(A00000000000000000000012,A00000000000000000000013); defaultConfigurationIsVisible=0; defaultConfigurationName=Debug;};
+ A00000000000000000000011 = {isa=XCConfigurationList; buildConfigurations=(A00000000000000000000014,A00000000000000000000015); defaultConfigurationIsVisible=0; defaultConfigurationName=Debug;};
+ A00000000000000000000012 = {isa=XCBuildConfiguration; buildSettings={SDKROOT=iphoneos; SWIFT_VERSION=6.0; IPHONEOS_DEPLOYMENT_TARGET=17.0;}; name=Debug;};
+ A00000000000000000000013 = {isa=XCBuildConfiguration; buildSettings={SDKROOT=iphoneos; SWIFT_VERSION=6.0; IPHONEOS_DEPLOYMENT_TARGET=17.0;}; name=Release;};
+ A00000000000000000000014 = {isa=XCBuildConfiguration; buildSettings={PRODUCT_BUNDLE_IDENTIFIER=org.agentchat.dictationfixture; PRODUCT_NAME="$(TARGET_NAME)"; INFOPLIST_FILE=Info.plist; CODE_SIGNING_ALLOWED=NO; TARGETED_DEVICE_FAMILY=1;}; name=Debug;};
+ A00000000000000000000015 = {isa=XCBuildConfiguration; buildSettings={PRODUCT_BUNDLE_IDENTIFIER=org.agentchat.dictationfixture; PRODUCT_NAME="$(TARGET_NAME)"; INFOPLIST_FILE=Info.plist; CODE_SIGNING_ALLOWED=NO; TARGETED_DEVICE_FAMILY=1;}; name=Release;};
+ A00000000000000000000020 = {isa=XCLocalSwiftPackageReference; relativePath="../../..";};
+ A00000000000000000000021 = {isa=XCSwiftPackageProductDependency; package=A00000000000000000000020; productName=AgentChatClient;};
+ A00000000000000000000022 = {isa=XCSwiftPackageProductDependency; package=A00000000000000000000020; productName=AgentChatOduvanchik;};
+ A00000000000000000000023 = {isa=PBXBuildFile; productRef=A00000000000000000000021;};
+ A00000000000000000000024 = {isa=PBXBuildFile; productRef=A00000000000000000000022;};
+
+ A00000000000000000000030 = {isa=PBXNativeTarget; buildConfigurationList=A00000000000000000000033; buildPhases=(A00000000000000000000034,A00000000000000000000035); buildRules=(); dependencies=(A00000000000000000000036); name=NativeUITests; productName=NativeUITests; productReference=A00000000000000000000032; productType="com.apple.product-type.bundle.ui-testing";};
+ A00000000000000000000031 = {isa=PBXFileReference; lastKnownFileType=sourcecode.swift; path=NativeUITests.swift; sourceTree="<group>";};
+ A00000000000000000000032 = {isa=PBXFileReference; explicitFileType=wrapper.cfbundle; includeInIndex=0; path=NativeUITests.xctest; sourceTree=BUILT_PRODUCTS_DIR;};
+ A00000000000000000000033 = {isa=XCConfigurationList; buildConfigurations=(A00000000000000000000037,A00000000000000000000038); defaultConfigurationIsVisible=0; defaultConfigurationName=Debug;};
+ A00000000000000000000034 = {isa=PBXSourcesBuildPhase; buildActionMask=2147483647; files=(A00000000000000000000039); runOnlyForDeploymentPostprocessing=0;};
+ A00000000000000000000035 = {isa=PBXFrameworksBuildPhase; buildActionMask=2147483647; files=(); runOnlyForDeploymentPostprocessing=0;};
+ A00000000000000000000036 = {isa=PBXTargetDependency; target=A00000000000000000000004; targetProxy=A00000000000000000000040;};
+ A00000000000000000000037 = {isa=XCBuildConfiguration; buildSettings={PRODUCT_BUNDLE_IDENTIFIER=org.agentchat.dictationfixture.uitests; PRODUCT_NAME="$(TARGET_NAME)"; GENERATE_INFOPLIST_FILE=YES; CODE_SIGNING_ALLOWED=NO; TEST_TARGET_NAME=AgentChatNativeFixture; TARGETED_DEVICE_FAMILY=1;}; name=Debug;};
+ A00000000000000000000038 = {isa=XCBuildConfiguration; buildSettings={PRODUCT_BUNDLE_IDENTIFIER=org.agentchat.dictationfixture.uitests; PRODUCT_NAME="$(TARGET_NAME)"; GENERATE_INFOPLIST_FILE=YES; CODE_SIGNING_ALLOWED=NO; TEST_TARGET_NAME=AgentChatNativeFixture; TARGETED_DEVICE_FAMILY=1;}; name=Release;};
+ A00000000000000000000039 = {isa=PBXBuildFile; fileRef=A00000000000000000000031;};
+ A00000000000000000000040 = {isa=PBXContainerItemProxy; containerPortal=A00000000000000000000001; proxyType=1; remoteGlobalIDString=A00000000000000000000004; remoteInfo=AgentChatNativeFixture;};
+ };
+ rootObject = A00000000000000000000001;
+}

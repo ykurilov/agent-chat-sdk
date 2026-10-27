@@ -93,9 +93,17 @@ public enum AgentChatDictationPhase: Sendable, Equatable {
     /// A keyboard edit breaks continuity and starts a new draft/session boundary.
     public func appendFinal(_ fragment: String, to draft: String) -> String {
         guard !fragment.isEmpty else { return draft }
-        let next = Self.appending(fragment, to: draft, separating: lastFinalDraft != draft)
+        let next = Self.appending(Self.initialFragment(fragment, draft: draft), to: draft, separating: lastFinalDraft != draft)
         lastFinalDraft = next
         return next
+    }
+
+    /// Uses precisely the same session separator as final commitment, without changing continuity.
+    func previewDraft(_ draft: String) -> String {
+        Self.appending(Self.initialFragment(partialText, draft: draft), to: draft, separating: lastFinalDraft != draft)
+    }
+    private static func initialFragment(_ fragment: String, draft: String) -> String {
+        draft.isEmpty ? String(fragment.drop(while: { $0 == " " || $0 == "\t" })) : fragment
     }
 
     public func cancel() {
