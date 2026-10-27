@@ -1,0 +1,39 @@
+name: ViewportSafari
+options:
+  bundleIdPrefix: dev.agentchat.viewport
+settings:
+  base:
+    IPHONEOS_DEPLOYMENT_TARGET: '18.0'
+    SWIFT_VERSION: '5.0'
+    CLANG_ENABLE_MODULES: YES
+    TARGETED_DEVICE_FAMILY: '1'
+    SUPPORTED_PLATFORMS: iphonesimulator
+    ONLY_ACTIVE_ARCH: YES
+    CODE_SIGNING_ALLOWED: NO
+targets:
+  ViewportSafari:
+    type: application
+    platform: iOS
+    sources: [App]
+    settings:
+      base:
+        PRODUCT_NAME: ViewportSafari
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+  ViewportSafariTests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [Tests]
+    dependencies:
+      - target: ViewportSafari
+    settings:
+      base:
+        PRODUCT_NAME: ViewportSafariTests
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  ViewportSafari:
+    build:
+      targets:
+        ViewportSafari: all
+    test:
+      targets: [ViewportSafariTests]

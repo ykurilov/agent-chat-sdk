@@ -203,7 +203,7 @@ export function TandemComposer({
   // Пока режим включён, вместо поля стоит панель режима. Поле только скрыто: черновик и его состояние остаются, клавиатура не выезжает.
   return (
     <TandemSkinLabels>
-      <div ref={wrapperRef} className="flex flex-col gap-1">
+      <div ref={wrapperRef} className="flex flex-col gap-1 max-sm:[&_textarea]:text-base">
         <div className={`flex items-end gap-2 ${hasMenu ? "" : hideModelPicker}`}>
           <div hidden={dialogOn} className={dialogOn ? "hidden" : "flex min-w-0 flex-1"}>
             {attachments ? (

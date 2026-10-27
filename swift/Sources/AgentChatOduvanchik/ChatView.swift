@@ -92,7 +92,7 @@ public struct AgentChatView: View {
     private let modelPickerInComposer: Bool
     private let showReasoningPicker: Bool
     private let modelChangeWarning: String?
-    public init(client: AgentChatClient, responderName: String = "Агент", speechRecognizer: (any AgentChatSpeechRecognizer)? = nil, attachmentsEnabled: Bool = false, modelPickerInComposer: Bool = false, showReasoningPicker: Bool = false, modelChangeWarning: String? = "Первый ответ после смены модели может быть дороже и медленнее: обновляется кэш разговора.") {
+    public init(client: AgentChatClient, responderName: String = "Агент", speechRecognizer: (any AgentChatSpeechRecognizer)? = nil, attachmentsEnabled: Bool = false, modelPickerInComposer: Bool = false, showReasoningPicker: Bool = false, modelChangeWarning: String? = "После изменения настроек первый ответ может быть дороже и медленнее: обновляется кэш разговора.") {
         _model = State(initialValue: AgentChatScreenModel(client: client, attachmentsEnabled: attachmentsEnabled)); self.responderName = responderName; self.speechRecognizer = speechRecognizer; self.modelPickerInComposer = modelPickerInComposer; self.showReasoningPicker = showReasoningPicker; self.modelChangeWarning = modelChangeWarning
     }
     public var body: some View {

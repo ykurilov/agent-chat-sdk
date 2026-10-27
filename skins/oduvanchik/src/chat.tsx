@@ -20,3 +20,6 @@ export function ChatWorkspace({ skin = oduvanchikSkin, ...props }: ChatWorkspace
 export function AgentPanel({ skin = oduvanchikSkin, ...props }: AgentPanelProps) {
   return <HeadlessAgentPanel {...props} skin={skin} />;
 }
+
+export { ChatAppViewport } from "@ykurilov/agent-chat-react";
+export type { ChatAppViewportProps } from "@ykurilov/agent-chat-react";

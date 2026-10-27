@@ -1,0 +1,3 @@
+html,body,#root {margin:0;min-width:0;} body {background:#f7f5f1;color:#20201f;font-family:Arial,sans-serif;}
+[data-testid=navigation] {height:48px;box-sizing:border-box;display:flex;align-items:center;gap:12px;background:#e6e1d8;padding:4px 12px;flex-shrink:0;}
+[data-testid=navigation] button {font-size:16px;}

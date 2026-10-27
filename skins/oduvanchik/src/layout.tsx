@@ -1,8 +1,8 @@
 import { TooltipProvider } from "@tandem/ui";
 import { ChatHeader, ScrollArea } from "@ykurilov/ds-react";
-import { useChatLabels } from "@ykurilov/agent-chat-react";
+import { useChatViewport, useChatLabels } from "@ykurilov/agent-chat-react";
 import type { ChatSkin } from "@ykurilov/agent-chat-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import type { ComponentProps, CSSProperties } from "react";
 import { OduvanchikSkinLabels } from "./tandem-labels";
 import { OduvanchikWelcome } from "./welcome";
@@ -10,6 +10,8 @@ import { OduvanchikWelcome } from "./welcome";
 /** One scroll root: SDK virtualisation and reader anchoring own the forwarded DOM ref. */
 export function OduvanchikLayout({ feed, composer, notice, scrollRef, announcement, empty, header, completion }: ComponentProps<ChatSkin["Layout"]>) {
   const labels = useChatLabels();
+  const viewportRef = useRef<HTMLDivElement>(null);
+  useChatViewport(viewportRef);
   const [scrolled, setScrolled] = useState(false);
   const [gutter, setGutter] = useState(0);
   useEffect(() => {
@@ -33,7 +35,7 @@ export function OduvanchikLayout({ feed, composer, notice, scrollRef, announceme
   }, [scrollRef]);
   const completed = completion != null && completion !== false;
   return <OduvanchikSkinLabels><TooltipProvider delayDuration={400}>
-    <div className="oduvanchik-chat oduvanchik-thread-root" style={{ "--oduvanchik-scrollbar-gutter": `${gutter}px` } as CSSProperties}>
+    <div ref={viewportRef} className="oduvanchik-chat oduvanchik-thread-root" style={{ "--oduvanchik-scrollbar-gutter": `${gutter}px` } as CSSProperties}>
       {header && <ChatHeader {...header} scrolled={scrolled} />}
       <ScrollArea ref={scrollRef} label={labels.agentPanelLabel} className="oduvanchik-thread-scroll">
         <div role="log" aria-live="off" className={`yk-chat-column oduvanchik-thread${empty ? " oduvanchik-thread-empty" : ""}`}>
@@ -44,7 +46,7 @@ export function OduvanchikLayout({ feed, composer, notice, scrollRef, announceme
       </ScrollArea>
       <div className="sr-only" aria-live="polite">{announcement}</div>
       {notice && <div className="oduvanchik-thread-notice">{notice}</div>}
-      <div className="oduvanchik-composer-wrap" hidden={completed}><div className="yk-chat-column oduvanchik-composer-column">{composer}</div></div>
+      <div data-agent-chat-composer="" className="oduvanchik-composer-wrap" hidden={completed}><div className="yk-chat-column oduvanchik-composer-column">{composer}</div></div>
     </div>
   </TooltipProvider></OduvanchikSkinLabels>;
 }

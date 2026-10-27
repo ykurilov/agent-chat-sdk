@@ -11,6 +11,9 @@
     "playwright.config.ts",
     "tests/embedding",
     "embedding.vite.config.ts",
-    "playwright.embedding.config.ts"
+    "playwright.embedding.config.ts",
+    "tests/viewport",
+    "viewport.vite.config.ts",
+    "playwright.viewport.config.ts"
   ]
 }

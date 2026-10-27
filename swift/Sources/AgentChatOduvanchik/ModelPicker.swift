@@ -10,7 +10,7 @@ public struct AgentChatComposerModelSelection {
     public let warning: String?
     public let onChange: (ChatExecutorModelChoice) -> Void
 
-    public init(state: ChatExecutorModelState, enabled: Bool = true, showReasoning: Bool = false, warning: String? = "Первый ответ после смены модели может быть дороже и медленнее: обновляется кэш разговора.", onChange: @escaping (ChatExecutorModelChoice) -> Void) {
+    public init(state: ChatExecutorModelState, enabled: Bool = true, showReasoning: Bool = false, warning: String? = "После изменения настроек первый ответ может быть дороже и медленнее: обновляется кэш разговора.", onChange: @escaping (ChatExecutorModelChoice) -> Void) {
         self.state = state; self.enabled = enabled; self.showReasoning = showReasoning
         self.warning = warning; self.onChange = onChange
     }
@@ -54,7 +54,7 @@ public struct AgentChatModelPicker: View {
     }
     let state: ChatExecutorModelState; let enabled: Bool; let showReasoning: Bool; let warning: String?; let onChange: (ChatExecutorModelChoice) -> Void
     @State private var pending: ChatExecutorModelChoice?
-    public init(state: ChatExecutorModelState, enabled: Bool = true, showReasoning: Bool = false, warning: String? = "Первый ответ после смены модели может быть дороже и медленнее: обновляется кэш разговора.", presentation: Presentation = .standalone, onChange: @escaping (ChatExecutorModelChoice) -> Void) { self.presentation = presentation; self.state = state; self.enabled = enabled; self.showReasoning = showReasoning; self.warning = warning; self.onChange = onChange }
+    public init(state: ChatExecutorModelState, enabled: Bool = true, showReasoning: Bool = false, warning: String? = "После изменения настроек первый ответ может быть дороже и медленнее: обновляется кэш разговора.", presentation: Presentation = .standalone, onChange: @escaping (ChatExecutorModelChoice) -> Void) { self.presentation = presentation; self.state = state; self.enabled = enabled; self.showReasoning = showReasoning; self.warning = warning; self.onChange = onChange }
     public var body: some View {
         HStack(spacing: YKTokens.Space.s2) {
             Menu {

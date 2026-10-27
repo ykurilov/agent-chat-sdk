@@ -145,3 +145,5 @@ export type { MemoryNotesState } from "./memory/use-memory-notes";
 export { splitVoiceTags, stripVoiceTags } from "./voice-tags";
 export { voiceAnswerIds } from "./voice-turn";
 export type { SplitVoiceTags, VoiceTagMatch, VoiceTagOptions } from "./voice-tags";
+export { ChatAppViewport, useChatViewport } from "./viewport/chat-app-viewport";
+export type { ChatAppViewportProps } from "./viewport/chat-app-viewport";
