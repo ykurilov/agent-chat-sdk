@@ -1,5 +1,12 @@
 # @ykurilov/agent-chat-flows
 
+## 0.87.6
+
+### Patch Changes
+
+- @ykurilov/agent-chat-core@0.87.6
+  - @ykurilov/agent-chat-react@0.87.6
+
 ## 0.87.5
 
 ### Patch Changes

@@ -1,5 +1,12 @@
 # @ykurilov/agent-chat-mcp
 
+## 0.87.6
+
+### Patch Changes
+
+- @ykurilov/agent-chat-core@0.87.6
+  - @ykurilov/agent-chat-web-tools@0.87.6
+
 ## 0.87.5
 
 ### Patch Changes

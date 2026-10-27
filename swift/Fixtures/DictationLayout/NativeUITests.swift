@@ -1,5 +1,48 @@
 import XCTest
 @MainActor final class NativeUITests:XCTestCase {
+    func testLongDictationTailManualScrollAndTypingBothThemes() throws {
+        let app=XCUIApplication()
+        for theme in ["light","dark"] {
+            app.launchArguments=[theme,"fullscreen","controls","long"];app.launch()
+            let field=app.textViews["composer"],mic=app.buttons["dictation-microphone"]
+            XCTAssertTrue(field.waitForExistence(timeout:15));app.buttons["Clear"].tap();mic.tap()
+            func metrics()->[String:Double] {let data=app.staticTexts["fixture-metrics"].label.data(using:.utf8)!;return (try? JSONDecoder().decode([String:Double].self,from:data)) ?? [:]}
+            func until(_ predicate:@escaping()->Bool,_ timeout:TimeInterval=5) {expectation(for:NSPredicate{_,_ in predicate()},evaluatedWith:field);waitForExpectations(timeout:timeout)}
+            func progress()->Int {Int(app.staticTexts["long-progress"].label) ?? 0}
+            until({(metrics()["steadyFrames"] ?? 0)>=12 && field.frame.height>100})
+            app.buttons["Reset metrics"].tap();app.buttons["Long"].tap()
+            until({progress()>=32},12)
+            let first=metrics();print("TAIL_AUTO",theme,first)
+            XCTAssertGreaterThan(first["overflowSamples"] ?? 0,30)
+            XCTAssertEqual(first["hiddenTailFrames"],0)
+            XCTAssertLessThan(first["maxOffsetDelta"] ?? 999,12)
+            for key in ["widthRange","heightRange","globalYRange","historyYRange"] {XCTAssertLessThan(first[key] ?? 999,0.5,key)}
+            let before=first["offset"] ?? 0
+            field.coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:0.2)).press(forDuration:0.1,thenDragTo:field.coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:0.85)))
+            until({(metrics()["offset"] ?? 999)<before-15})
+            app.buttons["Reset metrics"].tap();until({progress()>=48},10)
+            let held=metrics();print("TAIL_MANUAL",theme,held)
+            XCTAssertLessThan(held["offsetRange"] ?? 999,1)
+            XCTAssertEqual(held["tailVisible"],0)
+            for _ in 0..<5 {
+                if (metrics()["bottomGap"] ?? 999)<2 {break}
+                field.swipeUp(velocity:.fast)
+            }
+            until({(metrics()["bottomGap"] ?? 999)<2})
+            app.buttons["Reset metrics"].tap();app.buttons["Long"].tap();until({progress()>=95},15)
+            let resumed=metrics();print("TAIL_RESUMED",theme,resumed)
+            XCTAssertEqual(resumed["hiddenTailFrames"],0)
+            XCTAssertGreaterThan(resumed["overflowSamples"] ?? 0,60)
+            XCTAssertLessThan(resumed["maxOffsetDelta"] ?? 999,12)
+            for key in ["widthRange","heightRange","globalYRange","historyYRange"] {XCTAssertLessThan(resumed[key] ?? 999,0.5,key)}
+            mic.tap();until({!app.buttons["dictation-cancel"].exists && (metrics()["tailVisible"] ?? 0)==1})
+            let expected=try XCTUnwrap(field.value as? String)
+            let shot=XCTAttachment(screenshot:app.screenshot());shot.name="long-tail-"+theme;shot.lifetime = .keepAlways;add(shot)
+            field.coordinate(withNormalizedOffset:CGVector(dx:0.12,dy:0.74)).tap();field.typeText("!")
+            XCTAssertEqual(field.value as? String,expected+"!","The first tap after Stop must append at the actual end")
+            app.terminate()
+        }
+    }
     func testComposerControlsAndModelSelectionBothThemes() throws {
         let app=XCUIApplication()
         for theme in ["light","dark"] {

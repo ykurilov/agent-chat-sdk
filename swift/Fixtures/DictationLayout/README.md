@@ -9,3 +9,11 @@ UI-тест проверяет светлую и тёмную тему: preview/
 Caret regression: `testFinalSpeechFollowsEndCaretAndPreservesManualSelection` flushes a final through the microphone Stop action, then uses real XCUI keyboard input for empty/prefixed drafts and intentional interior caret/selection, in both themes.
 
 Full-screen regression: launch with `fullscreen` to put the composer into a bottom safe-area inset under a scrollable conversation, with attachment, agent Stop and speech controls. The CADisplayLink probe measures screen-space prefix/editor/history coordinates, not only coordinates inside the editor. The test waits for twelve stable presentation frames after the one initial expansion and requires actual prefix/history samples, then checks partial/final/finished, retained height and explicit clear in both themes. The bounded test phrase fits within the six-line viewport; normal scrolling beyond that limit is separate from layout stability.
+
+Long-dictation regression: `testLongDictationTailManualScrollAndTypingBothThemes`
+launches the full-screen host with `long`, grows partial/final speech beyond six
+lines, measures end-caret visibility and content offset on every display frame,
+then drags upward to read older text, returns to the bottom, resumes speech and
+stops it. A real tap and XCUI `typeText("!")` must append at the actual end. The
+conversation/editor frame stays fixed after the initial expansion; manual scrolling
+is measured separately from automatic following. Synthetic speech uses no provider.

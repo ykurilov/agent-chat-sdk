@@ -22,7 +22,7 @@ struct AgentChatInlineDictationInput: View {
 
     var body: some View {
         InlineTextEditor(text: $text, focused: $focused, draftSnapshot: draftSnapshot, displayText: displayText,
-                         placeholder: placeholder, fontSize: fontSize, enabled: enabled, onNeedsProjection: onNeedsProjection,
+                         placeholder: placeholder, fontSize: fontSize, enabled: enabled, active: active, reduceMotion: reduceMotion, onNeedsProjection: onNeedsProjection,
                          textColor: UIColor(YKColorRole.text.color), mutedColor: UIColor(YKColorRole.muted.color),
                          accentColor: UIColor(YKColorRole.accent.color)) { natural in
             let next = max(reservedHeight, natural)
@@ -64,6 +64,8 @@ private struct InlineTextEditor: UIViewRepresentable {
     let placeholder: String
     let fontSize: CGFloat
     let enabled: Bool
+    let active: Bool
+    let reduceMotion: Bool
     let onNeedsProjection: () -> Void
     let textColor: UIColor
     let mutedColor: UIColor
@@ -73,6 +75,11 @@ private struct InlineTextEditor: UIViewRepresentable {
     func makeUIView(context: Context) -> InlineTextView {
         let view = InlineTextView()
         view.delegate = context.coordinator
+        let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.appendTap(_:)))
+        tap.cancelsTouchesInView = false
+        tap.delegate = context.coordinator
+        view.addGestureRecognizer(tap)
+        view.appendTap = tap
         view.backgroundColor = .clear
         view.textContainerInset = .zero
         view.textContainer.lineFragmentPadding = 0
@@ -84,6 +91,8 @@ private struct InlineTextEditor: UIViewRepresentable {
     }
     static func dismantleUIView(_ view: InlineTextView, coordinator: Coordinator) {
         coordinator.isMounted = false
+        view.retire()
+        if let tap = view.appendTap { view.removeGestureRecognizer(tap) }
         view.delegate = nil
         view.onHeight = nil
         view.unmarkText()
@@ -120,6 +129,8 @@ private struct InlineTextEditor: UIViewRepresentable {
             coordinator.scheduleReconciliation()
             return
         }
+        view.configureTail(active: active, empty: displayText.isEmpty, confirmedEnd: (coordinator.confirmedText as NSString).length, reduceMotion: reduceMotion)
+        let savedOffset = view.contentOffset
         let previousConfirmedText = coordinator.confirmedText
         coordinator.confirmedText = draftSnapshot
         coordinator.pendingNativeDrafts.removeAll()
@@ -149,9 +160,11 @@ private struct InlineTextEditor: UIViewRepresentable {
         view.placeholder.text = placeholder; view.placeholder.isHidden = !displayText.isEmpty
         view.accessibilityLabel = placeholder
         view.tintColor = accentColor
+        if view.ownsSpeechViewport { view.setContentOffset(savedOffset, animated: false) }
+        view.synchronizeTailLayout()
         view.reportHeight()
     }
-    final class Coordinator: NSObject, UITextViewDelegate {
+    final class Coordinator: NSObject, UITextViewDelegate, UIGestureRecognizerDelegate {
         var parent: InlineTextEditor
         var pendingSelection: Int?
         var provisionalSuffix = ""
@@ -161,7 +174,26 @@ private struct InlineTextEditor: UIViewRepresentable {
         var isMounted = true
         private var reconciliationScheduled = false
         init(_ parent: InlineTextEditor) { self.parent = parent; confirmedText = parent.draftSnapshot }
-        func textViewDidBeginEditing(_ textView: UITextView) { parent.focused = true }
+        func textViewDidBeginEditing(_ textView: UITextView) { parent.focused = true; appendAfterStop(textView) }
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool { true }
+        @objc func appendTap(_ gesture: UITapGestureRecognizer) {
+            guard gesture.state == .ended, let view = gesture.view as? InlineTextView else { return }
+            appendAfterStop(view)
+        }
+        private func appendAfterStop(_ textView: UITextView) {
+            guard let view = textView as? InlineTextView, view.consumeAppendTap() else { return }
+            DispatchQueue.main.async { [weak self, weak view] in
+                guard let self, let view, isMounted, parent.enabled, !parent.active else { return }
+                let end = (confirmedText as NSString).length
+                view.selectedRange = NSRange(location: min(end, (view.text as NSString).length), length: 0)
+                view.followTail()
+            }
+        }
+        func scrollViewWillBeginDragging(_ scrollView: UIScrollView) { (scrollView as? InlineTextView)?.beginManualScroll() }
+        func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+            if !decelerate { (scrollView as? InlineTextView)?.endManualScroll() }
+        }
+        func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) { (scrollView as? InlineTextView)?.endManualScroll() }
         func textViewDidEndEditing(_ textView: UITextView) { parent.focused = false }
         func textViewDidChange(_ textView: UITextView) {
             guard parent.enabled, !suppressChanges else { return }
@@ -216,6 +248,106 @@ private final class InlineTextView: UITextView {
     let placeholder = UILabel()
     var onHeight: ((CGFloat) -> Void)?
     private var scheduled = false
+    var retired = false
+    weak var appendTap: UITapGestureRecognizer?
+    private var speechActive = false
+    private var retainsTail = false
+    private var manualViewport = false
+    private var appendOnTap = false
+    private var reduceMotion = false
+    private var scrollTarget: CGFloat = -1
+    private var followDisplayLink: CADisplayLink?
+    private var previousFollowTime: CFTimeInterval = 0
+    func retire() { retired = true; stopFollowing() }
+    private func stopFollowing() { followDisplayLink?.invalidate(); followDisplayLink = nil; previousFollowTime = 0 }
+    var ownsSpeechViewport: Bool { retainsTail }
+    func configureTail(active: Bool, empty: Bool, confirmedEnd: Int, reduceMotion: Bool) {
+        self.reduceMotion = reduceMotion
+        if active && !speechActive {
+            retainsTail = true; manualViewport = false; appendOnTap = false
+        } else if !active && speechActive {
+            // Stop can flush the last partial and finish in one SwiftUI render.
+            // Its old caret follows the confirmed prefix, not the preview suffix.
+            appendOnTap = !manualViewport && selectedRange.length == 0 && selectedRange.location == confirmedEnd
+        }
+        speechActive = active
+        if !active && empty {
+            retainsTail = false; manualViewport = false; appendOnTap = false
+            stopFollowing(); contentInset.bottom = 0; scrollTarget = -1
+        }
+    }
+    func beginManualScroll() {
+        guard retainsTail else { return }
+        stopFollowing(); manualViewport = true; appendOnTap = false; scrollTarget = -1
+        setContentOffset(contentOffset, animated: false)
+    }
+    func endManualScroll() {
+        guard retainsTail else { return }
+        let bottom = max(0, contentSize.height + adjustedContentInset.bottom - bounds.height)
+        if bottom - contentOffset.y < 8 {
+            manualViewport = false
+            appendOnTap = !speechActive
+            followTail()
+        }
+    }
+    func consumeAppendTap() -> Bool {
+        guard !speechActive, appendOnTap, !manualViewport else { return false }
+        appendOnTap = false
+        return true
+    }
+    // Native selection changes may otherwise scroll the confirmed caret away from
+    // the provisional tail, or undo the viewport the reader chose by dragging.
+    override func scrollRectToVisible(_ rect: CGRect, animated: Bool) {
+        if retainsTail { return }
+        super.scrollRectToVisible(rect, animated: animated)
+    }
+    func synchronizeTailLayout() {
+        guard retainsTail, !retired, bounds.width > 0 else { return }
+        textContainer.size = CGSize(width: bounds.width, height: .greatestFiniteMagnitude)
+        layoutManager.ensureLayout(for: textContainer)
+        let line = (font?.lineHeight ?? 24) + YKTextMetrics.lineSpacing(YKTokens.Text.body, size: font?.pointSize ?? 15)
+        let natural = layoutManager.usedRect(for: textContainer).height
+        let cap = ceil(line * 6)
+        // Short text must not scroll while the reserved viewport is opening.
+        // Add breathing room only when text approaches the six-line boundary.
+        if natural + line > cap, bounds.height >= cap - 0.5 { contentInset.bottom = line }
+        isScrollEnabled = natural + contentInset.bottom > cap
+        followTail()
+    }
+    func followTail() {
+        guard retainsTail, !manualViewport, !isDragging, !isDecelerating, !retired, bounds.height > 0 else { return }
+        layoutManager.ensureLayout(for: textContainer)
+        let line = (font?.lineHeight ?? 24) + YKTextMetrics.lineSpacing(YKTokens.Text.body, size: font?.pointSize ?? 15)
+        guard bounds.height >= ceil(line * 6) - 0.5 else { return }
+        let bottom = ceil(layoutManager.usedRect(for: textContainer).maxY)
+        let target = max(0, bottom + contentInset.bottom - bounds.height)
+        guard abs(target - scrollTarget) > 0.5 else { return }
+        scrollTarget = target
+        // Reserve a line ahead of the next wrap, and reconcile the viewport in
+        // the same native update as the text, before a display frame can expose it.
+        let minimum = max(0, bottom - bounds.height)
+        if contentOffset.y < minimum { setContentOffset(CGPoint(x: 0, y: minimum), animated: false) }
+        if reduceMotion {
+            stopFollowing(); setContentOffset(CGPoint(x: 0, y: target), animated: false)
+        } else if followDisplayLink == nil {
+            let link = CADisplayLink(target: self, selector: #selector(followFrame(_:)))
+            followDisplayLink = link
+            link.add(to: .main, forMode: .common)
+        }
+    }
+    @objc private func followFrame(_ link: CADisplayLink) {
+        guard retainsTail, !manualViewport, !retired, !isDragging, !isDecelerating else { stopFollowing(); return }
+        let elapsed = previousFollowTime == 0 ? link.duration : min(0.05, link.timestamp - previousFollowTime)
+        previousFollowTime = link.timestamp
+        let distance = scrollTarget - contentOffset.y
+        let step = max(1, 200 * elapsed)
+        if abs(distance) <= step {
+            setContentOffset(CGPoint(x: 0, y: scrollTarget), animated: false)
+            stopFollowing()
+        } else {
+            setContentOffset(CGPoint(x: 0, y: contentOffset.y + (distance > 0 ? step : -step)), animated: false)
+        }
+    }
     override init(frame: CGRect, textContainer: NSTextContainer?) {
         super.init(frame: frame, textContainer: textContainer)
         addSubview(placeholder)
@@ -228,10 +360,10 @@ private final class InlineTextView: UITextView {
         reportHeight()
     }
     func reportHeight() {
-        guard bounds.width > 0, !scheduled else { return }
+        guard !retired, bounds.width > 0, !scheduled else { return }
         scheduled = true
         DispatchQueue.main.async { [weak self] in
-            guard let self else { return }; scheduled = false
+            guard let self, !retired else { return }; scheduled = false
             if abs(textContainer.size.width - bounds.width) > 0.25 || textContainer.size.height != .greatestFiniteMagnitude {
                 textContainer.size = CGSize(width: bounds.width, height: .greatestFiniteMagnitude)
             }
@@ -239,8 +371,10 @@ private final class InlineTextView: UITextView {
             let line = (font?.lineHeight ?? 24) + YKTextMetrics.lineSpacing(YKTokens.Text.body, size: font?.pointSize ?? 15)
             let natural = ceil(max(font?.lineHeight ?? 24, layoutManager.usedRect(for: textContainer).height))
             let cap = ceil(line * 6)
-            isScrollEnabled = natural > cap
+            if retainsTail, natural + line > cap, bounds.height >= cap - 0.5 { contentInset.bottom = line }
+            isScrollEnabled = natural + contentInset.bottom > cap
             onHeight?(min(natural, cap))
+            followTail()
         }
     }
 }
