@@ -189,7 +189,7 @@ public struct AgentChatComposer: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, 10)
             HStack(alignment: .bottom, spacing: YKTokens.Space.s2 - 2) {
-                if let attachmentController { AgentChatAttachmentButton(controller: attachmentController).disabled(!enabled || dictation.isSendPending) }
+                if let attachmentController { AgentChatAttachmentButton(controller: attachmentController, composerEdge: true).disabled(!enabled || dictation.isSendPending) }
                 if let modelSelection {
                     AgentChatModelPicker(state: modelSelection.state, enabled: enabled && !dictation.isActive && modelSelection.enabled, showReasoning: modelSelection.showReasoning, warning: modelSelection.warning, presentation: .composer, onChange: modelSelection.onChange)
                         .layoutPriority(-1)
@@ -227,6 +227,9 @@ public struct AgentChatComposer: View {
                 .accessibilityLabel(Text("Отправить")).accessibilityIdentifier("send")
                 .accessibilityValue(Text(dictation.isSendPending ? "Ожидание окончания распознавания" : ""))
             }
+            // The input keeps its text inset; the controls use optical edges of their own.
+            .padding(.leading, attachmentController == nil ? 0 : -YKTokens.Space.s5)
+            .padding(.trailing, YKTokens.Space.s2)
             if case .failed(let message) = dictation.phase {
                 Text(message).ykText(.small).foregroundStyle(YKColorRole.danger.color)
                     .accessibilityIdentifier("dictation-error")

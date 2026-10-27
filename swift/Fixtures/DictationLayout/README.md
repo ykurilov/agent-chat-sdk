@@ -17,3 +17,10 @@ then drags upward to read older text, returns to the bottom, resumes speech and
 stops it. A real tap and XCUI `typeText("!")` must append at the actual end. The
 conversation/editor frame stays fixed after the initial expansion; manual scrolling
 is measured separately from automatic following. Synthetic speech uses no provider.
+
+Composer reasoning regression: `testComposerReasoningConfirmationAndInsetsBothThemes`
+uses `showReasoning: true`, requires a single combined menu, asserts no dispatch
+before confirmation or after Cancel, then exactly one callback and updated Medium
+label. Screenshots cover empty, text, active speech, menu and confirmation in both
+themes. The plus hit rectangle is at least 44pt. `testComposerReasoningWithAllControlsBothThemes`
+also enables agent Stop and dictation simultaneously to check adjacent frames for overlap.

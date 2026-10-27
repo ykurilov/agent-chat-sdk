@@ -1,5 +1,11 @@
 # @ykurilov/agent-chat-core
 
+## 0.87.9
+
+### Patch Changes
+
+- 16dfbcd: Swift: выровнены видимые края плюса и отправки, область касания плюса 44pt. При showReasoning в композере уровни находятся в меню модели и меняются после подтверждения. API исполнителя прежний; обновите Swift-пакет, для выбора уровня включите showReasoning в AgentChatComposerModelSelection.
+
 ## 0.87.8
 
 ### Patch Changes

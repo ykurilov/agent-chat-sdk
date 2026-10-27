@@ -149,7 +149,7 @@ private struct HistoryAnchor:UIViewRepresentable {
     func updateUIView(_ view:UIView,context:Context) {}
 }
 @MainActor @Observable final class ModelFixture {
-    var state=ChatExecutorModelState(revision:"fixture",models:[ChatExecutorModel(id:"opus",label:"Opus 5.5"),ChatExecutorModel(id:"flash",label:"Flash")],selected:ChatExecutorModelChoice(id:"opus",reasoning:"high"))
+    var state=ChatExecutorModelState(revision:"fixture",models:[ChatExecutorModel(id:"opus",label:"Opus 5.5",reasoning:.init(levels:["off","low","medium","high","max"],defaultLevel:"high")),ChatExecutorModel(id:"flash",label:"Flash")],selected:ChatExecutorModelChoice(id:"opus",reasoning:"high"))
     var changes=0
     func select(_ choice:ChatExecutorModelChoice) {changes+=1;state.selected=choice}
 }
@@ -161,7 +161,7 @@ private struct HistoryAnchor:UIViewRepresentable {
     @State private var context="main"
     @State private var model=ModelFixture()
     private var controls:Bool {ProcessInfo.processInfo.arguments.contains("controls")}
-    private var modelSelection:AgentChatComposerModelSelection? {controls ? AgentChatComposerModelSelection(state:model.state,warning:"Первый ответ дороже и медленнее."){model.select($0)}:nil}
+    private var modelSelection:AgentChatComposerModelSelection? {controls ? AgentChatComposerModelSelection(state:model.state,showReasoning:ProcessInfo.processInfo.arguments.contains("reasoning"),warning:"Первый ответ дороже и медленнее."){model.select($0)}:nil}
     private let attachments=AgentChatAttachmentController(client:try! AgentChatClient(endpoint:URL(string:"http://127.0.0.1:1/api/conversations")!,accountID:"fixture",cacheURL:FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)){"fixture-only"},chatId:"main")
     private var longRun:Bool {ProcessInfo.processInfo.arguments.contains("long")}
     private var fullscreen:Bool {ProcessInfo.processInfo.arguments.contains("fullscreen")}
@@ -170,7 +170,7 @@ private struct HistoryAnchor:UIViewRepresentable {
         if fullscreen {
             VStack(spacing:0) {
                 Text("Главный агент").font(.headline).padding()
-                if controls {Text("\(model.changes):\(model.state.selected.id)").accessibilityIdentifier("model-events").font(.caption2)}
+                if controls {Text("\(model.changes):\(model.state.selected.id)\(ProcessInfo.processInfo.arguments.contains("reasoning") ? ":"+(model.state.selected.reasoning ?? "none") : "")").accessibilityIdentifier("model-events").font(.caption2)}
                 HStack {Button("Reset metrics"){probe.reset()};Button("Stream"){source.screenStream()};Button("Clear"){draft=""};if controls {Button("Text"){draft="Проверяем новую раскладку композера."}}}
                 if longRun {HStack {Button("Long"){source.longStream(count:source.longProgress == 48 ? 47:48)};Text("\(source.longProgress)").accessibilityIdentifier("long-progress").monospacedDigit().frame(width:60)}}
                 Text(probe.report).font(.caption2).lineLimit(1).frame(height:12).accessibilityIdentifier("fixture-metrics")
@@ -181,7 +181,7 @@ private struct HistoryAnchor:UIViewRepresentable {
                     }.frame(maxWidth:.infinity,alignment:.leading)
                 }.defaultScrollAnchor(.bottom)
             }.safeAreaInset(edge:.bottom,spacing:0) {
-                AgentChatComposer(text:$draft,placeholder:"Сообщение менеджеру",onStop:controls ? nil:{},enabled:enabled,speechRecognizer:source,speechContextId:context,attachmentController:attachments,modelSelection:modelSelection){draft=""}.padding(.horizontal,12).padding(.vertical,8)
+                AgentChatComposer(text:$draft,placeholder:"Сообщение менеджеру",onStop:controls && !ProcessInfo.processInfo.arguments.contains("agent-stop") ? nil:{},enabled:enabled,speechRecognizer:source,speechContextId:context,attachmentController:attachments,modelSelection:modelSelection){draft=""}.padding(.horizontal,12).padding(.vertical,8)
             }
         } else {
         VStack {

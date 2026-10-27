@@ -65,7 +65,9 @@ import QuickLook
 
 public struct AgentChatDraftAttachments: View {
     let controller: AgentChatAttachmentController
+    private var composerEdge = false
     public init(controller: AgentChatAttachmentController) { self.controller = controller }
+    init(controller: AgentChatAttachmentController, composerEdge: Bool) { self.controller = controller; self.composerEdge = composerEdge }
     public var body: some View {
         VStack(alignment: .leading, spacing: YKTokens.Space.s2) {
             ForEach(controller.files) { file in
@@ -103,7 +105,9 @@ public struct AgentChatAttachmentButton: View {
     #if canImport(UIKit)
     @State private var showCamera = false
     #endif
+    private var composerEdge = false
     public init(controller: AgentChatAttachmentController) { self.controller = controller }
+    init(controller: AgentChatAttachmentController, composerEdge: Bool) { self.controller = controller; self.composerEdge = composerEdge }
     public var body: some View {
         Menu {
             #if canImport(PhotosUI)
@@ -118,7 +122,14 @@ public struct AgentChatAttachmentButton: View {
             }
             #endif
             Button("Из Файлов") { showFiles = true }
-        } label: { YKIcon(.plus, size: 21).foregroundStyle(YKColorRole.text.color).frame(width: 40, height: 40) }
+        } label: {
+            YKIcon(.plus, size: 21).foregroundStyle(YKColorRole.text.color)
+                // Phosphor plus ink spans x=32...224 in its 256-unit viewBox.
+                // Align that ink, keeping the entire 44pt hit region inside the composer.
+                .padding(.leading, composerEdge ? YKTokens.Space.s4 - 21 * 32 / 256 : 0)
+                .frame(width: 44, height: 44, alignment: composerEdge ? .leading : .center)
+                .contentShape(Rectangle())
+        }
         .accessibilityLabel("Прикрепить").accessibilityIdentifier("attach")
         .fileImporter(isPresented: $showFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
             switch result { case .success(let urls): Task { for url in urls { await controller.addFile(url) } }; case .failure: controller.error = "Файлы не выбраны" }

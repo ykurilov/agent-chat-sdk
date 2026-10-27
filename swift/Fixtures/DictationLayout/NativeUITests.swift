@@ -43,6 +43,64 @@ import XCTest
             app.terminate()
         }
     }
+    func testComposerReasoningConfirmationAndInsetsBothThemes() throws {
+        let app=XCUIApplication()
+        for theme in ["light","dark"] {
+            app.launchArguments=[theme,"fullscreen","controls","reasoning"];app.launch()
+            let field=app.textViews["composer"],picker=app.buttons["executor-model"],attach=app.buttons["attach"],send=app.buttons["send"]
+            XCTAssertTrue(field.waitForExistence(timeout:15))
+            app.buttons["Clear"].tap()
+            func shot(_ state:String) {let image=XCTAttachment(screenshot:app.screenshot());image.name="reasoning-"+theme+"-"+state;image.lifetime = .keepAlways;add(image)}
+            XCTAssertGreaterThanOrEqual(attach.frame.width,44);XCTAssertGreaterThanOrEqual(attach.frame.height,44)
+            XCTAssertLessThan(attach.frame.maxX,picker.frame.minX)
+            XCTAssertLessThan(picker.frame.maxX,app.buttons["dictation-microphone"].frame.minX)
+            XCTAssertFalse(app.buttons["executor-reasoning"].exists,"No second reasoning button in the composer")
+            print("INSET_FRAMES",theme,"attach",attach.frame,"send",send.frame,"editor",field.frame)
+            shot("empty")
+            app.buttons["Text"].tap();shot("text")
+            let width=field.frame.width
+            app.buttons["dictation-microphone"].tap()
+            expectation(for:NSPredicate {_,_ in field.frame.height>100},evaluatedWith:field);waitForExpectations(timeout:4)
+            XCTAssertFalse(picker.isEnabled)
+            XCTAssertLessThan(picker.frame.maxX,app.buttons["dictation-cancel"].frame.minX)
+            XCTAssertEqual(field.frame.width,width,accuracy:0.5)
+            app.buttons["Stream"].tap()
+            expectation(for:NSPredicate(format:"value CONTAINS %@","Сегодня"),evaluatedWith:field);waitForExpectations(timeout:3)
+            shot("dictation");app.buttons["dictation-cancel"].tap()
+            picker.tap()
+            let medium=app.buttons["executor-reasoning-medium"]
+            XCTAssertTrue(medium.waitForExistence(timeout:3));XCTAssertEqual(medium.label,"Medium")
+            shot("menu");medium.tap()
+            let sheet=app.sheets.firstMatch
+            XCTAssertTrue(sheet.waitForExistence(timeout:3));XCTAssertTrue(sheet.buttons["Сменить"].isHittable)
+            XCTAssertEqual(app.staticTexts["model-events"].label,"0:opus:high")
+            XCTAssertEqual(picker.value as? String,"Opus 5.5 High")
+            shot("before-confirm");sheet.buttons["Отмена"].tap()
+            XCTAssertEqual(app.staticTexts["model-events"].label,"0:opus:high")
+            picker.tap();app.buttons["executor-reasoning-medium"].tap()
+            XCTAssertTrue(sheet.waitForExistence(timeout:3));XCTAssertTrue(sheet.buttons["Сменить"].isHittable);sheet.buttons["Сменить"].tap()
+            expectation(for:NSPredicate(format:"label == %@","1:opus:medium"),evaluatedWith:app.staticTexts["model-events"]);waitForExpectations(timeout:3)
+            expectation(for:NSPredicate(format:"value == %@","Opus 5.5 Medium"),evaluatedWith:picker);waitForExpectations(timeout:3)
+            shot("after-confirm")
+            app.terminate()
+        }
+    }
+    func testComposerReasoningWithAllControlsBothThemes() throws {
+        let app=XCUIApplication()
+        for theme in ["light","dark"] {
+            app.launchArguments=[theme,"fullscreen","controls","reasoning","agent-stop"];app.launch()
+            let field=app.textViews["composer"],picker=app.buttons["executor-model"]
+            XCTAssertTrue(field.waitForExistence(timeout:15));app.buttons["Text"].tap()
+            let width=field.frame.width
+            app.buttons["dictation-microphone"].tap()
+            expectation(for:NSPredicate {_,_ in field.frame.height>100},evaluatedWith:field);waitForExpectations(timeout:4)
+            let controls=[app.buttons["attach"],picker,app.buttons["stop"],app.buttons["dictation-cancel"],app.buttons["dictation-microphone"],app.buttons["send"]]
+            for (left,right) in zip(controls,controls.dropFirst()) {XCTAssertLessThanOrEqual(left.frame.maxX,right.frame.minX,"Controls must not overlap")}
+            XCTAssertEqual(field.frame.width,width,accuracy:0.5)
+            let image=XCTAttachment(screenshot:app.screenshot());image.name="all-controls-"+theme;image.lifetime = .keepAlways;add(image)
+            app.terminate()
+        }
+    }
     func testComposerControlsAndModelSelectionBothThemes() throws {
         let app=XCUIApplication()
         for theme in ["light","dark"] {
