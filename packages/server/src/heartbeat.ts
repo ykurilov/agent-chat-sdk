@@ -55,7 +55,7 @@ export function createHeartbeatResponse(options: {
     },
   });
   return new Response(body, {
-    headers: { ...UI_MESSAGE_STREAM_HEADERS, [HEARTBEAT_HEADER]: String(heartbeatIntervalMs) },
+    headers: { ...UI_MESSAGE_STREAM_HEADERS, [HEARTBEAT_HEADER]: String(heartbeatIntervalMs), "x-content-type-options": "nosniff" },
   });
 }
 

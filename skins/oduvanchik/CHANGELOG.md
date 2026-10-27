@@ -6,6 +6,14 @@
 - Обновление приложения: обновить пакеты SDK одной версией после выпуска, пересобрать и убрать временные подмены значков. API и CSS-импорты прежние, миграций нет.
 
 
+## 0.87.5
+
+### Patch Changes
+
+- @ykurilov/agent-chat-sandbox@0.87.5
+  - @ykurilov/agent-chat-flows@0.87.5
+  - @ykurilov/agent-chat-react@0.87.5
+
 ## 0.87.4
 
 ### Patch Changes

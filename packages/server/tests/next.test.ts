@@ -59,6 +59,7 @@ describe("createNextRouteHandlers", () => {
     const response = await call("POST", `/${chatId}/messages`, { body: message("u1", "Привет") });
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toContain("text/event-stream");
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
     const reader = response.body!.getReader();
     const seen = await readUntil(reader, '"type":"start"');
     expect(seen).toContain('"type":"start"');

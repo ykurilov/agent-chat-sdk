@@ -66,11 +66,11 @@ export function createExternalChatHandler(options:ExternalChatHandlerOptions) {
                   timer=setTimeout(()=>void poll(),options.pollMs??200);
                 }catch(error){options.logError?.(error);finish();}
               };
-              if(request.signal.aborted)finish();else void poll();
+              if(request.signal.aborted)finish();else {controller.enqueue(encoder.encode(": connected\n\n"));void poll();}
             },
             cancel(){closed=true;clearTimeout(timer);dispose();},
           });
-          return new Response(stream,{headers:{"content-type":"text/event-stream","cache-control":"no-cache, no-transform","x-accel-buffering":"no"}});
+          return new Response(stream,{headers:{"content-type":"text/event-stream","cache-control":"no-cache, no-transform","x-accel-buffering":"no","x-content-type-options":"nosniff"}});
         }
         if(request.method==="POST"){
           const bytes=await readBody(request);const body=JSON.parse(bytes) as Record<string,unknown>;

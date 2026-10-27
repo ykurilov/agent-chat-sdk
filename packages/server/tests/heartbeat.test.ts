@@ -46,6 +46,7 @@ describe("createHeartbeatResponse", () => {
       expect(response.headers.get(name)).toBe(value);
     }
     expect(response.headers.get("x-agent-chat-heartbeat-ms")).toBe("10000");
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
   });
 
   it("шлёт первый пинг сразу, дальше по одному каждые heartbeatIntervalMs", async () => {
