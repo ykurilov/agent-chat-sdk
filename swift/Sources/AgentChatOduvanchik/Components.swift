@@ -139,6 +139,7 @@ public struct AgentChatComposer: View {
     let speechRecognizer: (any AgentChatSpeechRecognizer)?
     /// Change when switching conversations to discard unconfirmed speech from the old chat.
     let speechContextId: String?
+    let attachmentController: AgentChatAttachmentController?
     @State private var dictation = AgentChatDictation()
     @State private var reservedInputHeight: CGFloat = 0
     @FocusState private var isFocused: Bool
@@ -146,18 +147,19 @@ public struct AgentChatComposer: View {
     @Environment(\.isEnabled) private var inheritedEnabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    public init(text: Binding<String>, placeholder: String, onStop: (() -> Void)? = nil, enabled: Bool = true, stopEnabled: Bool = true, speechRecognizer: (any AgentChatSpeechRecognizer)? = nil, speechContextId: String? = nil, onSend: @escaping () -> Void) {
+    public init(text: Binding<String>, placeholder: String, onStop: (() -> Void)? = nil, enabled: Bool = true, stopEnabled: Bool = true, speechRecognizer: (any AgentChatSpeechRecognizer)? = nil, speechContextId: String? = nil, attachmentController: AgentChatAttachmentController? = nil, onSend: @escaping () -> Void) {
         _text = text
         self.placeholder = placeholder; self.onStop = onStop; self.onSend = onSend
         self.enabled = enabled; self.stopEnabled = stopEnabled
-        self.speechRecognizer = speechRecognizer; self.speechContextId = speechContextId
+        self.speechRecognizer = speechRecognizer; self.speechContextId = speechContextId; self.attachmentController = attachmentController
     }
 
-    private var canSend: Bool { inheritedEnabled && enabled && !dictation.isSendPending && (dictation.isActive || !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
+    private var canSend: Bool { inheritedEnabled && enabled && (attachmentController?.isReady ?? true) && !dictation.isSendPending && (dictation.isActive || !(attachmentController?.files.isEmpty ?? true) || !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
     private var recognizerId: ObjectIdentifier? { speechRecognizer.map { ObjectIdentifier($0) } }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: YKTokens.Space.s2) {
+            if let attachmentController { AgentChatDraftAttachments(controller: attachmentController) }
             HStack(alignment: .bottom, spacing: YKTokens.Space.s2 - 2) {
                 VStack(alignment: .leading, spacing: YKTokens.Space.s1) {
                     TextField(text: $text, axis: .vertical) { Text(placeholder) }
@@ -185,6 +187,7 @@ public struct AgentChatComposer: View {
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("dictation-input-area")
                 .padding(.vertical, 10)
+                if let attachmentController { AgentChatAttachmentButton(controller: attachmentController).disabled(!enabled || dictation.isSendPending) }
                 if let onStop {
                     YKIconButton(.stop, label: "Остановить", variant: .secondary, size: .md, iconWeight: .fill, action: onStop)
                         .accessibilityIdentifier("stop").disabled(!stopEnabled)
@@ -205,7 +208,7 @@ public struct AgentChatComposer: View {
                 Button {
                     guard canSend else { return }
                     if dictation.isActive {
-                        dictation.finishAndSend(draft: { text }) { onSend() }
+                        dictation.finishAndSend(draft: { text }, attachmentsPresent: { !(attachmentController?.files.isEmpty ?? true) }) { onSend() }
                     } else { onSend() }
                 } label: {
                     YKIcon(.arrowUp, size: 18)
@@ -230,6 +233,7 @@ public struct AgentChatComposer: View {
             if dictation.isActive, height > reservedInputHeight { reservedInputHeight = height }
         }
         .onChange(of: dictation.isActive) { _, active in if !active { reservedInputHeight = 0 } }
+        .task(id: attachmentController?.chatId) { await attachmentController?.observe() }
         .onDisappear { dictation.cancel() }
         .onChange(of: inheritedEnabled) { _, enabled in if !enabled { dictation.cancel() } }
         .onChange(of: scenePhase) { _, phase in if phase == .background { dictation.cancel() } }

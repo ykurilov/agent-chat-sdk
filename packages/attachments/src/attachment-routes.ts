@@ -130,6 +130,10 @@ export function createAttachmentRoutes(options: {
   acceptedMediaTypes?: readonly string[];
   /** Сказать клиенту, что модели без зрения видят картинки плашкой: предупреждение «не видит» не нужно. */
   imagesForBlindModels?: boolean;
+  /** External executor only: opaque files are stored/downloaded, never parsed or executed. */
+  allowGenericFiles?: boolean;
+  /** Model-independent external executors receive raw files; text extraction is unnecessary. */
+  extractFileText?: boolean;
 }): { routes: AttachmentRoutes; internals: AttachmentRoutesInternals } {
   const { storage, limits, acceptedMediaTypes } = options;
   const inTurn = createKeyedQueue();
@@ -200,7 +204,9 @@ export function createAttachmentRoutes(options: {
     if (received.length > limits.maxFileBytes) return refuse("too_large");
     if (received.length === 0) return refuse("empty");
     const name = cleanName(rawName);
-    const detected = detectFileKind(received, name);
+    const detected = detectFileKind(received, name) ?? (options.allowGenericFiles && !imported ? {
+      kind: "file" as const, mediaType: received[0]===80&&received[1]===75&&[3,5,7].includes(received[2]??-1) ? "application/zip" : "application/octet-stream",
+    } : null);
     if (!detected || (imported && detected.kind !== "image")) return refuse("unsupported_type");
     // Тип вне разрешённых — отказ до ужатия, разбора текста и записи.
     if (acceptedMediaTypes && !acceptedMediaTypes.includes(detected.mediaType)) return refuse("unsupported_type");
@@ -216,7 +222,7 @@ export function createAttachmentRoutes(options: {
 
     let extractedText: string | undefined;
     let textTruncated: boolean | undefined;
-    if (detected.kind !== "image") {
+    if (options.extractFileText !== false && (detected.kind === "text" || detected.kind === "pdf")) {
       try {
         const text = await extractText(detected.kind, bytes, { maxChars: charactersForTokens(limits.maxFileTextTokens) });
         const cut = truncateToTokens(text, limits.maxFileTextTokens);
@@ -308,7 +314,8 @@ export function createAttachmentRoutes(options: {
         maxFiles: limits.maxFiles,
         maxFileBytes: limits.maxFileBytes,
         maxMessageTextTokens: limits.maxMessageTextTokens,
-        accept: acceptedMediaTypes ? acceptFieldFor(acceptedMediaTypes) : acceptedFileTypes,
+        accept: acceptedMediaTypes ? acceptFieldFor(acceptedMediaTypes) : options.allowGenericFiles ? "*/*" : acceptedFileTypes,
+        ...(options.allowGenericFiles && { allowGenericFiles: true }),
         ...(acceptedMediaTypes && { acceptedMediaTypes }),
         ...(options.imagesForBlindModels && { imagesForBlindModels: true }),
       });

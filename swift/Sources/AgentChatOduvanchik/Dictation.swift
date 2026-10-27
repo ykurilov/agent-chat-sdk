@@ -82,10 +82,10 @@ public enum AgentChatDictationPhase: Sendable, Equatable {
 
     /// Waits for all final fragments and exactly one successful terminal event.
     /// Reads the final draft only after finished; empty drafts never send.
-    public func finishAndSend(draft: @escaping @MainActor () -> String, onSend: @escaping @MainActor () -> Void) {
+    public func finishAndSend(draft: @escaping @MainActor () -> String, attachmentsPresent: @escaping @MainActor () -> Bool = { false }, onSend: @escaping @MainActor () -> Void) {
         guard isActive, !isSendPending else { return }
         isSendPending = true
-        sendAfterFinish = { if !draft().trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { onSend() } }
+        sendAfterFinish = { if !draft().trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || attachmentsPresent() { onSend() } }
         finish()
     }
 

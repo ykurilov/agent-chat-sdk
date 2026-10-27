@@ -11,3 +11,6 @@ export type { DetectedFile } from "./detect-file-kind";
 export { attachmentsInstructions } from "./instructions";
 export { defaultAttachmentLimits } from "./limits";
 export type { AttachmentLimits } from "./limits";
+
+export { createExternalAttachments } from "./external-attachments";
+export type { ExternalAttachmentsOptions } from "./external-attachments";

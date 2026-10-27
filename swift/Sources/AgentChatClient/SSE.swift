@@ -46,6 +46,9 @@ public enum ChatReducer {
             if let index = snapshot.permissions.firstIndex(where: { $0.id == permission.id }) {
                 if permission.revision > snapshot.permissions[index].revision { snapshot.permissions[index] = permission }
             } else { snapshot.permissions.append(permission) }
+        case "model_state":
+            guard let state = event.modelState else { throw ChatClientError.invalidResponse }
+            snapshot.modelState = state
         case "status":
             guard let connection = event.connection, let turn = event.turn else { throw ChatClientError.invalidResponse }
             snapshot.conversation.connection = connection; snapshot.turn = turn

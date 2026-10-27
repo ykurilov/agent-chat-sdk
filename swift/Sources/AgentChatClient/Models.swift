@@ -52,14 +52,15 @@ public struct ChatMessage: Codable, Sendable, Equatable, Identifiable {
     public var createdAt: String
     public var revision: Int
     public var delivery: String?
+    public var attachments: [ChatAttachment]?
     public var status: String
     public var sequence: Int?
     /// Transient presentation provenance; never decoded from the server or persisted as canonical data.
     public internal(set) var isLocalEcho = false
-    private enum CodingKeys: String, CodingKey { case id, role, text, createdAt, revision, delivery, status, sequence }
-    public init(id: String, role: String, text: String, createdAt: String, revision: Int = 0, delivery: String? = nil, status: String = "complete", sequence: Int? = nil, isLocalEcho: Bool = false) {
+    private enum CodingKeys: String, CodingKey { case id, role, text, createdAt, revision, delivery, status, sequence, attachments }
+    public init(id: String, role: String, text: String, createdAt: String, revision: Int = 0, delivery: String? = nil, status: String = "complete", sequence: Int? = nil, isLocalEcho: Bool = false, attachments: [ChatAttachment]? = nil) {
         self.id = id; self.role = role; self.text = text; self.createdAt = createdAt
-        self.revision = revision; self.delivery = delivery; self.status = status; self.sequence = sequence; self.isLocalEcho = isLocalEcho
+        self.revision = revision; self.delivery = delivery; self.status = status; self.sequence = sequence; self.isLocalEcho = isLocalEcho; self.attachments = attachments
     }
 }
 public struct ChatPermission: Codable, Sendable, Equatable, Identifiable {
@@ -109,8 +110,9 @@ public struct ChatSnapshot: Codable, Sendable, Equatable {
     public var messages: [ChatMessage]
     public var permissions: [ChatPermission]
     public var turn: ChatTurn
-    public init(version: Int = 1, conversation: Conversation, cursor: Int = 0, messages: [ChatMessage] = [], permissions: [ChatPermission] = [], turn: ChatTurn = ChatTurn()) {
-        self.version = version; self.conversation = conversation; self.cursor = cursor; self.messages = messages; self.permissions = permissions; self.turn = turn
+    public var modelState: ChatExecutorModelState?
+    public init(version: Int = 1, conversation: Conversation, cursor: Int = 0, messages: [ChatMessage] = [], permissions: [ChatPermission] = [], turn: ChatTurn = ChatTurn(), modelState: ChatExecutorModelState? = nil) {
+        self.version = version; self.conversation = conversation; self.cursor = cursor; self.messages = messages; self.permissions = permissions; self.turn = turn; self.modelState = modelState
     }
 }
 public struct PermissionDecision: Codable, Sendable, Equatable {
@@ -130,8 +132,9 @@ public struct ChatFeedEvent: Codable, Sendable {
     public var permission: ChatPermission?
     public var connection: String?
     public var turn: ChatTurn?
-    public init(version: Int = 1, seq: Int, chatId: String, type: String, message: ChatMessage? = nil, permission: ChatPermission? = nil, connection: String? = nil, turn: ChatTurn? = nil) {
-        self.version = version; self.seq = seq; self.chatId = chatId; self.type = type; self.message = message; self.permission = permission; self.connection = connection; self.turn = turn
+    public var modelState: ChatExecutorModelState?
+    public init(version: Int = 1, seq: Int, chatId: String, type: String, message: ChatMessage? = nil, permission: ChatPermission? = nil, connection: String? = nil, turn: ChatTurn? = nil, modelState: ChatExecutorModelState? = nil) {
+        self.version = version; self.seq = seq; self.chatId = chatId; self.type = type; self.message = message; self.permission = permission; self.connection = connection; self.turn = turn; self.modelState = modelState
     }
 }
 public enum NetworkState: String, Codable, Sendable { case disconnected, connecting, connected, reconnecting, unauthorized }
@@ -140,13 +143,17 @@ public struct PendingCommand: Codable, Sendable, Equatable, Identifiable {
     public var chatId: String
     public var kind: String
     public var text: String?
+    public var attachments: [ChatAttachment]?
+    public var localAttachmentIds: [String]?
+    public var attachmentRetries: Int?
     public var permissionId: String?
     public var decision: PermissionDecision?
     public var error: String?
     public var acknowledged: Bool?
     public var delivery: String?
     public var createdAt: String?
-    public init(id: String, chatId: String, kind: String, text: String? = nil, permissionId: String? = nil, decision: PermissionDecision? = nil, error: String? = nil, acknowledged: Bool? = nil, delivery: String? = nil, createdAt: String? = nil) {
+    public init(id: String, chatId: String, kind: String, text: String? = nil, permissionId: String? = nil, decision: PermissionDecision? = nil, error: String? = nil, acknowledged: Bool? = nil, delivery: String? = nil, createdAt: String? = nil, attachments: [ChatAttachment]? = nil) {
+        self.attachments = attachments
         self.id = id; self.chatId = chatId; self.kind = kind; self.text = text; self.permissionId = permissionId; self.decision = decision; self.error = error; self.acknowledged = acknowledged; self.delivery = delivery; self.createdAt = createdAt
     }
 }
@@ -158,8 +165,46 @@ public struct ChatClientState: Sendable {
     public var network: NetworkState = .disconnected
     public var pending: [PendingCommand] = []
     public var error: String?
+    public var attachments: [ChatDraftAttachment] = []
+    public var uploadProgress: [String: Double] = [:]
 }
 public enum ChatClientError: Error, Sendable {
     case invalidEndpoint, cacheIdentityMismatch, unsupportedVersion, invalidResponse, cursorReset
     case http(status: Int, kind: String)
+}
+
+public struct ChatAttachment: Codable, Sendable, Equatable, Identifiable {
+    public var id: String; public var name: String; public var mediaType: String; public var size: Int; public var kind: String
+    public init(id: String, name: String, mediaType: String, size: Int, kind: String) { self.id = id; self.name = name; self.mediaType = mediaType; self.size = size; self.kind = kind }
+}
+public struct ChatDraftAttachment: Codable, Sendable, Equatable, Identifiable {
+    public var id: String; public var chatId: String; public var name: String; public var size: Int
+    public var uploaded: ChatAttachment?; public var error: String?; public var messageId: String?
+    public init(id: String, chatId: String, name: String, size: Int, uploaded: ChatAttachment? = nil, error: String? = nil) { self.id = id; self.chatId = chatId; self.name = name; self.size = size; self.uploaded = uploaded; self.error = error }
+}
+public struct ChatAttachmentSettings: Codable, Sendable {
+    public var maxFiles: Int; public var maxFileBytes: Int; public var accept: String; public var allowGenericFiles: Bool?
+    public init(maxFiles: Int = 10, maxFileBytes: Int = 20 * 1024 * 1024, accept: String = "image/*,.pdf,.txt", allowGenericFiles: Bool = false) { self.maxFiles = maxFiles; self.maxFileBytes = maxFileBytes; self.accept = accept; self.allowGenericFiles = allowGenericFiles }
+}
+public struct ChatExecutorModel: Codable, Sendable, Equatable, Identifiable {
+    public struct Reasoning: Codable, Sendable, Equatable {
+        public var levels: [String]; public var `default`: String?
+        public init(levels: [String], defaultLevel: String? = nil) { self.levels = levels; self.default = defaultLevel }
+    }
+    public var id: String; public var label: String; public var description: String?; public var isDefault: Bool?; public var reasoning: Reasoning?
+    public init(id: String, label: String, description: String? = nil, isDefault: Bool? = nil, reasoning: Reasoning? = nil) { self.id = id; self.label = label; self.description = description; self.isDefault = isDefault; self.reasoning = reasoning }
+}
+public struct ChatExecutorModelChoice: Codable, Sendable, Equatable {
+    public var id: String; public var reasoning: String?
+    public init(id: String, reasoning: String? = nil) { self.id = id; self.reasoning = reasoning }
+}
+public struct ChatExecutorModelState: Codable, Sendable, Equatable {
+    public var revision: String; public var models: [ChatExecutorModel]; public var selected: ChatExecutorModelChoice; public var canChange: Bool
+    public init(revision: String, models: [ChatExecutorModel], selected: ChatExecutorModelChoice, canChange: Bool = true) { self.revision = revision; self.models = models; self.selected = selected; self.canChange = canChange }
+}
+
+/// Bounds local picker copies even before the server can be reached. Configure alongside server limits.
+public struct ChatAttachmentStagingLimits: Sendable {
+    public let maxFileBytes: Int; public let maxDraftFiles: Int; public let maxTotalFiles: Int; public let maxTotalBytes: Int
+    public init(maxFileBytes: Int = 20 * 1024 * 1024, maxDraftFiles: Int = 10, maxTotalFiles: Int = 30, maxTotalBytes: Int = 200 * 1024 * 1024) { self.maxFileBytes = maxFileBytes; self.maxDraftFiles = maxDraftFiles; self.maxTotalFiles = maxTotalFiles; self.maxTotalBytes = maxTotalBytes }
 }

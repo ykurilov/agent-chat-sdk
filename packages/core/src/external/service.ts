@@ -2,14 +2,16 @@ import { ExternalConversationBusyError } from "./types";
 import { randomUUID } from "node:crypto";
 import { conversationView } from "./store";
 import { isExternalDispatchRejected } from "./types";
-import type { ConversationChange, ConversationDefinition, ConversationFeedEvent, ConversationMessage, ConversationPermission, ConversationSnapshot, ConversationState, ConversationStore, ExternalConversationEvent, ExternalExecutor, ExternalPermissionRequest, ExternalPermissionResponse, PermissionDecision } from "./types";
+import type { ConversationChange, ConversationDefinition, ConversationFeedEvent, ConversationMessage, ConversationPermission, ConversationSnapshot, ConversationState, ConversationStore, ExternalConversationEvent, ExternalExecutor, ExternalPermissionRequest, ExternalPermissionResponse, PermissionDecision, ExternalAttachmentAccess, ExternalModelState, ExternalModelCommand, ConversationAttachment } from "./types";
 
 interface Active {
   ownerId:string; executor:ExternalExecutor; holder:string; tail:Promise<unknown>; off:()=>void;
+  modelWork?:Promise<void>;
   timer?:ReturnType<typeof setInterval>; drain?:Promise<void>; reconcile?:Promise<void>; replay?:Promise<void>; decisions:Map<string,Promise<void>>; ready:boolean; nextReconcileAt:number; reconcileFailures:number; lost:boolean;
 }
 export interface ExternalConversationOptions {
   store:ConversationStore;
+  attachments?:ExternalAttachmentAccess;
   resolveExecutor(definition:ConversationDefinition):ExternalExecutor|Promise<ExternalExecutor>;
   now?:()=>number; leaseMs?:number; pollMs?:number; commandTimeoutMs?:number; retainedEvents?:number;
   logError?:(error:unknown)=>void;
@@ -55,6 +57,11 @@ export function createExternalConversationService(options:ExternalConversationOp
   async function ingest(id:string,a:Active,event:ExternalConversationEvent) {
     await guarded(id,a,s=>{
       switch(event.type){
+        case "model_state":{
+          checkModelState(event.state);
+          if(stableJSON(s.modelState)!==stableJSON(event.state)){s.modelState=structuredClone(event.state);emit(s,{type:"model_state",modelState:s.modelState});}
+          break;
+        }
         case "history_reset":s.epoch=event.epoch;break;
         case "message":case "delta":{
           const complete=event.type==="message";
@@ -110,18 +117,24 @@ export function createExternalConversationService(options:ExternalConversationOp
   }
   function scheduleDrain(id:string,a:Active) { void drain(id,a).catch(log); }
   async function drain(id:string,a:Active):Promise<void> {
-    if(a.lost||closed||!a.ready)return;
+    if(a.lost||closed||!a.ready||a.modelWork)return;
     if(a.drain)return a.drain;
     const work=(async()=>{
-      while(!a.lost&&!closed&&a.ready&&a.executor.status()!=="offline"){
+      while(!a.lost&&!closed&&a.ready&&!a.modelWork&&a.executor.status()!=="offline"){
         const next=await guarded(id,a,s=>{
+          if(s.modelCommands?.some(c=>c.status==="applying"))return null;
           if(s.messages.some(m=>m.delivery==="unknown"||m.delivery==="sending"))return null;
           const m=s.messages.find(m=>m.delivery==="queued");if(!m)return null;
-          m.delivery="sending";messageChanged(s,m);return {id:m.id,text:m.text};
+          if(m.attachments?.length&&!a.executor.sendMessage)return null;
+          m.delivery="sending";messageChanged(s,m);return {id:m.id,text:m.text,attachments:m.attachments??[]};
         });
         if(!next)return;
         try {
-          assertActive(a);await bounded(a.executor.send(next.text,next.id));
+          const attachments=await Promise.all(next.attachments.map(attachment=>{
+            if(!options.attachments)throw Error("external_attachments_unsupported");
+            return options.attachments.open({ownerId:a.ownerId,chatId:id,attachment});
+          }));
+          assertActive(a);await bounded(a.executor.sendMessage?a.executor.sendMessage({text:next.text,messageId:next.id,attachments}):a.executor.send(next.text,next.id));
           await guarded(id,a,s=>{const m=s.messages.find(m=>m.id===next.id)!;if(m.delivery==="sending"){m.delivery="sent";messageChanged(s,m);}});
         } catch(error) {
           await guarded(id,a,s=>{const m=s.messages.find(m=>m.id===next.id)!;if(m.delivery==="sending"){m.delivery=isExternalDispatchRejected(error)?"queued":"unknown";messageChanged(s,m);}});
@@ -189,8 +202,10 @@ export function createExternalConversationService(options:ExternalConversationOp
       const settled=()=>{if(a.replay===replay)a.replay=undefined;};
       void replay.then(settled,settled);
       await bounded(replay);await a.tail;
+      if(a.executor.models){const state=await bounded(Promise.resolve().then(()=>{assertActive(a);return a.executor.models!();}));await ingest(id,a,{type:"model_state",state});}
       const current=a.executor.status();
       await guarded(id,a,s=>{
+        for(const command of s.modelCommands??[])if(command.status==="applying"&&!a.modelWork)command.status="unknown";
         const before=JSON.stringify(s.turn);
         if(current==="thinking"||current==="waiting_approval"){
           if(s.turn.status!=="running")s.turn={status:"running",generation:s.turn.generation+1};
@@ -211,7 +226,7 @@ export function createExternalConversationService(options:ExternalConversationOp
     })();
     a.reconcile=work;try{await work;}catch(error){
       a.ready=false;a.nextReconcileAt=now()+Math.min(30_000,1000*2**Math.min(a.reconcileFailures++,5));
-      await guarded(id,a,s=>{if(s.connection!=="offline"){s.connection="offline";statusChanged(s);}});
+      await guarded(id,a,s=>{if(a.executor.status()==="offline"&&s.connection!=="offline"){s.connection="offline";statusChanged(s);}});
       throw error;
     }finally{if(a.reconcile===work)a.reconcile=undefined;}
   }
@@ -247,22 +262,65 @@ export function createExternalConversationService(options:ExternalConversationOp
   return {
     ensureConversation:(d:ConversationDefinition)=>store.create(d),
     list:(ownerId:string)=>store.list(ownerId),start,reconcile,
-    async snapshot(ownerId:string,id:string):Promise<ConversationSnapshot>{const s=await store.read(ownerId,id);return {version:1,conversation:conversationView(s),cursor:s.cursor,messages:s.messages,permissions:s.permissions,turn:s.turn};},
+    async snapshot(ownerId:string,id:string):Promise<ConversationSnapshot>{const s=await store.read(ownerId,id);return {version:1,conversation:conversationView(s),cursor:s.cursor,messages:s.messages,permissions:s.permissions,turn:s.turn,...(s.modelState&&{modelState:s.modelState})};},
     async events(ownerId:string,id:string,after:number):Promise<{version:1;reset:boolean;cursor:number;events:ConversationFeedEvent[]}>{
       if(!Number.isSafeInteger(after)||after<0)throw Error("invalid_cursor");const s=await store.read(ownerId,id);
       const reset=after>s.cursor||(s.events.length>0&&after<s.events[0]!.seq-1);
       return {version:1,reset,cursor:s.cursor,events:reset?[]:s.events.filter(e=>e.seq>after)};
     },
-    async send(ownerId:string,id:string,input:{clientMessageId:string;text:string}){
-      if(!input.clientMessageId||input.clientMessageId.length>200||!input.text.trim()||input.text.length>100_000)throw Error("invalid_message");
+    async send(ownerId:string,id:string,input:{clientMessageId:string;text:string;attachmentIds?:string[]}){
+      if(typeof input.clientMessageId!=="string"||!input.clientMessageId||input.clientMessageId.length>200||typeof input.text!=="string"||input.text.length>100_000)throw Error("invalid_message");
+      const ids=input.attachmentIds??[];
+      if(!Array.isArray(ids)||ids.some(x=>typeof x!=="string")||new Set(ids).size!==ids.length||ids.length>100)throw Error("invalid_attachments");
+      const compare=(old:ConversationMessage)=>{
+        if(old.role!=="user"||old.text!==input.text||stableJSON(old.attachments?.map(x=>x.id)??[])!==stableJSON(ids))throw Error("message_id_conflict");
+        return {messageId:old.id,delivery:old.delivery??"sent"};
+      };
+      const previous=(await store.read(ownerId,id)).messages.find(m=>m.id===input.clientMessageId);
+      if(previous)return compare(previous);
+      if(!input.text.trim()&&!ids.length)throw Error("invalid_message");
+      let attachments:ConversationAttachment[]=[];
+      if(ids.length){
+        if(!options.attachments)throw Error("external_attachments_unsupported");
+        attachments=await options.attachments.accept({ownerId,chatId:id,ids});
+        if(stableJSON(attachments.map(x=>x.id))!==stableJSON(ids))throw Error("invalid_attachment_result");
+        await options.attachments.confirm({ownerId,chatId:id,attachments});
+      }
       const receipt=await store.transaction(ownerId,id,s=>{
         if(s.definition.execution.kind!=="external")throw Error("executor_not_supported");
-        const old=s.messages.find(m=>m.id===input.clientMessageId);
-        if(old){if(old.role!=="user"||old.text!==input.text)throw Error("message_id_conflict");return {messageId:old.id,delivery:old.delivery??"sent"};}
-        const m:ConversationMessage={id:input.clientMessageId,role:"user",text:input.text,createdAt:new Date(now()).toISOString(),sequence:s.cursor+1,revision:0,delivery:"queued",status:"complete",aliases:[]};s.messages.push(m);messageChanged(s,m);return {messageId:m.id,delivery:m.delivery!};
+        const old=s.messages.find(m=>m.id===input.clientMessageId);if(old)return compare(old);
+        const m:ConversationMessage={id:input.clientMessageId,role:"user",text:input.text,createdAt:new Date(now()).toISOString(),sequence:s.cursor+1,revision:0,delivery:"queued",status:"complete",aliases:[],...(attachments.length&&{attachments})};s.messages.push(m);messageChanged(s,m);return {messageId:m.id,delivery:m.delivery!};
       });
       const a=active.get(id);if(a)scheduleDrain(id,a);
       return receipt;
+    },
+    async setModel(ownerId:string,id:string,input:ExternalModelCommand){
+      if(!input||typeof input.commandId!=="string"||!input.commandId||input.commandId.length>200||typeof input.expectedRevision!=="string"||!input.expectedRevision||!input.choice||typeof input.choice.id!=="string"||!input.choice.id||(input.choice.reasoning!==undefined&&typeof input.choice.reasoning!=="string"))throw Error("invalid_model_choice");
+      const prior=(await store.read(ownerId,id)).modelCommands?.find(c=>c.commandId===input.commandId);
+      if(prior){if(stableJSON({commandId:prior.commandId,expectedRevision:prior.expectedRevision,choice:prior.choice})!==stableJSON(input))throw Error("command_id_conflict");if(prior.status!=="applied")throw Error("external_model_unknown");return (await store.read(ownerId,id)).modelState!;}
+      await start(ownerId,id);const a=active.get(id)!;
+      if(!a.ready||a.executor.status()==="offline")throw Error("external_model_offline");
+      if(!a.executor.models||!a.executor.setModel)throw Error("external_model_unsupported");
+      if(a.modelWork||a.drain||a.executor.status()!=="idle")throw Error("external_model_busy");
+      const current=await bounded(Promise.resolve().then(()=>{assertActive(a);return a.executor.models!();}));
+      await ingest(id,a,{type:"model_state",state:current});
+      await guarded(id,a,s=>{
+        if(a.modelWork||a.drain||a.executor.status()!=="idle"||s.turn.status==="running"||s.modelCommands?.some(c=>c.status==="applying"))throw Error("external_model_busy");
+        if(!current.canChange)throw Error("external_model_offline");
+        if(current.revision!==input.expectedRevision)throw Error("external_model_conflict");
+        const model=current.models.find(m=>m.id===input.choice.id);if(!model||(input.choice.reasoning!==undefined&&!model.reasoning?.levels.includes(input.choice.reasoning)))throw Error("invalid_model_choice");
+        (s.modelCommands??=[]).push({...structuredClone(input),status:"applying"});
+      });
+      const physical=Promise.resolve().then(()=>{assertActive(a);return a.executor.setModel!(input);});a.modelWork=physical;
+      void physical.then(()=>{if(a.modelWork===physical)a.modelWork=undefined;},()=>{if(a.modelWork===physical)a.modelWork=undefined;});
+      try{
+        await bounded(physical);await a.tail;
+        const confirmed=await bounded(Promise.resolve().then(()=>{assertActive(a);return a.executor.models!();}));
+        await ingest(id,a,{type:"model_state",state:confirmed});
+        if(confirmed.selected.id!==input.choice.id||(input.choice.reasoning!==undefined&&confirmed.selected.reasoning!==input.choice.reasoning))throw Error("external_model_not_applied");
+        await guarded(id,a,s=>{s.modelCommands!.find(c=>c.commandId===input.commandId)!.status="applied";});
+        scheduleDrain(id,a);return confirmed;
+      }catch(error){await guarded(id,a,s=>{s.modelCommands!.find(c=>c.commandId===input.commandId)!.status="unknown";});throw error;}
     },
     async answerPermission(ownerId:string,id:string,requestId:string,commandId:string,decision:PermissionDecision){
       if(!commandId||commandId.length>200)throw Error("invalid_command");
@@ -300,4 +358,16 @@ function stableJSON(value:unknown):string {
   if(Array.isArray(value))return "["+value.map(stableJSON).join(",")+"]";
   if(value&&typeof value==="object")return "{"+Object.keys(value).sort().map(key=>JSON.stringify(key)+":"+stableJSON((value as Record<string,unknown>)[key])).join(",")+"}";
   return JSON.stringify(value)??"undefined";
+}
+
+function checkModelState(state:ExternalModelState):void {
+  if(!state||typeof state.revision!=="string"||!state.revision||state.revision.length>512||!Array.isArray(state.models)||state.models.length>256||typeof state.canChange!=="boolean"||!state.selected||typeof state.selected.id!=="string")throw Error("invalid_model_state");
+  const ids=new Set<string>();
+  for(const model of state.models){
+    if(!model||typeof model.id!=="string"||!model.id||model.id.length>200||ids.has(model.id)||typeof model.label!=="string"||!model.label||model.label.length>200)throw Error("invalid_model_state");ids.add(model.id);
+    if(model.description!==undefined&&(typeof model.description!=="string"||model.description.length>2000))throw Error("invalid_model_state");
+    if(model.reasoning&&(!Array.isArray(model.reasoning.levels)||model.reasoning.levels.length>32||model.reasoning.levels.some(x=>typeof x!=="string"||!x||x.length>80)||new Set(model.reasoning.levels).size!==model.reasoning.levels.length||(model.reasoning.default!==undefined&&!model.reasoning.levels.includes(model.reasoning.default))))throw Error("invalid_model_state");
+  }
+  const selected=state.models.find(m=>m.id===state.selected.id);
+  if(!selected||(state.selected.reasoning!==undefined&&!selected.reasoning?.levels.includes(state.selected.reasoning)))throw Error("invalid_model_state");
 }

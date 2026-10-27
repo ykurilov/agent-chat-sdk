@@ -12,17 +12,23 @@ import UIKit
     public private(set) var loadingDraft = false
     public private(set) var submitting = false
     public private(set) var failure: String?
-    private let client: AgentChatClient
+    public let client: AgentChatClient
+    public private(set) var attachments: AgentChatAttachmentController?
+    public private(set) var changingModel = false
+    private let attachmentsEnabled: Bool
     @ObservationIgnored nonisolated(unsafe) private var observation: Task<Void, Never>?
     private var draftWrites: Task<Void, Never>?
-    public init(client: AgentChatClient) { self.client = client }
+    public init(client: AgentChatClient, attachmentsEnabled: Bool = false) { self.client = client; self.attachmentsEnabled = attachmentsEnabled }
     public func connect() async {
         if observation == nil {
             observation = Task { [weak self, client] in
                 for await value in await client.updates() {
                     guard let self else { return }
                     let switched = state.selectedChatId != value.selectedChatId
-                    if switched { loadingDraft = true }
+                    if switched {
+                        loadingDraft = true
+                        attachments = attachmentsEnabled ? value.selectedChatId.map { AgentChatAttachmentController(client: client, chatId: $0) } : nil
+                    }
                     state = value
                     if switched, let id = value.selectedChatId { draft = await client.draft(chatId: id) }
                     if switched { loadingDraft = false }
@@ -50,9 +56,17 @@ import UIKit
         guard !submitting, let id = state.selectedChatId else { return }
         submitting = true; defer { submitting = false }
         let text = draft
+        guard attachments?.isReady ?? true else { failure = "Дождитесь загрузки файлов"; return }
+        let fileIds = attachments?.readyAttachmentIds ?? []
         await draftWrites?.value
-        do { try await client.send(text, chatId: id); if state.selectedChatId == id, draft == text { draft = "" }; failure = nil }
+        do { try await client.send(text, chatId: id, attachmentIds: fileIds); if state.selectedChatId == id, draft == text { draft = "" }; failure = nil }
         catch { failure = "Сообщение осталось в поле ввода: запись не удалась" }
+    }
+    public func setModel(_ choice: ChatExecutorModelChoice) async {
+        guard !changingModel, let id = state.selectedChatId, let current = state.snapshot?.modelState else { return }
+        changingModel = true; defer { changingModel = false }
+        do { try await client.setModel(chatId: id, choice: choice, expectedRevision: current.revision); failure = nil }
+        catch { if case ChatClientError.http(_, let kind) = error, kind == "external_model_busy" { failure = "Дождитесь окончания ответа перед сменой модели" } else { failure = "Смена модели не подтверждена. Текущая модель обновится после сверки" } }
     }
     public func answer(_ id: String, _ decision: PermissionDecision) async {
         guard let chat = state.selectedChatId else { return }
@@ -75,8 +89,10 @@ public struct AgentChatView: View {
     @State private var selection: String?
     private let responderName: String
     private let speechRecognizer: (any AgentChatSpeechRecognizer)?
-    public init(client: AgentChatClient, responderName: String = "Агент", speechRecognizer: (any AgentChatSpeechRecognizer)? = nil) {
-        _model = State(initialValue: AgentChatScreenModel(client: client)); self.responderName = responderName; self.speechRecognizer = speechRecognizer
+    private let showReasoningPicker: Bool
+    private let modelChangeWarning: String?
+    public init(client: AgentChatClient, responderName: String = "Агент", speechRecognizer: (any AgentChatSpeechRecognizer)? = nil, attachmentsEnabled: Bool = false, showReasoningPicker: Bool = false, modelChangeWarning: String? = "Первый ответ после смены модели может быть дороже и медленнее: обновляется кэш разговора.") {
+        _model = State(initialValue: AgentChatScreenModel(client: client, attachmentsEnabled: attachmentsEnabled)); self.responderName = responderName; self.speechRecognizer = speechRecognizer; self.showReasoningPicker = showReasoningPicker; self.modelChangeWarning = modelChangeWarning
     }
     public var body: some View {
         NavigationSplitView {
@@ -91,7 +107,9 @@ public struct AgentChatView: View {
         } detail: {
             VStack(spacing: 0) {
                 AgentChatHeader(model.state.snapshot?.conversation.title ?? "Чат", status: executorStatus, statusKind: executorStatusKind) {
-                    EmptyView()
+                    if let state = model.state.snapshot?.modelState {
+                        AgentChatModelPicker(state: state, enabled: !model.changingModel && model.state.network == .connected && model.state.snapshot?.turn.status != "running" && model.state.snapshot?.conversation.connection != "offline", showReasoning: showReasoningPicker, warning: modelChangeWarning) { choice in Task { await model.setModel(choice) } }
+                    }
                 } subtitle: { AgentChatResponderLabel(responderName) }
                 connection
                 if let snapshot = model.state.snapshot, snapshot.conversation.id == selection {
@@ -173,8 +191,9 @@ public struct AgentChatView: View {
     }
     @ViewBuilder private func messageRow(_ message: ChatMessage) -> some View {
         VStack(alignment: message.role == "user" ? .trailing : .leading, spacing: YKTokens.Space.s2) {
-            if message.role == "user" { AgentChatUserBubble(message.text) }
+            if message.role == "user" { if !message.text.isEmpty { AgentChatUserBubble(message.text) } }
             else { AgentChatMarkdown(message.text) }
+            if let attachments = message.attachments, let id = model.state.selectedChatId { AgentChatMessageAttachments(attachments, chatId: id, client: model.client) }
             if let delivery = message.delivery, delivery != "sent" {
                 AgentChatDeliveryNote(delivery == "refused" ? "Отправка отклонена, текст сохранён" : delivery == "unknown" ? "Проверяем доставку" : delivery == "sending" ? "Отправляем" : "Ожидает отправки", kind: delivery == "refused" ? .failed : .sending)
             }
@@ -185,7 +204,7 @@ public struct AgentChatView: View {
         }.frame(maxWidth: .infinity, alignment: message.role == "user" ? .trailing : .leading)
     }
     private var composer: some View {
-        AgentChatComposer(text: Binding(get: { model.draft }, set: { model.editDraft($0, chatId: selection) }), placeholder: "Сообщение", onStop: model.state.snapshot?.turn.status == "running" ? { Task { await model.stop() } } : nil, enabled: !model.submitting && model.state.snapshot?.conversation.execution.kind != "model", stopEnabled: model.state.snapshot?.turn.stopRequested != true && model.state.snapshot?.conversation.connection != "offline" && model.state.network == .connected, speechRecognizer: speechRecognizer, speechContextId: selection) {
+        AgentChatComposer(text: Binding(get: { model.draft }, set: { model.editDraft($0, chatId: selection) }), placeholder: "Сообщение", onStop: model.state.snapshot?.turn.status == "running" ? { Task { await model.stop() } } : nil, enabled: !model.submitting && model.state.snapshot?.conversation.execution.kind != "model", stopEnabled: model.state.snapshot?.turn.stopRequested != true && model.state.snapshot?.conversation.connection != "offline" && model.state.network == .connected, speechRecognizer: speechRecognizer, speechContextId: selection, attachmentController: model.attachments) {
             Task { await model.send() }
         }.padding(YKTokens.Space.s4)
             .disabled(model.loadingDraft || selection == nil || selection != model.state.selectedChatId)

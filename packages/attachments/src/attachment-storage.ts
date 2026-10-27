@@ -1,4 +1,4 @@
-export type AttachmentKind = "image" | "pdf" | "text";
+export type AttachmentKind = "image" | "pdf" | "text" | "file";
 
 /** Запись о загруженном файле. Байты хранятся рядом и читаются отдельно. */
 export interface StoredAttachment {
