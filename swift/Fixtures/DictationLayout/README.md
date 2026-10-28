@@ -24,3 +24,12 @@ before confirmation or after Cancel, then exactly one callback and updated Mediu
 label. Screenshots cover empty, text, active speech, menu and confirmation in both
 themes. The plus hit rectangle is at least 44pt. `testComposerReasoningWithAllControlsBothThemes`
 also enables agent Stop and dictation simultaneously to check adjacent frames for overlap.
+
+Long catalog regression: `testLongCatalogReasoningWithoutScrollingBothAnchorsAndThemes`
+uses 22 models and five reasoning levels. It requires every identified level to be
+hittable without a scroll, verifies the popover lies above/below its bottom/top
+anchor, tests Cancel without dispatch and one confirmed reasoning update, then
+opens `executor-models` and confirms a model change. `run-catalog-check.sh` runs it
+on an isolated iOS 27 simulator and retains screenshots in the xcresult bundle.
+Only the nested model list scrolls; composer layout and source-owned confirmation
+are unchanged.

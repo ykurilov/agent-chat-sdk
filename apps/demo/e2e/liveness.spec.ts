@@ -131,12 +131,25 @@ test("«стоп» из второй вкладки после переподк�
   await second.goto(page.url());
   const secondAnswer = lastAnswer(second);
   await expect(secondAnswer).toHaveAttribute("data-status", "streaming");
-  expectConsecutiveFromOne(await paragraphNumbers(secondAnswer));
+  await expect.poll(async () => (await paragraphNumbers(secondAnswer)).length).toBeGreaterThan(0);
+  const firstBeforeStop = await paragraphNumbers(answer);
+  const secondBeforeStop = await paragraphNumbers(secondAnswer);
+  expectConsecutiveFromOne(firstBeforeStop);
+  expectConsecutiveFromOne(secondBeforeStop);
+  const shownBeforeStop = firstBeforeStop.length > secondBeforeStop.length ? firstBeforeStop : secondBeforeStop;
   await second.getByRole("button", { name: "Остановить" }).click();
   await expect(secondAnswer.getByText("Остановлено")).toBeVisible();
   await expect(answer.getByText("Остановлено")).toBeVisible();
   await expect(page.getByRole("button", { name: "Остановить" })).toHaveCount(0);
-  // В обеих вкладках один и тот же ответ.
+  // Markdown может быть временно скрыт при смене состояния ответа. Ждём отрисовки обеих вкладок,
+  // сохраняя весь уже показанный префикс: пустые массивы не считаются совпадением.
+  await expect.poll(async () => {
+    const first = await paragraphNumbers(answer);
+    const other = await paragraphNumbers(secondAnswer);
+    return first.length >= shownBeforeStop.length
+      && JSON.stringify(first.slice(0, shownBeforeStop.length)) === JSON.stringify(shownBeforeStop)
+      && JSON.stringify(first) === JSON.stringify(other);
+  }).toBe(true);
   expect(await paragraphNumbers(answer)).toEqual(await paragraphNumbers(secondAnswer));
   expectConsecutiveFromOne(await paragraphNumbers(answer));
 });

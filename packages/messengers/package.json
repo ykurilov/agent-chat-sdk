@@ -1,6 +1,6 @@
 {
   "name": "@ykurilov/agent-chat-messengers",
-  "version": "0.87.11",
+  "version": "0.87.12",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,

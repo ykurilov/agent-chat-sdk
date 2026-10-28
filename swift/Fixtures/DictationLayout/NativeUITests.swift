@@ -1,5 +1,55 @@
 import XCTest
 @MainActor final class NativeUITests:XCTestCase {
+    func testLongCatalogReasoningWithoutScrollingBothAnchorsAndThemes() throws {
+        let app=XCUIApplication()
+        for theme in ["light","dark"] {
+            for top in [false,true] {
+                app.launchArguments=[theme,"fullscreen","controls","reasoning","many-models"]+(top ? ["picker-top"]:[])
+                app.launch()
+                let picker=app.buttons["executor-model"]
+                XCTAssertTrue(picker.waitForExistence(timeout:15));picker.tap()
+                func shot(_ phase:String) {
+                    let screenshot=app.screenshot(), name="catalog-"+theme+(top ? "-down-":"-up-")+phase
+                    let image=XCTAttachment(screenshot:screenshot);image.name=name;image.lifetime = .keepAlways;add(image)
+                    let folder=FileManager.default.temporaryDirectory.appendingPathComponent("catalog-shots",isDirectory:true)
+                    try? FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true)
+                    try? screenshot.pngRepresentation.write(to:folder.appendingPathComponent(name+".png"))
+                    try? app.debugDescription.write(to:folder.appendingPathComponent(name+".ax.txt"),atomically:true,encoding:.utf8)
+                }
+                shot("root")
+                let submenu=app.buttons["executor-models"]
+                guard submenu.waitForExistence(timeout:3) else {XCTFail("Model list needs its own identified submenu");return}
+                XCTAssertTrue(submenu.isHittable)
+                if top {XCTAssertGreaterThan(submenu.frame.minY,picker.frame.maxY)}
+                else {XCTAssertLessThan(submenu.frame.maxY,picker.frame.minY)}
+                for level in ["off","low","medium","high","max"] {
+                    let item=app.buttons["executor-reasoning-"+level]
+                    XCTAssertTrue(item.exists,"Stable identifier for \(level)")
+                    XCTAssertTrue(item.isHittable,"All levels visible without any scroll")
+                }
+                app.buttons["executor-reasoning-medium"].tap()
+                let sheet=app.sheets.firstMatch
+                XCTAssertTrue(sheet.waitForExistence(timeout:3))
+                XCTAssertEqual(app.staticTexts["model-events"].label,"0:opus:high")
+                XCTAssertTrue(sheet.staticTexts["После изменения настроек первый ответ может быть дороже и медленнее: обновляется кэш разговора."].exists)
+                shot("confirmation");sheet.buttons["Отмена"].tap()
+                XCTAssertEqual(app.staticTexts["model-events"].label,"0:opus:high")
+                // A cancelled confirmation keeps the compact menu available.
+                if !app.buttons["executor-reasoning-medium"].exists {picker.tap()}
+                app.buttons["executor-reasoning-medium"].tap()
+                XCTAssertTrue(sheet.waitForExistence(timeout:3));sheet.buttons["Сменить"].tap()
+                expectation(for:NSPredicate(format:"label == %@","1:opus:medium"),evaluatedWith:app.staticTexts["model-events"]);waitForExpectations(timeout:3)
+                expectation(for:NSPredicate(format:"value == %@","Opus 5.5 Medium"),evaluatedWith:picker);waitForExpectations(timeout:3)
+                picker.tap();app.buttons["executor-models"].tap()
+                let flash=app.buttons["executor-model-flash"]
+                XCTAssertTrue(flash.waitForExistence(timeout:3));XCTAssertTrue(flash.isHittable)
+                shot("models");flash.tap()
+                XCTAssertTrue(sheet.waitForExistence(timeout:3));sheet.buttons["Сменить"].tap()
+                expectation(for:NSPredicate(format:"label == %@","2:flash:none"),evaluatedWith:app.staticTexts["model-events"]);waitForExpectations(timeout:3)
+                app.terminate()
+            }
+        }
+    }
     func testLongDictationTailManualScrollAndTypingBothThemes() throws {
         let app=XCUIApplication()
         for theme in ["light","dark"] {
@@ -77,7 +127,7 @@ import XCTest
             XCTAssertEqual(picker.value as? String,"Opus 5.5 High")
             shot("before-confirm");sheet.buttons["Отмена"].tap()
             XCTAssertEqual(app.staticTexts["model-events"].label,"0:opus:high")
-            picker.tap();app.buttons["executor-reasoning-medium"].tap()
+            if !app.buttons["executor-reasoning-medium"].exists {picker.tap()};app.buttons["executor-reasoning-medium"].tap()
             XCTAssertTrue(sheet.waitForExistence(timeout:3));XCTAssertTrue(sheet.buttons["Сменить"].isHittable);sheet.buttons["Сменить"].tap()
             expectation(for:NSPredicate(format:"label == %@","1:opus:medium"),evaluatedWith:app.staticTexts["model-events"]);waitForExpectations(timeout:3)
             expectation(for:NSPredicate(format:"value == %@","Opus 5.5 Medium"),evaluatedWith:picker);waitForExpectations(timeout:3)
@@ -128,7 +178,7 @@ import XCTest
             shot("dictation")
             app.buttons["dictation-cancel"].tap()
             XCTAssertEqual(field.value as? String,"Проверяем новую раскладку композера.")
-            picker.tap();app.buttons["Flash"].tap()
+            picker.tap();app.buttons["executor-models"].tap();app.buttons["executor-model-flash"].tap()
             XCTAssertEqual(picker.value as? String,"Opus 5.5 High","Source changes only after confirmation")
             let confirmation=app.sheets.firstMatch
             XCTAssertTrue(confirmation.waitForExistence(timeout:3))
@@ -140,7 +190,7 @@ import XCTest
             expectation(for:NSPredicate(format:"label == %@","1:flash"),evaluatedWith:app.staticTexts["model-events"]);waitForExpectations(timeout:3)
             print("MODEL_CALLBACK",theme,app.staticTexts["model-events"].label)
             expectation(for:NSPredicate(format:"value == %@","Flash"),evaluatedWith:picker);waitForExpectations(timeout:3)
-            picker.tap();app.buttons["Opus 5.5"].tap()
+            picker.tap();app.buttons["executor-models"].tap();app.buttons["executor-model-opus"].tap()
             XCTAssertTrue(confirmation.waitForExistence(timeout:3))
             confirmation.buttons["Отмена"].tap()
             XCTAssertEqual(app.staticTexts["model-events"].label,"1:flash","Cancel must not dispatch another choice")

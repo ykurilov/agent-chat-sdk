@@ -20,7 +20,7 @@ export function OduvanchikAgentPanelLauncher({ open, busy, onToggle, buttonRef }
       aria-expanded={open}
       aria-label={open ? labels.agentPanelClose : labels.agentPanelOpen}
       onClick={onToggle}
-      style={{ minWidth: 44, minHeight: 44 }}
+      style={{ minWidth: 44, minHeight: 44, "--action-hover": "var(--yk-surface-2)" } as CSSProperties}
       className={cn("oduvanchik-chat",
         buttonVariants({ variant: "primary", size: "md" }),
         "fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-30 rounded-full shadow-lg",
