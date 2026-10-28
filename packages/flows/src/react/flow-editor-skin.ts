@@ -267,6 +267,8 @@ export interface FlowStatePanelProps {
   /** Из чего выбирать «Узнать» и инструменты. */
   fields: FlowField[];
   catalogTools: string[];
+  /** Optional app display names; fall back to the canonical tool ID. */
+  toolLabels?: Readonly<Record<string, string>>;
   /** Карточки условий: скин кладёт их в раздел «Когда выходить и куда». */
   exits: ReactNode;
   /** «Длится» и «Касания» (`FlowStateTiming`); нет части скина — пусто. */

@@ -1,0 +1,45 @@
+import { test, expect } from "@playwright/test";
+import { mkdir } from "node:fs/promises";
+const screenshots = process.env.FLOW_EDITOR_DRAFT_SHOTS ?? "/tmp/agent-chat-flow-editor-drafts";
+for (const skin of ["tandem", "oduvanchik"]) for (const theme of ["light", "dark"]) {
+  test(`${skin} ${theme}: condition drafts, native collapse and app labels`, async ({ page }, info) => {
+    const errors: string[] = [];
+    page.on("pageerror", error => errors.push(error.message));
+    await page.goto(`/flow-editor-drafts.html?skin=${skin}&theme=${theme}`);
+    await page.locator('.react-flow__node[data-id="intro"]').getByRole("button", { name: "Знакомство", exact: true }).click();
+    const panel = page.getByRole("region", { name: "Состояние", exact: true });
+    const card = panel.locator('[data-exit-card="intro_clear"]');
+    await card.getByRole("textbox").fill("Условие сохраняется после переключения");
+    await card.getByRole("radio", { name: "Данные", exact: true }).click();
+    await page.locator('.react-flow__node[data-id="block"]').getByRole("button", { name: "Поиск затыка", exact: true }).click();
+    await page.locator('.react-flow__node[data-id="intro"]').getByRole("button", { name: "Знакомство", exact: true }).click();
+    await card.getByRole("radio", { name: "Словами", exact: true }).click();
+    await expect(card.getByRole("textbox")).toHaveValue("Условие сохраняется после переключения");
+    await expect(card.getByRole("radio", { name: "Словами", exact: true })).toHaveAttribute("aria-checked", "true");
+    await expect(card.getByRole("radio", { name: "Данные", exact: true })).toHaveAttribute("aria-checked", "false");
+    const learn = panel.locator("[data-flow-learn]");
+    await expect(learn.locator("summary")).toHaveText("Узнать о человеке: 2 из 9");
+    await expect(learn).toHaveJSProperty("open", false);
+    const name = learn.locator("button").filter({ hasText: /^Имя$/ });
+    await expect(name).toBeHidden();
+    await mkdir(screenshots, { recursive: true });
+    await page.screenshot({ animations: "disabled", path: `${screenshots}/${info.project.name}-${skin}-${theme}-collapsed.png` });
+    await learn.locator("summary").click();
+    await expect(name).toBeVisible(); await name.click();
+    await expect(learn.locator("summary")).toHaveText("Узнать о человеке: 3 из 9");
+    await learn.locator("summary").click(); await expect(name).toBeHidden();
+    await panel.getByText("Дополнительно", { exact: true }).click();
+    await expect(panel.getByRole("button", { name: "Инструмент ответа", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await panel.getByRole("button", { name: "Инструмент ссылки", exact: true }).click();
+    await expect(panel.getByText("sale_answer", { exact: true })).toHaveCount(0);
+    await expect(panel.getByText("Подсказка меток приложения", { exact: true })).toBeVisible();
+    await expect(panel.getByRole("switch")).toHaveAccessibleDescription("Подсказка вопросов приложения");
+    await page.screenshot({ animations: "disabled", path: `${screenshots}/${info.project.name}-${skin}-${theme}-labels.png` });
+    await page.getByRole("button", { name: "JSON", exact: true }).click();
+    const value = JSON.parse(await page.getByRole("dialog").getByRole("textbox").inputValue());
+    expect(value.states[0].exits[0].when).toEqual({ type: "judge", text: "Условие сохраняется после переключения" });
+    expect(value.states[0].tools).toEqual(["sale_answer", "person_link_view"]);
+    expect(value.states[0].learn).toContain("name");
+    expect(errors).toEqual([]);
+  });
+}

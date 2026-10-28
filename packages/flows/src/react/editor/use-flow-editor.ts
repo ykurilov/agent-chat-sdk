@@ -1,6 +1,6 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { checkFlow } from "../../check/check-flow";
-import type { AgentFlow, FlowCatalog, FlowIssue, FlowPoint } from "../../format/flow-format";
+import type { AgentFlow, FlowCatalog, FlowCondition, FlowConditionType, FlowIssue, FlowPoint } from "../../format/flow-format";
 import type { StateMap } from "../../engine/migrate-run";
 import type { ChatsInState } from "../../store/flow-store";
 import type { FlowEditorMode, FlowIssueCount } from "../flow-editor-skin";
@@ -14,6 +14,8 @@ import {
   flowToJson,
   loadFlowJson,
   removeState as removeStateFrom,
+  normalizeCondition,
+  updateExit,
   type ExitOwner,
 } from "./editor-model";
 import {
@@ -127,6 +129,15 @@ export function useFlowEditor(options: UseFlowEditorOptions) {
   const labels = useFlowLabels().editor;
   const latest = useRef(options);
   latest.current = options;
+  // Editor-only inactive variants; the wire document still contains one active condition.
+  const conditionDrafts = useRef(new Map<string, Partial<Record<FlowConditionType, FlowCondition>>>());
+  useEffect(() => {
+    const alive = new Set([
+      ...flow.anyState.exits.map((exit) => JSON.stringify([flow.id, null, exit.id])),
+      ...flow.states.flatMap((state) => state.exits.map((exit) => JSON.stringify([flow.id, state.id, exit.id]))),
+    ]);
+    for (const key of conditionDrafts.current.keys()) if (!alive.has(key)) conditionDrafts.current.delete(key);
+  }, [flow]);
 
   const [selection, setSelection] = useState<FlowSelection>({ kind: "overview" });
   const [mode, setModeState] = useState<FlowEditorMode>("edit");
@@ -162,6 +173,25 @@ export function useFlowEditor(options: UseFlowEditorOptions) {
   const edit = useCallback((change: (flow: AgentFlow) => AgentFlow) => {
     if (latest.current.readOnly) return;
     onChange(change(latest.current.value));
+  }, [onChange]);
+
+  /** Переключение вида сохраняет черновик; полное условие заменяет его явно. */
+  const changeExit = useCallback((owner: ExitOwner, exitId: string, next: { when: FlowCondition; to: string | null }) => {
+    const current = latest.current;
+    if (current.readOnly) return;
+    const exits = owner === null ? current.value.anyState.exits : current.value.states.find((state) => state.id === owner)?.exits;
+    const exit = exits?.find((item) => item.id === exitId);
+    if (!exit) return;
+    const key = JSON.stringify([current.value.id, owner, exitId]);
+    const drafts = conditionDrafts.current.get(key) ?? {};
+    drafts[exit.when.type] = exit.when;
+    const typeOnly = Object.keys(next.when).length === 1;
+    const when = typeOnly
+      ? drafts[next.when.type] ?? normalizeCondition(current.value, exit.when, next.when)
+      : normalizeCondition(current.value, next.when, next.when);
+    drafts[when.type] = when;
+    conditionDrafts.current.set(key, drafts);
+    onChange(updateExit(current.value, owner, exitId, { when, to: next.to }));
   }, [onChange]);
 
   const select = useCallback((next: FlowSelection) => {
@@ -276,6 +306,7 @@ export function useFlowEditor(options: UseFlowEditorOptions) {
       setSimulation(null);
       setModeState("edit");
       setDialog(null);
+      conditionDrafts.current.clear();
       onChange(loaded.flow);
       return true;
     },
@@ -316,6 +347,7 @@ export function useFlowEditor(options: UseFlowEditorOptions) {
     setMode,
     goToIssue,
     edit,
+    changeExit,
     addState,
     connect,
     connectToNewState,

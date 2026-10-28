@@ -22,7 +22,6 @@ import {
   freeSpot,
   moveExit,
   moveField,
-  normalizeCondition,
   removeExit,
   removeField,
   setExcept,
@@ -189,9 +188,7 @@ function ExitCards({ editor, skin, labels, owner }: { editor: FlowEditorControll
             issues={editor.issues.filter((issue) => issue.place.exitId === exit.id)}
             canMoveUp={index > 0}
             canMoveDown={index < exits.length - 1}
-            onChange={(next) =>
-              editor.edit((current) => updateExit(current, owner, exit.id, { when: normalizeCondition(current, exit.when, next.when), to: next.to }))
-            }
+            onChange={(next) => editor.changeExit(owner, exit.id, next)}
             onMoveUp={() => editor.edit((current) => moveExit(current, owner, exit.id, -1))}
             onMoveDown={() => editor.edit((current) => moveExit(current, owner, exit.id, 1))}
             onDelete={() => editor.edit((current) => removeExit(current, owner, exit.id))}
@@ -272,6 +269,7 @@ function EditablePanel({ editor, skin, labels, onNavigate }: { editor: FlowEdito
         noSideQuestions={state.noSideQuestions}
         fields={[...flow.clientCard, ...flow.chatNotes]}
         catalogTools={[...new Set([...flow.tools, ...editor.catalog.tools])]}
+        {...(editor.catalog.toolLabels ? { toolLabels: editor.catalog.toolLabels } : {})}
         exits={<ExitCards editor={editor} skin={skin} labels={labels} owner={state.id} />}
         timing={<StateTiming editor={editor} skin={skin} labels={labels} state={state} />}
         issues={editor.issues.filter((issue) => issue.place.stateId === state.id && !issue.place.exitId)}

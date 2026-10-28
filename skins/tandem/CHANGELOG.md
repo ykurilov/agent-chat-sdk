@@ -1,5 +1,22 @@
 # @ykurilov/agent-chat-skin-tandem
 
+## 0.87.13
+
+### Patch Changes
+
+- f2dcb96: Редактор сохраняет неактивные черновики видов условия до размонтирования или загрузки JSON; возврат к прежнему виду восстанавливает введённое. Поля «Узнать о человеке» свёрнуты в строку с количеством выбранных. Панель принимает подписи инструментов из `catalog.toolLabels`; словарь поддерживает `editor.statePanel.tagsHint`, `noSideQuestionsHint` и `learnSummary`.
+  
+  ### Как обновить приложение
+  
+  Обновить установленные пакеты SDK вместе. Для русских названий передать `catalog.toolLabels` (ID → подпись), для пояснений - необязательные поля словаря через прежний `FlowLabelsProvider`. В штатных скинах дополнительные действия не требуются. ID инструментов, формат JSON и runtime прежние, миграций нет. Неактивные черновики не записываются на сервер.
+- Updated dependencies [f2dcb96]
+  - @ykurilov/agent-chat-flows@0.87.13
+  - @ykurilov/agent-chat-mcp@0.87.13
+  - @ykurilov/agent-chat-messengers@0.87.13
+  - @ykurilov/agent-chat-react@0.87.13
+  - @ykurilov/agent-chat-sandbox@0.87.13
+  - @ykurilov/agent-chat-skills@0.87.13
+
 ## 0.87.12
 
 ### Patch Changes

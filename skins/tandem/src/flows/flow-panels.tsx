@@ -11,7 +11,7 @@ import type {
 } from "@ykurilov/agent-chat-flows/react";
 import { useFlowLabels } from "@ykurilov/agent-chat-flows/react";
 import { ChevronDown, ChevronUp, CircleAlert, Flag, Plus, Trash2, TriangleAlert } from "lucide-react";
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import { IconButton, IssueBadge, KindIcon, Labeled, PanelShell, SectionTitle, Select } from "./flow-parts";
 
 const KINDS: FlowConditionType[] = ["judge", "data", "event", "timer"];
@@ -138,6 +138,7 @@ export function TandemFlowOverviewPanel(props: FlowOverviewPanelProps) {
 
 export function TandemFlowStatePanel(props: FlowStatePanelProps) {
   const labels = useFlowLabels().editor;
+  const noSideHintId = useId();
   const { onChange } = props;
   return (
     <PanelShell
@@ -158,14 +159,20 @@ export function TandemFlowStatePanel(props: FlowStatePanelProps) {
         <Textarea rows={6} value={props.instructions} onChange={(event) => onChange({ instructions: event.target.value })} />
       </Labeled>
       {props.fields.length > 0 && (
-        <div className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium text-[var(--foreground)]">{labels.statePanel.learn}</span>
-          <ChipToggles
-            items={props.fields.map((field) => ({ id: field.id, title: field.name || field.id }))}
-            selected={props.learn}
-            onChange={(learn) => onChange({ learn })}
-          />
-        </div>
+        <details className="group/learn" data-flow-learn="">
+          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 text-sm font-medium text-[var(--foreground)]">
+            <span>{labels.statePanel.learnSummary?.(props.fields.filter((field) => props.learn.includes(field.id)).length, props.fields.length)
+              ?? `${labels.statePanel.learn}: ${props.fields.filter((field) => props.learn.includes(field.id)).length}/${props.fields.length}`}</span>
+            <ChevronDown aria-hidden="true" className="size-4 shrink-0 -rotate-90 transition-transform group-open/learn:rotate-0" />
+          </summary>
+          <div className="pt-1.5">
+            <ChipToggles
+              items={props.fields.map((field) => ({ id: field.id, title: field.name || field.id }))}
+              selected={props.learn}
+              onChange={(learn) => onChange({ learn })}
+            />
+          </div>
+        </details>
       )}
       <div className="flex items-center justify-between gap-3">
         {props.start ? (
@@ -211,19 +218,22 @@ export function TandemFlowStatePanel(props: FlowStatePanelProps) {
               <span className="text-xs text-[var(--foreground-subtle)]">{labels.statePanel.noTools}</span>
             ) : (
               <ChipToggles
-                items={props.catalogTools.map((tool) => ({ id: tool, title: tool }))}
+                items={props.catalogTools.map((tool) => ({ id: tool, title: Object.hasOwn(props.toolLabels ?? {}, tool) ? props.toolLabels?.[tool] || tool : tool }))}
                 selected={props.tools}
                 onChange={(tools) => onChange({ tools })}
               />
             )}
           </div>
-          <Labeled label={labels.statePanel.tags}>
+          <Labeled label={labels.statePanel.tags} hint={labels.statePanel.tagsHint}>
             <Input defaultValue={props.tags.join(", ")} key={props.tags.join(",")} onBlur={(event) => onChange({ tags: splitList(event.target.value) })} />
           </Labeled>
-          <label className="flex items-center justify-between gap-3 text-sm text-[var(--foreground)]">
-            {labels.statePanel.noSideQuestions}
-            <Switch checked={props.noSideQuestions} onCheckedChange={(noSideQuestions) => onChange({ noSideQuestions })} />
-          </label>
+          <div className="flex flex-col gap-1.5">
+            <label className="flex items-center justify-between gap-3 text-sm text-[var(--foreground)]">
+              {labels.statePanel.noSideQuestions}
+              <Switch checked={props.noSideQuestions} aria-describedby={labels.statePanel.noSideQuestionsHint ? noSideHintId : undefined} onCheckedChange={(noSideQuestions) => onChange({ noSideQuestions })} />
+            </label>
+            {labels.statePanel.noSideQuestionsHint && <p id={noSideHintId} className="text-xs text-[var(--foreground-muted)]">{labels.statePanel.noSideQuestionsHint}</p>}
+          </div>
         </div>
       </details>
     </PanelShell>

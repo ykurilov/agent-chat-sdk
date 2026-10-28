@@ -155,13 +155,17 @@ export interface FlowEditorLabels {
     instructionsHint: string;
     firstMessage: string;
     learn: string;
+    /** Collapsed field-choice summary; optional for existing custom dictionaries. */
+    learnSummary?: (selected: number, total: number) => string;
     tools: string;
     toolsHint: string;
     noTools: string;
     tags: string;
+    tagsHint?: string;
     makeStart: string;
     isStart: string;
     noSideQuestions: string;
+    noSideQuestionsHint?: string;
     exits: string;
     addExit: string;
     more: string;
@@ -423,13 +427,16 @@ export const russianFlowEditorLabels: FlowEditorLabels = {
     instructionsHint: "Первая строка — цель, её видно на доске. Дальше — как себя вести.",
     firstMessage: "Первое сообщение",
     learn: "Узнать в этом состоянии",
+    learnSummary: (selected, total) => `Узнать о человеке: ${selected} из ${total}`,
     tools: "Инструменты",
     toolsHint: "Агенту здесь доступны только отмеченные.",
     noTools: "В сценарии пока нет инструментов.",
     tags: "Метки",
+    tagsHint: "Метки состояния через запятую.",
     makeStart: "Начинать отсюда",
     isStart: "Сценарий начинается здесь",
     noSideQuestions: "Не спрашивать здесь о человеке между делом",
+    noSideQuestionsHint: "В этом состоянии агент не задаёт попутные вопросы о человеке.",
     exits: "Когда выходить и куда",
     addExit: "Добавить условие",
     more: "Дополнительно",
@@ -676,13 +683,16 @@ export const englishFlowEditorLabels: FlowEditorLabels = {
     instructionsHint: "The first line is the goal, shown on the board. Then — how to behave.",
     firstMessage: "First message",
     learn: "Learn in this state",
+    learnSummary: (selected, total) => `Learn about the person: ${selected} of ${total}`,
     tools: "Tools",
     toolsHint: "Only the checked tools are available here.",
     noTools: "The flow has no tools yet.",
     tags: "Tags",
+    tagsHint: "State tags, separated by commas.",
     makeStart: "Start here",
     isStart: "The flow starts here",
     noSideQuestions: "No side questions about the person here",
+    noSideQuestionsHint: "The agent does not ask incidental questions about the person in this state.",
     exits: "When to leave and where to",
     addExit: "Add a condition",
     more: "More",

@@ -291,6 +291,8 @@ export type ParseFlowResult = { ok: true; flow: AgentFlow } | { ok: false; error
 /** Что объявило приложение: по этим именам сценарий ссылается на инструменты, события и виджеты. */
 export interface FlowCatalog {
   tools: readonly string[];
+  /** Display names for tool IDs in the editor. IDs in the flow and runtime stay unchanged. */
+  toolLabels?: Readonly<Record<string, string>>;
   /** Кнопки и события приложения: имя или `{ name, label }` — подпись видна на доске вместо имени. */
   events: readonly FlowCatalogEvent[];
   widgets: readonly string[];

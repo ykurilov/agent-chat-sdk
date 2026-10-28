@@ -11,7 +11,7 @@ import type {
 } from "@ykurilov/agent-chat-flows/react";
 import { useFlowLabels } from "@ykurilov/agent-chat-flows/react";
 import { CaretDownIcon as ChevronDown, CaretUpIcon as ChevronUp, WarningCircleIcon as CircleAlert, FlagIcon as Flag, PlusIcon as Plus, TrashIcon as Trash2, WarningIcon as TriangleAlert } from "@phosphor-icons/react";
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import { IconButton, IssueBadge, KindIcon, Labeled, PanelShell, SectionTitle, Select } from "./flow-parts";
 
 const KINDS: FlowConditionType[] = ["judge", "data", "event", "timer"];
@@ -133,6 +133,7 @@ export function OduvanchikFlowOverviewPanel(props: FlowOverviewPanelProps) {
 
 export function OduvanchikFlowStatePanel(props: FlowStatePanelProps) {
   const labels = useFlowLabels().editor;
+  const noSideHintId = useId();
   const { onChange } = props;
   return (
     <PanelShell
@@ -153,14 +154,20 @@ export function OduvanchikFlowStatePanel(props: FlowStatePanelProps) {
         <Textarea rows={6} value={props.instructions} onChange={(event) => onChange({ instructions: event.target.value })} />
       </Labeled>
       {props.fields.length > 0 && (
-        <div className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium text-[var(--yk-text)]">{labels.statePanel.learn}</span>
-          <ChipToggles
-            items={props.fields.map((field) => ({ id: field.id, title: field.name || field.id }))}
-            selected={props.learn}
-            onChange={(learn) => onChange({ learn })}
-          />
-        </div>
+        <details className="group/learn" data-flow-learn="">
+          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 text-sm font-medium text-[var(--yk-text)]">
+            <span>{labels.statePanel.learnSummary?.(props.fields.filter((field) => props.learn.includes(field.id)).length, props.fields.length)
+              ?? `${labels.statePanel.learn}: ${props.fields.filter((field) => props.learn.includes(field.id)).length}/${props.fields.length}`}</span>
+            <ChevronDown aria-hidden="true" className="size-4 shrink-0 -rotate-90 transition-transform group-open/learn:rotate-0" />
+          </summary>
+          <div className="pt-1.5">
+            <ChipToggles
+              items={props.fields.map((field) => ({ id: field.id, title: field.name || field.id }))}
+              selected={props.learn}
+              onChange={(learn) => onChange({ learn })}
+            />
+          </div>
+        </details>
       )}
       <div className="flex items-center justify-between gap-3">
         {props.start ? (
@@ -206,16 +213,19 @@ export function OduvanchikFlowStatePanel(props: FlowStatePanelProps) {
               <span className="text-xs text-[var(--yk-muted)]">{labels.statePanel.noTools}</span>
             ) : (
               <ChipToggles
-                items={props.catalogTools.map((tool) => ({ id: tool, title: tool }))}
+                items={props.catalogTools.map((tool) => ({ id: tool, title: Object.hasOwn(props.toolLabels ?? {}, tool) ? props.toolLabels?.[tool] || tool : tool }))}
                 selected={props.tools}
                 onChange={(tools) => onChange({ tools })}
               />
             )}
           </div>
-          <Labeled label={labels.statePanel.tags}>
+          <Labeled label={labels.statePanel.tags} hint={labels.statePanel.tagsHint}>
             <Input defaultValue={props.tags.join(", ")} key={props.tags.join(",")} onBlur={(event) => onChange({ tags: splitList(event.target.value) })} />
           </Labeled>
-          <Switch checked={props.noSideQuestions} onCheckedChange={(noSideQuestions) => onChange({ noSideQuestions })}>{labels.statePanel.noSideQuestions}</Switch>
+          <div className="flex flex-col gap-1.5">
+            <Switch checked={props.noSideQuestions} aria-describedby={labels.statePanel.noSideQuestionsHint ? noSideHintId : undefined} onCheckedChange={(noSideQuestions) => onChange({ noSideQuestions })}>{labels.statePanel.noSideQuestions}</Switch>
+            {labels.statePanel.noSideQuestionsHint && <p id={noSideHintId} className="text-xs text-[var(--yk-muted)]">{labels.statePanel.noSideQuestionsHint}</p>}
+          </div>
         </div>
       </details>
     </PanelShell>
