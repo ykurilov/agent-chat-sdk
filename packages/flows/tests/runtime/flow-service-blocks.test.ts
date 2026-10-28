@@ -14,6 +14,10 @@ const ANSWER = "Рада, что вы вернулись! На чём мы ос�
 const cut = (text: string) => cutForgedBlocks(text, formats);
 
 describe("служебные тексты сценария в ответе модели", () => {
+  it.each(["policy", "advice"])("служебный хвост %s не становится текстом ответа", name => {
+    expect(cut(`[flow:${name}]\nВнутренняя подсказка\n[/flow:${name}]\n${ANSWER}`).text).toBe(ANSWER);
+  });
+
   it("строки перехода и «скажи ровно это» из служебного сообщения — вырезаны", () => {
     const notice = transitionNotice(flow, [{ from: "intro", to: "remind", exitId: "any_silence", decidedBy: "timer", tags: [], at: 0 }]);
     expect(cut(`${notice.title}\n\n${ANSWER}`)).toEqual({ text: ANSWER, blocks: ["flow_transition", "flow_say_exactly"] });

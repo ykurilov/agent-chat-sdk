@@ -1,5 +1,18 @@
 # @ykurilov/agent-chat-flows
 
+## 0.88.0
+
+### Minor Changes
+
+- d3cc8bf: Режимы переходов запуска: прежний `rails`, советующий судья `advisor` и обычные переходы без судьи `free`. В `advisor` модель может явно подтвердить переход вопреки отрицательному совету в том же ходе. Защищённые выходы, стрелки графа и проверки по данным/событиям/таймерам сохраняются. Необязательный `judge.textModel` возвращает вероятность и собственный довод; основной Microsoft Decision остаётся по умолчанию. `onTransitionDecision` и событие `flow.transition-decision` связывают результат судьи с решением модели для eval.
+  
+  **Как обновить приложение:** все SDK-пакеты обновить одной версией. Старые чаты сохраняют `rails`. Для новых запусков задать `transitionMode` в `createAgentFlow` или результате `loadFlow`; выбранный режим закрепляется в чате. Текстовый судья включается через `judge.textModel`. В eval сохранять `onTransitionDecision` и ждать `flow.settled()` перед следующим ходом. SQLite/PostgreSQL автоматически применяют flows-миграцию 0004. Пользовательскому FlowStore для новых режимов сохранять transitionMode и pending advice. Контракт полей и ограничения - docs/flow-transition-modes.md.
+
+### Patch Changes
+
+- @ykurilov/agent-chat-core@0.88.0
+  - @ykurilov/agent-chat-react@0.88.0
+
 ## 0.87.14
 
 ### Patch Changes

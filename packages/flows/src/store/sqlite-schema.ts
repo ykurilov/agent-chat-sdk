@@ -1,5 +1,5 @@
 import type { AgentFlow } from "../format/flow-format";
-import type { FlowEndReason } from "../engine/flow-run";
+import type { FlowEndReason, FlowTransitionMode } from "../engine/flow-run";
 import type { FlowChatPlacement, FlowPendingDelivery, PendingFlowChange } from "./flow-store";
 import { index, integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
@@ -14,6 +14,7 @@ export const flowChats = sqliteTable(
     flowId: text("flow_id").notNull(),
     versionId: text("version_id").notNull(),
     stateId: text("state_id").notNull(),
+    transitionMode: text("transition_mode").$type<FlowTransitionMode>().notNull().default("rails"),
     pending: text("pending", { mode: "json" }).$type<PendingFlowChange[]>().notNull().default([]),
     dueAt: integer("due_at"),
     dueExitId: text("due_exit_id"),

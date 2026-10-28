@@ -12,3 +12,5 @@ export { FLOW_TIME_ZONE_TOOL } from "./time-zone-tool";
 export { FLOW_CLOSE_DAY_TOOL } from "./close-day-tool";
 export { FLOW_SIDE_TASK_TOOL } from "./side-task-tool";
 export { factId } from "./client-facts";
+
+export { FLOW_TRANSITION_DECISION_EVENT } from "./transition-policy";

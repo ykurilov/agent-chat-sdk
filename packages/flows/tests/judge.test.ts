@@ -31,7 +31,7 @@ interface Setup {
   settings?: Partial<JudgeSettings>;
   fetch?: FetchBehavior;
   /** Ответ запасной модели; функция, чтобы бросить ошибку. */
-  ask?: (input: AskModelInput) => { met: string[] } | Error;
+  ask?: (input: AskModelInput) => { met: string[] } | { verdicts: Array<{ exitId: string; probability: number; reason: string }> } | Error;
   recordUsage?: (input: RecordExternalUsageInput) => Promise<void>;
   env?: Record<string, string | undefined>;
   /** Лимит расходов: бросает, когда исчерпан. */
@@ -434,5 +434,25 @@ describe("судья: журнал входа (092)", () => {
     const broken = setup({ journalFails: true, fetch: async () => decision({ intro_clear: 0.9 }) });
     expect(await broken.judge.checkClaim(claim())).toMatchObject({ confirmed: true });
     expect(broken.errors).toEqual([expect.stringContaining("журнал недоступен")]);
+  });
+});
+
+
+describe("текстовый судья", () => {
+  it("одинаковая настройка даёт настоящий reason и уверенность без decision-запроса", async () => {
+    const { judge, calls, asked } = setup({ settings: { textModel: FALLBACK }, ask: () => ({ verdicts: [{ exitId: "x", probability: 0.25, reason: "Пока нет сведений о продажах" }] }) });
+    const verdict = await judge.checkClaim({ ownerId: OWNER, chatId: CHAT, exitId: "x", condition: "Известны продажи", messages: [] });
+    expect(verdict).toEqual({ exitId: "x", probability: 0.25, confirmed: false, source: "text", reason: "Пока нет сведений о продажах" });
+    expect(calls).toHaveLength(0); expect(asked[0]).toMatchObject({ model: FALLBACK, source: "judge" });
+  });
+  it("checkAll для аудита включает отрицательное решение", async () => {
+    const { judge } = setup({ settings: { textModel: FALLBACK }, ask: () => ({ verdicts: [{ exitId: "x", probability: 0.25, reason: "Данных нет" }] }) });
+    expect(await judge.checkAll({ ownerId: OWNER, chatId: CHAT, conditions: [{ exitId: "x", text: "Известны продажи" }], messages: [], includeRejected: true })).toMatchObject([{ confirmed: false, reason: "Данных нет" }]);
+    expect(await judge.checkAll({ ownerId: OWNER, chatId: CHAT, conditions: [{ exitId: "x", text: "Известны продажи" }], messages: [] })).toEqual([]);
+  });
+  it("неверный exitId и отсутствие довода не разрешают переход", async () => {
+    const { judge, calls } = setup({ settings: { textModel: FALLBACK }, ask: () => ({ verdicts: [{ exitId: "wrong", probability: 1, reason: "Да" }] }) });
+    expect(await judge.checkClaim({ ownerId: OWNER, chatId: CHAT, exitId: "x", condition: "Известны продажи", messages: [] })).toBeNull();
+    expect(calls).toHaveLength(0);
   });
 });

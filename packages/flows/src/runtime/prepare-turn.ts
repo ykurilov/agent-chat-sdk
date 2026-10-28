@@ -69,6 +69,11 @@ export function flowPrepareTurn(runtime: FlowRuntime, appTimeZone: () => string 
     // Открыт заново вне хода (`flow.reopen`): место догоняет запись.
     let run = withReopen(pinned.flow, currentRun(pinned.flow, ctx.state, now), record);
     const previousAnswer = run.answerId;
+    const { claimAdvice: previousClaimAdvice, transitionAdvice: previousAdvice, ...withoutAdvice } = run;
+    run = { ...withoutAdvice,
+      ...(ctx.resumed && previousClaimAdvice?.forTurnId === ctx.messageId && { claimAdvice: previousClaimAdvice }),
+      ...(ctx.resumed && previousAdvice?.forTurnId === ctx.messageId && { transitionAdvice: previousAdvice }),
+    };
     const pending: PendingFlowChange[] = await runtime.store.takePending(ctx.chatId);
     const appliedInTime = new Set(
       pending.flatMap((change) => (change.kind === "transition" && change.appliedAt !== undefined && change.branchHead === previousAnswer ? [transitionKey(change.transition)] : [])),
@@ -127,6 +132,9 @@ export function flowPrepareTurn(runtime: FlowRuntime, appTimeZone: () => string 
           run = await step(run, pendingEvent(change.transition, timeZone), out);
           // Применённые в срок уже сообщены; дотянутое ходом поверх них — новое.
           for (const transition of out) (appliedInTime.has(transitionKey(transition)) ? applied : transitions).push(transition);
+        } else if (change.kind === "advice") {
+          if (pinned!.transitionMode === "advisor" && change.versionId === pinned!.versionId && change.branchHead === previousAnswer && change.from === run.state)
+            run = { ...run, transitionAdvice: { forTurnId: ctx.messageId, sourceTurnId: change.branchHead, state: run.state, verdicts: change.verdicts } };
         } else {
           run = await step(run, { type: "event", event: "app", name: change.name });
         }

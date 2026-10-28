@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, cpSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { afterEach, describe, expect, it } from "vitest";
@@ -12,6 +15,7 @@ import { at, chatInput, describeFlowStoreContract, exampleFlow } from "./flow-st
 const MIGRATIONS = fileURLToPath(new URL("../../drizzle/postgres", import.meta.url));
 
 const databases: TemporaryPostgres[] = [];
+const migrationFolders: string[] = [];
 const pools: pg.Pool[] = [];
 async function freshDatabase(): Promise<TemporaryPostgres> {
   const database = await startTemporaryPostgres();
@@ -26,6 +30,7 @@ function pool(connectionString: string, max = 2): pg.Pool {
 afterEach(async () => {
   for (const created of pools.splice(0)) await created.end();
   for (const database of databases.splice(0)) await database.stop();
+  for (const folder of migrationFolders.splice(0)) rmSync(folder, { recursive: true, force: true });
 });
 
 async function query(connectionString: string, text: string): Promise<Record<string, unknown>[]> {
@@ -175,4 +180,17 @@ describe.skipIf(!realPostgresUrl)("сценарии в PostgreSQL (настоя�
     expect(taken.length).toBe(200);
     expect(new Set(taken).size).toBe(200);
   }, 60_000);
+});
+
+
+it("обновление PostgreSQL до transitionMode оставляет старые запуски в rails", async () => {
+  const database = await freshDatabase();
+  const oldFolder = mkdtempSync(join(tmpdir(), "flows-old-migrations-")); migrationFolders.push(oldFolder);
+  cpSync(MIGRATIONS, oldFolder, { recursive: true });
+  const journalPath = join(oldFolder, "meta/_journal.json");
+  const journal = JSON.parse(readFileSync(journalPath, "utf8")); journal.entries = journal.entries.slice(0, 4); writeFileSync(journalPath, JSON.stringify(journal));
+  const old = createPostgresFlowStore(pool(database.connectionString), oldFolder); await old.close();
+  await query(database.connectionString, `insert into agent_chat.flow_chats (chat_id,owner_id,flow_id,version_id,state_id,pending,time_zone,updated_at) values ('old','anna','flow','v1','intro','[]','UTC',now())`);
+  const upgraded = open(database.connectionString);
+  expect(await upgraded.getChat("old")).toMatchObject({ transitionMode: "rails", stateId: "intro" });
 });

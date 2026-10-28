@@ -43,6 +43,13 @@ const FALLBACK_SCHEMA = {
   additionalProperties: false,
 };
 
+const TEXT_JUDGE_INSTRUCTIONS = "Оцени выполнение каждого условия по цели состояния и переданным репликам. Для каждого условия верни exitId, probability от 0 до 1 и короткий reason: какие сведения подтверждают выполнение или чего не хватает. Не добавляй условия и не принимай слова агента за доказательство сами по себе.";
+const TEXT_JUDGE_SCHEMA = {
+  type: "object", properties: { verdicts: { type: "array", items: { type: "object",
+    properties: { exitId: { type: "string" }, probability: { type: "number", minimum: 0, maximum: 1 }, reason: { type: "string", minLength: 1, maxLength: 2000 } },
+    required: ["exitId", "probability", "reason"], additionalProperties: false } } }, required: ["verdicts"], additionalProperties: false,
+};
+
 const conditionQuestion = (text: string) => `Выполнено ли условие «${text}»?`;
 
 /** Что судье нужно от службы чата. */
@@ -70,7 +77,7 @@ export function createFlowJudge(settings: JudgeSettings, port: (chat: { ownerId:
         ownerId: question.ownerId,
         chatId: question.chatId,
         kind: question.kind,
-        model,
+        model: settings.textModel?.modelId ?? model,
         threshold,
         source: verdicts?.[0]?.source ?? null,
         ...(goal !== undefined && { goal: clip(goal) }),
@@ -168,6 +175,23 @@ export function createFlowJudge(settings: JudgeSettings, port: (chat: { ownerId:
   }
 
   async function ask(question: Question, context: JudgeContext): Promise<JudgeVerdict[] | null> {
+    if (settings.textModel) {
+      try {
+        const result = await (await port(question)).askModel({ ownerId: question.ownerId, chatId: question.chatId, model: settings.textModel,
+          system: TEXT_JUDGE_INSTRUCTIONS, prompt: JSON.stringify(context), schema: TEXT_JUDGE_SCHEMA, source: "judge",
+          ...(question.signal && { signal: question.signal }) });
+        const raw = (result.object as { verdicts?: unknown } | undefined)?.verdicts;
+        if (!Array.isArray(raw) || raw.length !== context.conditions.length) throw new Error("ответ текстового судьи не по схеме");
+        const values = new Map<string, JudgeVerdict>();
+        for (const item of raw) {
+          if (!item || typeof item.exitId !== "string" || values.has(item.exitId) || !context.conditions.some(condition => condition.exitId === item.exitId)
+            || typeof item.probability !== "number" || !Number.isFinite(item.probability) || item.probability < 0 || item.probability > 1
+            || typeof item.reason !== "string" || !item.reason.trim()) throw new Error("ответ текстового судьи не по схеме");
+          values.set(item.exitId, { exitId: item.exitId, probability: item.probability, confirmed: item.probability >= threshold, reason: item.reason.trim().slice(0, 2000), source: "text" });
+        }
+        return context.conditions.map(condition => values.get(condition.exitId)!);
+      } catch (error) { logError(`Текстовый судья: ${errorText(error)}`); return null; }
+    }
     const answers = await askDecision(question, context.conditions, context.state);
     if (answers) {
       return context.conditions.map(({ exitId }) => ({ exitId, probability: answers[exitId]!, confirmed: answers[exitId]! >= threshold, source: "decision" }));
@@ -193,7 +217,7 @@ export function createFlowJudge(settings: JudgeSettings, port: (chat: { ownerId:
       });
       return verdicts?.[0] ?? null;
     },
-    async checkAll({ ownerId, chatId, goal, conditions, messages, signal, testChat }) {
+    async checkAll({ ownerId, chatId, goal, conditions, messages, signal, testChat, includeRejected }) {
       if (conditions.length === 0) return [];
       const verdicts = await judge({
         kind: "after_turn",
@@ -205,7 +229,7 @@ export function createFlowJudge(settings: JudgeSettings, port: (chat: { ownerId:
         ...(signal && { signal }),
         ...(testChat && { testChat }),
       });
-      return verdicts?.filter((verdict) => verdict.confirmed) ?? [];
+      return (includeRejected ? verdicts : verdicts?.filter((verdict) => verdict.confirmed)) ?? [];
     },
   };
 }

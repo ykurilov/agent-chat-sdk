@@ -16,7 +16,7 @@ export type FlowEvent =
    */
   | { type: "data"; field?: string; card?: Record<string, unknown> }
   /** Судья подтвердил условие словами: по заявке агента (`claim`) или сам после ответа (`judge`). `why` — слова агента из заявки. */
-  | { type: "verdict"; exitId: string; probability: number; decidedBy: "claim" | "judge"; why?: string }
+  | { type: "verdict"; exitId: string; probability?: number; decidedBy: "claim" | "judge"; why?: string }
   /** Наступил таймер из `nextDue`. Пояс человека нужен, чтобы перепроверить срок: человек мог успеть ответить. */
   | { type: "timer"; exitId: string; timeZone: string };
 
@@ -106,7 +106,7 @@ export function nextTransition(flow: AgentFlow, run: FlowRun, event: FlowEvent, 
       to: target.state.id,
       exitId: exit.id,
       decidedBy: deciderOf(event),
-      ...(event.type === "verdict" ? { probability: event.probability } : {}),
+      ...(event.type === "verdict" && event.probability !== undefined ? { probability: event.probability } : {}),
       tags: target.state.tags,
       at: now,
       ...(target.returned ? { returned: true } : {}),

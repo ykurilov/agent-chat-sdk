@@ -3,18 +3,18 @@ import { flowChat, newChat, OWNER, say, plain, systemOf } from "./flow-chat";
 import { miniV1 } from "./migrate-flows";
 import type { FlowRun } from "../../src/format";
 import { readAll } from "../../../core/tests/unit/support/mock-model";
-import { userMessage, waitTurn } from "../../../core/tests/unit/support/notice-chat";
+import { userMessage, waitTurn, callTool, saying } from "../../../core/tests/unit/support/notice-chat";
 
 const spec = { flowId: "mini", key: "ownPublished", revision: "1", states: ["publish", "result"], judge: "Человек прислал ссылку на своё приложение. Чужая ссылка, несовпадение или сомнение помощника — нет." };
 const guard = { flowId: "mini", state: "publish", exitId: "interest", requires: { key: spec.key, revision: spec.revision }, judgeWindow: "current-human-turn" as const };
-function setup() {
+function setup(transitionMode: import("../../src/runtime/flow-types").FlowTransitionMode = "rails", scripts?: NonNullable<Parameters<typeof flowChat>[0]>["scripts"]) {
   const json = miniV1();
   json.start = "publish";
   json.states = [
     { id: "publish", title: "Результат", instructions: "Проверь собственную публикацию и ответь на актуальный вопрос.", exits: [{ id: "interest", when: { type: "judge", text: "Человек в текущем сообщении явно спрашивает про собственный домен или обучение." }, to: "course" }] },
     { id: "course", title: "Курс", instructions: "Расскажи о курсе." },
   ] as typeof json.states;
-  const chat = flowChat({ flowJson: json, flowOptions: { confirmations: [spec], exitGuards: [guard, { ...guard, state: "result" }] } });
+  const chat = flowChat({ flowJson: json, scripts, flowOptions: { transitionMode, confirmations: [spec], exitGuards: [guard, { ...guard, state: "result" }] } });
   const run = async (chatId: string) => (await chat.service.getChatState(OWNER, chatId)).values.flow as FlowRun;
   const revoke = async (id: string, key = "correction") => chat.flow.revokeConfirmation({ ownerId: OWNER, chatId: id, flowId: spec.flowId, key: spec.key, revision: spec.revision,
     expectedAtMessageId: (await chat.service.getChatState(OWNER, id)).atMessageId, idempotencyKey: key, reason: "Та ссылка была чужая" });
@@ -245,5 +245,21 @@ describe("durable confirmation + fresh interest", () => {
     expect((await chat.run(id)).confirmations?.ownPublished).toBeUndefined();
     expect((await chat.run(id)).checkedTransition).toBeUndefined();
     await chat.flow.stop(); await chat.service.flush();
+  });
+});
+
+
+describe("защищённые выходы во всех режимах", () => {
+  it.each(["rails", "advisor", "free"] as const)("%s: модель не обходит proof, серверный путь сохраняется", async mode => {
+    const chat = setup(mode, [callTool("flow_exit", "guard", { exit: 1, why: "Пора дальше", confirm: true }), saying("Продолжим обсуждение")]);
+    const { id } = await newChat(chat.service);
+    await say(chat.service, id, "Как перейти к курсу?"); await chat.flow.settled();
+    expect((await chat.run(id)).state).toBe("publish");
+    expect(chat.judge.checkClaim).not.toHaveBeenCalled();
+    expect((await chat.run(id)).checkedTransition).toBeUndefined();
+    chat.yes.add("confirmation:ownPublished"); chat.yes.add("interest");
+    await say(chat.service, id, "Мой сайт https://my.example.com. Как подключить домен?"); await chat.flow.settled();
+    expect((await chat.run(id)).checkedTransition?.transition.to).toBe("course");
+    expect((await chat.flow.readRun(OWNER, id))?.state).toBe("course");
   });
 });

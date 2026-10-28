@@ -1,5 +1,5 @@
 import type { AgentFlow } from "../format/flow-format";
-import type { FlowEndReason } from "../engine/flow-run";
+import type { FlowEndReason, FlowTransitionMode } from "../engine/flow-run";
 import type { FlowChatPlacement, FlowPendingDelivery, PendingFlowChange } from "./flow-store";
 import { boolean, index, integer, jsonb, pgSchema, primaryKey, text, timestamp } from "drizzle-orm/pg-core";
 
@@ -17,6 +17,7 @@ export const flowChats = agentChatSchema.table(
     flowId: text("flow_id").notNull(),
     versionId: text("version_id").notNull(),
     stateId: text("state_id").notNull(),
+    transitionMode: text("transition_mode").$type<FlowTransitionMode>().notNull().default("rails"),
     pending: jsonb("pending").$type<PendingFlowChange[]>().notNull().default([]),
     dueAt: moment("due_at"),
     dueExitId: text("due_exit_id"),

@@ -7,6 +7,7 @@ import { nextTransition } from "../engine/next-transition";
 import { applyTransition, claimAllowed, noteRejectedClaim } from "../engine/run-updates";
 import { judgeExits, stateGoal } from "../prompt/state-card";
 import { advance, chainLimitMessage, currentRun, personTimeZone, transitionReport, type ChatFlowRun, type FlowRuntime, type PinnedFlow } from "./flow-events";
+import { compactVerdict, decisionEvent, publishDecision, validateTransitionMode, verdictText } from "./transition-policy";
 import type { ClientCardTools, FlowJudge, JudgeMessage } from "./flow-types";
 import { chatTime } from "./test-clock";
 import type { FlowExtraTool } from "./extra-tool";
@@ -118,66 +119,102 @@ function wrapTool(runtime: FlowRuntime, model: AgentToolsModel, name: string, or
   } as Tool;
 }
 
-/** `flow_exit`: агент заявил, что условие словами выполнено; переход — только если судья подтвердил. */
+/** Обычные выходы словами: политика запуска; защищённые выходы остаются серверными. */
 function flowExitTool(input: FlowToolsInput, model: AgentToolsModel): Tool {
   const { runtime } = input;
   return tool({
-    description:
-      "Условие выхода из текущего состояния сценария выполнено. Номер условия — из карточки состояния (блок flow:state), why — одна фраза, почему. Переход проверит судья; подтвердит — в ответе карточка нового состояния.",
+    description: "Заявить выполнение условия выхода словами из текущего состояния. exit — номер из flow:state, why — обоснование. Политика перехода задана в flow:policy. confirm — явное подтверждение после полученного отрицательного совета в этом же ходе; серверные ограничения не отменяет.",
     inputSchema: z.object({
       exit: z.number().int().describe("Номер условия из карточки состояния"),
-      why: z.string().describe("Почему условие выполнено, одной фразой"),
+      why: z.string().describe("Почему условие выполнено"),
+      confirm: z.boolean().optional().describe("Подтвердить переход вопреки уже полученному в этом ходе совету"),
     }),
-    execute: async ({ exit, why }, { abortSignal }) => {
+    execute: async ({ exit, why, confirm }, { abortSignal, toolCallId }) => {
       const turn = await flowOfTurn(runtime, model);
       if (!turn) return NO_FLOW;
       if (turn.run.endedAt !== undefined || turn.pinned.ended) return "Программа закончилась: переходов больше нет, отвечай по общей части.";
       const { flow } = turn.pinned;
       const chosen = judgeExits(flow, turn.run.state)[exit - 1];
       if (!chosen) return `Нет такого условия: номер ${exit}. Номера условий — в карточке состояния.`;
-      if (runtime.confirmations?.guardFor(turn.pinned.flowId, turn.run.state, chosen.exitId)) return "Этот выход проверяется сервером после полного ответа: подтверждённая веха и актуальное сообщение человека должны быть проверены вместе. Переход пока не выполнен.";
-      if (!claimAllowed(turn.run, chosen.exitId)) return "Это условие уже проверяли: подожди ответа человека и продолжай разговор.";
-
-      const state = stateById(flow, turn.run.state)!;
-      let verdict;
-      try {
-        verdict = await input.judge().checkClaim({
-          ownerId: model.ownerId,
-          chatId: model.chatId,
-          exitId: chosen.exitId,
-          condition: chosen.text,
-          goal: stateGoal(state.instructions),
-          why,
-          messages: await input.history(model.ownerId, model.chatId),
-          ...(abortSignal && { signal: abortSignal }),
-          ...(turn.run.timeOffset !== undefined && { testChat: true }),
-        });
-      } catch (error) {
-        runtime.logError(`[сценарий] чат=${model.chatId} судья упал: ${error instanceof Error ? error.message : String(error)}`);
-        verdict = null;
+      const freshRun = () => {
+        const latest = currentRun(flow, { [FLOW_STATE_KEY]: turn.state.get(FLOW_STATE_KEY) }, runtime.now());
+        return latest.state === turn.run.state && latest.enteredAt === turn.run.enteredAt && latest.chain === turn.run.chain
+          && latest.answerId === turn.run.answerId && latest.endedAt === undefined ? latest : null;
+      };
+      const mode = validateTransitionMode(turn.pinned.transitionMode);
+      const turnId = model.turnId ?? model.messageId ?? turn.run.answerId ?? "unknown";
+      const emit = (phase: "judge" | "decision", decision: import("./flow-types").FlowTransitionDecision["decision"], verdict: import("./flow-types").JudgeVerdict | null, to?: string) =>
+        publishDecision(runtime, decisionEvent({ ownerId: model.ownerId, chatId: model.chatId, turnId, pinned: turn.pinned, run: turn.run,
+          exitId: chosen.exitId, to, phase, kind: "claim", decision, judge: verdict, modelWhy: why, at: runtime.now(), key: `${toolCallId}:${phase}`,
+          ...(phase === "decision" && verdict && { adviceId: `${turnId}:${advised && confirm ? advised.toolCallId : toolCallId}:judge:${chosen.exitId}` }) }), model);
+      if (runtime.confirmations?.guardFor(turn.pinned.flowId, turn.run.state, chosen.exitId)) {
+        await emit("decision", "protected", null);
+        return "Этот выход проверяется сервером после полного ответа: подтверждённая веха и актуальное сообщение человека должны быть проверены вместе. Переход пока не выполнен.";
       }
-      if (!verdict) return "Проверка не удалась: перехода нет, продолжай разговор в текущем состоянии.";
-      if (!verdict.confirmed) {
-        turn.state.set(FLOW_STATE_KEY, noteRejectedClaim(turn.run, chosen.exitId));
-        return "Судья не подтвердил: перехода нет, продолжай разговор в текущем состоянии.";
+      const prior = turn.run.claimAdvice;
+      const advised = mode === "advisor" && prior?.forTurnId === turnId && prior.state === turn.run.state && prior.enteredAt === turn.run.enteredAt
+        && Object.hasOwn(prior.claims, chosen.exitId) ? prior.claims[chosen.exitId] : undefined;
+      const override = Boolean(confirm && advised && turnId !== "unknown");
+      if (mode !== "free" && !override && !claimAllowed(turn.run, chosen.exitId)) return "Это условие уже проверяли: подожди ответа человека и продолжай разговор.";
+      let verdict = override ? advised!.verdict : null;
+      if (mode !== "free" && !override) {
+        const state = stateById(flow, turn.run.state)!;
+        try {
+          verdict = await input.judge().checkClaim({ ownerId: model.ownerId, chatId: model.chatId, exitId: chosen.exitId,
+            condition: chosen.text, goal: stateGoal(state.instructions), why, messages: await input.history(model.ownerId, model.chatId),
+            ...(abortSignal && { signal: abortSignal }), ...(turn.run.timeOffset !== undefined && { testChat: true }) });
+        } catch (error) {
+          runtime.logError(`[сценарий] чат=${model.chatId} судья упал: ${error instanceof Error ? error.message : String(error)}`);
+        }
+        await emit("judge", verdict ? "advice" : "unavailable", verdict);
+        if (!verdict) return "Проверка не удалась: перехода нет, продолжай разговор в текущем состоянии.";
+        if (!verdict.confirmed) {
+          const fresh = freshRun();
+          if (!fresh || abortSignal?.aborted) return "Ход или состояние изменились: переход не выполнен.";
+          let run = noteRejectedClaim(fresh, chosen.exitId);
+          if (mode === "advisor") {
+            const previous = fresh.claimAdvice;
+            const claims = previous?.forTurnId === turnId && previous.state === run.state && previous.enteredAt === run.enteredAt ? previous.claims : {};
+            run = { ...run, claimAdvice: { forTurnId: turnId, state: run.state, enteredAt: run.enteredAt,
+              claims: { ...claims, [chosen.exitId]: { verdict: compactVerdict(verdict), toolCallId, why: why.slice(0, 1000) } } } };
+          }
+          turn.state.set(FLOW_STATE_KEY, run);
+          if (mode !== "advisor") await emit("decision", "rejected", verdict);
+          return mode === "advisor"
+            ? `Судья советует остаться. ${verdictText(verdict, runtime.judgeThreshold ?? 0.7)} Переход пока не выполнен. Реши сам: продолжить текущее состояние или повторить flow_exit с confirm=true и своим why в этом же ходе.`
+            : "Судья не подтвердил: перехода нет, продолжай разговор в текущем состоянии.";
+        }
       }
-
-      const now = chatTime(turn.run, runtime.now());
-      const transition = nextTransition(flow, turn.run, { type: "verdict", exitId: chosen.exitId, probability: verdict.probability, decidedBy: "claim", why }, now);
+      if (abortSignal?.aborted) return "Ход остановлен: переход не выполнен.";
+      const card = await runtime.cardValues(model.ownerId);
+      const timeZone = await personTimeZone(runtime, model);
+      const fresh = freshRun();
+      if (!fresh || abortSignal?.aborted) {
+        await emit("decision", "blocked", verdict);
+        return "Ход или состояние изменились: переход не выполнен.";
+      }
+      const now = chatTime(fresh, runtime.now());
+      const transition = nextTransition(flow, fresh, { type: "verdict", exitId: chosen.exitId,
+        ...(verdict && { probability: verdict.probability }), decidedBy: "claim", why }, now);
       if (!transition) {
-        runtime.logError(chainLimitMessage(model.chatId, turn.run));
+        runtime.logError(chainLimitMessage(model.chatId, fresh));
+        await emit("decision", "blocked", verdict);
         return "Переход сейчас невозможен: продолжай разговор в текущем состоянии.";
       }
       const transitions = [transition];
-      const card = await runtime.cardValues(model.ownerId);
-      const run = advance(flow, applyTransition(flow, turn.run, transition), { type: "data", card }, {
-        now,
-        timeZone: await personTimeZone(runtime, model),
-        card,
-        out: transitions,
-        onChainLimit: (stopped) => runtime.logError(chainLimitMessage(model.chatId, stopped)),
+      let run = advance(flow, applyTransition(flow, fresh, transition), { type: "data", card }, {
+        now, timeZone, card, out: transitions,
+        onChainLimit: stopped => runtime.logError(chainLimitMessage(model.chatId, stopped)),
       });
-      return commit(runtime, model, turn, run, transitions);
+      if (run.claimAdvice?.forTurnId === turnId) {
+        const { [chosen.exitId]: consumed, ...claims } = run.claimAdvice.claims;
+        run = { ...run, claimAdvice: { ...run.claimAdvice, claims } };
+      }
+      if (run.transitionAdvice?.forTurnId === turnId) run = { ...run,
+        transitionAdvice: { ...run.transitionAdvice, verdicts: run.transitionAdvice.verdicts.filter(item => item.exitId !== chosen.exitId) } };
+      const output = await commit(runtime, model, turn, run, transitions);
+      await emit("decision", mode === "free" ? "without_judge" : override ? "against_advice" : "with_advice", verdict, transition.to);
+      return output;
     },
   });
 }

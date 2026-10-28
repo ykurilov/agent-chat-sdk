@@ -64,6 +64,7 @@ export function describeFlowStoreContract(open: () => Promise<SharedFlowStores>)
             flowId: "sales-review",
             versionId: "v1",
             stateId: "intro",
+            transitionMode: "rails",
             pending: [],
             dueAt: null,
             dueExitId: null,
@@ -82,6 +83,14 @@ export function describeFlowStoreContract(open: () => Promise<SharedFlowStores>)
           expect(await first.pinChat(input)).toEqual(expected);
           expect(await second.getChat(input.chatId)).toEqual(expected);
           expect(await second.getChat("нет-такого")).toBeNull();
+        }));
+
+      it("режим закрепляется за запуском и не меняется повторным pin", () =>
+        withStores(async ({ first, second }) => {
+          const input = chatInput({ transitionMode: "advisor" });
+          await first.pinChat(input);
+          expect(await second.getChat(input.chatId)).toMatchObject({ transitionMode: "advisor" });
+          expect(await second.pinChat({ ...input, transitionMode: "free" })).toMatchObject({ transitionMode: "advisor" });
         }));
 
       it("перенос чата: места startedAt/enteredAt сохраняются, видны второй копии и снимаются правкой", () =>

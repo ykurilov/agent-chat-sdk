@@ -48,6 +48,7 @@ export function memoryFlowStore(): FlowStore {
         flowId: input.flowId,
         versionId: input.versionId,
         stateId: input.stateId,
+        transitionMode: input.transitionMode ?? "rails",
         pending: [],
         dueAt: null,
         dueExitId: null,

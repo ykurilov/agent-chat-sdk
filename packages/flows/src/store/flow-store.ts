@@ -1,5 +1,5 @@
 import type { AgentFlow } from "../format/flow-format";
-import type { FlowEndReason, Transition } from "../engine/flow-run";
+import type { FlowEndReason, Transition, FlowTransitionMode, FlowJudgeAdvice } from "../engine/flow-run";
 import type { StateMap } from "../engine/migrate-run";
 
 // Договор хранилища сценариев: память (тесты), SQLite и PostgreSQL ведут себя одинаково.
@@ -19,11 +19,14 @@ export type PendingFlowChange =
        */
       appliedAt?: string;
     }
+  | { kind: "advice"; key: string; versionId: string; from: string; branchHead: string; verdicts: FlowJudgeAdvice[] }
   | { kind: "event"; key: string; name: string; data?: unknown; at: string }
   | { kind: "migrate"; key: string; versionId: string; map: StateMap; at: string };
 
 /** Чат, который идёт по сценарию: версия закреплена, состояние и ближайший таймер — для выборок и тика. */
 export interface FlowChatRecord {
+  /** Нет у старого собственного store — rails. */
+  transitionMode?: FlowTransitionMode;
   chatId: string;
   ownerId: string;
   flowId: string;
@@ -113,6 +116,7 @@ export interface SwapDeliveryInput {
 }
 
 export interface PinFlowChatInput {
+  transitionMode?: FlowTransitionMode;
   chatId: string;
   ownerId: string;
   flowId: string;

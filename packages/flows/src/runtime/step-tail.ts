@@ -1,3 +1,4 @@
+import { transitionPolicyTail } from "./transition-policy";
 import type { StepContext } from "@ykurilov/agent-chat-core";
 import type { AgentFlow } from "../format/flow-format";
 import { currentRun, type FlowRuntime } from "./flow-events";
@@ -27,7 +28,9 @@ export function withStepTail(own: StepContext | undefined, runtime: FlowRuntime,
     // Ход «пишет первым» — приложение видит его причины (`firstReasons`).
     const firstReasons = run?.answerId === input.messageId ? run.firstReasons : undefined;
     const app = own ? await own(firstReasons ? ({ ...input, firstReasons } as FlowStepContextInput) : input) : undefined;
-    if (!pinned || !run || !hasTail(pinned.flow)) return app;
+    if (!pinned || !run) return app;
+    const policy = transitionPolicyTail(pinned, run, input.messageId, runtime.judgeThreshold ?? 0.7);
+    if (!hasTail(pinned.flow)) return policy ? [app?.trim(), policy].filter(Boolean).join("\n") : app;
     const now = chatTime(run, runtime.now());
     // Пояс — человека; не знаем — приложения или сервера, и в первый день до ночи агент узнаёт город.
     const known = runtime.timeZones ? await runtime.timeZones.known(input.ownerId, input.chatId) : null;
@@ -40,6 +43,7 @@ export function withStepTail(own: StepContext | undefined, runtime: FlowRuntime,
       const line = (await part(tail))?.trim();
       if (line) lines.push(line);
     }
+    if (policy) lines.push(policy);
     if (lines.length === 0) return app;
     return [app?.trim(), ...lines].filter(Boolean).join("\n");
   };

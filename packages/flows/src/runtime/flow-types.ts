@@ -18,7 +18,7 @@ import type {
 } from "@ykurilov/agent-chat-core";
 import type { ToolSet } from "ai";
 import type { AgentFlow, FlowAfterEnd, FlowSchedule } from "../format/flow-format";
-import type { FirstMessagesSetting, FlowEndReason, FlowRun, Transition } from "../engine/flow-run";
+import type { FirstMessagesSetting, FlowEndReason, FlowRun, Transition, FlowTransitionMode, FlowJudgeAdvice } from "../engine/flow-run";
 import type { StateMap } from "../engine/migrate-run";
 import type { FlowDayInfo } from "../engine/flow-days";
 import type { FlowFirstReason } from "../engine/nudges";
@@ -29,6 +29,7 @@ export type { FlowFirstReason } from "../engine/nudges";
 
 /** Сценарий, по которому идёт чат: приложение хранит графы у себя и отдаёт нужную версию. */
 export interface LoadedFlow {
+  transitionMode?: FlowTransitionMode;
   flowId: string;
   /** Номер версии приложения; чат закрепляется за ней до перевода. */
   versionId: string;
@@ -144,17 +145,37 @@ export interface JudgeMessage {
   text: string;
 }
 
-export interface JudgeVerdict {
+export interface JudgeVerdict extends FlowJudgeAdvice {}
+
+export interface FlowTransitionDecision {
+  id: string;
+  ownerId: string;
+  chatId: string;
+  turnId: string;
+  flowId: string;
+  versionId: string;
+  mode: FlowTransitionMode;
+  state: string;
   exitId: string;
-  /** Уверенность, 0…1. Запасная модель вероятностей не даёт: 1 или 0. */
-  probability: number;
-  /** Условие выполнено: уверенность не ниже порога `threshold`. */
-  confirmed: boolean;
-  /** Кто решил: основной судья или запасная модель. */
-  source: "decision" | "fallback";
+  /** Выбранная цель; нет поля у отказа или решения остаться. */
+  to?: string;
+  phase: "judge" | "decision";
+  actor: "model" | "judge" | "server";
+  /** id исходного события с советом; отсутствует при работе без судьи. */
+  adviceId?: string;
+  kind: "claim" | "after_turn";
+  /** null — судья не вызывался или не ответил; различаются по decision. */
+  judge: JudgeVerdict | null;
+  decision: "advice" | "rejected" | "unavailable" | "with_advice" | "against_advice" | "without_judge" | "stayed" | "not_selected" | "protected" | "blocked";
+  modelWhy?: string;
+  at: number;
 }
 
+export type { FlowTransitionMode } from "../engine/flow-run";
+
 export interface JudgeSettings {
+  /** Текстовый судья вместо decision-модели: возвращает probability и reason для каждого условия. */
+  textModel?: ModelChoice;
   /** С какой уверенности переходить. По умолчанию 0.7. */
   threshold?: number;
   /** Основной судья. По умолчанию `microsoft/microsoft-decision-1`. */
@@ -184,7 +205,7 @@ export interface FlowJudgeEntry {
   model: string;
   threshold: number;
   /** Кто ответил; `null` — ни основной судья, ни запасная модель. */
-  source: "decision" | "fallback" | null;
+  source: "decision" | "fallback" | "text" | null;
   goal?: string;
   /** Слова агента при заявке; только в записи с текстами. */
   agentWords?: string;
@@ -217,6 +238,8 @@ export interface FlowJudge {
   }): Promise<JudgeVerdict | null>;
   /** После хода: условия словами, которые выполнены, в порядке `conditions` (своё раньше общего). Пусто — ни одно или не проверено. */
   checkAll(input: {
+    /** Для аудита вернуть и отрицательные ответы; старые реализации могут возвращать только положительные. */
+    includeRejected?: boolean;
     ownerId: string;
     chatId: string;
     /** Цель состояния. */
@@ -590,6 +613,10 @@ export interface AgentFlowOptions {
   /** `memoryFlowStore()`, `sqliteFlowStore(path)`, `postgresFlowStore(pool)`. */
   store: FlowStore;
   judge: JudgeSettings;
+  /** Умолчание для новых запусков; loadFlow/adopt могут переопределить. Сохраняется с запуском. */
+  transitionMode?: FlowTransitionMode;
+  /** Аудит решений, включая фонового судью. id стабилен для дедупликации повторной доставки. */
+  onTransitionDecision?: (event: FlowTransitionDecision) => void | Promise<void>;
   /** Правила «писать первым». По умолчанию тихие часы 21:00–09:00 и не больше 3 в сутки; `false` — без ограничений; «не сейчас» — `canWriteNow`. */
   firstMessages?: FirstMessagesSetting;
   onTransition?: (event: FlowTransitionEvent) => void | Promise<void>;

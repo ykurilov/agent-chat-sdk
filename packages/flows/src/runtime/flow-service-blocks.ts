@@ -7,6 +7,8 @@ import type { ServiceBlockFormat } from "@ykurilov/agent-chat-core";
  * у неё нет надёжной последней строки, а вырезка до пустой строки оставила бы на экране её середину.
  */
 export const FLOW_SERVICE_BLOCKS: readonly ServiceBlockFormat[] = [
+  { name: "flow_policy", line: "[flow:policy]", match: /^\[flow:policy\]$/, until: /^\[\/flow:policy\]$/ },
+  { name: "flow_advice", line: "[flow:advice]", match: /^\[flow:advice\]$/, until: /^\[\/flow:advice\]$/ },
   // `transitionNotice`: «Сработало: тишина 3 ч → «Напоминание».»
   { name: "flow_transition", line: "Сработало: ", match: /^Сработало: .+ → «[^»\n]*»\.$/ },
   // Ответ `flow_exit`: «Переход: «А» → «Б». Состояние сменилось, …»

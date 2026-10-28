@@ -1,3 +1,4 @@
+import { compactVerdict, decisionAppEvent, decisionEvent, publishDecision, validateTransitionMode } from "./transition-policy";
 import { FLOW_SERVICE_BLOCKS } from "./flow-service-blocks";
 import { confirmationHash, createConfirmations, type FlowRevokeConfirmationInput, type FlowRevokeConfirmationResult } from "./confirmations";
 import { judgeConfirmations } from "./confirmation-judge";
@@ -155,6 +156,7 @@ function turnWindow(messages: readonly HistoryMessage[], run: FlowRun, answer: {
 
 /** Сборка сценария с подменяемыми модулями. Приложению — `createAgentFlow`. */
 export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules = {}): BuiltAgentFlow {
+  validateTransitionMode(options.transitionMode);
   const { store } = options;
   // Условия хранилища (аренда, условная замена доставки) — договор, а не пожелание: без признака сценарий не запускается.
   if ((store as { guarded?: unknown } | undefined)?.guarded !== true) {
@@ -275,9 +277,9 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
         cardValues: (ownerId) => runtime.cardValues(ownerId),
         onDeadline: deadlineReached,
         onAppliedTransitions: ({ record, flow, run, transitions }) =>
-          runtime.afterTransitions({ ownerId: record.ownerId, chatId: record.chatId, pinned: { flowId: record.flowId, versionId: record.versionId, flow }, run, transitions }),
+          runtime.afterTransitions({ ownerId: record.ownerId, chatId: record.chatId, pinned: { flowId: record.flowId, versionId: record.versionId, flow, transitionMode: record.transitionMode ?? "rails" }, run, transitions }),
         onGiveUp: async ({ record, flow, run, at }) => {
-          await finish().end({ ownerId: record.ownerId, chatId: record.chatId, pinned: { flowId: record.flowId, versionId: record.versionId, flow }, run, reason: "abandoned", at });
+          await finish().end({ ownerId: record.ownerId, chatId: record.chatId, pinned: { flowId: record.flowId, versionId: record.versionId, flow, transitionMode: record.transitionMode ?? "rails" }, run, reason: "abandoned", at });
         },
         delivery,
       }),
@@ -388,6 +390,7 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
    * перезапуск сервера. Счёт дня старой системы ложится в счётчики сразу. Ошибка — в `fail`, чат без сценария.
    */
   async function pinLoaded(ownerId: string, chatId: string, loaded: LoadedFlow, fail: (problem: string) => void): Promise<{ pinned: PinnedFlow; record: FlowChatRecord } | null> {
+    const transitionMode = validateTransitionMode(loaded.transitionMode ?? options.transitionMode);
     const checked = flowOrProblem(loaded.flowId, loaded.versionId, loaded.flow);
     if ("problem" in checked) return void fail(checked.problem), null;
     const { flow } = checked;
@@ -416,6 +419,7 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
       flowId: loaded.flowId,
       versionId: loaded.versionId,
       stateId: loaded.stateId ?? flow.start!,
+      transitionMode,
       // Пояс узнаёт первый ход со страницы; до того — пояс приложения или сервера (→ В10).
       timeZone: loaded.timeZone ?? UNKNOWN_TIME_ZONE,
       ...(moved && {
@@ -430,11 +434,12 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
       }),
       at: iso(),
     });
+    if (transitionMode !== "rails" && record.transitionMode === undefined) throw new Error("FlowStore.pinChat должен сохранять transitionMode для advisor/free");
     const pinnedFlow = await versionFlow(record.flowId, record.versionId);
     if (!pinnedFlow) return null;
     if (loaded.timeZone) await timeZones.write(ownerId, chatId, loaded.timeZone);
     await carryToday(ownerId, chatId, pinnedFlow, today, at);
-    return { pinned: { flowId: record.flowId, versionId: record.versionId, flow: pinnedFlow }, record };
+    return { pinned: { flowId: record.flowId, versionId: record.versionId, flow: pinnedFlow, transitionMode: record.transitionMode ?? "rails" }, record };
   }
 
   /** Что уже было сегодня в старой системе: сообщения первым — в потолок дня (без двойного счёта), закрытый день. */
@@ -497,7 +502,7 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
   /** Таймер «срок вышел»: конец разговора, затем прощание по правилам «писать первым» (→ В5). */
   async function deadlineReached({ record, flow, run, at, timeZone }: { record: FlowChatRecord; flow: AgentFlow; run: ChatFlowRun; at: number; timeZone: string }): Promise<void> {
     const { ownerId, chatId } = record;
-    const pinned: PinnedFlow = { flowId: record.flowId, versionId: record.versionId, flow };
+    const pinned: PinnedFlow = { flowId: record.flowId, versionId: record.versionId, flow, transitionMode: record.transitionMode ?? "rails" };
     const { ended } = await finish().deadline({ ownerId, chatId, pinned, run, at, timeZone });
     remember(chatId, { ...pinned, ended: true });
     if (ended) await finish().farewell({ ownerId, chatId, pinned, run, at, timeZone, port: await portOf(record), firstMessages: firstMessages(), delivery: delivery() });
@@ -508,7 +513,7 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
     if (record) {
       const flow = await versionFlow(record.flowId, record.versionId);
       if (!flow) logError(`[сценарий] чат=${chatId}: версии ${record.flowId}@${record.versionId} нет в хранилище`);
-      return remember(chatId, flow ? { flowId: record.flowId, versionId: record.versionId, flow, ...(record.endedAt !== null && { ended: true }) } : null);
+      return remember(chatId, flow ? { flowId: record.flowId, versionId: record.versionId, flow, transitionMode: record.transitionMode ?? "rails", ...(record.endedAt !== null && { ended: true }) } : null);
     }
     if (!chat) return null;
     let pinned = pinning.get(chatId);
@@ -521,6 +526,12 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
 
   const runtime: FlowRuntime = {
     confirmations,
+    judgeThreshold: options.judge.threshold ?? 0.7,
+    async reportDecision(event) {
+      if (!options.onTransitionDecision) return;
+      try { await options.onTransitionDecision(event); }
+      catch (error) { logError(`[сценарий] чат=${event.chatId} onTransitionDecision: ${errorText(error)}`); }
+    },
     store,
     now,
     logError,
@@ -662,21 +673,33 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
     if (run.chain > 0) return;
     const state = stateById(pinned.flow, run.state);
     if (!state || isFinal(state)) return;
-    const conditions = judgeExits(pinned.flow, run.state);
+    const mode = validateTransitionMode(pinned.transitionMode);
+    let conditions = judgeExits(pinned.flow, run.state);
     const withConfirmations = confirmations.forState(pinned.flowId, run.state).length > 0 || conditions.some(({ exitId }) => confirmations.guardFor(pinned.flowId, run.state, exitId));
     if (conditions.length === 0 && !withConfirmations) return;
     if (withConfirmations) {
-      const checked = await judgeConfirmations({ confirmations, pinned, run, result, port: service, atMessageId, judge: judge(), threshold: options.judge.threshold ?? 0.7,
+      const checked = await judgeConfirmations({ mode, confirmations, pinned, run, result, port: service, atMessageId, judge: judge(), threshold: options.judge.threshold ?? 0.7,
+        onVerdict: verdict => publishDecision(runtime, decisionEvent({ ownerId, chatId, turnId: messageId, pinned, run, exitId: verdict.exitId,
+          phase: "judge", kind: "after_turn", decision: "advice", judge: verdict, at: now(), key: "after_turn:judge" })),
         now: chatTime(run, now()), conditions, goal: stateGoal(state.instructions), messages: await history(ownerId, chatId, { run, answer: { id: messageId, parts: result.parts } }) });
-      if (!checked.saved || !checked.transition) return;
-      const transition = checked.transition;
-      if (!confirmations.guardFor(pinned.flowId, run.state, transition.exitId)) await store.addPending(chatId, { kind: "transition", key: `judge:${messageId}`, transition, branchHead: messageId });
-      const first = exactFirstText(pinned.flow, transition.to);
-      if (first) await deliverFirstText(ownerId, chatId, messageId, conditions.find((item) => item.exitId === transition.exitId)!.text, first, Boolean(confirmations.guardFor(pinned.flowId, run.state, transition.exitId)));
-      return;
+      if (!checked.saved) return;
+      if (checked.transition) {
+        const transition = checked.transition;
+        await publishDecision(runtime, decisionEvent({ ownerId, chatId, turnId: messageId, pinned, run, exitId: transition.exitId, to: transition.to,
+          phase: "decision", kind: "after_turn", decision: confirmations.guardFor(pinned.flowId, run.state, transition.exitId) ? "protected" : "with_advice",
+          judge: checked.verdict ?? null, at: now(), key: "after_turn:decision", ...(checked.verdict && { adviceId: `${messageId}:after_turn:judge:${transition.exitId}` }) }));
+        if (!confirmations.guardFor(pinned.flowId, run.state, transition.exitId)) await store.addPending(chatId, { kind: "transition", key: `judge:${messageId}`, transition, branchHead: messageId });
+        const first = exactFirstText(pinned.flow, transition.to);
+        if (first) await deliverFirstText(ownerId, chatId, messageId, conditions.find((item) => item.exitId === transition.exitId)!.text, first, Boolean(confirmations.guardFor(pinned.flowId, run.state, transition.exitId)));
+        return;
+      }
+      if (mode === "rails") return;
     }
-
+    if (mode === "free") return;
+    conditions = conditions.filter(({ exitId }) => !confirmations.guardFor(pinned.flowId, run.state, exitId));
+    if (conditions.length === 0) return;
     const verdicts = await judge().checkAll({
+      includeRejected: true,
       ownerId,
       chatId,
       goal: stateGoal(state.instructions),
@@ -685,13 +708,46 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
       // Сдвиг часов есть только у тестового чата редактора.
       ...(run.timeOffset !== undefined && { testChat: true }),
     });
+    for (const verdict of verdicts) await publishDecision(runtime, decisionEvent({ ownerId, chatId, turnId: messageId, pinned, run,
+      exitId: verdict.exitId, phase: "judge", kind: "after_turn", decision: "advice", judge: verdict, at: now(), key: "after_turn:judge" }));
+    if (mode === "advisor") {
+      const positive = verdicts.filter(verdict => verdict.confirmed && conditions.some(item => item.exitId === verdict.exitId)).map(compactVerdict);
+      if (positive.length) await store.addPending(chatId, { kind: "advice", key: `advice:${messageId}`, versionId: pinned.versionId, from: run.state, branchHead: messageId, verdicts: positive });
+      return;
+    }
     const met = conditions.map(({ exitId }) => verdicts.find((verdict) => verdict.exitId === exitId && verdict.confirmed)).find(Boolean);
     if (!met) return;
     const transition = nextTransition(pinned.flow, run, { type: "verdict", exitId: met.exitId, probability: met.probability, decidedBy: "judge" }, chatTime(run, now()));
     if (!transition) return;
     await store.addPending(chatId, { kind: "transition", key: `judge:${messageId}`, transition, branchHead: messageId });
+    await publishDecision(runtime, decisionEvent({ ownerId, chatId, turnId: messageId, pinned, run, exitId: met.exitId, to: transition.to,
+      phase: "decision", kind: "after_turn", decision: "with_advice", judge: met, at: now(), key: "after_turn:decision", adviceId: `${messageId}:after_turn:judge:${met.exitId}` }));
     const first = exactFirstText(pinned.flow, transition.to);
     if (first) await deliverFirstText(ownerId, chatId, messageId, conditions.find((item) => item.exitId === met.exitId)!.text, first);
+  }
+
+  /** Конец полного хода отличает принятое решение остаться от ещё не обработанного совета. */
+  async function unusedAdvice(result: TurnResult) {
+    if (result.status !== "complete" || result.trigger === null || result.trigger === "notice") return [];
+    const pinned = await chatFlow(result.ownerId, result.chatId);
+    if (!pinned || pinned.transitionMode !== "advisor") return [];
+    const snapshot = await (await portOf(result)).getChatState(result.ownerId, result.chatId);
+    const run = storedRun(snapshot.values[FLOW_STATE_KEY]);
+    if (!run || run.answerId !== result.messageId) return [];
+    const pending = new Map<string, { state: string; verdict: import("./flow-types").JudgeVerdict; why?: string; adviceId: string }>();
+    if (run.transitionAdvice?.forTurnId === result.messageId) for (const verdict of run.transitionAdvice.verdicts)
+      pending.set(verdict.exitId, { state: run.transitionAdvice.state, verdict, adviceId: `${run.transitionAdvice.sourceTurnId}:after_turn:judge:${verdict.exitId}` });
+    if (run.claimAdvice?.forTurnId === result.messageId) for (const [exitId, item] of Object.entries(run.claimAdvice.claims))
+      pending.set(exitId, { state: run.claimAdvice.state, verdict: item.verdict, why: item.why, adviceId: `${result.messageId}:${item.toolCallId}:judge:${exitId}` });
+    const events = [];
+    for (const [exitId, item] of pending) {
+      const event = decisionEvent({ ownerId: result.ownerId, chatId: result.chatId, turnId: result.messageId, pinned, run: { state: item.state },
+        exitId, phase: "decision", kind: item.why === undefined ? "after_turn" : "claim", decision: item.state === run.state ? "stayed" : "not_selected",
+        judge: item.verdict, modelWhy: item.why, adviceId: item.adviceId, at: now(), key: "unused_advice" });
+      await publishDecision(runtime, event);
+      events.push(decisionAppEvent(event));
+    }
+    return events;
   }
 
   // ---------- Кнопки виджетов ----------
@@ -983,8 +1039,9 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
         afterTurn: async (result: TurnResult) => {
           const own = await chat.afterTurn?.(result);
           await noteAppZone(result, appZone);
+          const decisions = await unusedAdvice(result);
           track(judgeAfterTurn(result));
-          return own;
+          return decisions.length ? { events: [...(own?.events ?? []), ...decisions] } : own;
         },
         ...(chat.replyChecks && { replyChecks: withFlowKnownTexts(chat.replyChecks, (ownerId, chatId) => chatFlow(ownerId, chatId), logError) }),
         onStateChanged: async (input) => {

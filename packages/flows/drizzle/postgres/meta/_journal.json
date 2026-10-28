@@ -29,6 +29,13 @@
       "when": 1792408865798,
       "tag": "0003_chat_reopen",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793174400000,
+      "tag": "0004_transition_mode",
+      "breakpoints": true
     }
   ]
 }

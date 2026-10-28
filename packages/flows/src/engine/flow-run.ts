@@ -9,6 +9,18 @@ export const FLOW_PATH_LIMIT = 50;
 /** Больше стольких переходов подряд без ответа агента — сценарий зациклился, движок останавливается. */
 export const FLOW_CHAIN_LIMIT = 5;
 
+/** Политика обычных выходов словами; защищённые выходы всегда проверяются сервером. */
+export type FlowTransitionMode = "rails" | "advisor" | "free";
+
+/** Реальный ответ судьи. Текстового довода у decision-модели может не быть. */
+export interface FlowJudgeAdvice {
+  exitId: string;
+  confirmed: boolean;
+  probability: number;
+  source: "decision" | "fallback" | "text";
+  reason?: string;
+}
+
 /** Кто решил переход: агент заявил и судья подтвердил, судья сам, данные, событие или таймер. */
 export type TransitionDecider = "claim" | "judge" | "data" | "event" | "timer";
 
@@ -54,6 +66,10 @@ export interface FlowRun {
     answerId: string;
     humanMessageId: string;
   };
+  /** Совет доступен только указанному ответу и текущему состоянию. */
+  transitionAdvice?: { forTurnId: string; sourceTurnId: string; state: string; verdicts: FlowJudgeAdvice[] };
+  /** Отрицательный совет: разрешает явное подтверждение только в том же ходе и месте. */
+  claimAdvice?: { forTurnId: string; state: string; enteredAt: number; claims: Record<string, { verdict: FlowJudgeAdvice; toolCallId: string; why: string }> };
   state: string;
   /** Когда вошли в текущее состояние. */
   enteredAt: number;

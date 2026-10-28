@@ -26,6 +26,7 @@ export interface PinnedFlow {
   flowId: string;
   versionId: string;
   flow: AgentFlow;
+  transitionMode?: import("../engine/flow-run").FlowTransitionMode;
   /** Разговор закончен (`endChat`): инструкция «после конца» вместо правил сценария. */
   ended?: boolean;
 }
@@ -33,6 +34,8 @@ export interface PinnedFlow {
 /** Что общего у частей сценария в службе чата: хранилище, часы, сценарий чата и отчёт о переходах. */
 export interface FlowRuntime {
   confirmations?: import("./confirmations").FlowConfirmations;
+  judgeThreshold?: number;
+  reportDecision?: (event: import("./flow-types").FlowTransitionDecision) => Promise<void>;
   store: FlowStore;
   now(): number;
   logError(message: string): void;

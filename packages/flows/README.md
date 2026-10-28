@@ -7,6 +7,9 @@
 
 Полное описание простыми словами, с примерами и замерами: [docs/flows.md](../../docs/flows.md).
 
+Режим переходов запуска: `rails` (прежнее поведение), `advisor` (совет судьи) или `free` (обычные переходы без судьи).
+[Контракт режимов, текстового судьи и событий для eval](../../docs/flow-transition-modes.md).
+
 ## Подключить
 
 ```bash
@@ -41,6 +44,9 @@ flow.start();
 | `judge.model`, `judge.threshold`, `judge.timeoutMs` | основной судья, порог «выполнено», срок | decision-1, 0,7, 5000 мс |
 | `judge.openrouter` | `{ apiKey, baseUrl, headers }`: свой прокси и его заголовки | из окружения |
 | `firstMessages` | тихие часы, потолок в сутки, `canWriteNow`; `false` — без часов и потолка. `canWriteNow` → `false` — «не сейчас», касание через час, `{ retryAt }` — в свой момент; конец разговора от него не зависит. «Дни и время» сценария главнее | 21:00–09:00, 3 в сутки |
+| `transitionMode` | режим для новых запусков; `loadFlow` может переопределить, закрепляется в чате | `rails` |
+| `judge.textModel` | модель, которая возвращает вероятность и собственный текстовый довод; вместо Decision | выключено |
+| `onTransitionDecision` | решения судьи и модели, включая отказ и переход вопреки совету | — |
 | `onTransition` | каждый переход: `from`, `to`, `exitId`, `decidedBy`, `tags`, `reason`, `day` | — |
 | `onFinish` | конец разговора: `reason` (`final`, `deadline`, `abandoned`, `blocked`), `day`, `state`, `tags`, `run` | — |
 | `clientCard` | карточка клиента в базе приложения: `read`, `write`, `forget` | таблица модуля |

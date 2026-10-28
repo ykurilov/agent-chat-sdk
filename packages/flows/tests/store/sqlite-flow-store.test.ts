@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, cpSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
@@ -107,4 +107,18 @@ describe("сценарии в SQLite", () => {
     await open(filePath).close();
     expect(countRows(filePath, "__flows_migrations")).toBe(applied);
   });
+});
+
+
+it("обновление базы до transitionMode оставляет старые запуски в rails", async () => {
+  const file = freshFile(); const oldFolder = `${file}-old-migrations`;
+  folders.push(oldFolder); cpSync(MIGRATIONS, oldFolder, { recursive: true });
+  const journalPath = join(oldFolder, "meta/_journal.json");
+  const journal = JSON.parse(readFileSync(journalPath, "utf8")); journal.entries = journal.entries.slice(0, 4); writeFileSync(journalPath, JSON.stringify(journal));
+  const old = createSqliteFlowStore(file, oldFolder); await old.close();
+  const raw = new Database(file);
+  expect((raw.pragma("table_info(flow_chats)") as Array<{ name: string }>).some(column => column.name === "transition_mode")).toBe(false);
+  raw.prepare("insert into flow_chats (chat_id,owner_id,flow_id,version_id,state_id,pending,time_zone,updated_at) values (?,?,?,?,?,?,?,?)").run("old", "anna", "flow", "v1", "intro", "[]", "UTC", 0); raw.close();
+  const upgraded = open(file);
+  expect(await upgraded.getChat("old")).toMatchObject({ transitionMode: "rails", stateId: "intro" });
 });

@@ -14,10 +14,12 @@ const messagesOf = (messages: readonly HistoryMessage[]): JudgeMessage[] => mess
 
 /** Положительный check и guarded decision — одна служебная запись до исполнения перехода. */
 export async function judgeConfirmations(input: {
+  mode?: import("../engine/flow-run").FlowTransitionMode;
+  onVerdict?: (verdict: import("./flow-types").JudgeVerdict) => Promise<void>;
   confirmations: FlowConfirmations; pinned: PinnedFlow; run: FlowRun; result: TurnResult;
   port: FlowPort; atMessageId: string | null; judge: FlowJudge; threshold: number; now: number;
   conditions: Array<{ exitId: string; text: string }>; messages: JudgeMessage[]; goal?: string;
-}): Promise<{ transition?: Transition; saved: boolean }> {
+}): Promise<{ transition?: Transition; verdict?: import("./flow-types").JudgeVerdict; saved: boolean }> {
   const { confirmations, pinned, run, result, port } = input;
   const configurationHash = confirmations.revision(pinned.flowId);
   if (run.confirmationCheck?.answerId === result.messageId && run.confirmationCheck.configurationHash === configurationHash) return { saved: true };
@@ -33,9 +35,12 @@ export async function judgeConfirmations(input: {
   const humanMessageId = branch[humanIndex]!.id;
   const records = { ...run.confirmations };
   const onBranch = (record: typeof records[string] | undefined) => record?.status === "confirmed" && branch.some((message) => message.id === record.source.answerId) && branch.some((message) => message.id === record.source.humanMessageId);
-  const query = async (conditions: Array<{ exitId: string; text: string }>, messages: JudgeMessage[]) => input.judge.checkAll({
-    ...scope, conditions, messages, ...(input.goal && { goal: input.goal }), ...(run.timeOffset !== undefined && { testChat: true }),
-  });
+  const query = async (conditions: Array<{ exitId: string; text: string }>, messages: JudgeMessage[]) => {
+    const verdicts = await input.judge.checkAll({ ...scope, conditions, messages, includeRejected: true,
+      ...(input.goal && { goal: input.goal }), ...(run.timeOffset !== undefined && { testChat: true }) });
+    for (const verdict of verdicts) if (input.conditions.some(condition => condition.exitId === verdict.exitId)) await input.onVerdict?.(verdict);
+    return verdicts;
+  };
   for (const spec of confirmations.forState(scope.flowId, run.state)) {
     const old = records[spec.key];
     if (confirmationHolds(old, spec, scope) && onBranch(old)) continue;
@@ -56,7 +61,7 @@ export async function judgeConfirmations(input: {
       source: { kind: "judge", versionId: pinned.versionId, answerId: result.messageId, humanMessageId, probability: verdict.probability } };
   }
   const next: FlowRun = { ...run, confirmationCheck: { answerId: result.messageId, configurationHash }, ...(Object.keys(records).length && { confirmations: records }) };
-  const ordinary = input.conditions.filter((condition) => !confirmations.guardFor(scope.flowId, run.state, condition.exitId));
+  const ordinary = input.mode && input.mode !== "rails" ? [] : input.conditions.filter((condition) => !confirmations.guardFor(scope.flowId, run.state, condition.exitId));
   const guarded = input.conditions.filter((condition) => {
     const guard = confirmations.guardFor(scope.flowId, run.state, condition.exitId);
     if (!guard) return false;
@@ -76,11 +81,11 @@ export async function judgeConfirmations(input: {
     if (guard) next.checkedTransition = { versionId: pinned.versionId, transition, requires: guard.requires, criterionHash: confirmationHash(confirmations.specFor(scope.flowId, guard.requires)!), answerId: result.messageId, humanMessageId };
   }
   const changed = JSON.stringify(next) !== JSON.stringify(run);
-  if (!changed) return { ...(transition && { transition }), saved: true };
+  if (!changed) return { ...(transition && { transition, verdict: met! }), saved: true };
   for (const wait of [0, 10, 50, 100, 250, 500, 1000]) {
     if (wait) await new Promise((resolve) => setTimeout(resolve, wait));
     const saved = await commit({ ...scope, revision: confirmations.revision(scope.flowId), expectedAtMessageId: input.atMessageId, idempotencyKey: `judge:${result.messageId}`, flow: next as unknown as Record<string, unknown> });
-    if (saved.status === "applied" || saved.status === "same") return { ...(transition && { transition }), saved: true };
+    if (saved.status === "applied" || saved.status === "same") return { ...(transition && { transition, verdict: met! }), saved: true };
     if (saved.status !== "busy") return { saved: false };
   }
   return { saved: false };
