@@ -40,7 +40,7 @@
 .oduvanchik-confirm > p:first-child { color: var(--yk-accent-text); }
 .oduvanchik-confirm dd { font-family: var(--yk-font-sans); }
 .oduvanchik-composer-wrap { padding-bottom: max(12px, var(--agent-chat-safe-area-bottom,env(safe-area-inset-bottom))); }
-.oduvanchik-composer textarea { font-size: 15px; line-height: 1.5; color: var(--yk-text); background: transparent; }
+.oduvanchik-composer textarea { font-size: var(--yk-studio-composer-size, 15px); line-height: 1.5; color: var(--yk-text); background: transparent; }
 .oduvanchik-composer textarea::placeholder { color: var(--yk-muted); }
 .oduvanchik-composer textarea:focus { outline: none; }
 .oduvanchik-message-editor:focus-within { border-color: var(--yk-accent); box-shadow: 0 0 0 3px var(--yk-accent-soft); }
@@ -53,7 +53,7 @@
 }
 .oduvanchik-field { display: flex; flex-direction: column; width: 100%; min-width: 0; padding: 12px 8px 8px 12px; border: 1px solid var(--yk-border-strong); border-radius: 16px; background: var(--yk-surface); gap: 8px; }
 .oduvanchik-field:focus-within { border-color: var(--yk-accent); }
-.oduvanchik-field textarea { display: block; resize: none; width: 100%; min-width: 0; max-height: 180px; border: 0; padding: 0 4px 0 0; font: inherit; caret-color: var(--yk-accent); }
+.oduvanchik-field textarea { display: block; resize: none; width: 100%; min-width: 0; max-height: 180px; border: 0; padding: 0 4px 0 0; font: inherit; font-size: var(--yk-studio-composer-size, inherit); caret-color: var(--yk-accent); }
 .oduvanchik-field .oduvanchik-field-bar { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .oduvanchik-field-bar select { min-width: 0; max-width: 150px; border: 1px solid var(--yk-border); border-radius: 6px; background: var(--yk-surface); color: var(--yk-muted); padding: 4px; font-size: 11px; }
 .oduvanchik-field-tool, .oduvanchik-field-send { display: grid; place-items: center; flex: none; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 9px; }
@@ -160,7 +160,7 @@
 /* Studio: DS role tokens, scoped to this skin. ScrollArea owns the only feed scroll root. */
 .oduvanchik-thread-root { height: 100%; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 .oduvanchik-thread-scroll { padding-inline-start: var(--yk-studio-scrollbar-gap); }
-.oduvanchik-thread { padding: 24px 0 12px; font-size: var(--yk-studio-body-size); line-height: var(--yk-studio-body-line-height); }
+.oduvanchik-thread { padding: 24px 0 12px; font-size: var(--yk-studio-body-size, 15px); line-height: var(--yk-studio-body-line-height); }
 .oduvanchik-thread .oduvanchik-agent-body { line-height: var(--yk-studio-body-line-height); }
 .oduvanchik-thread .tandem-markdown { font-size: inherit; line-height: inherit; }
 .oduvanchik-thread .oduvanchik-agent > div { max-width: 100%; }
@@ -258,4 +258,17 @@
 .oduvanchik-field-send + .oduvanchik-field-send { margin-left: 4px; }
 
 /* iOS must not auto-zoom editable chat text on focus. Pinch zoom remains available. */
-@media (max-width: 48rem) { .oduvanchik-field textarea, .oduvanchik-composer textarea { font-size: max(16px, 1em); } }
+@media (max-width: 48rem) { .oduvanchik-field textarea, .oduvanchik-composer textarea { font-size: max(16px, var(--yk-studio-composer-size, 1em)); } }
+
+
+/* A narrow application panel keeps the host body scale on wide monitors.
+   Full-screen chat retains its existing 1600px breakpoint. */
+.oduvanchik-agent-panel .oduvanchik-thread { font-size: var(--yk-studio-body-size, 15px); }
+.oduvanchik-agent-panel > .oduvanchik-agent-panel-header { height: var(--yk-studio-panel-header-height, 57px); flex-shrink: 0; }
+.oduvanchik-agent-panel-header > .oduvanchik-agent-panel-control { height: var(--yk-studio-panel-control-size, 44px); min-height: var(--yk-studio-panel-control-size, 44px); min-width: var(--yk-studio-panel-control-size, 44px); }
+.oduvanchik-agent-panel-header > .oduvanchik-agent-panel-close { width: var(--yk-studio-panel-control-size, 44px); padding: 0; }
+@media (pointer: coarse) {
+  .oduvanchik-agent-panel > .oduvanchik-agent-panel-header { height: max(44px, var(--yk-studio-panel-header-height, 57px)); }
+  .oduvanchik-agent-panel-header > .oduvanchik-agent-panel-control { height: max(44px, var(--yk-studio-panel-control-size, 44px)); min-height: 44px; min-width: 44px; }
+  .oduvanchik-agent-panel-header > .oduvanchik-agent-panel-close { width: max(44px, var(--yk-studio-panel-control-size, 44px)); }
+}

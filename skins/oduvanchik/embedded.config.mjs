@@ -31,6 +31,9 @@ export function scopeEmbeddedCss(css) {
 
   });
   root.walkDecls(decl => {
+    // Scoped token defaults must not shadow the host's inherited body size.
+    // The skin's font-size declarations provide the standalone 15px fallback.
+    if (decl.prop === '--yk-studio-body-size' && decl.parent.type === 'rule' && decl.parent.selector.includes(':root')) decl.value = 'inherit';
     if (decl.prop === 'font' || decl.prop === 'font-family' || decl.prop.startsWith('--font-')) {
       for (const [name, renamed] of fonts) decl.value = decl.value.replaceAll(name, renamed);
     }

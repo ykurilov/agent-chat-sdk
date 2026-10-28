@@ -90,20 +90,19 @@ export function OduvanchikAgentPanel({
         data-mode={mode}
         onKeyDown={handleKeyDown}
         style={{ "--agent-panel-width": `${width}px` } as CSSProperties}
-        className={cn("oduvanchik-chat",
+        className={cn("oduvanchik-chat oduvanchik-agent-panel",
           "fixed inset-y-0 right-0 z-40 w-full min-w-0 flex-col overflow-x-hidden border-l border-[var(--border)] bg-[var(--surface)] min-[641px]:w-[var(--agent-panel-width)]",
           mode === "overlay" && "shadow-xl",
           open ? "flex" : "hidden",
         )}
       >
-        <header className="flex items-center gap-1 border-b border-[var(--border)] px-2 py-1.5">
+        <header className="oduvanchik-agent-panel-header flex items-center gap-1 border-b border-[var(--border)] px-2">
           <Button
             variant="ghost"
             size="md"
             aria-expanded={listOpen}
             onClick={() => onListOpenChange(!listOpen)}
-            style={{ minHeight: 44 }}
-            className="shrink-0"
+            className="oduvanchik-agent-panel-control shrink-0"
           >
             {listOpen ? <ArrowLeft aria-hidden="true" /> : <List aria-hidden="true" />}
             {listOpen ? labels.agentPanelBackToChat : labels.agentPanelChats}
@@ -114,8 +113,7 @@ export function OduvanchikAgentPanel({
             size="icon"
             aria-label={labels.agentPanelClose}
             onClick={onClose}
-            style={{ minWidth: 44, minHeight: 44 }}
-            className="shrink-0"
+            className="oduvanchik-agent-panel-control oduvanchik-agent-panel-close shrink-0"
           >
             <X aria-hidden="true" />
           </Button>

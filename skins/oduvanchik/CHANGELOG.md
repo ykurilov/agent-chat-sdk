@@ -6,6 +6,17 @@
 - Обновление приложения: обновить пакеты SDK одной версией после выпуска, пересобрать и убрать временные подмены значков. API и CSS-импорты прежние, миграций нет.
 
 
+## 0.89.1
+
+### Patch Changes
+
+- df67bea: Панель чата Одуванчика сохраняет размер текста приложения и на широком мониторе: лента внутри AgentPanel использует --yk-studio-body-size вместо принудительных 16px. Размер поля ввода настраивается через --yk-studio-composer-size. Высота шапки и кнопок панели — --yk-studio-panel-header-height (по умолчанию 57px) и --yk-studio-panel-control-size (44px). На сенсорных экранах кнопки остаются не меньше 44px, а поле на узком экране — не меньше 16px против автозума iOS. Работает и с embedded.css.
+  
+  Как обновить приложение: обновить все пакеты SDK одной версией. Для компактной шапки задать переменные на родителе панели: --yk-studio-body-size:14px; --yk-studio-composer-size:14px; --yk-studio-panel-header-height:36px; --yk-studio-panel-control-size:28px. Полноэкранный чат без настроек не меняется. Подробности — README скина, «Плотность панели в приложении».
+- @ykurilov/agent-chat-flows@0.89.1
+  - @ykurilov/agent-chat-react@0.89.1
+  - @ykurilov/agent-chat-sandbox@0.89.1
+
 ## 0.89.0
 
 ### Patch Changes

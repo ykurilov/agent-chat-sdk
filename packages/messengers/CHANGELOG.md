@@ -1,5 +1,12 @@
 # @ykurilov/agent-chat-messengers
 
+## 0.89.1
+
+### Patch Changes
+
+- @ykurilov/agent-chat-core@0.89.1
+  - @ykurilov/agent-chat-react@0.89.1
+
 ## 0.89.0
 
 ### Patch Changes

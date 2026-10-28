@@ -47,3 +47,10 @@ describe('embedded CSS target scoping', () => {
   expect(css).not.toContain(':after:is(');
   expect(css).toContain('*)::backdrop');
  });
+
+ it('inherits host body typography instead of reinstalling a scoped default', () => {
+  const css=scopeEmbeddedCss(':root{--yk-studio-body-size:15px;--yk-studio-body-line-height:1.8}.local{--yk-studio-body-size:14px}');
+  expect(css).toContain('--yk-studio-body-size:inherit');
+  expect(css).toContain('--yk-studio-body-size:14px');
+  expect(css).toContain('--yk-studio-body-line-height:1.8');
+ });
