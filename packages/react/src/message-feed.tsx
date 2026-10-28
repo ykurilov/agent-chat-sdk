@@ -52,6 +52,7 @@ export interface MessageFeedHandle {
 }
 
 export interface MessageFeedProps {
+  onLoadOlder?: (() => Promise<boolean>) | undefined;
   /** Скроллер скина: элемент, который прокручивается. */
   scrollRef: RefObject<HTMLElement | null>;
   messages: AgentChatMessage[];
@@ -94,7 +95,7 @@ function isTextField(target: EventTarget | null): boolean {
  * за растущим ответом, а после шага читателя вверх (колесо, касание, клавиша) стоит на месте.
  * Снова прилипает, когда читатель вернулся к низу ближе чем на 96 px.
  */
-function MessageFeedView({ scrollRef, messages, renderMessage, keepLastMounted, openAtMessageId, keepMountedMessageId, ref }: MessageFeedProps) {
+function MessageFeedView({ onLoadOlder, scrollRef, messages, renderMessage, keepLastMounted, openAtMessageId, keepMountedMessageId, ref }: MessageFeedProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const virtualizerRef = useRef<VirtualizerHandle>(null);
   const stuck = useRef(true);
@@ -106,6 +107,10 @@ function MessageFeedView({ scrollRef, messages, renderMessage, keepLastMounted, 
   }, []);
   // Высота списка при прошлой проверке: рост и прокрутка приходят в одном кадре, и отход от низа
   // надо мерить и по новой высоте, и по прежней, иначе рост сам «отодвигает» читателя от низа.
+  const older = useRef(onLoadOlder); older.current = onLoadOlder;
+  const firstItem = useRef(messages[0]?.id);
+  const prepended = firstItem.current !== messages[0]?.id && messages.some(message => message.id === firstItem.current);
+  useLayoutEffect(() => { firstItem.current = messages[0]?.id; }, [messages]);
   const lastHeight = useRef(0);
   const lastTop = useRef(0);
   // Рост может прийти до отложенного native scroll: перед доводкой низа
@@ -190,6 +195,7 @@ function MessageFeedView({ scrollRef, messages, renderMessage, keepLastMounted, 
       // Если перед шагом был ввод читателя, вёрстка ни при чём: иначе читатель боролся бы с лентой.
       const now = performance.now();
       const readerActed = now < readerInputUntil.current || now < userJumpUntil.current;
+      if (top < 160 && step < 0 && readerActed) void older.current?.();
       const anchorShift = anchor && scroller.contains(anchor.element)
         ? anchor.element.getBoundingClientRect().top - scroller.getBoundingClientRect().top + top - anchor.offset
         : 0;
@@ -401,6 +407,7 @@ function MessageFeedView({ scrollRef, messages, renderMessage, keepLastMounted, 
           ref={virtualizerRef}
           scrollRef={scrollRef}
           data={messages}
+          shift={prepended}
           itemSize={UNMEASURED_MESSAGE_HEIGHT_PX}
           bufferSize={positioned ? BUFFER_PX : 0}
           item={FeedItem}

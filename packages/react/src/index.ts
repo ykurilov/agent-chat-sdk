@@ -147,3 +147,5 @@ export { voiceAnswerIds } from "./voice-turn";
 export type { SplitVoiceTags, VoiceTagMatch, VoiceTagOptions } from "./voice-tags";
 export { ChatAppViewport, useChatViewport } from "./viewport/chat-app-viewport";
 export type { ChatAppViewportProps } from "./viewport/chat-app-viewport";
+
+export type { FeedChange, FeedChangeKind, HistoryView, HistoryPartReference } from "./history-view";

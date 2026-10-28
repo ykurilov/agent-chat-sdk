@@ -1,0 +1,6 @@
+@import "tailwindcss";
+@import "@tandem/ui/styles.css";
+@import "@ykurilov/agent-chat-skin-oduvanchik/styles.css";
+@source "../../../skins/tandem/src";
+@source "../../../skins/oduvanchik/src";
+html,body,#root{height:100%;margin:0;overflow:hidden}

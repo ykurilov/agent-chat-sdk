@@ -16,7 +16,7 @@ export type WorkStep =
  * Часть ответа для раскладки: то, что видно как обычно (`blank` — пустой текст, модель только начала писать), или шаг
  * работы. `key` шага — ключ части ответа: по первому шагу группы хранится раскрытие свёрнутой строки.
  */
-export type AnswerEntry<Node> = { kind: "shown"; node: Node; blank?: boolean } | { kind: "step"; key: string; step: WorkStep };
+export type AnswerEntry<Node> = { kind: "shown"; node: Node; blank?: boolean } | { kind: "step"; key: string; step: WorkStep; node?: Node };
 
 /** Строка списка шагов. */
 export interface WorkStepLine {
@@ -36,7 +36,7 @@ export const STEP_ICON_ROW_MAX = 8;
 export type WorkLayoutItem<Node> =
   | { kind: "shown"; node: Node }
   | { kind: "live"; key: string; phrase: string; icon: StepIcon; completed?: WorkStepItem[] }
-  | { kind: "done"; key: string; steps: WorkStepLine[]; count: number; items: WorkStepItem[]; icons: StepIcon[]; moreIcons: number };
+  | { kind: "done"; key: string; details?: Node[]; steps: WorkStepLine[]; count: number; items: WorkStepItem[]; icons: StepIcon[]; moreIcons: number };
 
 interface LayoutOptions {
   /** Ответ ещё пишется: последняя группа шагов — живая строка. */
@@ -68,6 +68,7 @@ export function workLayoutOf<Node>(entries: AnswerEntry<Node>[], { streaming, ph
       continue;
     }
     const group: WorkStep[] = [];
+    const details: Node[] = [];
     const blanks: WorkLayoutItem<Node>[] = [];
     const key = entry.key;
     let lastStep = index;
@@ -75,6 +76,7 @@ export function workLayoutOf<Node>(entries: AnswerEntry<Node>[], { streaming, ph
       const next = entries[index]!;
       if (next.kind === "step") {
         group.push(next.step);
+        if (next.node !== undefined) details.push(next.node);
         lastStep = index;
       } else if (next.blank) blanks.push({ kind: "shown", node: next.node });
       else break;
@@ -85,7 +87,7 @@ export function workLayoutOf<Node>(entries: AnswerEntry<Node>[], { streaming, ph
       layout.push({ kind: "live", key, phrase: labels.live(live.phrase), icon: live.icon, ...(completed.length > 0 && { completed }) });
     } else {
       const done = doneLinesOf(thoughts ? group : group.filter((step) => step.kind === "tool"), phrases, labels, !streaming);
-      if (done.count > 0) layout.push({ kind: "done", key, ...done });
+      if (done.count > 0) layout.push({ kind: "done", key, ...done, ...(details.length && { details }) });
     }
     layout.push(...blanks);
   }

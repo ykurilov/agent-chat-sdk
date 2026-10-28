@@ -12,8 +12,8 @@ const isReservedPath = (path: string): boolean => path.startsWith("$");
 const isObject = (value: unknown): value is ChatStateValues => typeof value === "object" && value !== null && !Array.isArray(value);
 
 /** Свёртка записей состояния показанной ветки по порядку: в записи сначала `unset`, потом `set`. */
-export function foldChatState(messages: ReadonlyArray<{ parts: ReadonlyArray<{ type: string }> }>): ChatStateValues {
-  let values: ChatStateValues | undefined;
+export function foldChatState(messages: ReadonlyArray<{ parts: ReadonlyArray<{ type: string }> }>, base?: ChatStateValues): ChatStateValues {
+  let values: ChatStateValues | undefined = base ? structuredClone(base) : undefined;
   for (const message of messages) {
     for (const part of message.parts) {
       if (part.type !== APP_STATE_PART_TYPE) continue;

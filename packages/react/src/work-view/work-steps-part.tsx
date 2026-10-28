@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { usePartOpen } from "../expanded-parts";
 import type { ExpandedParts } from "../expanded-parts";
 import { useChatLabels } from "../labels";
@@ -18,7 +19,7 @@ export function WorkStepsPart({
 }: {
   skin: ChatSkin;
   expanded: ExpandedParts;
-  item: Exclude<WorkLayoutItem<unknown>, { kind: "shown" }>;
+  item: Exclude<WorkLayoutItem<ReactNode>, { kind: "shown" }>;
 }) {
   const labels = useChatLabels();
   const [open, setOpen] = usePartOpen(expanded, `${item.key}:work`);
@@ -26,6 +27,7 @@ export function WorkStepsPart({
     return item.kind === "live" ? (
       <skin.WorkSteps state="live" phrase={item.phrase} icon={item.icon} {...(item.completed && { completed: item.completed })} />
     ) : (
+      <>
       <skin.WorkSteps
         state="done"
         steps={item.steps}
@@ -36,10 +38,12 @@ export function WorkStepsPart({
         open={open}
         onOpenChange={setOpen}
       />
+      {open && item.details}
+      </>
     );
   }
   if (item.kind === "live") return <skin.ToolCallRow toolName={item.phrase} title={item.phrase} state="running" open={false} onOpenChange={keepClosed} />;
   const title = labels.workView.stepsDone(item.count);
   const list = item.steps.map((step) => step.phrase).join("\n");
-  return <skin.ToolCallRow toolName={title} title={title} state="done" output={list} open={open} onOpenChange={setOpen} />;
+  return <><skin.ToolCallRow toolName={title} title={title} state="done" output={list} open={open} onOpenChange={setOpen} />{open && item.details}</>;
 }

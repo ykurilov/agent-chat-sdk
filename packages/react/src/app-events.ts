@@ -52,7 +52,7 @@ export interface AppEventReport {
  * `live: false`: они уже сработали там. Повторная загрузка тех же ответов событие второй раз не даёт; смена чата
  * начинает счёт заново (`AgentChat` к тому же пересоздаёт ленту на каждый чат).
  */
-export function useAppEventReport(chatId: string, loaded: boolean, busy: boolean, messages: readonly AgentChatMessage[], onAppEvent: AppEventHandler | undefined): AppEventReport {
+export function useAppEventReport(chatId: string, loaded: boolean, busy: boolean, messages: readonly AgentChatMessage[], onAppEvent: AppEventHandler | undefined, historical = false): AppEventReport {
   const report = useRef(onAppEvent);
   report.current = onAppEvent;
   const seen = useRef({ chatId, keys: new Set<string>(), initialized: false, liveAnswers: new Set<string>() });
@@ -76,10 +76,10 @@ export function useAppEventReport(chatId: string, loaded: boolean, busy: boolean
         state.keys.add(key);
         const partId = (part as { id?: unknown }).id;
         const copied = typeof partId === "string" && partId.startsWith(COPIED_APP_EVENT_ID_PREFIX);
-        report.current?.(event, { live: !copied && (live || state.liveAnswers.has(message.id)), messageId: message.id });
+        report.current?.(event, { live: !historical && !copied && (live || state.liveAnswers.has(message.id)), messageId: message.id });
       });
     }
-  }, [busy, chatId, loaded, messages]);
+  }, [busy, chatId, loaded, messages, historical]);
 
   return useMemo(() => ({ expectLive: (messageId: string) => void seen.current.liveAnswers.add(messageId) }), []);
 }

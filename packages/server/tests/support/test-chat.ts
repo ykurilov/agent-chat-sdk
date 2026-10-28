@@ -1,6 +1,6 @@
 import { CURRENT_FORMAT_VERSION, createInMemoryChatStorage } from "@ykurilov/agent-chat-core";
 import type { AgentChatMessage, ChatStorage } from "@ykurilov/agent-chat-core";
-import { createChatHandler } from "../../src/chat-handler";
+import { createChatServer } from "../../src/chat-handler";
 import type { ChatHandlerOptions } from "../../src/chat-handler";
 import { mockCatalog, mockEnv, mockModelId } from "./mock-catalog";
 
@@ -15,7 +15,7 @@ export const message = (id: string, text: string) => ({ message: { id, role: "us
 export function createTestChat(options: Partial<ChatHandlerOptions> & { gate?: () => Promise<void> } = {}) {
   const { gate, ...overrides } = options;
   const storage: ChatStorage = options.storage ?? createInMemoryChatStorage();
-  const handler = createChatHandler({
+  const { handler, service } = createChatServer({
     basePath: "/api/chat",
     resolveUser: async (request) => {
       const user = request.headers.get("x-user");
@@ -46,7 +46,7 @@ export function createTestChat(options: Partial<ChatHandlerOptions> & { gate?: (
   async function history(chatId: string) {
     return (await (await call("GET", `/${chatId}`)).json()) as { messages: AgentChatMessage[]; running: boolean };
   }
-  return { handler, storage, call, createChat, history };
+  return { handler, service, storage, call, createChat, history };
 }
 
 /** В базе вопрос `u1` и недописанный ответ: так остаётся ход, оборванный остановкой сервера. */

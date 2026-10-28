@@ -1,3 +1,4 @@
+import type { FeedChange, FeedChangeKind, HistoryView } from "./history-view";
 import { closeStoppedToolCalls } from "./close-stopped-tool-calls";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
@@ -53,6 +54,8 @@ export interface LivenessOptions {
 export type ConnectionState = "online" | "reconnecting" | "offline";
 
 export interface UseAgentChatOptions {
+  /** Browser-only paged history with deferred completed reasoning/tools. Server handle remains full. */
+  history?: "full" | "compact";
   /** Адрес обработчика чата, например `/api/chat`. */
   api: string;
   chatId: string;
@@ -90,6 +93,14 @@ export interface UseAgentChatOptions {
 }
 
 export interface AgentChatState {
+  historyView?: HistoryView;
+  feedChange: FeedChange;
+  loadOlder: () => Promise<boolean>;
+  loadingOlder: boolean;
+  olderFailed: boolean;
+  loadHistoryMessage: (messageId: string) => Promise<boolean>;
+  loadHistoryDetails: (partKey: string) => Promise<boolean>;
+  historyDetailStates: Record<string, "loading" | "error">;
   messages: AgentChatMessage[];
   /** Записи сжатия истории на текущей ветке: на их границах лента рисует разделители. */
   compactions: CompactionMarker[];
@@ -251,6 +262,7 @@ export type EditOutcome =
   | { status: "refused"; reason: EditRefusalReason; text?: string; code?: string; unit?: "messages" };
 
 interface ServerHistory {
+  historyView?: HistoryView;
   chat?: Partial<ChatModelChoice> & { closed?: unknown };
   /** Нет у серверов до 0.27. */
   capabilities?: unknown;
@@ -386,8 +398,27 @@ export function useAgentChat({
   onExpectLiveAppEvents,
   reloadKey,
   steering = false,
+  history: historyMode = "full",
 }: UseAgentChatOptions): AgentChatState {
   const chatUrl = `${api}/${encodeURIComponent(chatId)}`;
+  const [historyView, setHistoryView] = useState<HistoryView>();
+  const historyViewRef = useRef<HistoryView | undefined>(undefined);
+  const historyBoundary = useRef<{ url: string; first?: string }>({ url: chatUrl });
+  const hydrationEpoch = useRef(0);
+  const hydrationRequests = useRef(new Set<AbortController>());
+  const origin = useRef<{ messages: AgentChatMessage[]; kind: FeedChangeKind } | null>(null);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const olderInFlight = useRef<number | null>(null);
+  const [olderFailed, setOlderFailed] = useState(false);
+  const [historyDetailStates, setHistoryDetailStates] = useState<Record<string, "loading" | "error">>({});
+  const detailsInFlight = useRef(new Set<string>());
+  useEffect(() => {
+    hydrationEpoch.current++;
+    historyViewRef.current = undefined; setHistoryView(undefined);
+    historyBoundary.current = { url: chatUrl };
+    setHistoryDetailStates({}); setOlderFailed(false);
+    return () => { hydrationEpoch.current++; for (const request of hydrationRequests.current) request.abort(); hydrationRequests.current.clear(); };
+  }, [chatUrl, historyMode]);
   const [refusal, setRefusal] = useState<ChatRefusal | null>(null);
   const [serverRefusal, setServerRefusal] = useState<ServerRefusal | null>(null);
   const [accessRefusal, setAccessRefusal] = useState<ServerRefusal | null>(null);
@@ -725,7 +756,9 @@ export function useAgentChat({
   const loadHistory = useCallback(
     async (signal?: AbortSignal): Promise<HistoryResult> => {
       try {
-        const response = await fetchWithDeadline(request, chatUrl, undefined, {
+        const query = new URLSearchParams({ history: "compact" });
+        if (historyBoundary.current.url === chatUrl && historyBoundary.current.first) query.set("through", historyBoundary.current.first);
+        const response = await fetchWithDeadline(request, historyMode === "compact" ? `${chatUrl}?${query}` : chatUrl, undefined, {
           timeoutMs: settingsRef.current.requestTimeoutMs,
           wholeBody: true,
           ...(signal && { signal }),
@@ -747,8 +780,17 @@ export function useAgentChat({
         return isConnectionError(error) ? "unreachable" : "server_error";
       }
     },
-    [announceAppRefusal, chatUrl, request],
+    [announceAppRefusal, chatUrl, historyMode, request],
   );
+  // Refresh only the snapshot facts after a live turn; retain hydrated rows and live provenance.
+  const refreshHistoryView = async () => {
+    if (historyMode !== "compact") return;
+    const epoch = hydrationEpoch.current;
+    const history = await loadHistory();
+    if (typeof history === "string" || chatUrlRef.current !== chatUrl || hydrationEpoch.current !== epoch || !history.historyView) return;
+    historyViewRef.current = history.historyView;
+    setHistoryView(history.historyView);
+  };
   refreshAccessRef.current = async () => {
     const asked = chatUrl;
     const history = await loadHistory();
@@ -844,6 +886,7 @@ export function useAgentChat({
         // Ход оборвался (стоп, сбой), а вызов после «Разрешить» так и остался без результата: правду о нём знает сервер.
         if (hasStalledContinuation(messages)) void refreshFromServer(chatLifetime.current.signal);
         void refreshSpending();
+        void refreshHistoryView();
         if (forksMayChange.current) {
           forksMayChange.current = false;
           void refreshForks();
@@ -868,6 +911,20 @@ export function useAgentChat({
       setChatMessages(typeof update === "function" ? (current) => update(withoutResetMessages(current)) : update),
     [setChatMessages],
   );
+  const setHydratedMessages = useCallback((next: AgentChatMessage[], kind: FeedChangeKind) => {
+    messagesRef.current = next;
+    origin.current = { messages: next, kind };
+    setMessages(next);
+  }, [setMessages]);
+  const acceptHistoryView = useCallback((value: ServerHistory) => {
+    hydrationEpoch.current++;
+    for (const request of hydrationRequests.current) request.abort();
+    historyViewRef.current = value.historyView;
+    setHistoryView(value.historyView);
+    historyBoundary.current = { url: chatUrl, first: value.messages[0]?.id };
+    olderInFlight.current = null; setLoadingOlder(false);
+    setHistoryDetailStates({}); setOlderFailed(false);
+  }, [chatUrl]);
   const messagesRef = useRef(shownMessages);
   messagesRef.current = shownMessages;
   const [loaded, setLoaded] = useState(false);
@@ -984,9 +1041,11 @@ export function useAgentChat({
    */
   const applyServerHistory = useCallback(
     async (history: ServerHistory, before: AgentChatMessage[], signal: AbortSignal): Promise<boolean> => {
+      const previousView = historyViewRef.current;
       applyAccess(history);
+      acceptHistoryView(history);
       const shown = withUnsentKept(history);
-      setMessages(history.running ? withWidgetContinuationMarked(withContinuationMarked(shown)) : shown);
+      setHydratedMessages(history.running ? withWidgetContinuationMarked(withContinuationMarked(shown)) : shown, "history");
       setCorrections((current) => {
         const next = correctionsAfterHistory(history.pendingMessages ?? [], shown, current, sendingCorrections.current);
         // Те же поправки — тот же массив: лента не перерисовывается.
@@ -1008,16 +1067,19 @@ export function useAgentChat({
         }
         if (typeof finished !== "string") {
           applyAccess(finished);
-          setMessages(finished.messages);
+          acceptHistoryView(finished);
+          setHydratedMessages(finished.messages, "history");
           setCompactions(finished.compactions ?? []);
           setForks(finished.forks ?? []);
           return true;
         }
       }
-      setMessages(before);
+      historyViewRef.current = previousView; setHistoryView(previousView);
+      historyBoundary.current = { url: chatUrl, first: before[0]?.id };
+      setHydratedMessages(before, "history");
       return false;
     },
-    [applyAccess, loadHistory, resumeWithProbe, setMessages, withUnsentKept],
+    [applyAccess, acceptHistoryView, chatUrl, loadHistory, resumeWithProbe, setMessages, setHydratedMessages, withUnsentKept],
   );
 
   /** Ход не начат: недописанный ответ прерван, а ответ, который заменяло «Повторить», возвращается на место. */
@@ -1714,10 +1776,10 @@ export function useAgentChat({
   // То же состояние — тот же объект: экран не перерисовывается, `onStateChange` не зовётся повторно.
   const lastChatState = useRef<ChatStateValues>(foldChatState([]));
   const chatState = useMemo(() => {
-    const next = watchedChatState?.over === shownMessages ? watchedChatState.values : foldChatState(shownMessages);
+    const next = watchedChatState?.over === shownMessages ? watchedChatState.values : foldChatState(shownMessages, historyView?.stateBefore);
     if (!sameChatState(lastChatState.current, next)) lastChatState.current = next;
     return lastChatState.current;
-  }, [shownMessages, watchedChatState]);
+  }, [shownMessages, watchedChatState, historyView]);
 
   /*
    * Состояние загруженного чата — панелям страницы (`useChatState(chatId)`): один источник, без своих запросов. Только
@@ -1925,37 +1987,112 @@ export function useAgentChat({
   const selectBranch = useCallback(
     async (messageId: string): Promise<boolean> => {
       if (!loaded || busy || connection !== "online" || !capabilities.branches) return false;
+      const epoch = ++hydrationEpoch.current;
       const applyHistory = (history: ServerHistory) => {
+        acceptHistoryView(history);
         applyAccess(history);
-        setMessages(history.messages);
+        setHydratedMessages(history.messages, "branch");
         setCompactions(history.compactions ?? []);
         setForks(history.forks ?? []);
       };
       try {
         const response = await fetchWithDeadline(
           request,
-          `${chatUrl}/branch`,
+          `${chatUrl}/branch${historyMode === "compact" ? "?history=compact" : ""}`,
           { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ messageId }) },
           { timeoutMs: settingsRef.current.requestTimeoutMs, wholeBody: true },
         );
         if (chatUrlRef.current !== chatUrl) return false;
         if (response.ok) {
-          applyHistory((await response.json()) as ServerHistory);
+          const history = await response.json() as ServerHistory;
+          if (chatUrlRef.current !== chatUrl || hydrationEpoch.current !== epoch) return false;
+          applyHistory(history);
           return true;
         }
         // Чат изменился с другой вкладки или ответ начался: показываем то, что есть на сервере.
         const fresh = await loadHistory();
-        if (typeof fresh !== "string" && chatUrlRef.current === chatUrl) applyHistory(fresh);
+        if (typeof fresh !== "string" && chatUrlRef.current === chatUrl && hydrationEpoch.current === epoch) applyHistory(fresh);
         return false;
       } catch {
         // Связь пропала: экран остаётся как был, следующее действие покажет «Нет связи».
         return false;
       }
     },
-    [applyAccess, busy, capabilities.branches, chatUrl, connection, loadHistory, loaded, request, setMessages],
+    [applyAccess, acceptHistoryView, busy, capabilities.branches, chatUrl, connection, historyMode, loadHistory, loaded, request, setHydratedMessages],
   );
 
+
+  const loadOlder = useCallback(async (): Promise<boolean> => {
+    const view = historyViewRef.current;
+    if (!view?.olderCursor || olderInFlight.current !== null || busyRef.current) return false;
+    const epoch = hydrationEpoch.current, before = messagesRef.current;
+    const controller = new AbortController(); hydrationRequests.current.add(controller);
+    olderInFlight.current = epoch; setLoadingOlder(true); setOlderFailed(false);
+    try {
+      const query = new URLSearchParams({ history: "compact", branch: view.branch, before: view.olderCursor });
+      const response = await fetchWithDeadline(request, `${chatUrl}?${query}`, undefined, { timeoutMs: settingsRef.current.requestTimeoutMs, wholeBody: true, signal: controller.signal });
+      if (!response.ok) throw new Error("history_page");
+      const page = await response.json() as ServerHistory;
+      if (controller.signal.aborted || chatUrlRef.current !== chatUrl || hydrationEpoch.current !== epoch || messagesRef.current !== before || page.historyView?.branch !== view.branch) return false;
+      const ids = new Set(before.map(message => message.id));
+      const next = [...page.messages.filter(message => !ids.has(message.id)), ...before];
+      historyViewRef.current = page.historyView; setHistoryView(page.historyView);
+      historyBoundary.current = { url: chatUrl, first: next[0]?.id };
+      setHydratedMessages(next, "older-page");
+      return true;
+    } catch { if (!controller.signal.aborted && hydrationEpoch.current === epoch) setOlderFailed(true); return false; }
+    finally { hydrationRequests.current.delete(controller); if (olderInFlight.current === epoch) { olderInFlight.current = null; setLoadingOlder(false); } }
+  }, [chatUrl, request, setHydratedMessages]);
+  const loadHistoryMessage = useCallback(async (messageId: string): Promise<boolean> => {
+    const message = messagesRef.current.find(item => item.id === messageId);
+    const revision = message?.metadata?.historyRevision, view = historyViewRef.current;
+    if (!revision || !view) return !!message;
+    const key = `${messageId}:message`, epoch = hydrationEpoch.current;
+    const controller = new AbortController(); hydrationRequests.current.add(controller);
+    setHistoryDetailStates(states => ({ ...states, [key]: "loading" }));
+    try {
+      const query = new URLSearchParams({ branch: view.branch, messageId, revision });
+      const response = await fetchWithDeadline(request, `${chatUrl}/history-message?${query}`, undefined, { timeoutMs: settingsRef.current.requestTimeoutMs, wholeBody: true, signal: controller.signal });
+      if (!response.ok) throw new Error("history_message");
+      const detail = await response.json() as { branch: string; messageId: string; revision: string; message: AgentChatMessage };
+      if (controller.signal.aborted || chatUrlRef.current !== chatUrl || hydrationEpoch.current !== epoch || detail.branch !== view.branch || detail.messageId !== messageId || detail.revision !== revision || detail.message.id !== messageId) return false;
+      setHydratedMessages(messagesRef.current.map(item => item.id === messageId && item.metadata?.historyRevision === revision ? detail.message : item), "details");
+      setHistoryDetailStates(states => { const next = { ...states }; delete next[key]; return next; });
+      return true;
+    } catch { if (!controller.signal.aborted && hydrationEpoch.current === epoch) setHistoryDetailStates(states => ({ ...states, [key]: "error" })); return false; }
+    finally { hydrationRequests.current.delete(controller); }
+  }, [chatUrl, request, setHydratedMessages]);
+  const loadHistoryDetails = useCallback(async (key: string): Promise<boolean> => {
+    const split = key.lastIndexOf(":"), messageId = key.slice(0, split), partIndex = Number(key.slice(split + 1));
+    const message = messagesRef.current.find(item => item.id === messageId);
+    const ref = message?.metadata?.historyDetails?.[partIndex], view = historyViewRef.current;
+    const token = `${hydrationEpoch.current}:${key}`;
+    if (!ref || !view || detailsInFlight.current.has(token)) return false;
+    const epoch = hydrationEpoch.current, controller = new AbortController();
+    detailsInFlight.current.add(token); hydrationRequests.current.add(controller);
+    setHistoryDetailStates(states => ({ ...states, [key]: "loading" }));
+    try {
+      const query = new URLSearchParams({ branch: view.branch, messageId, partIndex: String(partIndex), revision: ref.revision });
+      const response = await fetchWithDeadline(request, `${chatUrl}/history-part?${query}`, undefined, { timeoutMs: settingsRef.current.requestTimeoutMs, wholeBody: true, signal: controller.signal });
+      if (!response.ok) throw new Error("history_details");
+      const detail = await response.json() as { branch: string; messageId: string; partIndex: number; revision: string; part: AgentChatMessage["parts"][number] };
+      if (controller.signal.aborted || chatUrlRef.current !== chatUrl || hydrationEpoch.current !== epoch || detail.branch !== view.branch || detail.revision !== ref.revision || detail.messageId !== messageId || detail.partIndex !== partIndex) return false;
+      const current = messagesRef.current;
+      const next = current.map(item => {
+        if (item.id !== messageId || item.metadata?.historyDetails?.[partIndex]?.revision !== ref.revision) return item;
+        const parts = [...item.parts]; parts[partIndex] = detail.part;
+        const refs = { ...item.metadata.historyDetails }; delete refs[partIndex];
+        return { ...item, parts, metadata: { ...item.metadata, historyDetails: refs } };
+      });
+      setHydratedMessages(next, "details");
+      setHistoryDetailStates(states => { const next = { ...states }; delete next[key]; return next; });
+      return true;
+    } catch { if (!controller.signal.aborted && hydrationEpoch.current === epoch) setHistoryDetailStates(states => ({ ...states, [key]: "error" })); return false; }
+    finally { detailsInFlight.current.delete(token); hydrationRequests.current.delete(controller); }
+  }, [chatUrl, request, setHydratedMessages]);
   return {
+    historyView, loadOlder, loadingOlder, olderFailed, loadHistoryMessage, loadHistoryDetails, historyDetailStates,
+    feedChange: { kind: !loaded || loadedChatId !== chatId ? "history" : origin.current?.messages.length === shownMessages.length && origin.current.messages.every((message, index) => message === shownMessages[index]) ? origin.current.kind : "live", historyComplete: loaded && loadedChatId === chatId && !historyView?.olderCursor, ...(historyView && { view: historyView }) },
     messages,
     compactions,
     forks,

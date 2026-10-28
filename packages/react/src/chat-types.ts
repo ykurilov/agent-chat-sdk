@@ -83,6 +83,9 @@ export interface VoiceCut {
 }
 
 export interface ChatMessageMetadata {
+  /** Payload omitted by the browser-only history view; indices and part identity are unchanged. */
+  historyRevision?: string;
+  historyDetails?: Record<number, import("./history-view").HistoryPartReference>;
   reasoningLevel?: string;
   modelId?: string;
   providerId?: string;

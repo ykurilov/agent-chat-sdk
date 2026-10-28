@@ -1,3 +1,4 @@
+import { compactHistory, historyPart, historyMessage, HistoryViewConflict, InvalidHistoryView } from "./history-view";
 import {
   ApprovalNotPendingError,
   AttachmentRejectedError,
@@ -101,6 +102,7 @@ export type { ChatMemory, MemoryCounts, MemoryMergeRecord, MemoryResult } from "
  * У отказов приложения одно тело: `{ kind, code, message }` (у `action_forbidden` ещё `action`).
  */
 export type HandlerErrorKind =
+  | "history_changed"
   | ChatErrorKind
   | "not_found"
   | "busy"
@@ -541,7 +543,15 @@ export function createChatServer(options: ChatHandlerOptions): { handler: ChatHa
 
     if (action === undefined && method === "GET") {
       // `backgroundTasks` — заявка клиенту: адрес `{chat}/tasks` есть, только если фон подключён.
-      return Response.json({ ...(await service.getHistory(userId, chatId)), backgroundTasks: background !== undefined });
+      const history = await service.getHistory(userId, chatId);
+      const query = new URL(request.url).searchParams;
+      try {
+        return Response.json({ ...(query.get("history") === "compact" ? compactHistory(history, query, options.agent.widgets?.custom?.map(widget => widget.name)) : history), backgroundTasks: background !== undefined }, { headers: { "cache-control": "private, no-store" } });
+      } catch (error) {
+        if (error instanceof HistoryViewConflict) return errorResponse(409, "history_changed");
+        if (error instanceof InvalidHistoryView) return errorResponse(400, "invalid");
+        throw error;
+      }
     }
 
     if (action === undefined && method === "PATCH" && options.chatList) {
@@ -553,6 +563,17 @@ export function createChatServer(options: ChatHandlerOptions): { handler: ChatHa
     if (action === undefined && method === "DELETE" && options.chatList) {
       await service.deleteChat(userId, chatId);
       return new Response(null, { status: 204 });
+    }
+
+    if ((action === "history-part" || action === "history-message") && method === "GET") {
+      // Service applies ownership and current capabilities before looking up any part.
+      const history = await service.getHistory(userId, chatId);
+      try { return Response.json((action === "history-part" ? historyPart : historyMessage)(history, new URL(request.url).searchParams), { headers: { "cache-control": "private, no-store" } }); }
+      catch (error) {
+        if (error instanceof HistoryViewConflict) return errorResponse(409, "history_changed");
+        if (error instanceof InvalidHistoryView) return errorResponse(400, "invalid");
+        throw error;
+      }
     }
 
     if (action === "compactions" && method === "GET") {
@@ -570,7 +591,8 @@ export function createChatServer(options: ChatHandlerOptions): { handler: ChatHa
     if (action === "branch" && method === "POST") {
       const messageId = parseMessageId(await readJsonBody(request));
       if (!messageId) return errorResponse(400, "invalid");
-      return Response.json(await service.selectBranch(userId, chatId, messageId));
+      const history = await service.selectBranch(userId, chatId, messageId);
+      return Response.json(new URL(request.url).searchParams.get("history") === "compact" ? compactHistory(history, new URL(request.url).searchParams, options.agent.widgets?.custom?.map(widget => widget.name)) : history, { headers: { "cache-control": "private, no-store" } });
     }
 
     if (action === "regenerate" && method === "POST") {

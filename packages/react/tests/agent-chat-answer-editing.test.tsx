@@ -121,9 +121,25 @@ describe("лента: onFeedChange", () => {
     const server = fakeChatServer({ history: [question("u1", "Привет"), answer("a1", "Ответ")] });
     const onFeedChange = vi.fn();
     renderAgentChat(server, { skin, onFeedChange });
-    await waitFor(() => expect(onFeedChange).toHaveBeenLastCalledWith({ messages: expect.arrayContaining([expect.objectContaining({ id: "a1" })]), busy: false }));
+    await waitFor(() => expect(onFeedChange).toHaveBeenLastCalledWith(expect.objectContaining({ messages: expect.arrayContaining([expect.objectContaining({ id: "a1" })]), busy: false })));
     fireEvent.change(screen.getByLabelText("поле"), { target: { value: "Ещё" } });
     fireEvent.submit(screen.getByLabelText("поле").closest("form")!);
     await waitFor(() => expect(onFeedChange).toHaveBeenLastCalledWith(expect.objectContaining({ busy: true })));
   });
+});
+
+it("compact editor waits for full message, shows a local failure and retries without losing outputs",async()=>{
+ const complete=answer("a1","Ответ");const compact={...complete,metadata:{status:"complete" as const,historyRevision:"MR",historyDetails:{0:{type:"tool-search",revision:"R"}}},parts:[{type:"tool-search",toolCallId:"call-1",state:"output-available" as const},{type:"text",text:"Ответ",state:"done" as const}]};
+ const server=fakeChatServer({history:[question("u1","Привет"),compact]});const original=server.fetch;let attempts=0;
+ server.fetch=async(input,init)=>{
+   const url=new URL(String(input),"http://fixture");
+   if(url.pathname.endsWith("/history-message"))return ++attempts===1?new Response(null,{status:503}):Response.json({branch:"B",messageId:"a1",revision:"MR",message:complete});
+   const response=await original(input,init);
+   if(url.pathname.endsWith("/c1")&&(!init?.method||init.method==="GET")&&response.ok)return Response.json({...await response.json(),historyView:{mode:"compact",branch:"B",olderCursor:null,headMessageId:"a1",totals:{messages:2,assistantAnswers:1},stateBefore:{}}});
+   return response;
+ };
+ const editing=editingWith();renderAgentChat(server,{skin,history:"compact",answerEditing:editing});await screen.findByText("Ответ");
+ fireEvent.click(editButtons()[0]!);await screen.findByRole("alert");expect(editing.renderEditor).not.toHaveBeenCalled();
+ fireEvent.click(editButtons()[0]!);await waitFor(()=>expect(document.querySelector('[data-kind="answer-editor"]')).not.toBeNull());
+ expect(editing.renderEditor.mock.calls.at(-1)![0].message.parts).toEqual(complete.parts);expect(attempts).toBe(2);
 });

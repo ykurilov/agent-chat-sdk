@@ -1,7 +1,9 @@
+import { HistoryDetailsContext } from "./history-view";
+import type { FeedChange } from "./history-view";
 import type { ComposerOptions } from "./composer-options";
 import { getToolName, isToolUIPart } from "ai";
 import type { DynamicToolUIPart, ToolUIPart } from "ai";
-import { Fragment, memo, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ComponentProps, ElementType, ReactNode } from "react";
 import { ALWAYS_IN_CHAT, ALWAYS_OFFERED, messageText } from "./chat-types";
 import { stripVoiceTags } from "./voice-tags";
@@ -77,6 +79,7 @@ interface FeedExtensions extends AgentChatExtensions {
 }
 
 export interface AgentChatProps extends AgentChatExtensions {
+  history?: "full" | "compact";
   /** Optional application heading and trailing content, rendered by the selected skin. */
   header?: ChatHeaderView;
   /** Application-owned result. Shown after loaded history while idle; never changes server status. Null/false removes it. */
@@ -112,7 +115,7 @@ export interface AgentChatProps extends AgentChatExtensions {
   /** Правка ответов агента (песочница): кнопка правки у законченных ответов, отметки «изменено», редактор страницы. Нет — ответы не правятся. */
   answerEditing?: AnswerEditing;
   /** Сообщения текущей ветки и занятость чата; вызывается при каждой смене. Для панелей рядом с чатом, например журнала песочницы. */
-  onFeedChange?: (feed: { messages: AgentChatMessage[]; busy: boolean }) => void;
+  onFeedChange?: (feed: { messages: AgentChatMessage[]; busy: boolean; change: FeedChange }) => void;
   /** Свои кнопки под ответами агента («Нравится», «В заметки»): рисует скин в ряду действий ответа. Массив держите постоянным. */
   messageActions?: MessageAction[];
   /** Ход закончен: у ответа `messageId` итог `status` (включая остановку и ошибку). Один раз на ход; открытие чата хода не даёт. */
@@ -184,10 +187,11 @@ function SubjectAgentChat(props: AgentChatProps & { subject: string }) {
   return <SubjectChatLoading skin={props.skin} />;
 }
 
-function AgentChatBody({ header, completion, composerOptions, api, chatId, skin, liveness, voice, voiceDialog, attachments: attachmentsPlugin, spendingLimits, onBusyChange, appBridge, initialDraft, answerEditing, onFeedChange, messageActions, onTurnFinished, onTurnRefused, composerActions, onAppEvent, onChatAccessChange, onStateChange, onModelChosen, onChatUnavailable, reloadKey, steering, widgets, diagrams, liveDemos, images, videos, appEvents, workView, stepPhrases, noticeLines, answerDetails }: AgentChatProps & { chatId: string }) {
+function AgentChatBody({ history, header, completion, composerOptions, api, chatId, skin, liveness, voice, voiceDialog, attachments: attachmentsPlugin, spendingLimits, onBusyChange, appBridge, initialDraft, answerEditing, onFeedChange, messageActions, onTurnFinished, onTurnRefused, composerActions, onAppEvent, onChatAccessChange, onStateChange, onModelChosen, onChatUnavailable, reloadKey, steering, widgets, diagrams, liveDemos, images, videos, appEvents, workView, stepPhrases, noticeLines, answerDetails }: AgentChatProps & { chatId: string }) {
   const spendingNoticeId = useId();
   const closedNoticeId = useId();
   const chat = useAgentChat({
+    history,
     api,
     chatId,
     ...(liveness && { liveness }),
@@ -312,10 +316,10 @@ function AgentChatBody({ header, completion, composerOptions, api, chatId, skin,
   const reportFeed = useRef(onFeedChange);
   reportFeed.current = onFeedChange;
   useEffect(() => {
-    reportFeed.current?.({ messages: chat.messages, busy });
-  }, [busy, chat.messages]);
+    reportFeed.current?.({ messages: chat.messages, busy, change: chat.feedChange });
+  }, [busy, chat.messages, chat.historyView]);
   useTurnFinishedReport(chatId, busy, chat.messages, onTurnFinished);
-  const appEventReport = useAppEventReport(chatId, chat.loaded, busy, chat.messages, onAppEvent);
+  const appEventReport = useAppEventReport(chatId, chat.loaded, busy, chat.messages, onAppEvent, ["older-page", "details", "branch"].includes(chat.feedChange.kind));
   const actionRuns = useMessageActionRuns(chatId);
   const dividers = useMemo(() => dividersByMessage(chat.compactions), [chat.compactions]);
   const voiceAnswers = useVoiceAnswerIds(chat.messages);
@@ -522,7 +526,7 @@ function AgentChatBody({ header, completion, composerOptions, api, chatId, skin,
             {...(index === lastIndex && canRegenerate && { onRegenerate: regenerate })}
             {...(answerEditing && { editMark: answerEditing.edits.get(message.id) })}
             {...(answerEditing && capabilities.answerEditing && !busy && (message.metadata?.status ?? "complete") === "complete" && {
-              onEdit: () => setEditingAnswerId(message.id),
+              onEdit: () => { if (!message.metadata?.historyRevision) setEditingAnswerId(message.id); else void chat.loadHistoryMessage(message.id).then(ready => { if (ready) setEditingAnswerId(message.id); }); },
             })}
             {...(messageActions && messageActions.length > 0 && {
               actions: messageActions,
@@ -532,9 +536,11 @@ function AgentChatBody({ header, completion, composerOptions, api, chatId, skin,
             })}
           />
         );
-      const shown = serviceLines ? (
+      const editFailure = chat.historyDetailStates[`${message.id}:message`] === "error" ? <p role="alert">{labels.history.failed}</p> : null;
+      const shown = serviceLines || editFailure ? (
         <>
           {serviceLines}
+          {editFailure}
           {content}
         </>
       ) : (
@@ -563,6 +569,8 @@ function AgentChatBody({ header, completion, composerOptions, api, chatId, skin,
       canRegenerate,
       canRetry,
       capabilities.answerEditing,
+      chat.loadHistoryMessage,
+      chat.historyDetailStates,
       chatClosed,
       correctionIds,
       describeAttachments,
@@ -601,16 +609,20 @@ function AgentChatBody({ header, completion, composerOptions, api, chatId, skin,
   if (chat.accessRefusal) return <skin.Layout feed={<skin.ErrorNotice kind="other" text={chat.accessRefusal.text} onRetry={chat.retry} />} composer={null} scrollRef={scrollRef} announcement="" />;
 
   const feed = (
+    <HistoryDetailsContext.Provider value={{ messages: chat.messages, load: chat.loadHistoryDetails, states: chat.historyDetailStates }}>
+    {chat.historyView && <div aria-hidden={!chat.historyView.olderCursor} style={{ visibility: chat.historyView.olderCursor ? "visible" : "hidden" }}><button type="button" disabled={!chat.historyView.olderCursor || chat.loadingOlder || busy} aria-busy={chat.loadingOlder} onClick={() => void chat.loadOlder()}>{chat.olderFailed ? `${labels.history?.failed ?? ""} · ${labels.retry}` : labels.history?.older}</button></div>}
     <MessageFeed
       key={feedView.epoch}
       ref={feedRef}
       scrollRef={scrollRef}
       messages={feedMessages}
       keepLastMounted={busy}
+      onLoadOlder={chat.historyView?.olderCursor && !chat.olderFailed ? chat.loadOlder : undefined}
       {...(editingId !== null && { keepMountedMessageId: editingId })}
       {...(feedView.openAtMessageId && { openAtMessageId: feedView.openAtMessageId })}
       renderMessage={renderMessage}
     />
+    </HistoryDetailsContext.Provider>
   );
 
   // С файлами текст не обязателен, но отправка ждёт, пока все файлы загружены. Без файлов — как в чате без вложений.
@@ -1023,7 +1035,7 @@ const AgentAnswer = memo(function AgentAnswer({
   const entries: AnswerEntry<ReactNode>[] = [];
   const show = (node: ReactNode, blank = false) => void entries.push({ kind: "shown", node, ...(blank && { blank }) });
   const step = (index: number, work: WorkStep, node: ReactNode) =>
-    void (simple ? entries.push({ kind: "step", key: partKey(message.id, index), step: work }) : show(node));
+    void (simple ? entries.push({ kind: "step", key: partKey(message.id, index), step: work, ...(message.metadata?.historyDetails && { node }) }) : show(node));
   const customNames = new Set(Object.keys(extensions.widgets ?? {}));
   /** Номер следующей схемы в ответе: схемы всех текстовых частей ответа нумеруются подряд. */
   let nextDiagram = 0;
@@ -1047,7 +1059,7 @@ const AgentAnswer = memo(function AgentAnswer({
       // Заголовок раздумья от сервера (`thoughtTitles`); пока его нет — прежняя подпись.
       const title = streaming ? undefined : thoughtTitles[ordinal];
       // Пустое раздумье — пропуск; без права `reasoning` сервер шлёт пустое место с заголовком — шаг простого вида.
-      if (!streaming && part.text.trim().length === 0 && (title === undefined || !simple)) return;
+      if (!streaming && !message.metadata?.historyDetails?.[index] && part.text.trim().length === 0 && (title === undefined || !simple)) return;
       step(
         index,
         { kind: "thinking", durationMs, ...(title !== undefined && { title }) },
@@ -1314,8 +1326,16 @@ function ExpandablePart<C extends ChatSkin["Reasoning"] | ChatSkin["ToolCallRow"
   ...props
 }: { Component: C; expanded: ExpandedParts; partId: string } & Omit<ComponentProps<C>, "open" | "onOpenChange">) {
   const [open, setOpen] = usePartOpen(expanded, partId);
+  const details = useContext(HistoryDetailsContext), labels = useChatLabels();
+  const split = partId.lastIndexOf(":"), index = Number(partId.slice(split + 1));
+  const message = details?.messages.find(message => message.id === partId.slice(0, split));
+  const ref = message?.metadata?.historyDetails?.[index];
+  const load = details?.load;
+  useEffect(() => { if (open && ref && load) void load(partId); }, [open, ref?.revision, partId, load]);
   const Part = Component as ElementType;
-  return <Part {...props} open={open} onOpenChange={setOpen} />;
+  return <div style={message?.metadata?.historyRevision ? { maxHeight: "60dvh", overflowY: "auto" } : undefined}><Part {...props} open={open} onOpenChange={setOpen} />
+    {open && ref && <div role="status">{details?.states[partId] === "error" ? <button type="button" onClick={() => void load?.(partId)}>{labels.history?.failed} · {labels.retry}</button> : labels.history?.loading}</div>}
+  </div>;
 }
 
 /** Вызов инструмента как шаг простого вида: имя, состояние, вход и выход, если они пришли. */

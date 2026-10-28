@@ -232,6 +232,7 @@ export interface ChatLabels {
    * Тандем ставит словарь дизайн-системы на том же языке. Нет — скин решает сам (Тандем: русский или словарь приложения).
    */
   locale?: string;
+  history?: { loading: string; failed: string; older: string };
   composerPlaceholder: string;
   /** Подпись поля ввода для экранного диктора. */
   composerLabel: string;
@@ -478,13 +479,14 @@ const resetPhrase = (info: SpendingInfo) => (info.resetsAt ? `, обновитс
 const mergeDate = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
 
 /** Словарь, в котором есть и необязательные надписи: их подставляет `ChatLabelsProvider`. */
-export type ResolvedChatLabels = Omit<ChatLabels, "widgets" | "diagram" | "demo" | "images" | "videos" | "viewer" | "voice" | "helpers" | "tasks" | "notices" | "messengerStatus" | "workView" | "composerSettings" | "welcome"> &
+export type ResolvedChatLabels = Omit<ChatLabels, "widgets" | "diagram" | "demo" | "images" | "videos" | "viewer" | "voice" | "helpers" | "tasks" | "notices" | "messengerStatus" | "workView" | "composerSettings" | "welcome" | "history"> &
   Required<
     Pick<
       ChatLabels,
       "externalImageLink" | "answerCutByLength" | "answerEdited" | "answerUndelivered" | "toolOutputEdited" | "editAnswer" | "steeringPending" | "thinkingPhrases" | "thinkingElapsed" | "spendingMessagesLeft" | "spendingMessagesExhausted" | "editMessageLimit"
     >
   > & {
+    history: NonNullable<ChatLabels["history"]>;
     welcome: { title: string; description: string };
     composerSettings: ComposerSettingsLabels;
     widgets: WidgetLabels;
@@ -735,6 +737,7 @@ export const russianLabels: ResolvedChatLabels = {
   toolOutputEdited: "Результат изменён",
   steeringPending: "Агент учтёт на следующем шаге",
   editAnswer: "Изменить ответ",
+  history: { loading: "Загружаю подробности…", failed: "Не удалось загрузить", older: "Более ранние сообщения" },
   retry: "Повторить",
   reconnecting: "Переподключаемся…",
   connectionLost: "Нет связи с сервером",
@@ -1058,6 +1061,7 @@ export const englishLabels: ResolvedChatLabels = {
   answerUndelivered: "Not delivered",
   toolOutputEdited: "Result edited",
   editAnswer: "Edit reply",
+  history: { loading: "Loading details…", failed: "Could not load", older: "Earlier messages" },
   retry: "Retry",
   reconnecting: "Reconnecting…",
   connectionLost: "No connection to the server",
@@ -1308,6 +1312,7 @@ export function ChatLabelsProvider({ labels, children }: { labels: ChatLabels; c
   const resolved = useMemo(
     () => ({
       ...labels,
+      history: { ...(labels.locale?.startsWith("en") ? englishLabels : russianLabels).history, ...labels.history },
       welcome: { ...(labels.locale?.startsWith("en") ? englishLabels : russianLabels).welcome, ...labels.welcome },
       composerSettings: { ...(labels.locale?.startsWith("en") ? englishLabels : russianLabels).composerSettings, ...labels.composerSettings },
       externalImageLink: labels.externalImageLink ?? russianLabels.externalImageLink,

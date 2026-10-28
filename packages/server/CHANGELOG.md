@@ -1,5 +1,19 @@
 # @ykurilov/agent-chat-server
 
+## 0.89.0
+
+### Minor Changes
+
+- ca13a59: Опциональная компактная история браузера: последние сообщения, подгрузка старых страниц и подробностей reasoning/tools при раскрытии. Полная серверная история и контекст модели прежние.
+  
+  ### Как обновить приложение
+  
+  Все SDK-пакеты обновить вместе. Включить `history="compact"` у AgentChat/ChatWorkspace либо history: "compact" у useAgentChat. До включения перенести продуктовые счётчики и чтение tool outputs из onFeedChange на полный серверный handle или свой компактный facts endpoint. `feed.change.kind` различает live/history/branch/older-page/details; `change.view` содержит headMessageId, totals и olderCursor. Свои редакторы получают полное сообщение через loadHistoryMessage; частичные parts не сохраняют как полные. Старые вызовы остаются full. Миграций нет. Контракт и ограничения: docs/compact-history.md.
+
+### Patch Changes
+
+- @ykurilov/agent-chat-core@0.89.0
+
 ## 0.88.0
 
 ### Patch Changes
