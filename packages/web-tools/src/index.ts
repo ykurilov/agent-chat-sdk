@@ -9,3 +9,6 @@ export { dnsHostResolver } from "./dns-host-resolver";
 export { WebToolError } from "./web-tool-error";
 export type { WebToolErrorKind } from "./web-tool-error";
 export type { PageContent, PageReaderService, PageScreenshotService, SearchHit, WebSearchService } from "./services";
+
+export { createDeepSeekServices, createDeepSeekWebTools } from "./deepseek/deepseek-services";
+export type { DeepSeekOptions, DeepSeekServices, DeepSeekWebToolsOptions } from "./deepseek/deepseek-services";

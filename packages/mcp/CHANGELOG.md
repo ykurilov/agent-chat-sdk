@@ -1,5 +1,13 @@
 # @ykurilov/agent-chat-mcp
 
+## 0.87.11
+
+### Patch Changes
+
+- Updated dependencies [eb679ed]
+  - @ykurilov/agent-chat-web-tools@0.87.11
+  - @ykurilov/agent-chat-core@0.87.11
+
 ## 0.87.10
 
 ### Patch Changes

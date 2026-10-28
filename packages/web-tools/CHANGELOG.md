@@ -1,5 +1,14 @@
 # @ykurilov/agent-chat-web-tools
 
+## 0.87.11
+
+### Patch Changes
+
+- eb679ed: DeepSeek Search/Fetch как второй поставщик веб-поиска и Markdown-чтения. Готовая createDeepSeekWebTools принимает ключ, настройки прокси и spending.storage; имена web_search/read_page и подписи /labels сохраняются. Учёт только полученных непустых ответов, по умолчанию $0.00075 за вызов; повторы HTTP408/429/5xx ограничены общим сроком и отменяются по «Стоп». Firecrawl и скриншоты прежние.
+  
+  Как обновить приложение: обновить пакеты SDK одной версией. Для DeepSeek использовать createDeepSeekWebTools({apiKey: process.env.DEEPSEEK_API_KEY!, spending: {storage}}) в прежнем agent.tools. Дополнительно baseUrl/headers для прокси; webToolsInstructions и withWebToolTitles не меняются. Ограничения и цены - README веб-инструментов, раздел DeepSeek. Непереключённым приложениям менять код не требуется. Нет миграций базы и протокола.
+- @ykurilov/agent-chat-core@0.87.11
+
 ## 0.87.10
 
 ### Patch Changes

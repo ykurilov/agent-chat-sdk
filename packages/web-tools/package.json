@@ -1,6 +1,6 @@
 {
   "name": "@ykurilov/agent-chat-web-tools",
-  "version": "0.87.10",
+  "version": "0.87.11",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,
@@ -29,6 +29,11 @@
       "@ykurilov/agent-chat-source": "./src/network.ts",
       "types": "./dist/types/network.d.ts",
       "import": "./dist/network.js"
+    },
+    "./deepseek": {
+      "@ykurilov/agent-chat-source": "./src/deepseek/deepseek-services.ts",
+      "types": "./dist/types/deepseek/deepseek-services.d.ts",
+      "import": "./dist/deepseek.js"
     }
   },
   "engines": {

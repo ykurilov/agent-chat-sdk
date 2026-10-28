@@ -1,4 +1,5 @@
 import type { ToolSet } from "ai";
+import { createWebUsageRecorder } from "./spending";
 import { modelMaySeeToolResultImages } from "@ykurilov/agent-chat-core";
 import type { ChatStorage } from "@ykurilov/agent-chat-core";
 import { dnsHostResolver } from "./dns-host-resolver";
@@ -108,31 +109,7 @@ function countingSpending(spending: WebToolsSpending) {
   for (const [name, price] of Object.entries(prices)) {
     if (price !== undefined && !(Number.isFinite(price) && price >= 0)) throw new Error(`pricePerCallUsd.${name}: нужно число не меньше нуля, а не ${price}`);
   }
-  const now = spending.now ?? (() => Date.now());
-  const providerId = spending.providerId ?? "firecrawl";
-
-  async function record(name: string, costUsd: number, ownerId: string, chatId: string) {
-    try {
-      await spending.storage.insertUsageRecord({
-        id: crypto.randomUUID(),
-        ownerId,
-        chatId,
-        messageId: null,
-        source: "web_tools",
-        modelId: name,
-        providerId,
-        inputTokens: 0,
-        cachedInputTokens: 0,
-        cacheWriteTokens: 0,
-        outputTokens: 0,
-        reasoningTokens: 0,
-        costUsd,
-        createdAt: new Date(now()).toISOString(),
-      });
-    } catch (error) {
-      spending.logError?.(`Веб-инструменты: не удалось записать расход ${name}: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
+  const record = createWebUsageRecorder(spending);
 
   return (tools: ToolSet, ownerId: string, chatId: string): ToolSet =>
     Object.fromEntries(

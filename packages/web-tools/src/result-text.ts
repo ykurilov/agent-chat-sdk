@@ -12,7 +12,7 @@ export function formatSearchResults(query: string, hits: SearchHit[]): string {
       const title = hit.title.replace(/\s+/g, " ").trim() || hit.url;
       const link = `${index + 1}. [${title.replace(/[[\]]/g, "\\$&")}](${hit.url.replace(/\(/g, "%28").replace(/\)/g, "%29")})`;
       const snippet = hit.snippet.trim();
-      return snippet ? `${link}\n   ${snippet}` : link;
+      return [snippet ? `${link}\n   ${snippet}` : link, hit.date ? `   Дата: ${hit.date}` : "", hit.summary?.trim() ? `   ${hit.summary.trim()}` : "", hit.content?.trim() ? `\n${hit.content.trim()}` : ""].filter(Boolean).join("\n");
     })
     .join("\n");
 }

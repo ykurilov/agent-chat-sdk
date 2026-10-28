@@ -1,6 +1,6 @@
 {
   "name": "@ykurilov/agent-chat-flows",
-  "version": "0.87.10",
+  "version": "0.87.11",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,

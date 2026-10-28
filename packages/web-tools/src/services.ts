@@ -4,6 +4,9 @@ export interface SearchHit {
   title: string;
   url: string;
   snippet: string;
+  summary?: string;
+  date?: string;
+  content?: string;
 }
 
 export interface WebSearchService {
