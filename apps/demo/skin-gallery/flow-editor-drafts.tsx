@@ -12,7 +12,7 @@ document.documentElement.classList.toggle("dark", params.get("theme") === "dark"
 document.documentElement.dataset.theme = params.get("theme") === "dark" ? "dark" : "light";
 const parsed = parseFlow(fixture);
 if (!parsed.ok) throw new Error("Invalid fixture");
-const initial: AgentFlow = { ...parsed.flow, tools: [...parsed.flow.tools, "sale_answer", "person_link_view", "finish_dialog"], states: parsed.flow.states.map(state => state.id === "intro" ? { ...state, tools: ["sale_answer"] } : state) };
+const initial: AgentFlow = { ...parsed.flow, tools: [...parsed.flow.tools, "sale_answer", "person_link_view", "finish_dialog"], states: parsed.flow.states.map(state => state.id === "intro" ? { ...state, tools: ["sale_answer"] } : state.id === "block" ? { ...state, exits: [...state.exits, { id: "block_tool", when: { type: "event" as const, event: "tool" as const, name: "finish_dialog" }, to: "offer" }] } : state) };
 const labels = { ...russianFlowLabels, editor: { ...russianFlowLabels.editor, statePanel: { ...russianFlowLabels.editor.statePanel, tagsHint: "Подсказка меток приложения", noSideQuestionsHint: "Подсказка вопросов приложения" } } };
 function Gallery() {
   const [value, onChange] = useState(initial);

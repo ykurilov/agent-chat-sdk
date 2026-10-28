@@ -6,6 +6,7 @@ for (const skin of ["tandem", "oduvanchik"]) for (const theme of ["light", "dark
     const errors: string[] = [];
     page.on("pageerror", error => errors.push(error.message));
     await page.goto(`/flow-editor-drafts.html?skin=${skin}&theme=${theme}`);
+    await expect(page.locator('[data-exit="block_tool"]')).toContainText("Вызван инструмент «Инструмент завершения»");
     await page.locator('.react-flow__node[data-id="intro"]').getByRole("button", { name: "Знакомство", exact: true }).click();
     const panel = page.getByRole("region", { name: "Состояние", exact: true });
     const card = panel.locator('[data-exit-card="intro_clear"]');
@@ -38,6 +39,7 @@ for (const skin of ["tandem", "oduvanchik"]) for (const theme of ["light", "dark
     await page.getByRole("button", { name: "JSON", exact: true }).click();
     const value = JSON.parse(await page.getByRole("dialog").getByRole("textbox").inputValue());
     expect(value.states[0].exits[0].when).toEqual({ type: "judge", text: "Условие сохраняется после переключения" });
+    expect(value.states.find((state: { id: string }) => state.id === "block").exits.find((exit: { id: string }) => exit.id === "block_tool").when).toEqual({ type: "event", event: "tool", name: "finish_dialog" });
     expect(value.states[0].tools).toEqual(["sale_answer", "person_link_view"]);
     expect(value.states[0].learn).toContain("name");
     expect(errors).toEqual([]);

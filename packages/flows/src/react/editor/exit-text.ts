@@ -5,7 +5,7 @@ import type { FlowEditorLabels } from "../../labels/editor";
 import type { FlowEdgeKind } from "../flow-editor-skin";
 
 /** Подпись условия для доски, прогона и проверки: «Понятны тема курса и продажи», «Тишина человека 3 ч». С каталогом — подписи событий. */
-export function conditionText(flow: AgentFlow, when: FlowCondition, labels: FlowEditorLabels, catalog?: Pick<FlowCatalog, "events">): string {
+export function conditionText(flow: AgentFlow, when: FlowCondition, labels: FlowEditorLabels, catalog?: Pick<FlowCatalog, "events" | "toolLabels">): string {
   switch (when.type) {
     case "judge":
       return when.text.trim() || labels.board.emptyCondition;
@@ -15,9 +15,13 @@ export function conditionText(flow: AgentFlow, when: FlowCondition, labels: Flow
       if (typeof when.value === "boolean") return `${name} ${op} ${when.value ? labels.yes : labels.no}`;
       return when.op === "filled" || when.value === undefined ? `${name} ${op}` : `${name} ${op} ${when.value}`;
     }
-    case "event":
+    case "event": {
       if (when.event === "message" || !when.name) return labels.events[when.event];
-      return `${labels.events[when.event]} «${(when.event !== "tool" && catalogEventLabel(catalog, when.name)) || when.name}»`;
+      const title = when.event === "tool"
+        ? (Object.hasOwn(catalog?.toolLabels ?? {}, when.name) ? catalog?.toolLabels?.[when.name] : undefined)
+        : catalogEventLabel(catalog, when.name);
+      return `${labels.events[when.event]} «${title || when.name}»`;
+    }
     case "timer":
       if (when.from === "time_of_day") return `${labels.timerSpans.time_of_day} ${when.at}`;
       if (when.from === "state_days") return `${labels.statePanel.duration} ${labels.days(when.days)}`;

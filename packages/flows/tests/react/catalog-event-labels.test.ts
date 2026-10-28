@@ -43,6 +43,17 @@ describe("подписи событий приложения", () => {
     expect(conditionText(flow, paid, labels)).toBe("Событие приложения «paid»");
   });
 
+  it("доска: название инструмента из toolLabels, служебное имя остаётся в условии", () => {
+    const flow = fixtureFlow("sales-review");
+    const when: FlowCondition = { type: "event", event: "tool", name: "finish_dialog" };
+    const named = { ...catalog, toolLabels: { finish_dialog: "Завершить диалог" }, events: [{ name: "finish_dialog", label: "Другое событие" }] };
+    expect(conditionText(flow, when, labels, named)).toBe("Вызван инструмент «Завершить диалог»");
+    expect(when.name).toBe("finish_dialog");
+    expect(conditionText(flow, when, labels, catalog)).toBe("Вызван инструмент «finish_dialog»");
+    expect(conditionText(flow, when, labels, { ...named, toolLabels: { finish_dialog: "" } })).toBe("Вызван инструмент «finish_dialog»");
+    expect(conditionText(flow, { ...when, name: "toString" }, labels, named)).toBe("Вызван инструмент «toString»");
+  });
+
   it("describeCondition: подпись из каталога; без каталога — имя", () => {
     const flow = fixtureFlow("sales-review");
     expect(describeCondition(flow, paid, catalog)).toBe("событие «Оплачено»");
