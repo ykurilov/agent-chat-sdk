@@ -8,6 +8,7 @@ import { createServer } from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+const bundlerFlags = process.argv.includes("--webpack") ? ["--webpack"] : [];
 const appFolder = join(dirname(fileURLToPath(import.meta.url)), "..");
 const nextBin = createRequire(join(appFolder, "package.json")).resolve("next/dist/bin/next");
 const cookie = (user) => ({ cookie: `chat-user=${user}`, "accept-encoding": "gzip" });
@@ -32,17 +33,18 @@ function run(args, options = {}) {
 }
 
 async function build() {
-  const child = run(["build"]);
+  const child = run(["build", ...bundlerFlags]);
   let output = "";
   child.stdout.on("data", (chunk) => (output += chunk));
   child.stderr.on("data", (chunk) => (output += chunk));
   const code = await new Promise((resolve) => child.on("exit", resolve));
   if (code !== 0) throw new Error(`next build упал:\n${output}`);
+  if (/Critical dependency:/.test(output)) throw new Error(`Next build emitted critical dependency warnings:\n${output}`);
 }
 
 async function startServer(mode) {
   const port = await freePort();
-  const child = run([mode, "-p", String(port), "-H", "127.0.0.1"]);
+  const child = run([mode, ...(mode === "dev" ? bundlerFlags : []), "-p", String(port), "-H", "127.0.0.1"]);
   let output = "";
   child.stdout.on("data", (chunk) => (output += chunk));
   child.stderr.on("data", (chunk) => (output += chunk));
@@ -55,7 +57,7 @@ async function startServer(mode) {
     if (ready) break;
     await new Promise((resolve) => setTimeout(resolve, 300));
   }
-  return { base, stop: () => process.kill(-child.pid, "SIGTERM") };
+  return { base, stop: () => process.kill(-child.pid, "SIGTERM"), output: () => output };
 }
 
 const userMessage = (id, text) => JSON.stringify({ message: { id, role: "user", parts: [{ type: "text", text }] } });
@@ -83,10 +85,18 @@ async function scenario(mode, base) {
   const label = `[${mode}]`;
   const page = await fetch(base);
   check(page.status === 200, `${label} страница / открывается`);
+  const html = await page.text();
+  check(html.includes('data-attachment-ssr="ready"'), `${label} attachment hooks render on the server`);
 
   const created = await fetch(`${base}/api/chat`, { method: "POST", headers: cookie("anna") });
   const { id } = await created.json();
   check(created.status === 201 && Boolean(id), `${label} чат создаётся`);
+
+  const pdf = new FormData();
+  pdf.append("file", new Blob([samplePdf()], {type:"application/pdf"}), "probe.pdf");
+  const uploaded = await fetch(`${base}/api/chat/${id}/attachments`, {method:"POST",headers:cookie("anna"),body:pdf});
+  const file = await uploaded.json();
+  check(uploaded.status === 201 && file.textTokens > 0, `${label} actual PDF worker extracted text (${uploaded.status}: ${JSON.stringify(file)})`);
 
   const anonymous = await fetch(`${base}/api/chat/${id}`);
   check(anonymous.status === 401, `${label} без пользователя — 401`);
@@ -135,6 +145,31 @@ async function scenario(mode, base) {
   check(later.messages.length === before.messages.length + 2, `${label} история после нового сообщения свежая (${before.messages.length} → ${later.messages.length})`);
 }
 
+function samplePdf() {
+  const lines=["Next SDK PDF worker probe"];
+  const escape = (text) => text.replace(/[\\()]/g, (char) => `\\${char}`);
+  const stream = `BT /F1 14 Tf 72 720 Td 16 TL ${lines.map((line) => `(${escape(line)}) Tj T*`).join(" ")} ET`;
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+    `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+  ];
+  let body = "%PDF-1.4\n";
+  const offsets = [];
+  objects.forEach((object, index) => {
+    offsets.push(body.length);
+    body += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xrefAt = body.length;
+  body += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const offset of offsets) body += `${String(offset).padStart(10, "0")} 00000 n \n`;
+  body += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefAt}\n%%EOF\n`;
+  return new TextEncoder().encode(body);
+}
+
+
 async function main() {
   console.log("сборка примера…");
   await build();
@@ -142,6 +177,7 @@ async function main() {
     const server = await startServer(mode);
     try {
       await scenario(mode, server.base);
+      check(!/Critical dependency:|Invalid hook call/.test(server.output()), `[${mode}] no critical webpack or React warnings`);
     } finally {
       server.stop();
     }

@@ -860,16 +860,16 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
 
   // ---------- Открыть заново ----------
 
-  /** Концы, после которых разговор не открывается: дошёл до конца, срок вышел, канал заблокирован. */
+  /** Защищённые причины конца; только final допускает явное разрешение приложения allowFinal. */
   const CLOSED_FOR_GOOD = new Set(["final", "deadline", "blocked"]);
 
-  async function reopen({ ownerId, chatId, reason, endedAfter }: FlowReopenInput): Promise<FlowReopenResult> {
+  async function reopen({ ownerId, chatId, reason, endedAfter, allowFinal }: FlowReopenInput): Promise<FlowReopenResult> {
     const pinned = await chatFlow(ownerId, chatId);
     const record = await store.getChat(chatId);
     if (!pinned || !record || record.ownerId !== ownerId) return { reopened: false, reason: "not_flow" };
     if (record.endedAt === null) return { reopened: false, reason: "not_ended" };
     const endReason = record.endReason ?? "final";
-    if (CLOSED_FOR_GOOD.has(endReason)) return { reopened: false, reason: endReason as "final" | "deadline" | "blocked" };
+    if (CLOSED_FOR_GOOD.has(endReason) && !(endReason === "final" && allowFinal === true)) return { reopened: false, reason: endReason as "final" | "deadline" | "blocked" };
     const { values } = await (await portOf({ ownerId, chatId })).getChatState(ownerId, chatId);
     const run = await runOutsideTurn(runtime, { ownerId, chatId }, pinned.flow, values, now(), record);
     const at = chatTime(run, now());

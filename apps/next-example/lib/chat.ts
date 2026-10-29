@@ -1,3 +1,4 @@
+import { createAttachments, createMemoryAttachmentStorage } from "@ykurilov/agent-chat-attachments";
 import { createInMemoryChatStorage } from "@ykurilov/agent-chat-core";
 import { createChatHandler } from "@ykurilov/agent-chat-server";
 import type { ChatHandler } from "@ykurilov/agent-chat-server";
@@ -16,6 +17,7 @@ function createExampleChatHandler(): ChatHandler {
   return createChatHandler({
     basePath: "/api/chat",
     storage: createInMemoryChatStorage(),
+    attachments: createAttachments({ storage: createMemoryAttachmentStorage() }),
     // В своём приложении здесь читается ваша сессия. Пример берёт имя из cookie.
     resolveUser: async (request) => {
       const id = readCookie(request, userCookieName);

@@ -1,6 +1,6 @@
 {
   "name": "@ykurilov/agent-chat-web-tools",
-  "version": "0.89.1",
+  "version": "0.90.0",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,

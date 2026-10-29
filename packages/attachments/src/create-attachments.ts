@@ -1,3 +1,4 @@
+import { resolveUnsentRetentionMs } from "./unsent-retention";
 import { AttachmentRejectedError } from "@ykurilov/agent-chat-core";
 import type { IncomingFilePart, MessageAttachments, StoredFilePart } from "@ykurilov/agent-chat-core";
 import { isAttachmentId } from "./attachment-storage";
@@ -14,7 +15,6 @@ import { createAttachmentRoutes } from "./attachment-routes";
 import type { AttachmentRoutes } from "./attachment-routes";
 
 const PREFIX = "attachment:";
-const ABANDONED_AFTER_MS = 24 * 60 * 60_000;
 const CLEANUP_EVERY_MS = 15 * 60_000;
 
 export interface CreateAttachmentsOptions {
@@ -22,6 +22,9 @@ export interface CreateAttachmentsOptions {
   imageNumbers?: boolean;
   storage: AttachmentStorage;
   limits?: Partial<AttachmentLimits>;
+  /** Срок неотправленных файлов, мс (по умолчанию сутки). null — хранить до явного удаления/подтверждения.
+   * Для очередей мессенджеров задайте срок ожидания или null. Квоты неотправленных файлов сохраняются. */
+  unsentRetentionMs?: number | null;
   /** Часы; в тестах подменяются. */
   now?: () => Date;
   /**
@@ -64,6 +67,7 @@ export type Attachments = MessageAttachments &
 
 export function createAttachments(options: CreateAttachmentsOptions): Attachments {
   const { storage } = options;
+  const unsentRetentionMs = resolveUnsentRetentionMs(options.unsentRetentionMs);
   if (typeof storage.removeUnattached !== "function") {
     // Без условного удаления DELETE и чистка могли бы убрать файл уже отправленного сообщения: не подменяем его безусловным.
     throw new TypeError("AttachmentStorage: нужен метод removeUnattached(id) — удаление только неприкреплённого файла, атомарно с markAttached");
@@ -77,10 +81,11 @@ export function createAttachments(options: CreateAttachmentsOptions): Attachment
 
   /** Брошенные загрузки (выбрали файл и ушли) убираются при очередной загрузке, не чаще раза в 15 минут. */
   function cleanUpAbandoned(): void {
+    if (unsentRetentionMs === null) return;
     const current = now().getTime();
     if (current - lastCleanupAt < CLEANUP_EVERY_MS) return;
     lastCleanupAt = current;
-    void storage.removeUnattachedOlderThan(new Date(current - ABANDONED_AFTER_MS)).catch(() => {});
+    void storage.removeUnattachedOlderThan(new Date(current - unsentRetentionMs)).catch(() => {});
   }
 
   const { routes, internals } = createAttachmentRoutes({
@@ -102,7 +107,7 @@ export function createAttachments(options: CreateAttachmentsOptions): Attachment
     for (const id of ids) {
       const record = isAttachmentId(id) ? await storage.get(id) : undefined;
       if (!record || record.chatId !== input.chatId || record.ownerId !== input.userId) throw notFound();
-      if (!record.attached && Date.parse(record.createdAt) < now().getTime() - ABANDONED_AFTER_MS) {
+      if (unsentRetentionMs !== null && !record.attached && Date.parse(record.createdAt) < now().getTime() - unsentRetentionMs) {
         // Неотправленный файл старше суток уже подлежит чистке: убираем его сами и просим загрузить заново.
         await storage.removeUnattached(record.id);
         throw new AttachmentRejectedError("attachment_expired", "Файл хранился слишком долго и удалён: загрузите его снова");

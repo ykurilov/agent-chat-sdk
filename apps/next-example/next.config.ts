@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 
-const config: NextConfig = {};
+// Keep this integration fixture within the shared test machine budget.
+const config: NextConfig = { experimental: { cpus: 2 } };
 
 export default config;

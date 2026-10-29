@@ -285,6 +285,7 @@ export interface AgentTurnInput {
   /** Блоки приложения для вопроса хода: один опрос в начале хода, дальше застывают в ответе (`agent.contextBlocks`). */
   contextBlocks?: ContextBlocksSource;
   contextBlocksRefresh?: ContextBlocksRefresh;
+  contextBlocksHistory?: { latest: readonly string[] };
   /** Срок ответа `contextBlocks`, мс, уже проверенный; `Infinity` — без срока. Нет — 5 с. */
   contextBlocksTimeoutMs?: number;
   /**
@@ -1532,6 +1533,7 @@ async function openAttempt(
     stepContextTimeoutMs,
     contextBlocks: _contextBlocks,
     contextBlocksRefresh: _contextBlocksRefresh,
+    contextBlocksHistory: _contextBlocksHistory,
     contextBlocksTimeoutMs: _contextBlocksTimeoutMs,
     ...requestInput
   } = input;
@@ -1540,7 +1542,7 @@ async function openAttempt(
     serviceBlocks: input.serviceBlocks ?? CORE_SERVICE_BLOCKS,
     providerId,
     history: attempt.history,
-    frozenContext: { current: { answerId: input.messageId, data: attempt.frozenContext }, group: Boolean(input.group) },
+    frozenContext: { current: { answerId: input.messageId, data: attempt.frozenContext }, group: Boolean(input.group), latestKeys: input.contextBlocksHistory?.latest },
     ...(attempt.tailMessages && { tailMessages: attempt.tailMessages }),
     logError,
     repeatSilence: attempt.repeatSilence,

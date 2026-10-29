@@ -85,6 +85,9 @@ export interface FlowEndInput {
 export interface FlowReopenInput {
   ownerId: string;
   chatId: string;
+  /** Только по явному решению приложения: открыть после final (например, тестовый чат эксперта).
+   * Не разрешает deadline/blocked и не обходит истёкший срок программы. Нода и история сохраняются. */
+  allowFinal?: boolean;
   /** Почему открыт, словами приложения: придёт в `onReopen.reason`. */
   reason?: string;
   /** Открыть, только если разговор закончился не раньше этого момента; раньше — `ended_too_long_ago`. Политика давности — приложения. */
@@ -93,7 +96,7 @@ export interface FlowReopenInput {
 
 /**
  * Почему разговор не открыт: не по сценарию (`not_flow`), не закончен или уже открыт другим вызовом (`not_ended`), конец,
- * который не открывается (`final`, `deadline`, `blocked`), срок программы уже вышел (`deadline_passed`), закончился раньше
+ * который не открывается (`final` без `allowFinal`, `deadline`, `blocked`), срок программы уже вышел (`deadline_passed`), закончился раньше
  * `endedAfter` (`ended_too_long_ago`).
  */
 export type FlowReopenRefusal = "not_flow" | "not_ended" | "final" | "deadline" | "blocked" | "deadline_passed" | "ended_too_long_ago";
@@ -106,7 +109,7 @@ export interface FlowReopen {
   chatId: string;
   flowId: string;
   versionId: string;
-  /** Чем разговор кончился: `abandoned` или своя причина приложения. */
+  /** Чем разговор кончился: `abandoned`, своя причина приложения или явно разрешённый `final`. */
   endReason: FlowEndReason;
   endedAt: Date;
   /** Причина открытия из `flow.reopen`. */

@@ -369,6 +369,8 @@ export interface AgentSettings {
   contextBlocks?: ContextBlocksSource;
   /** Снимок до смены начала истории, как у памяти; по умолчанию `turn` — прежнее чтение каждого хода. */
   contextBlocksRefresh?: ContextBlocksRefresh;
+  /** В запросе модели оставить только последнюю выданную версию выбранных app-блоков. Raw история сохраняется. */
+  contextBlocksHistory?: { latest: readonly string[] };
   /**
    * Права человека из базы приложения (админ ли, тариф): зовётся один раз в начале хода, до `contextBlocks` и сборки
    * инструментов; повторная попытка и запасной провайдер не зовут снова. Итог — полем `viewer` в `contextBlocks` и в
@@ -1428,6 +1430,9 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     throw new TypeError('agent.contextBlocksRefresh: ждём "turn" или "history-start"');
   }
   const stepContextTimeoutMs = resolveTimeoutMs(stepContextTimeoutSetting, DEFAULT_STEP_CONTEXT_TIMEOUT_MS, "agent.stepContextTimeoutMs");
+  if (agentSettings.contextBlocksHistory !== undefined && (agentSettings.contextBlocksHistory === null || !Array.isArray(agentSettings.contextBlocksHistory.latest) || agentSettings.contextBlocksHistory.latest.some(key => typeof key !== "string" || !key.trim()))) {
+    throw new TypeError("agent.contextBlocksHistory.latest: нужен список непустых ключей блоков");
+  }
   const contextBlocksTimeoutMs = resolveTimeoutMs(contextBlocksTimeoutSetting, DEFAULT_CONTEXT_BLOCKS_TIMEOUT_MS, "agent.contextBlocksTimeoutMs");
   const turnLimits = resolveTurnLimits({ turnTimeoutMs, maxOutputTokens }, options.catalog);
   /** Ходы этой службы: общий срок хода и штатная остановка. */

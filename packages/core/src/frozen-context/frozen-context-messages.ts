@@ -48,6 +48,28 @@ export function withFrozenContext(
       ? [dataOf(message), ...message.parts.filter(p => p.type === FROZEN_CONTEXT_PART_TYPE).slice(1).map(p => (p as { data: FrozenContextData }).data)]
       : []).concat(current?.data).find(data => data?.appContextFrom === root.id)
     : undefined;
+  const latestKeys = new Set((options.latestKeys ?? []).filter(key => !isReservedKey(key)));
+  const lastUpdates = new Map<string, FrozenContextData>();
+  if (anchor) for (const block of anchor.blocks) if (latestKeys.has(block.key)) lastUpdates.set(block.key, anchor);
+  if (latestKeys.size) {
+    const bases = new Map<string, FrozenContextData>();
+    const noteUpdate = (data: FrozenContextData, base: FrozenContextData | undefined) => {
+      const keys = data.sent === "all" || !base ? [...latestKeys]
+        : [...data.sent.changed, ...data.sent.removed, ...(data.sent.hidden ?? [])];
+      for (const key of keys) if (latestKeys.has(key)) lastUpdates.set(key, data);
+    };
+    let currentSeen = false;
+    for (const message of history) {
+      const data = dataOf(message);
+      if (data) { noteUpdate(data, data.base === null ? undefined : bases.get(data.base)); bases.set(message.id, data); if (message.id === current?.answerId) currentSeen = true; }
+      for (const part of (message.role === "assistant" ? message.parts.filter(part => part.type === FROZEN_CONTEXT_PART_TYPE).slice(1) : [])) {
+        const note = (part as { data: FrozenContextData }).data;
+        noteUpdate(note, bases.get(message.id)); bases.set(message.id, note);
+      }
+    }
+    if (current && !currentSeen) noteUpdate(current.data, current.data.base === null ? undefined : bases.get(current.data.base));
+  }
+  const keptUpdate = (key: string, data: FrozenContextData) => !latestKeys.has(key) || lastUpdates.get(key) === data;
   let anchored = false;
   // Что модель видела последним у каждого ответа: его блоки, затем заметки продолжения по порядку. База — всегда раньше.
   const seen = new Map<string, FrozenContextData>();
@@ -62,8 +84,8 @@ export function withFrozenContext(
   const textsOf = (data: FrozenContextData, base: FrozenContextData | undefined) => {
     // У summary уже полный app snapshot. До его исходного места старые app блоки не показываем;
     // дату, память, место и notices по-прежнему выводим на своих местах. После него — прежние delta.
-    const include = (key: string) => allowed(key) && (!anchor || anchored || isReservedKey(key));
-    const texts = blockTexts(data, base, group, anchor || options.includeKey ? include : undefined);
+    const include = (key: string) => allowed(key) && keptUpdate(key, data) && (!anchor || anchored || isReservedKey(key));
+    const texts = blockTexts(data, base, group, anchor || options.includeKey || latestKeys.size ? include : undefined);
     if (data === anchor) anchored = true;
     return texts;
   };
@@ -77,7 +99,7 @@ export function withFrozenContext(
     }
     // База заметки — прошлые блоки её же ответа, а не номер в ней: у копии «Повторить» номер ответа другой.
     const placed = anchor && message === root ? { ...message, parts: message.parts.flatMap(part => isSummaryPart(part)
-      ? [part, ...anchor.blocks.filter(block => !isReservedKey(block.key) && allowed(block.key) && !(group && block.private)).map(block => ({ type: "text" as const, text: block.text }))]
+      ? [part, ...anchor.blocks.filter(block => !isReservedKey(block.key) && allowed(block.key) && keptUpdate(block.key, anchor) && !(group && block.private)).map(block => ({ type: "text" as const, text: block.text }))]
       : [part]) } : message;
     output.push(...withResumeNotes(placed, (note) => {
       const texts = textsOf(note, seen.get(message.id));
@@ -97,6 +119,8 @@ export interface FrozenContextProjection {
   anchorHistory?: readonly AgentChatMessage[];
   /** Допустимые ключи блоков в проекции; нет — прежний набор. Текст переписки не фильтруется. */
   includeKey?: (key: string) => boolean;
+  /** Только последнее выданное обновление выбранных app-ключей; raw snapshots и прочие блоки сохраняются. */
+  latestKeys?: readonly string[];
 }
 
 /** Ответ, разрезанный заметками продолжения (все части застывших блоков после первой). Заметка без текстов не режет. */

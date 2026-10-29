@@ -168,3 +168,35 @@ describe("flow.reopen", () => {
     expect(await chat.flow.reopen({ ownerId: OWNER, chatId: id, endedAfter: new Date(msk(14, 9)) })).toEqual({ reopened: true });
   });
 });
+
+describe('explicit final reopening for application-owned previews', () => {
+  it('requires allowFinal, preserves history/state and admits a real next turn', async () => {
+    const chat=timerChat({edit:abandonsInADay(5)});
+    const {id}=await chat.service.createChat(OWNER);
+    await human(chat,id,'История тестового разговора');
+    await chat.flow.end({ownerId:OWNER,chatId:id,reason:'final'});
+    const before=await chat.flow.readRun(OWNER,id);
+    expect(await chat.flow.reopen({ownerId:OWNER,chatId:id})).toEqual({reopened:false,reason:'final'});
+    expect(await chat.flow.reopen({ownerId:'stranger',chatId:id,allowFinal:true})).toEqual({reopened:false,reason:'not_flow'});
+    expect(await chat.flow.reopen({ownerId:OWNER,chatId:id,allowFinal:true,reason:'expert preview'})).toEqual({reopened:true});
+    expect(await chat.flow.admit({ownerId:OWNER,chatId:id})).toEqual({kind:'answer'});
+    expect((await chat.flow.readRun(OWNER,id))?.state).toBe(before?.state);
+    await human(chat,id,'Продолжение после окончания');
+    const prompt=promptText(chat.model.doStreamCalls.at(-1)!);
+    expect(prompt).toContain('История тестового разговора');
+    expect(prompt).toContain('Продолжение после окончания');
+  });
+  it('does not bypass blocked, deadline or elapsed program deadlines', async () => {
+    for(const reason of ['blocked','deadline']) {
+      const chat=timerChat({edit:abandonsInADay(5)});
+      const {id}=await chat.service.createChat(OWNER); await human(chat,id,'Привет');
+      await chat.flow.end({ownerId:OWNER,chatId:id,reason});
+      expect(await chat.flow.reopen({ownerId:OWNER,chatId:id,allowFinal:true})).toEqual({reopened:false,reason});
+    }
+    const chat=timerChat({edit:abandonsInADay(1)});
+    const {id}=await chat.service.createChat(OWNER);await human(chat,id,'Привет');
+    await chat.flow.end({ownerId:OWNER,chatId:id,reason:'final'});
+    clockAt(msk(16,12));
+    expect(await chat.flow.reopen({ownerId:OWNER,chatId:id,allowFinal:true})).toEqual({reopened:false,reason:'deadline_passed'});
+  });
+});

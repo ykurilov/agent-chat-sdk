@@ -168,6 +168,9 @@ importers:
       '@ai-sdk/provider':
         specifier: 4.0.19
         version: 4.0.19
+      '@ykurilov/agent-chat-attachments':
+        specifier: workspace:*
+        version: link:../../packages/attachments
       '@ykurilov/agent-chat-core':
         specifier: workspace:*
         version: link:../../packages/core

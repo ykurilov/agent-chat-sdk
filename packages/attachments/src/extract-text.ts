@@ -34,7 +34,7 @@ function normalize(text: string): string {
  * всегда одинаково. Вторая линия — потолок памяти потока разбора: он держит то, что первая не видит (зашифрованный
  * PDF, другие фильтры сжатия), но срабатывает не всегда одинаково — зависит от сборки мусора.
  * Код потока встроен строкой, чтобы пакет не зависел от того, как приложение собирает файлы. `unpdf` он берёт по
- * адресу, найденному в основном потоке.
+ * адресу собственного серверного модуля; Node resolver выполняется внутри worker, вне преобразований сборщика.
  */
 const PDF_WORKER_SOURCE = `
 const { parentPort, workerData } = require("node:worker_threads");
@@ -70,7 +70,10 @@ const checkStreamSizes = (bytes, maxBytes) => {
 const squeeze = (texts) => texts.join("\\n").replace(/[^\\S\\n]+/g, " ").replace(/ ?\\n ?/g, "\\n").replace(/\\n{3,}/g, "\\n\\n");
 (async () => {
   checkStreamSizes(workerData.bytes, workerData.maxStreamBytes);
-  const { getDocumentProxy } = await import(workerData.unpdfUrl);
+  const { createRequire } = require("node:module");
+  const { pathToFileURL } = require("node:url");
+  const unpdfUrl = pathToFileURL(createRequire(workerData.moduleUrl).resolve("unpdf")).href;
+  const { getDocumentProxy } = await import(unpdfUrl);
   const pdf = await getDocumentProxy(workerData.bytes);
   try {
     const pages = [];
@@ -104,13 +107,12 @@ export interface PdfReadOptions {
 const unreadable = () => new AttachmentRejectedError("unreadable", "Не удалось прочитать файл: он повреждён, защищён паролем или слишком сложный");
 
 function pdfText(bytes: Uint8Array, options: PdfReadOptions): Promise<string> {
-  const unpdfUrl = import.meta.resolve("unpdf");
   return new Promise((resolve, reject) => {
     // Поток забирает буфер себе (transfer): копия одна, исходные байты остаются у вызывающего.
     const copy = bytes.slice();
     const worker = new Worker(PDF_WORKER_SOURCE, {
       eval: true,
-      workerData: { unpdfUrl, bytes: copy, maxChars: options.maxChars ?? Infinity, maxStreamBytes: options.maxStreamBytes ?? PDF_STREAM_BYTES },
+      workerData: { moduleUrl: import.meta.url, bytes: copy, maxChars: options.maxChars ?? Infinity, maxStreamBytes: options.maxStreamBytes ?? PDF_STREAM_BYTES },
       transferList: [copy.buffer],
       resourceLimits: { maxOldGenerationSizeMb: options.maxMemoryMb ?? PDF_MEMORY_MB, maxYoungGenerationSizeMb: 32 },
     });
