@@ -1,6 +1,8 @@
 /** Optional, skin-independent controls. The host owns context and enabled tool configuration. */
 export interface ComposerOptions {
   variant?: "compact" | "standard" | "extended";
+  /** Oduvanchik extended composer: keep only the reasoning icon and caret; the accessible name and tooltip retain the selected level. */
+  reasoningChip?: "label" | "icon";
   context?: { label: string; onPick?: () => void };
   projects?: Array<{ id: string; label: string; onPick: () => void }>;
   contextAttachments?: Array<{ id: string; label: string; onRemove?: () => void }>;

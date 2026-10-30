@@ -17,6 +17,9 @@ export function ComposerSettings({ choice, options, disabled }: { choice?: Model
   const providers = choice?.providers ?? [];
   const currentProvider = providers.find((provider) => provider.id === choice?.current.providerId);
   const currentModel = currentProvider?.models.find((model) => model.id === choice?.current.modelId);
+  const reasoningLevel = choice?.reasoning && (labels.levels[choice.reasoning] || choice.reasoningLevels.find((level) => level.id === choice.reasoning)?.name);
+  const reasoningTitle = reasoningLevel ? `${labels.reasoning}: ${reasoningLevel}` : labels.reasoning;
+  const reasoningIconOnly = options.reasoningChip === "icon";
   const all = new Map<string, ModelChoiceView["providers"][number]["models"][number]>();
   providers.forEach((provider) => provider.models.forEach((model) => { if (!all.has(model.id) || provider.id === currentProvider?.id) all.set(model.id, model); }));
   const filtered = [...all.values()].filter((model) => `${model.name} ${model.description ?? ""} ${model.tags?.join(" ") ?? ""}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()));
@@ -31,7 +34,7 @@ export function ComposerSettings({ choice, options, disabled }: { choice?: Model
     panel.current?.querySelector<HTMLElement>('input, button')?.focus();
     const onPointer = (event: PointerEvent) => { if (!root.current?.contains(event.target as Node)) setOpen(null); };
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") { event.preventDefault(); setOpen(null); previous?.focus(); }
+      if (event.key === "Escape") { event.preventDefault(); setOpen(null); (trigger.current ?? previous)?.focus(); }
       if (mobile && event.key === "Tab") {
         const nodes = [...(panel.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled)') ?? [])];
         const first = nodes[0], last = nodes.at(-1);
@@ -68,7 +71,7 @@ export function ComposerSettings({ choice, options, disabled }: { choice?: Model
   const toolControls = <section className="oduvanchik-settings-section"><p className="oduvanchik-label">{labels.tools}</p>{options.tools?.map((tool) => <label className="oduvanchik-setting-switch" key={tool.id}><span>{tool.label}{tool.description && <small>{tool.description}</small>}</span><input type="checkbox" role="switch" checked={tool.enabled} disabled={disabled} onChange={(event) => { if (!disabled) tool.onChange(event.target.checked); }} /></label>)}</section>;
   return <div className="oduvanchik-settings" ref={root}>
     {choice && <button type="button" className="oduvanchik-chip oduvanchik-chip-model" aria-label={`${labels.model}: ${currentModel?.name ?? labels.model}`} disabled={disabled || !providers.length} aria-expanded={open === "model"} aria-controls={id} onClick={(event) => show("model", event.currentTarget)}><CpuIcon size={16} aria-hidden /><span>{currentModel?.name ?? labels.model}</span><CaretDownIcon className="oduvanchik-chip-caret" size={12} aria-hidden /></button>}
-    {(choice?.reasoningLevels.length || options.reasoningVisibility) ? <button type="button" className="oduvanchik-chip oduvanchik-chip-reasoning" aria-label={labels.reasoning} disabled={disabled} aria-expanded={open === "reasoning"} aria-controls={id} onClick={(event) => show("reasoning", event.currentTarget)}><BrainIcon size={16} aria-hidden /><span>{(choice?.reasoning && labels.levels[choice.reasoning]) || choice?.reasoningLevels.find((level) => level.id === choice.reasoning)?.name || labels.reasoning}</span><CaretDownIcon className="oduvanchik-chip-caret" size={12} aria-hidden /></button> : null}
+    {(choice?.reasoningLevels.length || options.reasoningVisibility) ? <button type="button" className={`oduvanchik-chip oduvanchik-chip-reasoning${reasoningIconOnly ? " oduvanchik-chip-reasoning-icon" : ""}`} aria-label={reasoningIconOnly ? reasoningTitle : labels.reasoning} title={reasoningTitle} disabled={disabled} aria-expanded={open === "reasoning"} aria-controls={id} onClick={(event) => show("reasoning", event.currentTarget)}><BrainIcon size={16} aria-hidden />{!reasoningIconOnly && <span>{reasoningLevel || labels.reasoning}</span>}<CaretDownIcon className="oduvanchik-chip-caret" size={12} aria-hidden /></button> : null}
     {options.tools && <button type="button" className="oduvanchik-chip oduvanchik-chip-tools" aria-label={labels.tools} disabled={disabled} aria-expanded={open === "tools"} aria-controls={id} onClick={(event) => show("tools", event.currentTarget)}><WrenchIcon size={16} aria-hidden /><span className="oduvanchik-label">{options.tools.filter((tool) => tool.enabled).length}</span><CaretDownIcon className="oduvanchik-chip-caret" size={12} aria-hidden /></button>}
     {open && !disabled && <>
       {mobile && <div className="oduvanchik-settings-dim" onClick={close} />}

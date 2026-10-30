@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { cleanup, fireEvent, render as renderBase, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { OduvanchikComposer } from "../src/composer";
-import type { ModelChoiceView } from "@ykurilov/agent-chat-react";
+import { ChatLabelsProvider, englishLabels, type ModelChoiceView } from "@ykurilov/agent-chat-react";
 
 afterEach(cleanup);
 const render = (node: ReactNode) => renderBase(node, { wrapper: ({ children }) => <TooltipProvider>{children}</TooltipProvider> });
@@ -15,6 +15,43 @@ const choice = (onChange = vi.fn()): ModelChoiceView => ({
 const base = () => ({ value: "Текст", onValueChange: vi.fn(), onSubmit: vi.fn(), canSubmit: true, busy: false, onStop: vi.fn() });
 
 describe("три вида поля Одуванчик", () => {
+  it("reasoning icon keeps the localized level in its accessible name and tooltip, with no visible text", () => {
+    const model = choice();
+    const { container, rerender } = render(<OduvanchikComposer {...base()} options={{ variant: "extended", reasoningChip: "icon" }} modelChoice={model} />);
+    const chip = screen.getByRole("button", { name: "Рассуждения: Низко" });
+    expect(chip.title).toBe("Рассуждения: Низко");
+    expect(chip.textContent).toBe("");
+    expect(chip.querySelectorAll("svg")).toHaveLength(2);
+    fireEvent.click(chip);
+    expect(within(screen.getByRole("dialog")).getByRole("group", { name: "Рассуждения" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Выкл", exact: true }));
+    expect(model.onReasoningChange).toHaveBeenCalledWith("off");
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(document.activeElement).toBe(chip);
+    rerender(<OduvanchikComposer {...base()} options={{ variant: "extended", reasoningChip: "icon" }} modelChoice={{ ...model, reasoning: "off" }} />);
+    expect(screen.getByRole("button", { name: "Рассуждения: Выкл" }).title).toBe("Рассуждения: Выкл");
+    expect(container.querySelector('.oduvanchik-chip-reasoning-icon > span')).toBeNull();
+  });
+  it("unselected reasoning icon retains its name and visibility menu", () => {
+    const change = vi.fn();
+    render(<OduvanchikComposer {...base()} options={{ variant: "extended", reasoningChip: "icon", reasoningVisibility: { value: true, onChange: change } }} />);
+    const chip = screen.getByRole("button", { name: "Рассуждения", exact: true });
+    expect(chip.textContent).toBe(""); expect(chip.title).toBe("Рассуждения");
+    fireEvent.click(chip);
+    fireEvent.click(screen.getByRole("switch", { name: "Показывать ход мысли" }));
+    expect(change).toHaveBeenCalledWith(false);
+  });
+  it("icon mode respects translated labels and remains disabled while busy", () => {
+    render(<ChatLabelsProvider labels={englishLabels}><OduvanchikComposer {...base()} busy options={{ variant: "extended", reasoningChip: "icon" }} modelChoice={choice()} /></ChatLabelsProvider>);
+    const chip = screen.getByRole("button", { name: "Reasoning: Low" }) as HTMLButtonElement;
+    expect(chip.disabled).toBe(true);
+    fireEvent.click(chip);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  it.each([undefined, "label"] as const)("default and explicit label modes preserve the visible level (%s)", (reasoningChip) => {
+    render(<OduvanchikComposer {...base()} options={{ variant: "extended", reasoningChip }} modelChoice={choice()} />);
+    expect(screen.getByRole("button", { name: "Рассуждения", exact: true }).textContent).toBe("Низко");
+  });
   it("поле, смонтированное в закрытой панели, сохраняет строку и растёт при фокусе после открытия", () => {
     const props = base();
     const { rerender } = render(<div hidden><OduvanchikComposer {...props} value="Первая\nВторая" /></div>);

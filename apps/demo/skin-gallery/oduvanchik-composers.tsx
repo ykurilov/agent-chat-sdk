@@ -35,6 +35,7 @@ function Chat({ variant }: { variant: typeof variants[number] }) {
   const choice = useModelChoice({ api: "/oduvanchik-catalog", chatId: variant, menuWanted: variant === "extended" });
   const options: ComposerOptions = {
     variant,
+    ...(new URLSearchParams(location.search).get("reasoning") === "icon" && { reasoningChip: "icon" as const }),
     context: { label: context, onPick: () => setContext(context === "Мастерская" ? "Лендинг вебинара" : "Мастерская") },
     projects: [{ id: "webinar", label: "Лендинг вебинара", onPick: () => setProjects(["Лендинг вебинара"]) }],
     contextAttachments: projects.map((label) => ({ id: label, label, onRemove: () => setProjects((items) => items.filter((item) => item !== label)) })),
