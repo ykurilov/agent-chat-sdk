@@ -308,6 +308,11 @@ export function createInMemoryChatStorage(): ChatStorage {
       return found.map(readable);
     },
 
+    async hasMessages(chatId) {
+      for (const message of messages.values()) if (message.chatId === chatId) return true;
+      return false;
+    },
+
     async listMessageLinks(chatId) {
       return sortedMessages(chatId).map(({ id, parentId, createdAt }) => ({ id, parentId, createdAt }));
     },

@@ -175,6 +175,17 @@ export function describeChatStorageContract(
       expect(await storage.listMessages("missing")).toEqual([]);
     });
 
+    it("hasMessages checks empty, populated, missing and deleted chats", async () => {
+      const storage = await storageWithChat();
+      if (!storage.hasMessages) return; // Older app-owned implementations stay valid.
+      expect(await storage.hasMessages(chatInput.id)).toBe(false);
+      expect(await storage.hasMessages("missing")).toBe(false);
+      await storage.insertMessage(userMessage("presence", "2099-01-01T00:00:00.000Z"));
+      expect(await storage.hasMessages(chatInput.id)).toBe(true);
+      await storage.deleteChat(chatInput.id);
+      expect(await storage.hasMessages(chatInput.id)).toBe(false);
+    });
+
     it("listMessageLinks отдаёт только id, родителя и время создания, в том же порядке, что listMessages", async () => {
       const storage = await storageWithChat();
       const sameTime = "2099-01-01T00:00:02.000Z";

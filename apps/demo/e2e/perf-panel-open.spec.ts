@@ -18,11 +18,17 @@ test(`панель с загруженной историей открывает
   await page.context().addCookies([{ name: "demo-user", value: "anna", domain: "localhost", path: "/" }]);
   await page.addInitScript((id) => localStorage.setItem("agent-chat:panel-chat:/api/chat:anna", id), chatId);
   const historyLoaded = page.waitForResponse((response) => new URL(response.url()).pathname === `/api/chat/${chatId}` && response.ok());
+  let historyRequests = 0;
+  page.on("request", request => { if (request.method() === "GET" && new URL(request.url()).pathname === `/api/chat/${chatId}`) historyRequests++; });
+  const watchOpened = page.waitForResponse(response => new URL(response.url()).pathname === `/api/chat/${chatId}/watch` && response.ok());
   await page.goto("/panel-app");
   await historyLoaded;
   await expect(page.getByRole("complementary", { name: "Панель агента" })).toHaveCount(0);
   // История пришла и разобрана; даём странице успокоиться, чтобы замер не ловил хвост загрузки.
+  const watch = await watchOpened;
+  expect(watch.headers()["x-agent-chat-history-match"]).toBe("1");
   await page.waitForTimeout(1_000);
+  expect(historyRequests).toBe(1);
 
   const openingMs = await page.evaluate(
     ({ marker }) =>

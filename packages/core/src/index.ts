@@ -346,3 +346,5 @@ export { endTurn } from "./agent-run/end-turn";
 export type { EndTurnOptions } from "./agent-run/end-turn";
 
 export { buildModelMenu } from "./models/model-choice";
+
+export { hasChatMessages } from "./storage/chat-storage";

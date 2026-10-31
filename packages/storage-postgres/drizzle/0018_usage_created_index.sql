@@ -1,0 +1,1 @@
+CREATE INDEX "usage_records_created_idx" ON "agent_chat"."usage_records" USING btree ("created_at");

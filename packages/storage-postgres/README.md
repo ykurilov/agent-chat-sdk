@@ -38,3 +38,8 @@ await storage.close(); // при остановке сервера
 Подключение целиком: [docs/getting-started.md](https://github.com/ykurilov/agent-chat-sdk/blob/main/docs/getting-started.md).
 
 Журнал изменений и что делать при обновлении: [CHANGELOG.md](./CHANGELOG.md). Все пакеты SDK выходят вместе и с одной версией; обновление — `pnpm update "@ykurilov/agent-chat-*" --latest`.
+
+
+## Загрузка и лёгкие входы
+
+[Лёгкий SSR-текст, словари без редактора, сверка истории и проверка наличия сообщений](https://github.com/ykurilov/agent-chat-sdk/blob/main/docs/loading-performance.md). Старые входы сохранены.

@@ -88,6 +88,11 @@ async function scenario(mode, base) {
   const html = await page.text();
   check(html.includes('data-attachment-ssr="ready"'), `${label} attachment hooks render on the server`);
 
+  const saved = await fetch(`${base}/saved-text`);
+  const savedHtml = await saved.text();
+  check(saved.status === 200 && savedHtml.includes('data-static-message="ready"') && savedHtml.includes("<strong>Rendered without chat hooks</strong>"), `${label} text-only entry renders in a Server Component`);
+  check(!savedHtml.includes('<img src="https://example.invalid/pixel"'), `${label} static Markdown does not load an external image`);
+
   const created = await fetch(`${base}/api/chat`, { method: "POST", headers: cookie("anna") });
   const { id } = await created.json();
   check(created.status === 201 && Boolean(id), `${label} чат создаётся`);

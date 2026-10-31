@@ -753,6 +753,8 @@ export function useAgentChat({
   };
 
   /** История с сервера, с учётом сроков; `signal` — своя отмена (серия попыток, уход со страницы). */
+  const historyVersion = useRef<{ url: string; version: string } | null>(null);
+  const historyVersions = useRef(new WeakMap<ServerHistory, { url: string; version: string }>());
   const loadHistory = useCallback(
     async (signal?: AbortSignal): Promise<HistoryResult> => {
       try {
@@ -775,7 +777,12 @@ export function useAgentChat({
         if (!response.ok) return "server_error";
         // Доступ вернули: отказ приложения больше не показывается вместо чата.
         setAccessRefusal(null);
-        return (await response.json()) as ServerHistory;
+        const history = (await response.json()) as ServerHistory;
+        if (!signal?.aborted && chatUrlRef.current === chatUrl) {
+          const version = response.headers.get("x-agent-chat-history-version");
+          if (version) historyVersions.current.set(history, { url: chatUrl, version });
+        }
+        return history;
       } catch (error) {
         return isConnectionError(error) ? "unreachable" : "server_error";
       }
@@ -1041,6 +1048,7 @@ export function useAgentChat({
    */
   const applyServerHistory = useCallback(
     async (history: ServerHistory, before: AgentChatMessage[], signal: AbortSignal): Promise<boolean> => {
+      historyVersion.current = historyVersions.current.get(history) ?? null;
       const previousView = historyViewRef.current;
       applyAccess(history);
       acceptHistoryView(history);
@@ -1510,8 +1518,8 @@ export function useAgentChat({
 
   // Подписка на события чата, пока ответ не идёт: ход, начатый не из этой вкладки (фон, мессенджер, другая вкладка),
   // подхватывается тем же путём, что после перезагрузки; изменения задач поднимают `tasksVersion`. Пока подписка была
-  // закрыта, события терялись: каждое открытие перечитывает историю. Ход, который начал свой запрос этой вкладки
-  // (сообщение, ответ на подтверждение или виджет), подключает сам запрос: второе подключение дописало бы ответ заново.
+  // закрыта, события терялись: открытие перечитывает историю, если сервер не подтвердил совпадение снимка.
+  // Ход, который начал свой запрос этой вкладки (сообщение, ответ на подтверждение или виджет), подключает сам запрос: второе подключение дописало бы ответ заново.
   // При «Нет связи с сервером» к ходу подключает «Повторить», а не открытие подписки.
   const connectionRef = useRef(connection);
   connectionRef.current = connection;
@@ -1535,9 +1543,10 @@ export function useAgentChat({
       signal: watch.signal,
       delaysMs: settingsRef.current.reconnectDelaysMs,
       silenceTimeoutMs: settingsRef.current.silenceTimeoutMs,
-      onOpen: () => {
+      historyVersion: () => historyVersion.current?.url === chatUrl ? historyVersion.current.version : undefined,
+      onOpen: (historyMatches) => {
         setTasksVersion((version) => version + 1);
-        if (!ownTurnStarting() && connectionRef.current !== "offline") void refreshFromServer(chatSignal, { unlessFeedChanged: true });
+        if (!historyMatches && !ownTurnStarting() && connectionRef.current !== "offline") void refreshFromServer(chatSignal, { unlessFeedChanged: true });
       },
       onEvent: (event) => {
         if (event.type === "tasks-changed") setTasksVersion((version) => version + 1);

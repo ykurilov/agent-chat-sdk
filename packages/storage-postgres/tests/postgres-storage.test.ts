@@ -722,3 +722,24 @@ async function openStorageWithPool(connectionString: string, poolSize: number): 
   openStorages.push(storage);
   return storage;
 }
+
+it("hasMessages uses one indexed LIMIT query without loading message payloads", async () => {
+  const queries: Array<{ sql: string; params: unknown[] }> = [];
+  const storage = await createPgliteChatStorage({ onQuery: (sql, params) => queries.push({ sql, params }) });
+  try {
+    queries.length = 0;
+    expect(await storage.hasMessages!("absent")).toBe(false);
+    expect(queries).toHaveLength(1);
+    expect(queries[0]!.sql).toMatch(/select 1 from .*messages.*chat_id.*limit/i);
+    expect(queries[0]!.sql).not.toContain('"parts"');
+    expect(queries[0]!.params).toEqual(["absent", 1]);
+  } finally { await storage.close(); }
+});
+
+it("migrates a standalone usage date index", async () => {
+  const database = await freshDatabase();
+  await openStorage(database.connectionString);
+  const rows = await query(database.connectionString, "select indexdef from pg_indexes where schemaname = 'agent_chat' and indexname = 'usage_records_created_idx'");
+  expect(rows).toHaveLength(1);
+  expect(rows[0]!.indexdef).toContain("(created_at)");
+});

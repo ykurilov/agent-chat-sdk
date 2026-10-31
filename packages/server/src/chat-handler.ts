@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { compactHistory, historyPart, historyMessage, HistoryViewConflict, InvalidHistoryView } from "./history-view";
 import {
   ApprovalNotPendingError,
@@ -404,7 +405,7 @@ export function createChatServer(options: ChatHandlerOptions): { handler: ChatHa
   const hasWatchers = (ownerId: string, chatId: string) => (watchers.get(watcherKey(ownerId, chatId)) ?? 0) > 0;
 
   /** Подписчик считается, пока поток открыт; снимается при отмене потока, уходе клиента и сбое открытия — ровно один раз. */
-  function watchResponse(request: Request, userId: string, chatId: string): Response {
+  async function watchResponse(request: Request, userId: string, chatId: string): Promise<Response> {
     const key = watcherKey(userId, chatId);
     watchers.set(key, (watchers.get(key) ?? 0) + 1);
     let counted = true;
@@ -431,7 +432,24 @@ export function createChatServer(options: ChatHandlerOptions): { handler: ChatHa
         onClose: uncount,
         logError,
       });
-      return streamResponse(stream);
+      try {
+        // Subscribe first. Changes while reading the snapshot are already queued for this watcher.
+        const expected = new URL(request.url).searchParams.get("historyVersion");
+        let matches = false;
+        if (expected && /^[a-f0-9]{64}$/.test(expected)) {
+          try {
+            matches = expected === historyVersion({ ...await service.getHistory(userId, chatId), backgroundTasks: background !== undefined });
+          } catch {
+            // Keep the old reload path for a failed read or changed access policy; verification is only an optimization.
+          }
+        }
+        const response = streamResponse(stream);
+        if (expected) response.headers.set("x-agent-chat-history-match", matches ? "1" : "0");
+        return response;
+      } catch (error) {
+        await stream.cancel();
+        throw error;
+      }
     } catch (error) {
       uncount();
       throw error;
@@ -546,7 +564,7 @@ export function createChatServer(options: ChatHandlerOptions): { handler: ChatHa
       const history = await service.getHistory(userId, chatId);
       const query = new URL(request.url).searchParams;
       try {
-        return Response.json({ ...(query.get("history") === "compact" ? compactHistory(history, query, options.agent.widgets?.custom?.map(widget => widget.name)) : history), backgroundTasks: background !== undefined }, { headers: { "cache-control": "private, no-store" } });
+        return Response.json({ ...(query.get("history") === "compact" ? compactHistory(history, query, options.agent.widgets?.custom?.map(widget => widget.name)) : history), backgroundTasks: background !== undefined }, { headers: { "cache-control": "private, no-store", "x-agent-chat-history-version": historyVersion({ ...history, backgroundTasks: background !== undefined }) } });
       } catch (error) {
         if (error instanceof HistoryViewConflict) return errorResponse(409, "history_changed");
         if (error instanceof InvalidHistoryView) return errorResponse(400, "invalid");
@@ -829,4 +847,9 @@ function errorToResponse(error: unknown): Response {
     return Response.json({ error: { kind: "widget_check_timeout", code: "widget_check_timeout", message: error.message } }, { status: 504 });
   }
   return errorResponse(500, "other");
+}
+
+/** Full authorized snapshot, before compact paging; no process-local cache or missed-event assumptions. */
+function historyVersion(history: unknown): string {
+  return createHash("sha256").update(JSON.stringify(history)).digest("hex");
 }

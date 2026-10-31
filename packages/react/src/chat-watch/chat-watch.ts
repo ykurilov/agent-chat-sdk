@@ -28,7 +28,9 @@ export type WatchChatOptions = {
   refusedRetryMs?: number;
   /** Сколько ждать хоть какого-то байта (событие или пинг), прежде чем считать поток мёртвым. */
   silenceTimeoutMs: number;
-  onOpen?: () => void;
+  /** Called for every reconnect too: use the latest successfully loaded snapshot. */
+  historyVersion?: () => string | undefined;
+  onOpen?: (historyMatches: boolean) => void;
   onEvent: (event: ChatWatchEvent) => void;
 };
 
@@ -58,13 +60,19 @@ async function readOnce(options: WatchChatOptions): Promise<"opened" | "failed" 
   const connection = new AbortController();
   const stopConnection = () => connection.abort();
   options.signal.addEventListener("abort", stopConnection, { once: true });
+  let opened = false;
   let silenceTimer: ReturnType<typeof setTimeout> | undefined;
   const restartSilenceTimer = () => {
     clearTimeout(silenceTimer);
     silenceTimer = setTimeout(stopConnection, options.silenceTimeoutMs);
   };
   try {
-    const response = await options.fetch(options.url, { headers: { accept: "text/event-stream" }, signal: connection.signal });
+    // Opening now may include server-side snapshot verification: a stalled response must time out too.
+    restartSilenceTimer();
+    const version = options.historyVersion?.();
+    const url = version ? `${options.url}${options.url.includes("?") ? "&" : "?"}historyVersion=${encodeURIComponent(version)}` : options.url;
+    const response = await options.fetch(url, { headers: { accept: "text/event-stream" }, signal: connection.signal });
+    if (connection.signal.aborted) return "failed";
     if (!response.ok || !response.body) {
       if (response.status === 401 || response.status === 403) return "refused";
       if (isPermanentRefusal(response.status)) return "unavailable";
@@ -72,7 +80,8 @@ async function readOnce(options: WatchChatOptions): Promise<"opened" | "failed" 
     }
     // Сервер без подписки, который на любой адрес отвечает своей страницей или JSON: повторять бессмысленно.
     if (!(response.headers.get("content-type") ?? "").includes("text/event-stream")) return "unavailable";
-    options.onOpen?.();
+    opened = true;
+    options.onOpen?.(Boolean(version) && response.headers.get("x-agent-chat-history-match") === "1");
     restartSilenceTimer();
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -93,7 +102,7 @@ async function readOnce(options: WatchChatOptions): Promise<"opened" | "failed" 
     }
     return "opened";
   } catch {
-    return connection.signal.aborted && !options.signal.aborted ? "opened" : "failed";
+    return connection.signal.aborted && !options.signal.aborted && opened ? "opened" : "failed";
   } finally {
     clearTimeout(silenceTimer);
     options.signal.removeEventListener("abort", stopConnection);

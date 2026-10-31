@@ -1,6 +1,6 @@
 {
   "name": "@ykurilov/agent-chat-flows",
-  "version": "0.91.0",
+  "version": "0.92.0",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,
@@ -37,7 +37,12 @@
       "types": "./dist/types/postgres.d.ts",
       "import": "./dist/postgres.js"
     },
-    "./agent-flow.schema.json": "./agent-flow.schema.json"
+    "./agent-flow.schema.json": "./agent-flow.schema.json",
+    "./labels": {
+      "@ykurilov/agent-chat-source": "./src/labels/index.ts",
+      "types": "./dist/types/labels/index.d.ts",
+      "import": "./dist/labels.js"
+    }
   },
   "engines": {
     "node": ">=22"

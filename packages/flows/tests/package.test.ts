@@ -19,11 +19,12 @@ describe("каркас пакета @ykurilov/agent-chat-flows", () => {
     expect(manifest.files).toEqual(expect.arrayContaining(["dist", "drizzle", "agent-flow.schema.json"]));
   });
 
-  it("входы «.», «./format», «./react», «./sqlite», «./postgres» и JSON Schema, исходники на месте", () => {
-    expect(Object.keys(manifest.exports)).toEqual([".", "./format", "./react", "./sqlite", "./postgres", "./agent-flow.schema.json"]);
+  it("входы «.», «./format», «./react», «./labels», «./sqlite», «./postgres» и JSON Schema, исходники на месте", () => {
+    expect(Object.keys(manifest.exports)).toEqual([".", "./format", "./react", "./sqlite", "./postgres", "./agent-flow.schema.json", "./labels"]);
     for (const name of ["index", "format", "react", "sqlite", "postgres"]) {
       expect(existsSync(join(root, `packages/flows/src/${name}.ts`)), name).toBe(true);
     }
+    expect(existsSync(join(root, "packages/flows", manifest.exports["./labels"]["@ykurilov/agent-chat-source"]))).toBe(true);
     expect(manifest.exports["./agent-flow.schema.json"]).toBe("./agent-flow.schema.json");
   });
 

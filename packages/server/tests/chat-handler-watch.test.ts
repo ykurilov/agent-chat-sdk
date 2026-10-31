@@ -372,3 +372,80 @@ describe("T047: фон подключён к службе через обраб�
     expect(seen).toEqual(["turn-started", "turn-finished"]);
   });
 });
+
+describe("watch snapshot handshake", () => {
+  it.each(["", "?history=compact"])("matches an unchanged authorized history %s", async (query) => {
+    const server = createServer();
+    const id = await server.createChat();
+    const first = await server.call("GET", `/${id}${query}`);
+    const version = first.headers.get("x-agent-chat-history-version");
+    expect(version).toMatch(/^[a-f0-9]{64}$/);
+    const watch = await server.call("GET", `/${id}/watch?historyVersion=${version}`);
+    expect(watch.headers.get("x-agent-chat-history-match")).toBe("1");
+    await watch.body!.cancel();
+  });
+
+  it("detects a message written between history and subscription, also on a different server instance", async () => {
+    const storage = createInMemoryChatStorage();
+    const first = createServer({ storage });
+    const second = createServer({ storage });
+    const id = await first.createChat();
+    const version = (await first.call("GET", `/${id}`)).headers.get("x-agent-chat-history-version");
+    await (await first.call("POST", `/${id}/messages`, { body: message("race-question", "Проверка") })).text();
+    const watch = await second.call("GET", `/${id}/watch?historyVersion=${version}`);
+    expect(watch.headers.get("x-agent-chat-history-match")).toBe("0");
+    await watch.body!.cancel();
+  });
+
+  it("legacy and malformed tokens cannot suppress a reload; foreign chats remain forbidden", async () => {
+    const server = createServer();
+    const id = await server.createChat();
+    for (const query of ["", "?historyVersion=garbage"]) {
+      const watch = await server.call("GET", `/${id}/watch${query}`);
+      expect(watch.headers.get("x-agent-chat-history-match")).not.toBe("1");
+      await watch.body!.cancel();
+    }
+    const stranger = await server.call("GET", `/${id}/watch?historyVersion=${"a".repeat(64)}`, { user: "stranger" });
+    expect(stranger.status).toBe(404);
+  });
+});
+
+it("queues live events while verifying the history snapshot", async () => {
+  const server = createServer();
+  const id = await server.createChat();
+  const version = (await server.call("GET", `/${id}`)).headers.get("x-agent-chat-history-version");
+  let entered!: () => void;
+  let release!: () => void;
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const getHistory = server.service.getHistory;
+  const spy = vi.spyOn(server.service, "getHistory").mockImplementationOnce(async (...args) => {
+    const snapshot = await getHistory(...args);
+    entered();
+    await gate;
+    return snapshot;
+  });
+  const opening = server.call("GET", `/${id}/watch?historyVersion=${version}`);
+  await started;
+  await server.service.publishAppEvent({ ownerId: "anna", chatId: id, event: { type: "arrived-during-verification" } });
+  release();
+  const response = await opening;
+  expect(response.headers.get("x-agent-chat-history-match")).toBe("1");
+  const reader = response.body!.getReader();
+  const seen = await readUntil(reader, "arrived-during-verification");
+  expect(seen).toContain('"type":"app-event"');
+  await reader.cancel();
+  spy.mockRestore();
+});
+
+it("falls back to the ordinary history request if snapshot verification fails", async () => {
+  const server = createServer();
+  const id = await server.createChat();
+  const version = (await server.call("GET", `/${id}`)).headers.get("x-agent-chat-history-version");
+  const spy = vi.spyOn(server.service, "getHistory").mockRejectedValueOnce(new Error("read failed or access changed"));
+  const response = await server.call("GET", `/${id}/watch?historyVersion=${version}`);
+  expect(response.status).toBe(200);
+  expect(response.headers.get("x-agent-chat-history-match")).toBe("0");
+  await response.body!.cancel();
+  spy.mockRestore();
+});

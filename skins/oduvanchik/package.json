@@ -1,6 +1,6 @@
 {
   "name": "@ykurilov/agent-chat-skin-oduvanchik",
-  "version": "0.91.0",
+  "version": "0.92.0",
   "license": "MIT",
   "type": "module",
   "sideEffects": [
@@ -44,6 +44,15 @@
     },
     "./embedded.css": {
       "default": "./dist/embedded.css"
+    },
+    "./text": {
+      "@ykurilov/agent-chat-source": "./src/text.tsx",
+      "types": "./dist/types/text.d.ts",
+      "import": "./dist/text.js"
+    },
+    "./text/styles.css": {
+      "@ykurilov/agent-chat-source": "./src/text.css",
+      "default": "./dist/text.css"
     }
   },
   "engines": {
@@ -59,7 +68,7 @@
     "directory": "skins/oduvanchik"
   },
   "scripts": {
-    "build": "node ../../scripts/build-package.mjs && cp src/styles.css dist/ && cp src/flows/styles.css dist/flows/ && vite build --config embedded.config.mjs",
+    "build": "node ../../scripts/build-package.mjs && cp src/styles.css src/text.css dist/ && cp src/flows/styles.css dist/flows/ && vite build --config embedded.config.mjs",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {

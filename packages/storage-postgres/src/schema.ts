@@ -140,6 +140,7 @@ export const usageRecords = agentChatSchema.table(
     estimated: boolean("estimated").notNull().default(false),
   },
   (table) => [
+    index("usage_records_created_idx").on(table.createdAt),
     index("usage_records_owner_created_idx").on(table.ownerId, table.createdAt),
     index("usage_records_chat_created_idx").on(table.chatId, table.createdAt),
   ],

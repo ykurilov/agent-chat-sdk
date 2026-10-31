@@ -37,6 +37,7 @@ const labelFolders = [
   "packages/mcp/src/react",
 ];
 const labelsDictionaries = [
+  "skins/oduvanchik/src/text-labels.ts",
   "packages/react/src/labels.tsx",
   "packages/sandbox/src/react/sandbox-labels.ts",
   "packages/messengers/src/react/messengers-labels.ts",

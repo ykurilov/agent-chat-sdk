@@ -185,6 +185,8 @@ export interface ChatStorage {
    * Лёгкий путь для тех, кому нужна только ветка (например, записи сжатия для экрана).
    */
   listMessageLinks(chatId: string): Promise<MessageLink[]>;
+  /** Есть ли хотя бы одно сообщение (включая служебные и другие ветки). Встроенные SQL-хранилища читают только константу с LIMIT 1. Не проверяет права владельца. */
+  hasMessages?(chatId: string): Promise<boolean>;
   /**
    * Связи сообщений чата, как у `listMessageLinks`, и у каждого — только части этих типов (по порядку; нет — пустой
    * список). Выборка внутри базы: тексты и выводы инструментов не читаются. Лёгкий путь для состояния ветки
@@ -495,4 +497,9 @@ export interface StoredPendingBurst {
   heldUntil: string;
   /** Страница хода (`SendMessageOptions.page`): ход после перезапуска идёт с ней. */
   page?: TurnRequestContext;
+}
+
+/** Совместимо со старыми хранилищами приложения; встроенные выполняют один LIMIT 1 без parts. Не проверяет владельца. */
+export async function hasChatMessages(storage: ChatStorage, chatId: string): Promise<boolean> {
+  return storage.hasMessages ? storage.hasMessages(chatId) : (await storage.listMessageLinks(chatId)).length > 0;
 }

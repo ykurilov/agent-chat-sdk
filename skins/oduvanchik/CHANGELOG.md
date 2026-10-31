@@ -6,6 +6,21 @@
 - Обновление приложения: обновить пакеты SDK одной версией после выпуска, пересобрать и убрать временные подмены значков. API и CSS-импорты прежние, миграций нет.
 
 
+## 0.92.0
+
+### Minor Changes
+
+- 6b9b6ba: Avoid downloading unchanged history after watch opens with a subscribe-before-verify handshake; retain legacy fallback. Add static SSR text and labels-only entries, optional hasMessages and hasChatMessages fallback, and a PostgreSQL usage date index. Existing interactive skin and editor entries remain unchanged.
+  
+  Migration: update all SDK packages together. Use @ykurilov/agent-chat-skin-oduvanchik/text for static saved Markdown (no interactive copy/diagram/demo), /text/styles.css for scoped standalone styles, @ykurilov/agent-chat-flows/labels for dictionaries, and hasChatMessages(storage, chatId) after authorization. Server history verification still reads the snapshot. App-owned model-menu requests are unchanged. Full contract: https://github.com/ykurilov/agent-chat-sdk/blob/main/docs/loading-performance.md.
+
+### Patch Changes
+
+- Updated dependencies [6b9b6ba]
+  - @ykurilov/agent-chat-react@0.92.0
+  - @ykurilov/agent-chat-flows@0.92.0
+  - @ykurilov/agent-chat-sandbox@0.92.0
+
 ## 0.91.0
 
 ### Minor Changes

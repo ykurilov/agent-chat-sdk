@@ -448,6 +448,10 @@ export function createSqliteChatStorage(options: { filePath: string }): SqliteCh
       return found;
     },
 
+    async hasMessages(chatId) {
+      return db.select({ present: sql<number>`1` }).from(messages).where(eq(messages.chatId, chatId)).limit(1).all().length > 0;
+    },
+
     async listMessageLinks(chatId) {
       return db
         .select({ id: messages.id, parentId: messages.parentId, createdAt: messages.createdAt })

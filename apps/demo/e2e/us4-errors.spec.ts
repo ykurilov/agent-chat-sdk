@@ -177,7 +177,7 @@ test("шлюз ответил 502 на отправку — сообщение �
     if (request.method() === "POST" && request.url().endsWith("/messages")) sentIds.push((request.postDataJSON() as { message: { id: string } }).message.id);
   });
   page.on("response", (response) => {
-    if (response.url().endsWith("/watch")) watchesOpened += 1;
+    if (new URL(response.url()).pathname.endsWith("/watch")) watchesOpened += 1;
   });
   // Приложение за шлюзом перезапускается: шлюз отдаёт свою страницу 502, сервер сообщения не видел.
   await page.route(sendUrl, (route) =>
@@ -189,7 +189,7 @@ test("шлюз ответил 502 на отправку — сообщение �
   const watchesBeforeSend = watchesOpened;
   await send(page, text);
   await expect(page.getByText("Что-то пошло не так, попробуйте ещё раз")).toBeVisible();
-  // Подписка на события чата открывается после сбоя и перечитывает историю: сообщение всё равно на месте.
+  // Подписка после сбоя открылась заново; независимо от совпадения серверного снимка неотправленное сообщение остаётся.
   await expect.poll(() => watchesOpened).toBeGreaterThan(watchesBeforeSend);
   await expect(page.getByRole("log").getByText(text, { exact: true })).toHaveCount(1);
 

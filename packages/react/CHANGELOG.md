@@ -1,5 +1,13 @@
 # @ykurilov/agent-chat-react
 
+## 0.92.0
+
+### Minor Changes
+
+- 6b9b6ba: Avoid downloading unchanged history after watch opens with a subscribe-before-verify handshake; retain legacy fallback. Add static SSR text and labels-only entries, optional hasMessages and hasChatMessages fallback, and a PostgreSQL usage date index. Existing interactive skin and editor entries remain unchanged.
+  
+  Migration: update all SDK packages together. Use @ykurilov/agent-chat-skin-oduvanchik/text for static saved Markdown (no interactive copy/diagram/demo), /text/styles.css for scoped standalone styles, @ykurilov/agent-chat-flows/labels for dictionaries, and hasChatMessages(storage, chatId) after authorization. Server history verification still reads the snapshot. App-owned model-menu requests are unchanged. Full contract: https://github.com/ykurilov/agent-chat-sdk/blob/main/docs/loading-performance.md.
+
 ## 0.91.0
 
 ### Minor Changes

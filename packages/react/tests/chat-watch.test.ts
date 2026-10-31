@@ -162,3 +162,31 @@ describe("watchChat: сервер без подписки", () => {
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 });
+
+it("times out a watch whose response headers never arrive", async () => {
+  let attempts = 0;
+  const controller = new AbortController();
+  const fetch = async (_url: string, init?: RequestInit) => {
+    attempts++;
+    return await new Promise<Response>((_resolve, reject) => {
+      init!.signal!.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true });
+    });
+  };
+  const done = watchChat({ url: "/watch", fetch, signal: controller.signal, delaysMs: [10], silenceTimeoutMs: 100, onEvent: () => {} });
+  await settle(111);
+  expect(attempts).toBe(2);
+  controller.abort();
+  await done;
+});
+
+it("does not report a late watch opening after its chat was left", async () => {
+  const controller = new AbortController();
+  let release!: (response: Response) => void;
+  const response = new Promise<Response>(resolve => { release = resolve; });
+  const onOpen = vi.fn();
+  const done = watchChat({ url: "/watch", fetch: async () => response, signal: controller.signal, delaysMs: [10], silenceTimeoutMs: 100, onOpen, onEvent: () => {} });
+  controller.abort();
+  release(new Response(new ReadableStream(), { headers: { "content-type": "text/event-stream" } }));
+  await done;
+  expect(onOpen).not.toHaveBeenCalled();
+});

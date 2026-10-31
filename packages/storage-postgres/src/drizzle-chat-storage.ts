@@ -377,6 +377,11 @@ export function createDrizzleChatStorage(db: ChatDatabase): ChatStorage {
       return found;
     },
 
+    async hasMessages(chatId) {
+      const found = await db.select({ present: sql<number>`1` }).from(messages).where(eq(messages.chatId, chatId)).limit(1);
+      return found.length > 0;
+    },
+
     async listMessageLinks(chatId) {
       return db
         .select({ id: messages.id, parentId: messages.parentId, createdAt: messages.createdAt })

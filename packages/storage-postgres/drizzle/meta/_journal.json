@@ -127,6 +127,13 @@
       "when": 1792017521169,
       "tag": "0017_pending_bursts",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1793442948920,
+      "tag": "0018_usage_created_index",
+      "breakpoints": true
     }
   ]
 }

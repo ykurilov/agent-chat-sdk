@@ -278,3 +278,43 @@ describe("useAgentChat: подписка на события чата", () => {
     expect(server.requestsTo("watch")).toHaveLength(0);
   });
 });
+
+describe("watch snapshot handshake in the hook", () => {
+  function versionedServer(matches: boolean) {
+    const server = watchingServer();
+    const fetch = server.fetch;
+    server.fetch = (async (input, init) => {
+      const url = String(input);
+      const response = await fetch(url.includes("/watch?") ? url.split("?")[0]! : input, init);
+      if (url.includes("/watch")) {
+        expect(new URL(url, "https://test.local").searchParams.get("historyVersion")).toBe("a".repeat(64));
+        response.headers.set("x-agent-chat-history-match", matches ? "1" : "0");
+      } else if (url === "/api/chat/c1") response.headers.set("x-agent-chat-history-version", "a".repeat(64));
+      return response;
+    }) as typeof fetch;
+    return server;
+  }
+
+  it("does not load unchanged history again after opening watch, but still applies live messages", async () => {
+    const server = versionedServer(true);
+    const { result } = renderChatHook(server);
+    await waitFor(() => expect(result.current.tasksVersion).toBe(1));
+    expect(server.requestsTo("history")).toHaveLength(1);
+    server.state.history = [question, answer, notice];
+    act(() => server.emit({ type: "message-added", messageId: "n1" }));
+    await waitFor(() => expect(result.current.messages.map(message => message.id)).toContain("n1"));
+    expect(server.requestsTo("history")).toHaveLength(2);
+  });
+
+  it("reloads when the snapshot changed during the gap", async () => {
+    const server = versionedServer(false);
+    const fetch = server.fetch;
+    server.fetch = (async (input, init) => {
+      if (String(input).includes("/watch")) server.state.history = [question, answer, notice];
+      return fetch(input, init);
+    }) as typeof fetch;
+    const { result } = renderChatHook(server);
+    await waitFor(() => expect(result.current.messages.map(message => message.id)).toContain("n1"));
+    expect(server.requestsTo("history")).toHaveLength(2);
+  });
+});
