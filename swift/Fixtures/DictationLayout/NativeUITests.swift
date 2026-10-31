@@ -1,5 +1,47 @@
 import XCTest
 @MainActor final class NativeUITests:XCTestCase {
+    func testMarkdownImagesBothThemes() {
+        for theme in ["light", "dark"] {
+            let app = XCUIApplication()
+            app.launchArguments = [theme, "markdown-images"]
+            app.launch()
+            let image = app.descendants(matching: .any).matching(identifier: "markdown-image").firstMatch
+            XCTAssertTrue(image.waitForExistence(timeout: 5))
+            let anchor = app.staticTexts["image-bottom-anchor"]
+            XCTAssertTrue(anchor.exists)
+            let top = anchor.frame.minY
+            XCTAssertEqual(image.value as? String, "loading")
+            saveImageShot(app, theme + "-loading")
+            app.buttons["Release image"].tap()
+            XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "До картинки")).firstMatch.exists)
+            expectation(for: NSPredicate(format: "value == %@", "loaded"), evaluatedWith: image)
+            waitForExpectations(timeout: 6)
+            XCTAssertEqual(anchor.frame.minY, top, accuracy: 1, "Decoding must not reflow the response")
+            XCTAssertGreaterThan(image.frame.width, app.frame.width * 0.8)
+            XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "после картинки")).firstMatch.exists)
+            saveImageShot(app, theme + "-loaded")
+            app.buttons["Failed"].tap()
+            expectation(for: NSPredicate(format: "value == %@", "failed"), evaluatedWith: image)
+            waitForExpectations(timeout: 6)
+            XCTAssertEqual(anchor.frame.minY, top, accuracy: 1)
+            saveImageShot(app, theme + "-failed")
+            app.buttons["Fallback"].tap()
+            XCTAssertTrue(app.staticTexts["Локальная подпись"].waitForExistence(timeout: 3))
+            XCTAssertFalse(image.exists, "Local addresses without a host loader are caption-only")
+            saveImageShot(app, theme + "-fallback")
+            app.terminate()
+        }
+    }
+
+    private func saveImageShot(_ app: XCUIApplication, _ name: String) {
+        let shot = app.screenshot()
+        let attachment = XCTAttachment(screenshot: shot); attachment.lifetime = .keepAlways
+        add(attachment)
+        let folder = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("image-shots")
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try? shot.pngRepresentation.write(to: folder.appendingPathComponent(name + ".png"))
+    }
+
     func testLongCatalogReasoningWithoutScrollingBothAnchorsAndThemes() throws {
         let app=XCUIApplication()
         for theme in ["light","dark"] {

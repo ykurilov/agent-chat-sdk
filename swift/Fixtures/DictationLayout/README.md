@@ -33,3 +33,11 @@ opens `executor-models` and confirms a model change. `run-catalog-check.sh` runs
 on an isolated iOS 27 simulator and retains screenshots in the xcresult bundle.
 Only the nested model list scrolls; composer layout and source-owned confirmation
 are unchanged.
+
+Markdown images: `bash swift/Fixtures/DictationLayout/run-images-check.sh` runs an
+isolated iPhone simulator with a generated PNG and an injected loader, without a
+provider or application server. Both themes exercise loading, decoding, fixed
+response-bottom geometry, inline text before/after the image, malformed image
+data, and caption-only fallback for a local path without a loader. Screenshots
+are retained under `build/images-check/image-shots` and in the xcresult bundle.
+This does not verify the application's Mac-file authorization or a physical phone.

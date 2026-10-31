@@ -172,7 +172,9 @@ private struct HistoryAnchor:UIViewRepresentable {
     private var fullscreen:Bool {ProcessInfo.processInfo.arguments.contains("fullscreen")}
     var body:some Scene {WindowGroup {
         Group {
-        if fullscreen {
+        if ProcessInfo.processInfo.arguments.contains("markdown-images") {
+            MarkdownImagesFixture()
+        } else if fullscreen {
             VStack(spacing:0) {
                 Text("Главный агент").font(.headline).padding()
                 if ProcessInfo.processInfo.arguments.contains("picker-top"), let selection=modelSelection {
@@ -206,4 +208,52 @@ private struct HistoryAnchor:UIViewRepresentable {
         }
         }.preferredColorScheme(ProcessInfo.processInfo.arguments.contains("dark") ? .dark:.light).task{probe.start()}
     }}
+}
+
+
+private actor MarkdownImageFixtureGate {
+    static let shared = MarkdownImageFixtureGate()
+    private var released = false
+    func release() { released = true }
+    func wait() async throws {
+        while !released { try await Task.sleep(for: .milliseconds(50)) }
+        try Task.checkCancellation()
+    }
+}
+
+private struct MarkdownImagesFixture: View {
+    @State private var mode = "good"
+    private static var picture: Data {
+        UIGraphicsImageRenderer(size: CGSize(width: 640, height: 480)).pngData { context in
+            UIColor.systemTeal.setFill(); context.fill(CGRect(x: 0, y: 0, width: 640, height: 480))
+            ("SDK image" as NSString).draw(at: CGPoint(x: 130, y: 200), withAttributes: [.font: UIFont.systemFont(ofSize: 50), .foregroundColor: UIColor.white])
+        }
+    }
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Ответ агента").font(.headline)
+                HStack {
+                    Button("Release image") { Task { await MarkdownImageFixtureGate.shared.release() } }
+                    Button("Loaded") { mode = "good" }
+                    Button("Failed") { mode = "bad" }
+                    Button("Fallback") { mode = "fallback" }
+                }
+                if mode == "fallback" {
+                    AgentChatMarkdown("До ![Локальная подпись](/tmp/local.png) после")
+                } else {
+                    let bytes = Self.picture
+                    AgentChatMarkdown("До картинки ![Снимок](/tmp/sdk-images/\(mode).png \"Title\") после картинки")
+                        .agentChatImageLoader { address in
+                            try await MarkdownImageFixtureGate.shared.wait()
+                            if address == "/tmp/sdk-images/good.png" { return bytes }
+                            if address == "/tmp/sdk-images/bad.png" { return Data("not an image".utf8) }
+                            throw URLError(.badURL)
+                        }
+                }
+                Text("Нижняя граница ответа").accessibilityIdentifier("image-bottom-anchor")
+                AgentChatMarkdown("Незаконченная картинка: ![часть](/tmp/")
+            }.padding(16)
+        }.background(Color(uiColor: .systemBackground))
+    }
 }

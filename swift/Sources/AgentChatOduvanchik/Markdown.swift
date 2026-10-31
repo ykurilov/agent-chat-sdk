@@ -1,9 +1,10 @@
 import Foundation
 
-/// Блоки Markdown ответа менеджера. Строчное оформление (жирный, ссылки, код) разбирает AttributedString.
+/// Блоки Markdown ответа агента, включая картинки. Строчное оформление разбирает AttributedString.
 public enum ChatMarkdownBlock: Equatable, Sendable {
     case heading(level: Int, text: String)
     case paragraph(String)
+    case image(alt: String, address: String, title: String?)
     case bulletList([String])
     case numberedList(start: Int, items: [String])
     case quote(String)
@@ -41,7 +42,89 @@ public enum ChatMarkdown {
             }
         }
         builder.flush()
-        return builder.blocks
+        return builder.blocks.flatMap { block in
+            if case let .paragraph(text) = block { return imageBlocks(in: text) }
+            return [block]
+        }
+    }
+
+    /// Complete inline images become blocks; unfinished syntax and code spans stay text.
+    /// Destinations are passed verbatim to the host (including Mac paths).
+    public static func imageBlocks(in text: String) -> [ChatMarkdownBlock] {
+        let chars = Array(text)
+        var result: [ChatMarkdownBlock] = []
+        var start = 0, cursor = 0
+        func escaped(_ index: Int) -> Bool {
+            var i = index, count = 0
+            while i > 0 && chars[i - 1] == "\\" { count += 1; i -= 1 }
+            return count % 2 == 1
+        }
+        while cursor < chars.count {
+            if chars[cursor] == "`", !escaped(cursor) {
+                var end = cursor
+                while end < chars.count && chars[end] == "`" { end += 1 }
+                let fence = String(chars[cursor..<end])
+                let remainder = String(chars[end...])
+                if let range = remainder.range(of: fence) {
+                    cursor = end + remainder.distance(from: remainder.startIndex, to: range.upperBound)
+                    continue
+                }
+                // Unfinished inline code is streaming text, not an image.
+                break
+            }
+            guard chars[cursor] == "!", !escaped(cursor), cursor + 1 < chars.count, chars[cursor + 1] == "[" else { cursor += 1; continue }
+            let imageStart = cursor
+            var close = cursor + 2
+            while close < chars.count && (chars[close] != "]" || escaped(close)) { close += 1 }
+            guard close + 1 < chars.count, chars[close + 1] == "(" else { cursor += 1; continue }
+            var i = close + 2
+            while i < chars.count && chars[i].isWhitespace { i += 1 }
+            let angled = i < chars.count && chars[i] == "<"
+            if angled { i += 1 }
+            let addressStart = i
+            var depth = 0
+            while i < chars.count {
+                let ch = chars[i]
+                if !escaped(i) {
+                    if angled && ch == ">" { break }
+                    if !angled {
+                        if ch == "(" { depth += 1 }
+                        if ch == ")" { if depth == 0 { break }; depth -= 1 }
+                        if ch.isWhitespace && depth == 0 { break }
+                    }
+                }
+                i += 1
+            }
+            guard i > addressStart, i < chars.count, depth == 0 else { cursor += 1; continue }
+            let address = String(chars[addressStart..<i])
+            if angled {
+                guard chars[i] == ">" else { cursor += 1; continue }
+                i += 1
+            }
+            let beforeSpace = i
+            while i < chars.count && chars[i].isWhitespace { i += 1 }
+            var title: String?
+            if i > beforeSpace, i < chars.count, chars[i] == "\"" || chars[i] == "'" {
+                let quote = chars[i]; i += 1
+                let titleStart = i
+                while i < chars.count && (chars[i] != quote || escaped(i)) { i += 1 }
+                guard i < chars.count else { cursor += 1; continue }
+                title = String(chars[titleStart..<i]); i += 1
+                while i < chars.count && chars[i].isWhitespace { i += 1 }
+            }
+            guard i < chars.count, chars[i] == ")" else { cursor += 1; continue }
+            if start < imageStart {
+                let prefix = String(chars[start..<imageStart]).trimmingCharacters(in: .newlines)
+                if !prefix.isEmpty { result.append(.paragraph(prefix)) }
+            }
+            result.append(.image(alt: String(chars[(imageStart + 2)..<close]), address: address, title: title))
+            cursor = i + 1; start = cursor
+        }
+        if start < chars.count {
+            let suffix = String(chars[start...]).trimmingCharacters(in: .newlines)
+            if !suffix.isEmpty { result.append(.paragraph(suffix)) }
+        }
+        return result.isEmpty ? [.paragraph(text)] : result
     }
 
     private static func heading(_ line: String) -> ChatMarkdownBlock? {

@@ -1,7 +1,7 @@
 import SwiftUI
 import YKDesign
 
-/// Ответ агента в Markdown: заголовки, списки, цитаты, код; внутри строк — жирный, курсив, ссылки, `код`.
+/// Ответ агента в Markdown: заголовки, списки, цитаты, код и картинки; строчное оформление сохраняется.
 /// Пока ответ пишется, незакрытый блок кода показывается как код.
 public struct AgentChatMarkdown: View {
     let blocks: [ChatMarkdownBlock]
@@ -28,6 +28,8 @@ public struct AgentChatMarkdown: View {
             Self.inline(text).ykText(level <= 2 ? .heading : .body, weight: 600)
                 .foregroundStyle(YKColorRole.text.color)
                 .padding(.top, YKTokens.Space.s1)
+        case let .image(alt, address, title):
+            MarkdownImage(alt: alt, address: address, title: title)
         case let .paragraph(text):
             Self.inline(text).ykText(.body).foregroundStyle(YKColorRole.text.color)
         case let .bulletList(items):
@@ -35,7 +37,7 @@ public struct AgentChatMarkdown: View {
         case let .numberedList(start, items):
             list(items.enumerated().map { ("\(start + $0.offset).", $0.element) })
         case let .quote(text):
-            Self.inline(text).ykText(.body).foregroundStyle(YKColorRole.muted.color)
+            content(text, muted: true)
                 .padding(.leading, YKTokens.Space.s3)
                 .overlay(alignment: .leading) {
                     Rectangle().fill(YKColorRole.borderStrong.color).frame(width: 2)
@@ -56,8 +58,20 @@ public struct AgentChatMarkdown: View {
             ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                 HStack(alignment: .firstTextBaseline, spacing: YKTokens.Space.s2) {
                     Text(item.mark).ykText(.body).foregroundStyle(YKColorRole.muted.color)
-                    Self.inline(item.text).ykText(.body).foregroundStyle(YKColorRole.text.color)
+                    content(item.text)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+    }
+
+    private func content(_ text: String, muted: Bool = false) -> some View {
+        VStack(alignment: .leading, spacing: YKTokens.Space.s2) {
+            ForEach(Array(ChatMarkdown.imageBlocks(in: text).enumerated()), id: \.offset) { _, block in
+                if case let .image(alt, address, title) = block {
+                    MarkdownImage(alt: alt, address: address, title: title)
+                } else if case let .paragraph(value) = block {
+                    Self.inline(value).ykText(.body).foregroundStyle(muted ? YKColorRole.muted.color : YKColorRole.text.color)
                 }
             }
         }
