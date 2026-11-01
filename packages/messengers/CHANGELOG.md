@@ -1,5 +1,16 @@
 # @ykurilov/agent-chat-messengers
 
+## 0.94.0
+
+### Minor Changes
+
+- 1c3dcf0: Добавлено включаемое подтверждение привязки: `linkConfirmation.label(userId, account)` задаёт подпись аккаунта приложения, а бот Telegram/VK связывает его только после явного нажатия «Да». Подтверждение сохраняется в хранилище, ограничено владельцем/ботом/личным чатом и истекает через 15 минут. Код расходуется при открытии; без опции поведение прежнее. Работает без службы чата. [Контракт](https://github.com/ykurilov/agent-chat-sdk/blob/main/packages/messengers/README.md#подтверждение-перед-привязкой).
+
+### Patch Changes
+
+- @ykurilov/agent-chat-core@0.94.0
+  - @ykurilov/agent-chat-react@0.94.0
+
 ## 0.93.0
 
 ### Patch Changes

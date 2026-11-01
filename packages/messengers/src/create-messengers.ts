@@ -66,6 +66,7 @@ export function createMessengers(options: MessengersOptions) {
     bots,
     textsOf,
     resolveUser: options.resolveUser,
+    ...(options.linkConfirmation && { linkConfirmation: options.linkConfirmation }),
     logError,
     ...(options.onLinked !== undefined && { onLinked: options.onLinked }),
     ...(options.onUnlinked !== undefined && { onUnlinked: options.onUnlinked }),

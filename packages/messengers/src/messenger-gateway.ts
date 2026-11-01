@@ -8,7 +8,7 @@ import type { AnswerChunk, MessengerChatService, MessengerUserMessage } from "./
 import type { ConversationContext, ConversationPolicy, OpenedChat, PolicyReply } from "./conversation-policy";
 import type { GroupChats } from "./group-chats";
 import type { InboundMedia } from "./inbound-media";
-import type { ExternalChat, InboundUpdate } from "./messenger-adapter";
+import type { Button, ExternalChat, InboundUpdate } from "./messenger-adapter";
 import { defaultTextsOf, type MessengerTexts, type MessengerTextsOf } from "./messenger-texts";
 import { chatKeyOf, type OutboundQueue } from "./outbound-queue";
 import { DELIVERY_GIVE_UP_MS, DELIVERY_LEASE_MS, durableDelivery } from "./pending-deliveries";
@@ -284,11 +284,11 @@ export function createMessengerGateway(deps: {
     return read.response;
   }
 
-  async function reply(bot: MessengerBot, key: ConversationKey, chat: ExternalChat, answer: PolicyReply | string) {
+  async function reply(bot: MessengerBot, key: ConversationKey, chat: ExternalChat, answer: PolicyReply | string, linkButtons?: Button[][]) {
     const { text, rows } = typeof answer === "string" ? { text: answer, rows: undefined } : answer;
     if (!text) return;
     const prepared = rows && rows.length > 0 ? buttons.prepare(key, rows) : undefined;
-    const message = { text, markup: "plain" as const, ...(prepared && { buttons: prepared.buttons }) };
+    const message = { text, markup: "plain" as const, ...((prepared || linkButtons) && { buttons: prepared?.buttons ?? linkButtons }) };
     try {
       // Кнопки записываются в том же действии очереди: итог считается ушедшим, когда записаны и они.
       await deps.queueFor(bot).run(
@@ -320,7 +320,10 @@ export function createMessengerGateway(deps: {
     if (update.kind === "bot_added" || update.kind === "bot_removed") return;
 
     const linked = await deps.linking.handleUpdate(update);
-    if (linked) return reply(bot, key, update.chat, linked.reply);
+    if (linked) {
+      if (linked.acknowledge) await bot.adapter.answerButton(pressOf(update)).catch(logError);
+      return reply(bot, key, update.chat, linked.reply, linked.buttons);
+    }
     const writer = await policy.resolveWriter(update.account);
     if ("reply" in writer) return reply(bot, key, update.chat, writer.reply);
     if (!chatEnabled) return withoutChat(bot, update, key);

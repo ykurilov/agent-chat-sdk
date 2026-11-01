@@ -3,9 +3,9 @@ import type { ResolvedUser } from "@ykurilov/agent-chat-core";
 import { createHash, randomBytes } from "node:crypto";
 import { commandOf } from "./bot-commands";
 import { readJsonBody } from "./bounded-body";
-import type { ExternalAccount, InboundUpdate, MessengerName } from "./messenger-adapter";
+import type { Button, ExternalAccount, InboundUpdate, MessengerName } from "./messenger-adapter";
 import { defaultTextsOf, type MessengerTextsOf } from "./messenger-texts";
-import type { MessengerBot, MessengerLink, MessengerStore } from "./types";
+import type { MessengerBot, MessengerLink, MessengerStore, MessengersBaseOptions } from "./types";
 
 /** Сколько живёт код привязки. */
 export const LINK_CODE_TTL_MS = 15 * 60_000;
@@ -35,6 +35,7 @@ export function createAccountLinking(deps: {
   resolveUser(request: Request): Promise<ResolvedUser>;
   textsOf?: MessengerTextsOf;
   onLinked?(link: MessengerLink): Promise<void> | void;
+  linkConfirmation?: MessengersBaseOptions["linkConfirmation"];
   onUnlinked?(link: MessengerLink): Promise<void> | void;
   /** Чужие страницы, которым можно выдавать и снимать привязку с куками человека. */
   allowedOrigins?: readonly string[];
@@ -69,15 +70,20 @@ export function createAccountLinking(deps: {
    * разных людей одновременно не переписывают друг друга, `onLinked` получает только сохранённая привязка.
    */
   async function redeem(code: string, account: ExternalAccount): Promise<"linked" | "failed" | "taken"> {
-    if (!isLinkCode(code)) return "failed";
+    // В защищённом режиме только кнопка может завершить привязку, в том числе при прямом вызове.
+    if (deps.linkConfirmation || !isLinkCode(code)) return "failed";
     const now = new Date().toISOString();
     const claimed = await store.consumeLinkCode(hashLinkCode(code), account.messenger, now);
     if (!claimed) return "failed";
+    return saveLink(claimed.userId, account, now);
+  }
+
+  async function saveLink(userId: string, account: ExternalAccount, now: string): Promise<"linked" | "taken"> {
     const link: MessengerLink = {
       messenger: account.messenger,
       botId: account.botId,
       externalUserId: account.externalUserId,
-      userId: claimed.userId,
+      userId,
       name: account.name,
       ...(account.username !== undefined && { username: account.username }),
       linkedAt: now,
@@ -109,16 +115,59 @@ export function createAccountLinking(deps: {
     await store.saveConversation({ ...key, type: "private", userId: link.userId, blocked: false, active: true, createdAt: now, updatedAt: now });
   }
 
-  /** `/start <код>` или `/link <код>` → ответ человеку; другое обновление — `null`. */
-  async function handleUpdate(update: InboundUpdate): Promise<{ reply: string } | null> {
+  const confirmationKey = (update: InboundUpdate) => ({
+    messenger: update.account.messenger,
+    botId: update.account.botId,
+    externalChatId: update.chat.id,
+  });
+  // Адрес записи зависит от аккаунта: чужое нажатие не сжигает разрешение владельца.
+  // В ConversationKey остаётся настоящий id чата, в базе - только хеш токена кнопки.
+  const confirmationId = (update: InboundUpdate, token: string) => hashLinkCode(JSON.stringify([
+    "account_link", token, update.account.messenger, update.account.botId, update.chat.id, update.account.externalUserId,
+  ]));
+
+  /** `/start <код>`, `/link <код>` или наша кнопка → ответ; другие обновления — null. */
+  async function handleUpdate(update: InboundUpdate): Promise<{ reply: string; buttons?: Button[][]; acknowledge?: boolean } | null> {
+    const texts = textsOf(update.account);
+    const outcomeReply = (outcome: "linked" | "failed" | "taken") => ({
+      reply: outcome === "linked" ? texts.linked : outcome === "taken" ? texts.linkTaken : texts.linkFailed,
+    });
+    if (update.kind === "button" && update.buttonId?.startsWith("link_")) {
+      if (!deps.linkConfirmation || update.chat.type !== "private") return { ...outcomeReply("failed"), acknowledge: true };
+      const now = new Date().toISOString();
+      const pending = await store.takeButton(confirmationKey(update), confirmationId(update, update.buttonId), now);
+      if (pending?.type !== "account_link" || typeof pending.userId !== "string" || typeof pending.expiresAt !== "string" || pending.expiresAt <= now) {
+        return { ...outcomeReply("failed"), acknowledge: true };
+      }
+      const outcome = await saveLink(pending.userId, update.account, now);
+      if (outcome === "linked") await rememberPrivateChat(update);
+      return { ...outcomeReply(outcome), acknowledge: true };
+    }
     const command = commandOf(update);
     if (!command) return null;
     const isStartCode = command.name === "start" && isLinkCode(command.args);
     if (!isStartCode && command.name !== "link") return null;
+    if (deps.linkConfirmation) {
+      if (update.chat.type !== "private" || !isLinkCode(command.args)) return outcomeReply("failed");
+      const now = new Date().toISOString();
+      const claimed = await store.consumeLinkCode(hashLinkCode(command.args), update.account.messenger, now);
+      if (!claimed) return outcomeReply("failed");
+      const label = await deps.linkConfirmation.label(claimed.userId, update.account);
+      if (typeof label !== "string" || !label.trim()) throw new TypeError("messengers: linkConfirmation.label must return a non-empty label");
+      const id = `link_${randomBytes(16).toString("base64url")}`;
+      await store.saveButton({
+        ...confirmationKey(update), id: confirmationId(update, id), createdAt: now,
+        action: { type: "account_link", userId: claimed.userId, expiresAt: new Date(Date.now() + LINK_CODE_TTL_MS).toISOString() },
+      });
+      // Пустые пользовательские фразы не могут скрыть цель привязки или убрать доступную кнопку.
+      return {
+        reply: texts.linkConfirmationQuestion(label) || defaultTextsOf(update.account).linkConfirmationQuestion(label),
+        buttons: [[{ id, text: texts.linkConfirm || defaultTextsOf(update.account).linkConfirm }]],
+      };
+    }
     const outcome = await redeem(command.args, update.account);
     if (outcome === "linked" && update.chat.type === "private") await rememberPrivateChat(update);
-    const texts = textsOf(update.account);
-    return { reply: outcome === "linked" ? texts.linked : outcome === "taken" ? texts.linkTaken : texts.linkFailed };
+    return outcomeReply(outcome);
   }
 
   /** Адреса `/links` (путь — без `basePath`). Не наш адрес — `null`. */
