@@ -124,7 +124,7 @@ function PersonChats({ person, chatsState, chats, onChatsRetry }: PeopleChatsVie
                 onClick={chat.onOpen}
                 className={cn(
                   "oduvanchik-focus flex w-full items-center gap-2 rounded-[var(--radius-small)] px-2 py-1.5 text-left hover:bg-[var(--surface-muted)]",
-                  chat.selected && "bg-[var(--surface-muted)]",
+                  chat.selected && "bg-[var(--yk-surface-3)]",
                 )}
               >
                 <span className="min-w-0 flex-1 truncate text-[var(--foreground)]">{chat.title ?? labels.untitledChat}</span>

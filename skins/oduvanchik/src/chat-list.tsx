@@ -74,7 +74,7 @@ export function OduvanchikChatList({
                 <div
                   className={cn(
                     "flex items-center rounded-[var(--radius-control)] transition-colors duration-[var(--motion-fast)]",
-                    item.active ? "bg-[var(--surface-hover)]" : "hover:bg-[var(--surface-hover)]",
+                    item.active ? "bg-[var(--yk-surface-3)]" : "hover:bg-[var(--surface-hover)]",
                   )}
                 >
                   <button
