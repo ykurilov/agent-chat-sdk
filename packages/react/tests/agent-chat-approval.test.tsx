@@ -46,6 +46,36 @@ function continueAnswer(stream: { push: (chunk: Record<string, unknown>) => void
 }
 
 describe("AgentChat: подтверждение действий", () => {
+  it.each(["allow", "deny"] as const)("раннее %s не отправляется до конца хода, затем решение принимается один раз", async (decision) => {
+    const server = fakeChatServer({ resumable: true });
+    renderAgentChat(server);
+    await screen.findByLabelText("поле");
+    submitQuestion("Удали заметки");
+    await waitFor(() => expect(server.streams).toHaveLength(1));
+    const stream = server.streams[0]!;
+    stream.push({ type: "start", messageId: "a1" });
+    stream.push({ type: "start-step" });
+    stream.push({ type: "tool-input-available", toolCallId: "call-1", toolName: "delete_notes", input: {} });
+    stream.push({ type: "tool-approval-request", approvalId: "ap1", toolCallId: "call-1" });
+    await waitFor(() => expect(row()?.getAttribute("data-approval")).toBe("requested"));
+    // Этот тестовый скин намеренно не блокирует кнопку по pending: hook тоже защищает запрос.
+    await act(async () => decide(decision));
+    expect(server.requestsTo("approval")).toHaveLength(0);
+    expect(row().getAttribute("data-approval-pending")).toBe("true");
+    stream.push({ type: "finish-step" });
+    stream.push({ type: "message-metadata", messageMetadata: { status: "awaiting_approval" } });
+    stream.push({ type: "finish" });
+    act(() => stream.end());
+    await waitFor(() => expect(row().getAttribute("data-approval-pending")).toBe("false"));
+    decide(decision);
+    await waitFor(() => expect(server.requestsTo("approval")).toHaveLength(1));
+    expect(server.requestsTo("approval")[0]).toMatchObject({ body: { decision } });
+    await waitFor(() => expect(server.resumed).toHaveLength(1));
+    act(() => continueAnswer(server.resumed[0]!, decision === "deny" ? "denied" : "ok"));
+    await waitFor(() => expect(document.querySelector('[data-kind="agent"]')?.getAttribute("data-status")).toBe("complete"));
+    expect(server.requestsTo("approval")).toHaveLength(1);
+  });
+
   it("ответ, ждущий решения, из истории: карточка с названием и кнопками, ответ не «пустой», поле ввода доступно", async () => {
     const server = fakeChatServer({ history: waiting() });
     renderAgentChat(server);

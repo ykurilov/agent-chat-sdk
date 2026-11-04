@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { ChatLabelsProvider, russianLabels, useChatLabels, voiceErrorText } from "../src/labels";
+import { ChatLabelsProvider, englishLabels, russianLabels, useChatLabels, voiceErrorText } from "../src/labels";
 import { stubSkin } from "./support/stub-skin";
 
 function SendAndStop() {
@@ -16,6 +16,12 @@ function SendAndStop() {
 afterEach(cleanup);
 
 describe("словарь надписей", () => {
+  it.each([russianLabels, englishLabels])("старый словарь получает подпись ожидания конца хода в своём языке ($locale)", (original) => {
+    const { approvalWaitingForTurn: _omitted, ...oldLabels } = original;
+    function Waiting() { return <p>{useChatLabels().approvalWaitingForTurn}</p>; }
+    render(<ChatLabelsProvider labels={oldLabels}><Waiting /></ChatLabelsProvider>);
+    expect(screen.getByText(original.approvalWaitingForTurn!)).toBeTruthy();
+  });
   it("без провайдера отдаёт russianLabels", () => {
     render(<SendAndStop />);
     expect(screen.getByText("Отправить | Остановить | Думал 3 сек")).toBeTruthy();
@@ -157,6 +163,7 @@ describe("словарь надписей", () => {
       toolError: "поиск: ошибка",
       approvalRequested: "Агент хочет: удалить заметки",
       approvalWaiting: "Ждёт вашего решения",
+      approvalWaitingForTurn: "Агент завершает ответ…",
       approvalAllow: "Разрешить",
       approvalDeny: "Отклонить",
       approvalAlways: "Всегда в этом чате",

@@ -72,7 +72,7 @@ export function OduvanchikToolApprovalCard({
         )}
       </div>
       <p data-approval-waiting aria-live="polite" className="text-[var(--foreground-muted)] empty:hidden">
-        {approval.pending ? labels.approvalWaiting : ""}
+        {approval.waitingForTurn ? labels.approvalWaitingForTurn : approval.pending ? labels.approvalWaiting : ""}
       </p>
       {approval.failed && (
         <p role="alert" className="text-[var(--destructive-text)]">

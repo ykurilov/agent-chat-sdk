@@ -14,6 +14,17 @@ const requested = (overrides: Partial<Extract<NonNullable<Props["approval"]>, { 
   ({ state: "requested", onDecide: vi.fn(), pending: false, failed: false, canAlways: true, ...overrides }) as const;
 
 describe("карточка подтверждения", () => {
+  it("карточка во время хода объясняет ожидание и блокирует решения", () => {
+    const onDecide = vi.fn();
+    renderRow({ approval: requested({ pending: true, waitingForTurn: true, onDecide }) });
+    expect(screen.getByText("Агент завершает ответ…")).toBeTruthy();
+    for (const name of ["Разрешить", "Отклонить", "Всегда в этом чате"]) {
+      const button = screen.getByRole("button", { name });
+      expect((button as HTMLButtonElement).disabled).toBe(true);
+      fireEvent.click(button);
+    }
+    expect(onDecide).not.toHaveBeenCalled();
+  });
   it("название по-человечески, входные данные читаемо, три кнопки", () => {
     renderRow({ title: "Удалить заметки", input: { folder: "старое", limit: 10, dryRun: false }, approval: requested() });
     expect(screen.getByText("Агент хочет: Удалить заметки")).toBeTruthy();

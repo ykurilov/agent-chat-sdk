@@ -1,5 +1,31 @@
 # @ykurilov/agent-chat-skin-tandem
 
+## 0.95.3
+
+### Patch Changes
+
+- 3f58d7a: Publish fresh compiled approval controls and waiting labels. Version 0.95.2 accidentally contained older build artifacts; use 0.95.3 or later for the early-approval fix. Releases now rebuild package artifacts immediately before publishing even when source verification is cached.
+- Updated dependencies [3f58d7a]
+  - @ykurilov/agent-chat-react@0.95.3
+  - @ykurilov/agent-chat-flows@0.95.3
+  - @ykurilov/agent-chat-messengers@0.95.3
+  - @ykurilov/agent-chat-sandbox@0.95.3
+  - @ykurilov/agent-chat-mcp@0.95.3
+  - @ykurilov/agent-chat-skills@0.95.3
+
+## 0.95.2
+
+### Patch Changes
+
+- d5fdd6f: Block tool approval decisions until the active turn finishes, expose waitingForTurn for custom cards, and explain the wait in the standard skins.
+- Updated dependencies [d5fdd6f]
+  - @ykurilov/agent-chat-react@0.95.2
+  - @ykurilov/agent-chat-flows@0.95.2
+  - @ykurilov/agent-chat-messengers@0.95.2
+  - @ykurilov/agent-chat-sandbox@0.95.2
+  - @ykurilov/agent-chat-mcp@0.95.2
+  - @ykurilov/agent-chat-skills@0.95.2
+
 ## 0.95.1
 
 ### Patch Changes

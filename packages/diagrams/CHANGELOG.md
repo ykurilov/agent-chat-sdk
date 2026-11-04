@@ -1,5 +1,13 @@
 # @ykurilov/agent-chat-diagrams
 
+## 0.95.3
+
+No changes in this release.
+
+## 0.95.2
+
+No changes in this release.
+
 ## 0.95.1
 
 No changes in this release.

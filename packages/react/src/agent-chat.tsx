@@ -513,6 +513,7 @@ function AgentChatBody({ history, header, completion, composerOptions, api, chat
             {...(index === lastIndex && canRetry && { onRetry: retry })}
             onApproval={respondToApproval}
             approvalPendingId={approvalPendingId}
+            approvalWaitingForTurn={busy}
             approvalFailure={approvalFailure}
             awaitingHuman={index === lastIndex && !busy && !chatClosed && message.metadata?.status === "awaiting_approval"}
             chatClosed={chatClosed}
@@ -959,6 +960,7 @@ const AgentAnswer = memo(function AgentAnswer({
   onRetry,
   onApproval,
   approvalPendingId,
+  approvalWaitingForTurn,
   approvalFailure,
   awaitingHuman,
   chatClosed,
@@ -1000,6 +1002,7 @@ const AgentAnswer = memo(function AgentAnswer({
   onRetry?: () => void;
   onApproval: (approvalId: string, decision: ApprovalDecision) => void;
   approvalPendingId: string | null;
+  approvalWaitingForTurn: boolean;
   approvalFailure: { id: string; kind: ApprovalFailureKind; text?: string } | null;
   /** Последний ответ ветки ждёт человека: только в нём виджет активен. */
   awaitingHuman: boolean;
@@ -1119,7 +1122,7 @@ const AgentAnswer = memo(function AgentAnswer({
       if (getToolName(part) === SUGGEST_REPLIES) return;
       // Помощник — своя строка с заданием, шагами и итогом; скин без неё (до версии 18) рисует обычный вызов.
       if (skin.HelperCallRow && isHelperPart(part)) {
-        const helper = withoutPendingApproval(helperCallViewOf(part, { onApproval, approvalPendingId, approvalFailure, failureText: (kind) => failureTextOf(kind, labels) }), chatClosed);
+        const helper = withoutPendingApproval(helperCallViewOf(part, { onApproval, approvalPendingId, waitingForTurn: approvalWaitingForTurn, approvalFailure, failureText: (kind) => failureTextOf(kind, labels) }), chatClosed);
         const row = <ExpandablePart key={key} Component={skin.HelperCallRow} expanded={expanded} partId={partKey(message.id, index)} {...helper} />;
         // Помощник, ждущий решения человека, виден и в простом виде: иначе ход встанет без кнопок.
         if (helper.approval?.state === "requested") show(row);
@@ -1168,7 +1171,7 @@ const AgentAnswer = memo(function AgentAnswer({
           toolName={getToolName(part)}
           state={toolCallState(part)}
           {...(hasTitle(part) && { title: part.title })}
-          {...withoutPendingApproval(approvalProps(part, { onApproval, approvalPendingId, approvalFailure, labels }), chatClosed)}
+          {...withoutPendingApproval(approvalProps(part, { onApproval, approvalPendingId, waitingForTurn: approvalWaitingForTurn, approvalFailure, labels }), chatClosed)}
           {...(part.input !== undefined && { input: part.input })}
           {...(part.state === "output-available" && { output: part.output })}
           {...(part.state === "output-error" && { errorText: part.errorText })}
@@ -1398,6 +1401,7 @@ function approvalProps(
   controls: {
     onApproval: (approvalId: string, decision: ApprovalDecision) => void;
     approvalPendingId: string | null;
+    waitingForTurn: boolean;
     approvalFailure: { id: string; kind: ApprovalFailureKind; text?: string } | null;
     labels: ChatLabels;
   },
@@ -1409,7 +1413,8 @@ function approvalProps(
       approval: {
         state: "requested",
         onDecide: (decision) => controls.onApproval(approval.id, decision),
-        pending: controls.approvalPendingId === approval.id,
+        pending: controls.waitingForTurn || controls.approvalPendingId === approval.id,
+        waitingForTurn: controls.waitingForTurn,
         failed: controls.approvalFailure?.id === approval.id,
         ...(controls.approvalFailure?.id === approval.id && { failureText: controls.approvalFailure.text ?? failureTextOf(controls.approvalFailure.kind, controls.labels) }),
         canAlways: approval.requestReason === ALWAYS_OFFERED,

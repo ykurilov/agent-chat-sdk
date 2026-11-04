@@ -1404,6 +1404,8 @@ export function useAgentChat({
 
   const respondToApproval = useCallback(
     async (approvalId: string, decision: ApprovalDecision) => {
+      // Карточка может прийти раньше конца потока; сервер ещё держит ход занятым.
+      if (busyRef.current) return;
       const signal = chatLifetime.current.signal;
       if (ownedBy(approving.current, signal) !== undefined) return;
       const pending = { lifetime: signal, value: approvalId };

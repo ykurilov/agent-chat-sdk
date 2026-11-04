@@ -64,3 +64,6 @@ import { tandemMessengersSkin } from "@ykurilov/agent-chat-skin-tandem/messenger
 Подключение целиком: [docs/getting-started.md](https://github.com/ykurilov/agent-chat-sdk/blob/main/docs/getting-started.md).
 
 Журнал изменений и что делать при обновлении: [CHANGELOG.md](./CHANGELOG.md). Все пакеты SDK выходят вместе и с одной версией; обновление — `pnpm update "@ykurilov/agent-chat-*" --latest`.
+
+Карточки подтверждения блокируют кнопки по `approval.pending`, включая ожидание конца ответа агента.
+В этом случае `approval.waitingForTurn` включает подпись `labels.approvalWaitingForTurn`.

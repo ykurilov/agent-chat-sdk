@@ -173,6 +173,29 @@ describe("release.mjs: ветки выпуска", () => {
     expect(result.calls).toContain("git push --atomic origin HEAD:refs/heads/main refs/tags/v1.2.3");
   });
 
+  it("свежая отметка verify не позволяет опубликовать старый dist с другой машины", () => {
+    addToken();
+    addChangeset();
+    mkdirSync(join(project, "packages/core/dist"));
+    const artifact = join(project, "packages/core/dist/index.js");
+    writeFileSync(artifact, "old build");
+    const stamp = spawnSync("node", ["--input-type=module", "-e", 'import { codeFingerprint, writeStamp } from "./scripts/verified-stamp.mjs"; writeStamp(process.cwd(), codeFingerprint(process.cwd()));'], {
+      cwd: project, encoding: "utf8", env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, FAKE_LOG: logFile },
+    });
+    expect(stamp.status).toBe(0);
+    fakeCommand("pnpm", `if [ "$1" = build ]; then echo "current build" > "${artifact}"; fi
+if [ "$2 $3" = "changeset publish" ]; then grep -q "current build" "${artifact}" || exit 44; fi
+exit 0`);
+    const result = release();
+    expect(result.status).toBe(0);
+    expect(result.calls).not.toContain("pnpm test");
+    expect(result.calls).not.toContain("pnpm typecheck");
+    const build = result.calls.indexOf("pnpm build");
+    expect(build).toBeGreaterThan(result.calls.indexOf("pnpm exec changeset version"));
+    expect(build).toBeLessThan(result.calls.indexOf("pnpm exec changeset publish"));
+    expect(readFileSync(artifact, "utf8").trim()).toBe("current build");
+  });
+
   it("новая запись: проверки, версия, коммит, публикация, тег, push — в этом порядке", () => {
     addToken();
     addChangeset();

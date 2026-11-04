@@ -1,5 +1,17 @@
 # @ykurilov/agent-chat-react
 
+## 0.95.3
+
+### Patch Changes
+
+- 3f58d7a: Publish fresh compiled approval controls and waiting labels. Version 0.95.2 accidentally contained older build artifacts; use 0.95.3 or later for the early-approval fix. Releases now rebuild package artifacts immediately before publishing even when source verification is cached.
+
+## 0.95.2
+
+### Patch Changes
+
+- d5fdd6f: Block tool approval decisions until the active turn finishes, expose waitingForTurn for custom cards, and explain the wait in the standard skins.
+
 ## 0.95.1
 
 No changes in this release.

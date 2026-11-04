@@ -49,6 +49,7 @@ export function pendingHelperApprovalId(part: { output?: unknown }): string | un
 export interface HelperCallControls {
   onApproval: (approvalId: string, decision: ApprovalDecision) => void;
   approvalPendingId: string | null;
+  waitingForTurn?: boolean;
   approvalFailure: { id: string; kind: ApprovalFailureKind; text?: string } | null;
   failureText: (kind: ApprovalFailureKind) => string;
 }
@@ -108,7 +109,8 @@ function approvalOf(progress: HelperProgress | undefined, controls: HelperCallCo
   return {
     state: "requested",
     onDecide: (decision) => controls.onApproval(approvalId, decision),
-    pending: controls.approvalPendingId === approvalId,
+    pending: controls.waitingForTurn === true || controls.approvalPendingId === approvalId,
+    waitingForTurn: controls.waitingForTurn === true,
     failed: failure !== undefined,
     ...(failure !== undefined && { failureText: failed?.text ?? controls.failureText(failure) }),
     // «Всегда в этом чате» относится к инструментам основного агента; внутри помощника — только «да» или «нет».

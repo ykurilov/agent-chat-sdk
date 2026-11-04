@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { fakeChatServer } from "./support/fake-chat-server";
 import type { HistoryMessage } from "./support/fake-chat-server";
@@ -44,6 +44,30 @@ const helperPart = (overrides: Record<string, unknown> = {}) => ({
 const helperRow = () => document.querySelector('[data-kind="helper"]') as HTMLElement;
 
 describe("AgentChat: строка помощника", () => {
+  it("раннее подтверждение помощника тоже ждёт конца хода", async () => {
+    const server = fakeChatServer();
+    renderAgentChat(server, { skin: stubWorkSkin });
+    await screen.findByLabelText("поле");
+    submitQuestion("Удали заметки");
+    await waitFor(() => expect(server.streams).toHaveLength(1));
+    const stream = server.streams[0]!;
+    stream.push({ type: "start", messageId: "a1" });
+    stream.push({ type: "start-step" });
+    stream.push({ type: "tool-input-available", toolCallId: "call-h", toolName: "helper_researcher", input: { task: "Удали заметки" } });
+    stream.push({ type: "tool-output-available", toolCallId: "call-h", output: awaitingProgress, preliminary: true });
+    await waitFor(() => expect(helperRow()?.dataset.approval).toBe("requested"));
+    expect(helperRow().dataset.approvalPending).toBe("true");
+    await act(async () => fireEvent.click(screen.getByLabelText("allow")));
+    expect(server.requestsTo("approval")).toHaveLength(0);
+    stream.push({ type: "finish-step" });
+    stream.push({ type: "message-metadata", messageMetadata: { status: "awaiting_approval" } });
+    stream.push({ type: "finish" });
+    act(() => stream.end());
+    await waitFor(() => expect(helperRow().dataset.approvalPending).toBe("false"));
+    fireEvent.click(screen.getByLabelText("allow"));
+    await waitFor(() => expect(server.requestsTo("approval")).toHaveLength(1));
+    expect(server.requestsTo("approval")[0]!.url).toMatch(/approvals\/hap1$/);
+  });
   it("вызов helper_* рисуется HelperCallRow: имя без приставки, задание, шаги, итог, статус; строки инструмента нет", async () => {
     renderAgentChat(fakeChatServer({ history: answerWith(helperPart()) }), { skin: stubWorkSkin });
     await waitFor(() => expect(helperRow()).toBeTruthy());

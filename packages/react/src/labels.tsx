@@ -327,6 +327,8 @@ export interface ChatLabels {
   approvalRequested: (action: string) => string;
   /** Пока человек не решил. */
   approvalWaiting: string;
+  /** Карточка появилась, пока агент ещё заканчивает ход. */
+  approvalWaitingForTurn?: string;
   approvalAllow: string;
   approvalDeny: string;
   approvalAlways: string;
@@ -830,6 +832,7 @@ export const russianLabels: ResolvedChatLabels = {
   },
   approvalRequested: (action) => `Агент хочет: ${action}`,
   approvalWaiting: "Ждёт вашего решения",
+  approvalWaitingForTurn: "Агент завершает ответ…",
   approvalAllow: "Разрешить",
   approvalDeny: "Отклонить",
   approvalAlways: "Всегда в этом чате",
@@ -1146,6 +1149,7 @@ export const englishLabels: ResolvedChatLabels = {
   },
   approvalRequested: (action) => `The agent wants to: ${action}`,
   approvalWaiting: "Waiting for your decision",
+  approvalWaitingForTurn: "The agent is finishing its response…",
   approvalAllow: "Allow",
   approvalDeny: "Deny",
   approvalAlways: "Always in this chat",
@@ -1312,6 +1316,7 @@ export function ChatLabelsProvider({ labels, children }: { labels: ChatLabels; c
   const resolved = useMemo(
     () => ({
       ...labels,
+      approvalWaitingForTurn: labels.approvalWaitingForTurn ?? (labels.locale?.startsWith("en") ? englishLabels : russianLabels).approvalWaitingForTurn,
       history: { ...(labels.locale?.startsWith("en") ? englishLabels : russianLabels).history, ...labels.history },
       welcome: { ...(labels.locale?.startsWith("en") ? englishLabels : russianLabels).welcome, ...labels.welcome },
       composerSettings: { ...(labels.locale?.startsWith("en") ? englishLabels : russianLabels).composerSettings, ...labels.composerSettings },
