@@ -79,6 +79,6 @@ describe("обработчик чата: onTurnFinished — ход законч�
     const chatId = await createChat();
     await ask(call, chatId);
     expect((await history(chatId)).messages.at(-1)?.metadata?.status).toBe("complete");
-    await vi.waitFor(() => expect(logError).toHaveBeenCalledWith(expect.stringContaining("приложение упало")));
+    await vi.waitFor(() => expect(logError).toHaveBeenCalledWith(expect.stringContaining("приложение упало"), expect.any(Error)));
   });
 });

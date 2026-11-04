@@ -102,7 +102,7 @@ export async function loadBranchAppState(
 export function createAppStateWriter(context: {
   base: AppStateValues;
   write: (record: AppStateRecord) => void;
-  logError: (message: string) => void;
+  logError: (message: string, error?: unknown) => void;
   chatId: string;
   reserved?: boolean;
   /** @internal Только доверенная серверная подготовка хода и flows compare-head commit. Не часть model.state. */

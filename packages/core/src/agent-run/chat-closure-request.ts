@@ -15,7 +15,7 @@ export interface ChatClosureRequest {
 }
 
 export function createChatClosureRequest(context: {
-  logError: (message: string) => void;
+  logError: (message: string, error?: unknown) => void;
   chatId: string;
   /** Записать закрытие в ответ хода — сразу, в порядке просьб. */
   write?: (closure: ChatClosure) => void;
@@ -39,7 +39,7 @@ export function createChatClosureRequest(context: {
       if (!record) return;
       recording = recording.then(() =>
         record(checked).catch((failure: unknown) =>
-          context.logError(`Закрытие чата ${context.chatId} не записалось при вызове closeChat: ${failure instanceof Error ? failure.message : String(failure)}`),
+          context.logError(`Закрытие чата ${context.chatId} не записалось при вызове closeChat: ${failure instanceof Error ? failure.message : String(failure)}`, failure),
         ),
       );
     },

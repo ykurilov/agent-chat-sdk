@@ -120,9 +120,8 @@ describe("onStateChanged: смена ветки", () => {
 describe("onStateChanged: сбои и остановка", () => {
   it("хук упал все попытки — logError и событие state-changed-failed; ход цел", async () => {
     const logError = vi.fn();
-    const handler = vi.fn(async () => {
-      throw new Error("база приложения недоступна");
-    });
+    const failure = new Error("база приложения недоступна");
+    const handler = vi.fn(async () => { throw failure; });
     const { service, events, storage } = setup([write("email", "a@x.ru"), saying("Записал")], {
       onStateChanged: handler,
       onStateChangedAttempts: 2,
@@ -132,7 +131,7 @@ describe("onStateChanged: сбои и остановка", () => {
     await send(service, chat.id, "u1");
     await vi.waitFor(() => expect(events.some((event) => event.type === "state-changed-failed")).toBe(true), { timeout: 5000 });
     expect(handler).toHaveBeenCalledTimes(2);
-    expect(logError).toHaveBeenCalledWith(expect.stringContaining("onStateChanged"));
+    expect(logError).toHaveBeenCalledWith(expect.stringContaining("onStateChanged"), failure);
     expect(events.find((event) => event.type === "state-changed-failed")).toEqual({ type: "state-changed-failed", ownerId: "anna", chatId: chat.id });
     expect((await storage.listMessages(chat.id)).at(-1)!.status).toBe("complete");
   });

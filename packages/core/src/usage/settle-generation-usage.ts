@@ -26,7 +26,7 @@ export interface GenerationUsageSettlement {
   /** Начало хода: поправка попадает в тот же период лимита, что и оценка. */
   startedAt: string;
   steps: readonly StepToSettle[];
-  logError: (message: string) => void;
+  logError: (message: string, error?: unknown) => void;
 }
 
 /**
@@ -149,7 +149,7 @@ async function recordCorrection(
     });
   } catch (failure) {
     input.logError(
-      `Не удалось записать поправку расхода (чат ${input.chatId}): ${failure instanceof Error ? failure.message : "неизвестная ошибка"}`,
+      `Не удалось записать поправку расхода (чат ${input.chatId}): ${failure instanceof Error ? failure.message : "неизвестная ошибка"}`, failure,
     );
   }
 }

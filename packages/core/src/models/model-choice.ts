@@ -91,14 +91,14 @@ export function resolveDefaultChoice(
   catalog: ModelCatalog,
   env: Env,
   configured: ModelChoice | undefined,
-  logError: (message: string) => void,
+  logError: (message: string, error?: unknown) => void,
 ): ModelChoice {
   if (configured) {
     try {
       return validateModelChoice(catalog, env, configured, { requireKey: false, allowHidden: true });
     } catch (error) {
       logError(
-        `Выбор модели по умолчанию «${configured.modelId}» у «${configured.providerId}» не подходит: ${(error as Error).message}. Взята первая доступная модель.`,
+        `Выбор модели по умолчанию «${configured.modelId}» у «${configured.providerId}» не подходит: ${(error as Error).message}. Взята первая доступная модель.`, error,
       );
     }
   }

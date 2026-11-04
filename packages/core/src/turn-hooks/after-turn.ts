@@ -89,7 +89,7 @@ export function createAfterTurn(context: {
   storage: ChatStorage;
   catalog: ModelCatalog;
   chatEvents: ChatEvents;
-  logError: (message: string) => void;
+  logError: (message: string, error?: unknown) => void;
   /** Сотрудник хода по чату (`staffOfChat` службы): итог, доделанный после перезапуска, получает его как у живого хода. */
   staffOf?: (chat: Chat) => StaffActor | null | undefined;
 }): AfterTurn {
@@ -116,7 +116,9 @@ export function createAfterTurn(context: {
     const where = `чат ${result.chatId}, ответ ${result.messageId}, итог ${result.status}`;
     const outcome = await callWithRetries(settings.handler, result, { timeoutMs, attempts });
     if (!outcome.ok) {
-      logError(`afterTurn не отработал (${where}): ${outcome.reason}`);
+      const message = `afterTurn не отработал (${where}): ${outcome.reason}`;
+      if ("error" in outcome) logError(message, outcome.error);
+      else logError(message);
       chatEvents.emit({ type: "after-turn-failed", ownerId: result.ownerId, chatId: result.chatId, messageId: result.messageId });
       await closeState(storage, result.messageId, "failed", [], logError, where);
       return [];
@@ -133,7 +135,7 @@ export function createAfterTurn(context: {
       const sums = await storage.sumUsage({ chatId: answer.chatId, messageId: answer.messageId });
       return sums.reduce((total, sum) => total + sum.costUsd, 0);
     } catch (failure) {
-      logError(`Цена ответа ${answer.messageId} для afterTurn не прочитана: ${failure instanceof Error ? failure.message : String(failure)}`);
+      logError(`Цена ответа ${answer.messageId} для afterTurn не прочитана: ${failure instanceof Error ? failure.message : String(failure)}`, failure);
       return null;
     }
   }
@@ -147,7 +149,7 @@ export function createAfterTurn(context: {
       const chat = await storage.getChat(turn.chatId);
       return chat ? chatDataOfInput(chat) : turn.chatData;
     } catch (failure) {
-      logError(`Данные чата ${turn.chatId} для afterTurn не прочитаны: ${failure instanceof Error ? failure.message : String(failure)}`);
+      logError(`Данные чата ${turn.chatId} для afterTurn не прочитаны: ${failure instanceof Error ? failure.message : String(failure)}`, failure);
       return turn.chatData;
     }
   }
@@ -206,7 +208,7 @@ export function createAfterTurn(context: {
           chatEvents.emit({ type: "app-event", ownerId: turn.ownerId, chatId: turn.chatId, messageId: turn.messageId, event });
         }
       }).catch((failure: unknown) =>
-        logError(`События afterTurn ответа ${turn.messageId} после «Стопа» не отданы: ${failure instanceof Error ? failure.message : String(failure)}`),
+        logError(`События afterTurn ответа ${turn.messageId} после «Стопа» не отданы: ${failure instanceof Error ? failure.message : String(failure)}`, failure),
       );
       return [];
     },
@@ -215,7 +217,7 @@ export function createAfterTurn(context: {
       inFlight.add(messageId);
       void track(recover(messageId))
         .catch((failure: unknown) =>
-          logError(`afterTurn ответа ${messageId} после перезапуска не доделан: ${failure instanceof Error ? failure.message : String(failure)}`),
+          logError(`afterTurn ответа ${messageId} после перезапуска не доделан: ${failure instanceof Error ? failure.message : String(failure)}`, failure),
         )
         .finally(() => inFlight.delete(messageId));
     },
@@ -280,7 +282,7 @@ function turnResultOf(
   };
 }
 
-type HookOutcome = { ok: true; events: AppEvent[] } | { ok: false; reason: string };
+type HookOutcome = { ok: true; events: AppEvent[] } | { ok: false; reason: string; error?: unknown };
 
 /**
  * Попытки хука: бросок или отказ — пауза и снова, пока есть попытки и срок. Срок — на всё вместе: вышел — сбой сразу,
@@ -296,6 +298,7 @@ async function callWithRetries(handler: AfterTurnHandler, result: TurnResult, li
   let expired = false;
   const tries = (async (): Promise<HookOutcome> => {
     let reason = "";
+    let lastError: unknown;
     for (let attempt = 1; attempt <= limits.attempts && !expired; attempt++) {
       if (attempt > 1) await pause(AFTER_TURN_RETRY_PAUSES_MS[Math.min(attempt - 2, AFTER_TURN_RETRY_PAUSES_MS.length - 1)]!, giveUp.signal);
       if (expired) break;
@@ -303,16 +306,17 @@ async function callWithRetries(handler: AfterTurnHandler, result: TurnResult, li
       try {
         returned = await handler(result);
       } catch (failure) {
+        lastError = failure;
         reason = `попытка ${attempt} из ${limits.attempts}: ${failure instanceof Error ? failure.message : String(failure)}`;
         continue;
       }
       try {
         return { ok: true, events: checkedEvents(returned) };
       } catch (failure) {
-        return { ok: false, reason: failure instanceof Error ? failure.message : String(failure) };
+        return { ok: false, reason: failure instanceof Error ? failure.message : String(failure), error: failure };
       }
     }
-    return { ok: false, reason };
+    return { ok: false, reason, error: lastError };
   })();
   try {
     return await Promise.race([tries, deadline]);
@@ -338,13 +342,13 @@ async function closeState(
   messageId: string,
   state: "done" | "failed",
   appendParts: StoredMessage["parts"],
-  logError: (message: string) => void,
+  logError: (message: string, error?: unknown) => void,
   where: string,
 ): Promise<boolean> {
   try {
     return await storage.setAfterTurnState(messageId, state, appendParts.length > 0 ? { appendParts } : undefined);
   } catch (failure) {
-    logError(`Состояние afterTurn не записано (${where}): ${failure instanceof Error ? failure.message : String(failure)}`);
+    logError(`Состояние afterTurn не записано (${where}): ${failure instanceof Error ? failure.message : String(failure)}`, failure);
     return false;
   }
 }

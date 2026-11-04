@@ -206,7 +206,7 @@ describe("observeModelCalls: поток", () => {
     };
     const result = streamText(await requestWith(model, observer, { logError }));
     expect(await result.text).toBe("Ок");
-    expect(logError).toHaveBeenCalledWith(expect.stringContaining("журнал упал"));
+    expect(logError).toHaveBeenCalledWith(expect.stringContaining("журнал упал"), expect.any(Error));
   });
 
   it("ядро не меняет prompt после отправки: замороженный запрос проходит, событие не меняется до конца хода", async () => {

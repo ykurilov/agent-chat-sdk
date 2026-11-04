@@ -43,7 +43,7 @@ export interface ProviderOutages {
   recovered(providerId: string): void;
 }
 
-export function createProviderOutages(options: { now: () => number; logError: (message: string) => void }): ProviderOutages {
+export function createProviderOutages(options: { now: () => number; logError: (message: string, error?: unknown) => void }): ProviderOutages {
   const outages = new Map<string, { kind: ProviderOutageKind; pausedUntil: number; probeUntil?: number }>();
   const alertedAt = new Map<string, number>();
   const pausedKind = (providerId: string): ProviderOutageKind | undefined => {

@@ -202,6 +202,6 @@ describe("служба чата: правила хода и расход пос�
     await answered(service, chat.id, "u1");
     await vi.waitFor(() => expect(limits.afterSpending).toHaveBeenCalledWith({ userId: "anna", chatId: chat.id }));
     expect(journaled).toBe(1);
-    await vi.waitFor(() => expect(logError).toHaveBeenCalledWith(expect.stringContaining("порог не отправлен")));
+    await vi.waitFor(() => expect(logError).toHaveBeenCalledWith(expect.stringContaining("порог не отправлен"), expect.any(Error)));
   });
 });

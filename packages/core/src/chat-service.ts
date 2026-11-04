@@ -518,8 +518,8 @@ export interface ChatServiceOptions {
    */
   maxConcurrentTurnsPerUser?: number;
   env?: Record<string, string | undefined>;
-  /** Журнал сервера. По умолчанию `console.error`. */
-  logError?: (message: string) => void;
+  /** Журнал сервера. Второй аргумент — исходная ошибка, если она есть; сообщения без ошибки остаются с одним аргументом. По умолчанию `console.error`. */
+  logError?: (message: string, error?: unknown) => void;
   /**
    * Часы службы: дата в запросе к модели, `prepareTurn.now`, время сценариев. Один источник на службу — тесты и
    * песочница подменяют время целиком. По умолчанию — сейчас.
@@ -1214,7 +1214,7 @@ function isInvalidTurnRequest(error: unknown): boolean {
  * Инструменты памяти рядом с инструментами приложения (инструкцию памяти дописывает `assembleInstructions`).
  * Повтор имени — ошибка: тихо подменить чужой инструмент нельзя.
  */
-function withLongTermMemory(agent: AgentSettings, memory: LongTermMemory | undefined, logError: (message: string) => void): AgentSettings {
+function withLongTermMemory(agent: AgentSettings, memory: LongTermMemory | undefined, logError: (message: string, error?: unknown) => void): AgentSettings {
   if (!memory) return agent;
   const clash = (own: ToolSet, memoryNames: readonly string[]) => memoryNames.find((name) => Object.hasOwn(own, name));
   const clashMessage = (name: string) => `Инструмент «${name}» задан и приложением, и долгой памятью: переименуйте инструмент приложения`;
@@ -1244,7 +1244,7 @@ function withLongTermMemory(agent: AgentSettings, memory: LongTermMemory | undef
  * Инструменты фона рядом с инструментами приложения и памяти. Повтор имени — ошибка: при создании службы для набора,
  * на ходе — для набора из функции.
  */
-function withBackgroundTools(agent: AgentSettings, background: BackgroundTasks | undefined, logError: (message: string) => void): AgentSettings {
+function withBackgroundTools(agent: AgentSettings, background: BackgroundTasks | undefined, logError: (message: string, error?: unknown) => void): AgentSettings {
   if (!background) return agent;
   const clashMessage = (name: string) => `Инструмент «${name}» задан и приложением, и фоном: переименуйте инструмент приложения`;
   if (agent.tools && typeof agent.tools !== "function") {
@@ -1293,7 +1293,7 @@ function checkWidgetNamesFree(widgets: AgentWidgets, memory: LongTermMemory | un
 }
 
 /** Инструменты виджетов рядом с инструментами приложения и памяти. Без виджетов — те же настройки. */
-function withWidgets(agent: AgentSettings, widgets: AgentWidgets, logError: (message: string) => void): AgentSettings {
+function withWidgets(agent: AgentSettings, widgets: AgentWidgets, logError: (message: string, error?: unknown) => void): AgentSettings {
   const tools = withWidgetTools(agent.tools, widgets, logError);
   return tools === agent.tools ? agent : { ...agent, tools };
 }
@@ -1385,7 +1385,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
   /** Вызовы, чей результат правка ответа не меняет: файлы (по списку приложения) и ответы человека на виджеты. */
   const uneditableTools: ReadonlySet<string> = new Set([...(input.lockedToolOutputs ?? []), ...Object.keys(widgets.tools)]);
   const instructionsOfChat = chatInstructionsSource(input.chatInstructions, options.agent.instructions, instructionBlocks, input.background?.instructions);
-  const chatEvents = input.chatEvents ?? createChatEvents((error) => logError(`Слушатель событий чата упал: ${String(error)}`));
+  const chatEvents = input.chatEvents ?? createChatEvents((error) => logError(`Слушатель событий чата упал: ${String(error)}`, error));
   const afterTurn =
     options.afterTurn &&
     createAfterTurn({
@@ -1460,7 +1460,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     try {
       return await voices?.current(userId);
     } catch (error) {
-      logError(`Голос: не удалось узнать голос человека: ${error instanceof Error ? error.message : String(error)}`);
+      logError(`Голос: не удалось узнать голос человека: ${error instanceof Error ? error.message : String(error)}`, error);
       return undefined;
     }
   };
@@ -1622,7 +1622,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     } catch (error) {
       if (!isWidgetCheckOutcome(error)) {
         // Только имя ошибки: её текст может нести данные ответа или базы.
-        logError(`[виджет] ошибка проверки чат=${logValue(call.chat.id)} вызов=${logValue(call.toolCallId)}: ${logValue(error instanceof Error ? error.name : "не ошибка")}`);
+        logError(`[виджет] ошибка проверки чат=${logValue(call.chat.id)} вызов=${logValue(call.toolCallId)}: ${logValue(error instanceof Error ? error.name : "не ошибка")}`, error);
       }
       throw error;
     } finally {
@@ -1715,7 +1715,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
   /** Расход уже в журнале: лимиты сверяют пороги. Не ждётся; сбой — строка в журнал. */
   function afterSpending(userId: string, chatId: string): void {
     if (!options.limits?.afterSpending) return;
-    const report = (failure: unknown) => logError(`Лимиты после расхода (чат ${chatId}): ${failure instanceof Error ? failure.message : String(failure)}`);
+    const report = (failure: unknown) => logError(`Лимиты после расхода (чат ${chatId}): ${failure instanceof Error ? failure.message : String(failure)}`, failure);
     try {
       options.limits.afterSpending({ userId, chatId }).catch(report);
     } catch (failure) {
@@ -1759,7 +1759,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     try {
       return await write();
     } catch (error) {
-      await giveBack?.().catch((failure: unknown) => logError(`Место в лимите сообщений не вернулось (чат ${chatId}): ${failure instanceof Error ? failure.message : String(failure)}`));
+      await giveBack?.().catch((failure: unknown) => logError(`Место в лимите сообщений не вернулось (чат ${chatId}): ${failure instanceof Error ? failure.message : String(failure)}`, failure));
       throw error;
     }
   }
@@ -1826,7 +1826,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
       warnErrorDetailsWithoutModel(given);
       return resolveChatCapabilities(given);
     } catch (error) {
-      logError(`chatCapabilities упал или вернул неверные права (чат ${chat.id}): ${error instanceof Error ? error.message : String(error)}`);
+      logError(`chatCapabilities упал или вернул неверные права (чат ${chat.id}): ${error instanceof Error ? error.message : String(error)}`, error);
       throw error;
     }
   }
@@ -1879,7 +1879,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     try {
       refused = new ChatCreationRefusedError(refusal);
     } catch (error) {
-      logError(`beforeCreateChat вернул неверный отказ (человек ${userId}): ${error instanceof Error ? error.message : String(error)}`);
+      logError(`beforeCreateChat вернул неверный отказ (человек ${userId}): ${error instanceof Error ? error.message : String(error)}`, error);
       throw error;
     }
     throw refused;
@@ -1916,7 +1916,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
   async function repairClosureCopy(chat: Chat, closed: ChatClosure | undefined): Promise<void> {
     if (!storage.setChatClosed || sameClosure(chat.closed, closed)) return;
     await storage.setChatClosed(chat.id, closed ?? null).catch((failure: unknown) =>
-      logError(`Копия закрытия чата ${chat.id} не записалась: ${failure instanceof Error ? failure.message : String(failure)}`),
+      logError(`Копия закрытия чата ${chat.id} не записалась: ${failure instanceof Error ? failure.message : String(failure)}`, failure),
     );
   }
 
@@ -1950,7 +1950,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
   async function writeClosureCopy(ownerId: string, chatId: string, closed: ChatClosure | null): Promise<void> {
     if (storage.setChatClosed) {
       await storage.setChatClosed(chatId, closed).catch((failure: unknown) =>
-        logError(`Копия закрытия чата ${chatId} не записалась: ${failure instanceof Error ? failure.message : String(failure)}`),
+        logError(`Копия закрытия чата ${chatId} не записалась: ${failure instanceof Error ? failure.message : String(failure)}`, failure),
       );
     }
     chatEvents.emit(closed ? { type: "chat-closed", ownerId, chatId, closed } : { type: "chat-reopened", ownerId, chatId });
@@ -1973,7 +1973,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
       stateChanged.notify({ ownerId, chatId, reason, before, after: state.values, atMessageId: state.atMessageId });
       await syncClosureCopy(ownerId, chatId, state);
     } catch (failure) {
-      logError(`Смена состояния чата ${chatId} не разослана: ${failure instanceof Error ? failure.message : String(failure)}`);
+      logError(`Смена состояния чата ${chatId} не разослана: ${failure instanceof Error ? failure.message : String(failure)}`, failure);
     }
   }
 
@@ -1997,7 +1997,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
       try {
         await writeUndelivered(chatId);
       } catch (failure) {
-        logError(`Пометка «не доставлено» в чате ${chatId} не записалась после хода: ${failure instanceof Error ? failure.message : String(failure)}`);
+        logError(`Пометка «не доставлено» в чате ${chatId} не записалась после хода: ${failure instanceof Error ? failure.message : String(failure)}`, failure);
       } finally {
         writingUndelivered.delete(chatId);
       }
@@ -2035,7 +2035,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
           await appendClosure({ id: chatId }, closed);
         });
       } catch (failure) {
-        logError(`Закрытие чата ${chatId} не записалось после хода: ${failure instanceof Error ? failure.message : String(failure)}`);
+        logError(`Закрытие чата ${chatId} не записалось после хода: ${failure instanceof Error ? failure.message : String(failure)}`, failure);
       } finally {
         writingClosures.delete(chatId);
       }
@@ -2070,7 +2070,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
       const remembered = await storage.getUserModelChoice(userId);
       return remembered ? effectiveChoiceOfChat(options.catalog, env, remembered, defaultChoice) : null;
     } catch (error) {
-      logError(`Не удалось прочитать запомненный выбор модели человека ${userId}: ${String(error)}`);
+      logError(`Не удалось прочитать запомненный выбор модели человека ${userId}: ${String(error)}`, error);
       return null;
     }
   }
@@ -2088,7 +2088,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     // Ответ брошен упавшей копией дольше порога — прерывается сразу, не дожидаясь проверки (FR-060).
     if (write && isDetachedAnswer(answerBeforeCorrections(branch), runningId) && storage.listSilentAnswerIds) {
       const recovered = await recoverStaleAnswers({ chatId }).catch((failure: unknown) => {
-        logError(`Проверка брошенного ответа чата ${chatId} не удалась: ${failure instanceof Error ? failure.message : "неизвестная ошибка"}`);
+        logError(`Проверка брошенного ответа чата ${chatId} не удалась: ${failure instanceof Error ? failure.message : "неизвестная ошибка"}`, failure);
         return 0;
       });
       if (recovered > 0) ({ messages, selections, branch } = await loadTree(chatId));
@@ -2167,14 +2167,14 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     try {
       await options.onModelChosen({ userId, chatId, choice: { ...choice } });
     } catch (error) {
-      logError(`onModelChosen: сбой хука (чат ${chatId}): ${error instanceof Error ? error.message : String(error)}`);
+      logError(`onModelChosen: сбой хука (чат ${chatId}): ${error instanceof Error ? error.message : String(error)}`, error);
     }
   }
 
   /** Запоминает выбор для новых чатов. Сбой выбор в чате не отменяет: он уже сохранён. */
   async function rememberChoice(userId: string, choice: ModelChoice): Promise<void> {
     if (!storage.saveUserModelChoice) return;
-    await storage.saveUserModelChoice(userId, choice).catch((error: unknown) => logError(`Не удалось запомнить выбор модели человека ${userId}: ${String(error)}`));
+    await storage.saveUserModelChoice(userId, choice).catch((error: unknown) => logError(`Не удалось запомнить выбор модели человека ${userId}: ${String(error)}`, error));
   }
 
   /** Все сообщения чата без обрывков склейки голосовых фраз (они остаются в базе, но ветками не считаются), выбор человека и текущая ветка из них. */
@@ -2973,7 +2973,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
         (held) => {
           if (!held) clearInterval(timer);
         },
-        (error: unknown) => logError(`Удержание пачки чата ${chatId} не продлилось: ${error instanceof Error ? error.message : String(error)}`),
+        (error: unknown) => logError(`Удержание пачки чата ${chatId} не продлилось: ${error instanceof Error ? error.message : String(error)}`, error),
       );
     }, BURST_HOLD_RENEW_MS);
     (timer as { unref?: () => void }).unref?.();
@@ -3008,7 +3008,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
         if (decided)
           return storage
             .removePendingBurst!(chatId, questionId)
-            .catch((error: unknown) => logError(`Запись пачки чата ${chatId} не снялась: ${error instanceof Error ? error.message : String(error)}`));
+            .catch((error: unknown) => logError(`Запись пачки чата ${chatId} не снялась: ${error instanceof Error ? error.message : String(error)}`, error));
       });
     return answering;
   }
@@ -3061,7 +3061,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
       if (!chat) return receivingAbandonedBurst(burst);
       target = await serviceFor({ ownerId: burst.ownerId, chatId: burst.chatId, chat });
     } catch (error) {
-      logError(`Служба для брошенной пачки чата ${burst.chatId} не нашлась (serviceFor): ${error instanceof Error ? error.message : String(error)} — пачка ждёт следующего обхода`);
+      logError(`Служба для брошенной пачки чата ${burst.chatId} не нашлась (serviceFor): ${error instanceof Error ? error.message : String(error)} — пачка ждёт следующего обхода`, error);
       return;
     }
     if (!target) {
@@ -3101,7 +3101,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
         }
       }
     })()
-      .catch((error: unknown) => logError(`Обход ждущих пачек не удался: ${error instanceof Error ? error.message : String(error)}`))
+      .catch((error: unknown) => logError(`Обход ждущих пачек не удался: ${error instanceof Error ? error.message : String(error)}`, error))
       .finally(() => burstSweeps.delete(sweep));
     burstSweeps.add(sweep);
     return sweep;
@@ -3233,7 +3233,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
       // начало запроса и кэш модели прежние.
       await launchTurn(ownerId, chatId, [...before, ...branch.slice(first)], { parentId: last.id, page: continuationRequestContext(page, turn.correctionPages()), action: "send", detached: true });
     }, { lease: "required" })
-      .catch((failure: unknown) => logError(`Ход по поправкам чата ${chatId} не начался: ${failure instanceof Error ? failure.message : String(failure)}`))
+      .catch((failure: unknown) => logError(`Ход по поправкам чата ${chatId} не начался: ${failure instanceof Error ? failure.message : String(failure)}`, failure))
       .finally(() => {
         if (handOffs.get(chatId) === handOff) handOffs.delete(chatId);
       });
@@ -3516,8 +3516,8 @@ export function createChatService(input: ChatServiceOptions): ChatService {
         await storage.deleteChat(chatId);
       }, { lease: "required" }).finally(() => deleting.delete(chatId));
       // Задачи фона удалённого чата отменяются; сбой фона удаление не отменяет — чата уже нет.
-      await options.background?.chatDeleted(userId, chatId).catch((error: unknown) => logError(`Фон: не удалось убрать задачи удалённого чата ${chatId}: ${String(error)}`));
-      await options.limits?.chatDeleted?.({ userId, chatId }).catch((error: unknown) => logError(`Лимиты: не удалось стереть окна удалённого чата ${chatId}: ${String(error)}`));
+      await options.background?.chatDeleted(userId, chatId).catch((error: unknown) => logError(`Фон: не удалось убрать задачи удалённого чата ${chatId}: ${String(error)}`, error));
+      await options.limits?.chatDeleted?.({ userId, chatId }).catch((error: unknown) => logError(`Лимиты: не удалось стереть окна удалённого чата ${chatId}: ${String(error)}`, error));
     },
 
     async getModelMenu(userId) {
@@ -4060,7 +4060,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
             sweep.running = Promise.all([recoverStaleAnswers(), afterTurn?.recoverPending(liveAnswerIds), ...(recoverBurstsOnSweep ? [sweepingBursts({ abandonedBefore: now().toISOString() })] : [])])
               .then(() => undefined)
               .catch((failure: unknown) =>
-                logError(`Проверка брошенных ответов не удалась: ${failure instanceof Error ? failure.message : "неизвестная ошибка"}`),
+                logError(`Проверка брошенных ответов не удалась: ${failure instanceof Error ? failure.message : "неизвестная ошибка"}`, failure),
               )
               .finally(() => {
                 sweep.running = undefined;
@@ -4109,7 +4109,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
       try {
         if (await interruptAnswer(messageId)) recovered += 1;
       } catch (failure) {
-        logError(`Не удалось прервать брошенный ответ ${messageId}: ${failure instanceof Error ? failure.message : String(failure)}`);
+        logError(`Не удалось прервать брошенный ответ ${messageId}: ${failure instanceof Error ? failure.message : String(failure)}`, failure);
       }
     }
     return recovered;
@@ -4227,7 +4227,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
         });
       },
       assertWithinLimit: (ownerId, chatId) => assertWithinSpendingLimit(ownerId, chatId),
-      logError: (error) => logError(`Фон: ${error instanceof Error ? error.message : String(error)}`),
+      logError: (error) => logError(`Фон: ${error instanceof Error ? error.message : String(error)}`, error),
       helpers: backgroundHelpers,
     };
   }

@@ -232,7 +232,7 @@ describe("служба чата: проверка перед ходом (beforeT
     const { service, model, storage } = setup({ beforeTurn: () => ({ code: "Урок Закрыт", message: "x" }), logError });
     const chat = await service.createChat("anna");
     await expect(service.sendMessage("anna", chat.id, userMessage("u1", "Привет"))).rejects.toBeInstanceOf(TypeError);
-    expect(logError).toHaveBeenCalledWith(expect.stringContaining("beforeTurn"));
+    expect(logError).toHaveBeenCalledWith(expect.stringContaining("beforeTurn"), expect.any(Error));
     expect(model.doStreamCalls).toHaveLength(0);
     expect(await storage.listMessages(chat.id)).toEqual([]);
   });

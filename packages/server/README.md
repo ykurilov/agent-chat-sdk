@@ -108,3 +108,11 @@ await chat.flush({ waitForAnswersMs: 20_000 }); // при штатной ост�
 Журнал изменений и что делать при обновлении: [CHANGELOG.md](./CHANGELOG.md). Все пакеты SDK выходят вместе и с одной версией; обновление — `pnpm update "@ykurilov/agent-chat-*" --latest`.
 
 Контракты интеграции приложения: [HTTP-приветствие, текущий вопрос, номера фото, метаданные и тесты](https://github.com/ykurilov/agent-chat-sdk/blob/main/docs/app-chat-contracts.md).
+
+## Исходная ошибка в журнале
+
+`createChatHandler` и `createChatServer` принимают `logError?: (message: string, error?: unknown) => void`.
+При обработке исключения второй аргумент передаёт исходное значение без сериализации: у `Error` сохраняются `stack` и `cause`.
+Диагностические сообщения без исключения вызывают обработчик с одной строкой. Обработчики с одним аргументом совместимы.
+Второй аргумент предназначен для серверного журнала приложения; формат HTTP/SSE ошибок для пользователя не меняется.
+У `createExternalChatHandler` отдельный прежний контракт `logError?: (error: unknown) => void`, он не меняется.

@@ -19,7 +19,7 @@ export interface SpentTokens {
   steps?: readonly (TokenUsage & { at?: string })[];
   /** Когда начался ход (сжатие): в каком периоде лимита сидит расход. */
   startedAt: string;
-  logError: (message: string) => void;
+  logError: (message: string, error?: unknown) => void;
 }
 
 /**
@@ -50,7 +50,7 @@ export async function recordSpentTokens(input: SpentTokens): Promise<string | nu
     });
     return id;
   } catch (failure) {
-    input.logError(`Не удалось записать расход (${input.source}, чат ${input.chatId}): ${failure instanceof Error ? failure.message : "неизвестная ошибка"}`);
+    input.logError(`Не удалось записать расход (${input.source}, чат ${input.chatId}): ${failure instanceof Error ? failure.message : "неизвестная ошибка"}`, failure);
     return null;
   }
 }

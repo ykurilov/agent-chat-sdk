@@ -57,7 +57,7 @@ interface ChatCacheState {
 }
 
 export interface CacheMissWatchOptions {
-  logError: (message: string) => void;
+  logError: (message: string, error?: unknown) => void;
   now?: () => number;
 }
 

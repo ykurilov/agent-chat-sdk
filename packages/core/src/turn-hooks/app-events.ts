@@ -35,7 +35,7 @@ export interface AppEventEmitter {
 export function createAppEventEmitter(context: {
   /** Кусок в запись ответа и клиенту. */
   emit: (chunk: UIMessageChunk) => void;
-  logError: (message: string) => void;
+  logError: (message: string, error?: unknown) => void;
   chatId: string;
 }): AppEventEmitter {
   let closed = false;

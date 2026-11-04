@@ -64,7 +64,7 @@ describe("обработчик чата: чат объекта", () => {
       const { call, storage } = createTestChat({ subjectChats: async () => answer as never, logError });
       const response = await call("POST", "/subject", { body: { key: "lesson:1" } });
       expect(response.status).toBe(500);
-      expect(logError).toHaveBeenCalledWith(expect.stringContaining("subjectChats должен вернуть объект"));
+      expect(logError).toHaveBeenCalledWith(expect.stringContaining("subjectChats должен вернуть объект"), expect.any(Error));
       expect(await storage.listChats("anna", { subjects: "include" })).toEqual([]);
     }
   });

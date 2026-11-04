@@ -63,7 +63,7 @@ export interface CompactionRunInput {
   /** Задание последним сообщением; по умолчанию — сводка всей переписки (`compactionTask`). */
   task?: string;
   abortSignal?: AbortSignal;
-  logError: (message: string) => void;
+  logError: (message: string, error?: unknown) => void;
   fetch?: typeof globalThis.fetch;
   /** Наблюдатель хода: обращения сжатия — событиями с назначением `compaction`. Нет — запрос как прежде. */
   observe?: Omit<ModelCallObservation, "purpose">;

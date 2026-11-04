@@ -502,13 +502,14 @@ describe("сжатие: расход токенов", () => {
   it("сбой записи расхода не отменяет сжатие и попадает в журнал", async () => {
     const { storage, service, logError } = await setup({ contexts: [100, 300, 600] });
     const original = storage.insertUsageRecord;
+    const failure = new Error("база недоступна");
     storage.insertUsageRecord = async () => {
-      throw new Error("база недоступна");
+      throw failure;
     };
     await service.afterAnswer({ chatId: "chat-1", answerId: "a3" });
     await settled(service);
     storage.insertUsageRecord = original;
     expect(await storage.listCompactions("chat-1")).toHaveLength(1);
-    expect(logError).toHaveBeenCalledWith(expect.stringMatching(/расход.*база недоступна/i));
+    expect(logError).toHaveBeenCalledWith(expect.stringMatching(/расход.*база недоступна/i), failure);
   });
 });

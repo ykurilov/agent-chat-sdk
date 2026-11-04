@@ -67,7 +67,7 @@ describe("служба чата: выбор модели", () => {
     const { service, logError } = setup({ defaultChoice: { modelId: "нет-такой", providerId: "acme" } });
     const chat = await service.createChat("anna");
     expect(chat).toMatchObject({ modelId: mockModelId, providerId: "mock" });
-    expect(logError).toHaveBeenCalledWith(expect.stringContaining("нет-такой"));
+    expect(logError).toHaveBeenCalledWith(expect.stringContaining("нет-такой"), expect.any(Error));
   });
 
   it("setModel записывает выбор в чат; следующий ответ идёт от новой модели и подписан ею", async () => {

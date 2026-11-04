@@ -119,7 +119,7 @@ describe("заголовки раздумий (thoughtTitles)", () => {
     const answer = (await service.getHistory("anna", chat.id)).messages.at(-1);
     expect(answer?.metadata?.status).toBe("complete");
     expect(answer?.metadata).not.toHaveProperty("thoughtTitles");
-    expect(logError).toHaveBeenCalledWith(expect.stringContaining("заголовок раздумья"));
+    expect(logError).toHaveBeenCalledWith(expect.stringContaining("заголовок раздумья"), expect.any(Error));
   });
 
   it("кэш: запрос основной модели во втором ходе побайтно тот же, что без заголовков", async () => {
@@ -207,7 +207,7 @@ describe("заголовки раздумий: включение по чату"
     const chat = await broken.service.createChat("anna");
     await readAll(await broken.service.sendMessage("anna", chat.id, userMessage("u1", "Сделай игру")));
     expect(broken.titleModel.doGenerateCalls).toHaveLength(0);
-    expect(broken.logError).toHaveBeenCalledWith(expect.stringContaining("enabled упала"));
+    expect(broken.logError).toHaveBeenCalledWith(expect.stringContaining("enabled упала"), expect.any(Error));
   });
 });
 

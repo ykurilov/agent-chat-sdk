@@ -12,7 +12,7 @@ export interface OneOffCallsContext {
   storage: ChatStorage;
   catalog: ModelCatalog;
   env: Record<string, string | undefined>;
-  logError: (message: string) => void;
+  logError: (message: string, error?: unknown) => void;
   /** Проверка лимита до вызова: бросает `SpendingLimitReachedError`. */
   assertWithinLimit: (ownerId: string, chatId: string) => Promise<void>;
   /** Расход записан: лимиты сверяют пороги. Не ждётся. */

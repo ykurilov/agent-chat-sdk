@@ -195,7 +195,7 @@ describe("служба чата: запомненный выбор челове�
       reasoning: "high",
     });
     expect((await service.getHistory("anna", chat.id)).chat).toMatchObject({ modelId: "leveled", providerId: "acme" });
-    expect(logError).toHaveBeenCalledWith(expect.stringContaining("диск полон"));
+    expect(logError).toHaveBeenCalledWith(expect.stringContaining("диск полон"), expect.any(Error));
   });
 
   it("не удалось прочитать выбор: чат создаётся на выборе по умолчанию, сбой — в журнале", async () => {
@@ -205,7 +205,7 @@ describe("служба чата: запомненный выбор челове�
     };
     const { service, logError } = setup({ storage });
     expect(await service.createChat("anna")).toMatchObject(appDefault);
-    expect(logError).toHaveBeenCalledWith(expect.stringContaining("база недоступна"));
+    expect(logError).toHaveBeenCalledWith(expect.stringContaining("база недоступна"), expect.any(Error));
   });
 
   it("меню моделей по-прежнему отдаёт выбор по умолчанию из настроек, а не запомненный", async () => {
@@ -289,6 +289,6 @@ describe("служба чата: пустой чат, открытый как н
     const { service, logError } = setup({ storage });
     const empty = await service.createChat("anna");
     expect((await service.getHistory("anna", empty.id)).chat).toMatchObject(appDefault);
-    expect(logError).toHaveBeenCalledWith(expect.stringContaining("база недоступна"));
+    expect(logError).toHaveBeenCalledWith(expect.stringContaining("база недоступна"), expect.any(Error));
   });
 });

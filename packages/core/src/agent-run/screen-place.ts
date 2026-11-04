@@ -36,7 +36,7 @@ export function isTabId(value: unknown): value is string {
  */
 export function resolveTurnPlace(
   place: ScreenPlace | null | undefined,
-  context: { maxLength: number; chatId: string; logError: (message: string) => void },
+  context: { maxLength: number; chatId: string; logError: (message: string, error?: unknown) => void },
 ): ScreenPlace | null {
   if (!place) return null;
   const trimmed = place.description.trim();

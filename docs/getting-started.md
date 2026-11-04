@@ -648,6 +648,14 @@ export const runtime = "nodejs"; // хранилища работают толь
 [contracts/http-api.md](contracts/basic-agent-dialog/http-api.md); пинги в потоках —
 в [дополнении к нему](contracts/fast-feed-and-liveness/http-api.md).
 
+## Журнал ошибок сервера
+
+В `createChatHandler`, `createChatServer` и `createChatService` настройка `logError` принимает
+`(message: string, error?: unknown) => void`. Первый аргумент — прежнее сообщение, второй — исходное исключение,
+если оно есть. В серверном журнале приложения сохраняйте второй аргумент как ошибку, чтобы не потерять `stack` и `cause`.
+Сообщения без исключения передаются одной строкой. Старые обработчики с одним аргументом работают без изменений.
+Формат ошибок для браузера прежний; исходное исключение не добавляется в HTTP/SSE.
+
 ## 5. Стандартный вид - Одуванчик
 
 Для нового приложения используется `@ykurilov/agent-chat-skin-oduvanchik/chat`. `AgentChat`, `ChatWorkspace` и `AgentPanel` из этого входа выбирают Одуванчик без свойства `skin`; явно переданный скин имеет приоритет.

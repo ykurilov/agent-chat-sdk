@@ -21,7 +21,7 @@ export interface MemoryAfterAnswerOptions {
   storage: ChatStorage;
   catalog: ModelCatalog;
   env: Record<string, string | undefined>;
-  logError: (message: string) => void;
+  logError: (message: string, error?: unknown) => void;
   /** Наблюдатель хода: обращения памяти — событиями с назначением `memory`. Нет — модель без прослойки. */
   turnObserver?: TurnObserver;
 }
@@ -68,10 +68,10 @@ export function createMemoryAfterAnswer({ memory, storage, catalog, env, logErro
           await memory.afterAnswer!({ userId: ownerId, chatId, model, recordUsage });
         } catch (failure) {
           const kind = classifyProviderError(failure, found.provider);
-          logError(describeProviderFailure(failure, { chatId, modelId, providerId, kind, env, catalog }));
+          logError(describeProviderFailure(failure, { chatId, modelId, providerId, kind, env, catalog }), failure);
         }
       })()
-        .catch((failure) => logError(`Дела памяти после ответа в чате ${chatId} не удались: ${failure instanceof Error ? failure.message : "неизвестная ошибка"}`))
+        .catch((failure) => logError(`Дела памяти после ответа в чате ${chatId} не удались: ${failure instanceof Error ? failure.message : "неизвестная ошибка"}`, failure))
         .finally(() => running.delete(job));
       running.add(job);
     },

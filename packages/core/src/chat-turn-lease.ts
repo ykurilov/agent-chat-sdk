@@ -38,7 +38,7 @@ export interface ChatTurnLeases {
 }
 
 /** Хранилище без аренды — вход и выход ничего не делают: один ход за раз держится только внутри копии. */
-export function createChatTurnLeases(input: { storage: ChatStorage; holder: string; logError: (message: string) => void; onLost?: (chatId: string) => void }): ChatTurnLeases {
+export function createChatTurnLeases(input: { storage: ChatStorage; holder: string; logError: (message: string, error?: unknown) => void; onLost?: (chatId: string) => void }): ChatTurnLeases {
   const { storage, holder, logError } = input;
   if (!storage.claimChatTurn || !storage.releaseChatTurn) return { enter: async () => true, signal: () => undefined, holder: () => undefined, invalidate: () => {}, leave: () => {}, releaseAll: async () => {}, clearForeign: async () => {} };
   const claim = storage.claimChatTurn.bind(storage);
@@ -119,7 +119,7 @@ export function createChatTurnLeases(input: { storage: ChatStorage; holder: stri
         clearTimeout(timer);
         if (expired) {
           void pending.then(() => release(chatId, lease.token), () => release(chatId, lease.token)).catch((error: unknown) => {
-            logError(`Позднее снятие аренды чата ${chatId} не удалось: ${error instanceof Error ? error.message : String(error)}`);
+            logError(`Позднее снятие аренды чата ${chatId} не удалось: ${error instanceof Error ? error.message : String(error)}`, error);
           });
         }
         resolve();
@@ -144,7 +144,7 @@ export function createChatTurnLeases(input: { storage: ChatStorage; holder: stri
     const done: Promise<void> = (after.length > 0 ? Promise.all(after).then(() => release(chatId, lease.token)) : release(chatId, lease.token))
       .catch((error: unknown) => {
         // Не снялась — истечёт сама через срок аренды.
-        logError(`Аренда хода чата ${chatId} не снялась: ${error instanceof Error ? error.message : String(error)}`);
+        logError(`Аренда хода чата ${chatId} не снялась: ${error instanceof Error ? error.message : String(error)}`, error);
       })
       .finally(() => {
         if (releasing.get(chatId) === done) releasing.delete(chatId);

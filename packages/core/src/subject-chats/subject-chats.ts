@@ -122,7 +122,7 @@ export interface SubjectChatsDeps {
   choiceForNewChat(ownerId: string): Promise<ModelChoice>;
   /** Проверенный выбор или `null`, если провайдер скрыт из меню (`hiddenFromMenu`): чат тогда без своего выбора. */
   validateModelChoice(choice: ModelChoice): ModelChoice | null;
-  logError(message: string): void;
+  logError(message: string, error?: unknown): void;
   /** Будит агента нового чата указанием из приветствия (`deliverNotices`). */
   wakeAgent(ownerId: string, chatId: string, instruction: string): Promise<unknown>;
 }
@@ -166,7 +166,7 @@ export function createSubjectChats(deps: SubjectChatsDeps) {
     try {
       await deps.wakeAgent(chat.ownerId, chat.id, instruction);
     } catch (error) {
-      deps.logError(`Не удалось разбудить агента нового чата ${chat.id}: ${error instanceof Error ? error.message : String(error)}`);
+      deps.logError(`Не удалось разбудить агента нового чата ${chat.id}: ${error instanceof Error ? error.message : String(error)}`, error);
     }
   }
 
@@ -243,7 +243,7 @@ export function createSubjectChats(deps: SubjectChatsDeps) {
     const uploaded: StoredFilePart[] = [];
     const discardUploaded = async () => {
       if (uploaded.length === 0) return;
-      await deps.attachments?.discardImportedFiles?.(uploaded).catch((error: unknown) => deps.logError(`Импорт чата ${chatId}: не удалось убрать файлы: ${String(error)}`));
+      await deps.attachments?.discardImportedFiles?.(uploaded).catch((error: unknown) => deps.logError(`Импорт чата ${chatId}: не удалось убрать файлы: ${String(error)}`, error));
     };
     const createdAt = isoDate(source.createdAt ?? incoming[0]!.createdAt);
     try {
@@ -311,7 +311,7 @@ export function createSubjectChats(deps: SubjectChatsDeps) {
     if (closure && storage.setChatClosed) {
       await storage
         .setChatClosed(chatId, closure)
-        .catch((error: unknown) => deps.logError(`Импорт чата ${chatId}: копия закрытия не записалась: ${String(error)}`));
+        .catch((error: unknown) => deps.logError(`Импорт чата ${chatId}: копия закрытия не записалась: ${String(error)}`, error));
     }
     return { chatId };
   }
@@ -323,7 +323,7 @@ export function createSubjectChats(deps: SubjectChatsDeps) {
  * Записи состояния импортируемого чата: по записи на верхний ключ (проверки и пределы — как у `model.state`).
  * Неверные данные — исключение до записи.
  */
-function importedStateRecords(state: ImportChatInput["chat"]["state"], logError: (message: string) => void): AppStateRecord[] {
+function importedStateRecords(state: ImportChatInput["chat"]["state"], logError: (message: string, error?: unknown) => void): AppStateRecord[] {
   if (state === undefined) return [];
   if (typeof state !== "object" || state === null || Array.isArray(state)) throw new TypeError("chat.state импорта — JSON-объект.");
   const reserved = Object.keys(state).find(isReservedAppStateKey);

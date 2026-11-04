@@ -377,7 +377,7 @@ describe("ход не начался после beforeTurn (turnNotStarted)", ()
     const other = await failing.service.createChat("anna");
     await readAll(await failing.service.sendMessage("anna", other.id, userMessage("u1")));
     await expect(failing.service.sendMessage("anna", other.id, userMessage("u1"))).rejects.toThrow(/u1|уже/);
-    expect(failing.logError).toHaveBeenCalledWith(expect.stringContaining("turnNotStarted"));
+    expect(failing.logError).toHaveBeenCalledWith(expect.stringContaining("turnNotStarted"), expect.any(Error));
   });
 });
 

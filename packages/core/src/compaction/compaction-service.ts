@@ -125,7 +125,7 @@ export interface CompactionServiceOptions {
   serviceBlocks?: readonly ServiceBlockFormat[];
   /** `null` — автосжатие выключено; записи, уже сделанные, всё равно применяются к истории. */
   settings: ResolvedCompactionSettings | null;
-  logError: (message: string) => void;
+  logError: (message: string, error?: unknown) => void;
   fetch?: typeof globalThis.fetch;
   /** Часы для паузы после сбоя; в тестах подменяются. */
   now?: () => number;
@@ -250,7 +250,7 @@ export function createCompactionService(options: CompactionServiceOptions): Comp
       // Отмена при остановке сервера — не сбой: ни паузы, ни записи в журнал.
       if (signal.aborted) return "failed";
       pausedAt.set(chatId, now());
-      logError(compactionFailureLine(chatId, model, error));
+      logError(compactionFailureLine(chatId, model, error), error);
       return "failed";
     }
   }
@@ -412,7 +412,7 @@ export function createCompactionService(options: CompactionServiceOptions): Comp
       } catch (error) {
         if (error instanceof CompactionFailedError && error.usage) await recordCompactionUsage({ chatId, model, spent: error.usage, startedAt });
         if (abortSignal?.aborted) return null;
-        logError(compactionFailureLine(chatId, model, error));
+        logError(compactionFailureLine(chatId, model, error), error);
         line("не вышло");
         return null;
       }
@@ -442,7 +442,7 @@ export function createCompactionService(options: CompactionServiceOptions): Comp
       if (!isCompactionDue({ branch: branchThroughAnswer(branch, answerId), compactions, contextWindowTokens: profile.contextWindowTokens, settings: settings! })) return;
       void compact(chatId, { modelId: answer.modelId, providerId: answer.providerId }, undefined, answerId);
     } catch (error) {
-      logError(`Сжатие чата ${chatId}: не удалось проверить, нужно ли оно: ${error instanceof Error ? error.message : "неизвестная ошибка"}`);
+      logError(`Сжатие чата ${chatId}: не удалось проверить, нужно ли оно: ${error instanceof Error ? error.message : "неизвестная ошибка"}`, error);
     }
   }
 

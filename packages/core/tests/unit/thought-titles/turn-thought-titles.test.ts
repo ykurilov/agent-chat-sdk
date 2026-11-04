@@ -69,7 +69,7 @@ describe("заголовки раздумий хода", () => {
     await titles.settle(100);
     expect(titles.titles()).toEqual({});
     expect(changes).toEqual([]);
-    expect(logError).toHaveBeenCalledWith(expect.stringContaining("503"));
+    expect(logError).toHaveBeenCalledWith(expect.stringContaining("503"), expect.any(Error));
   });
 
   it("короткое раздумье на языке человека — первое предложение, без модели", async () => {

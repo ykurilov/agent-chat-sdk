@@ -16,7 +16,7 @@ export interface DataChangeNotifier {
 /** Сообщения инструментов об изменении данных одного хода: в хранилище не попадают, идут только в поток ответа. */
 export function createDataChangeNotifier(context: {
   emit: (chunk: UIMessageChunk) => void;
-  logError: (message: string) => void;
+  logError: (message: string, error?: unknown) => void;
   chatId: string;
 }): DataChangeNotifier {
   let closed = false;

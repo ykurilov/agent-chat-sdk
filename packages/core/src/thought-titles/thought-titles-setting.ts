@@ -101,7 +101,7 @@ export function resolveThoughtTitles(setting: ThoughtTitlesSetting | undefined, 
 }
 
 /** Язык заголовков хода: настройка, иначе по сообщению человека. Сбой функции — по сообщению, строка в журнал. */
-export function thoughtTitleLanguage(resolved: ResolvedThoughtTitles, input: ThoughtTitleLanguageInput, logError: (message: string) => void): string {
+export function thoughtTitleLanguage(resolved: ResolvedThoughtTitles, input: ThoughtTitleLanguageInput, logError: (message: string, error?: unknown) => void): string {
   const { language } = resolved;
   if (typeof language === "string" && language.trim()) return language.trim();
   if (typeof language === "function") {
@@ -109,31 +109,31 @@ export function thoughtTitleLanguage(resolved: ResolvedThoughtTitles, input: Tho
       const chosen = language(input);
       if (typeof chosen === "string" && chosen.trim()) return chosen.trim();
     } catch (error) {
-      logError(`[заголовок раздумья] thoughtTitles.language упала: ${error instanceof Error ? error.message : String(error)}`);
+      logError(`[заголовок раздумья] thoughtTitles.language упала: ${error instanceof Error ? error.message : String(error)}`, error);
     }
   }
   return languageOfText(input.lastUserText);
 }
 
 /** Включены ли заголовки в этом ходе; сбой функции `enabled` — нет, строка в журнал. */
-export function thoughtTitlesEnabled(resolved: ResolvedThoughtTitles, chat: { ownerId: string; chatId: string }, logError: (message: string) => void): boolean {
+export function thoughtTitlesEnabled(resolved: ResolvedThoughtTitles, chat: { ownerId: string; chatId: string }, logError: (message: string, error?: unknown) => void): boolean {
   if (!resolved.enabled) return true;
   try {
     return resolved.enabled(chat) === true;
   } catch (error) {
-    logError(`[заголовок раздумья] thoughtTitles.enabled упала: ${error instanceof Error ? error.message : String(error)}`);
+    logError(`[заголовок раздумья] thoughtTitles.enabled упала: ${error instanceof Error ? error.message : String(error)}`, error);
     return false;
   }
 }
 
 /** Свои слова приложения для проверки заголовков; сбой функции — без них, строка в журнал. */
-export async function thoughtTitleHiddenNames(resolved: ResolvedThoughtTitles, chat: { ownerId: string; chatId: string }, logError: (message: string) => void): Promise<string[]> {
+export async function thoughtTitleHiddenNames(resolved: ResolvedThoughtTitles, chat: { ownerId: string; chatId: string }, logError: (message: string, error?: unknown) => void): Promise<string[]> {
   if (!resolved.hiddenNames) return [];
   try {
     const names = await resolved.hiddenNames(chat);
     return Array.isArray(names) ? names.filter((name): name is string => typeof name === "string") : [];
   } catch (error) {
-    logError(`[заголовок раздумья] thoughtTitles.hiddenNames упала: ${error instanceof Error ? error.message : String(error)}`);
+    logError(`[заголовок раздумья] thoughtTitles.hiddenNames упала: ${error instanceof Error ? error.message : String(error)}`, error);
     return [];
   }
 }

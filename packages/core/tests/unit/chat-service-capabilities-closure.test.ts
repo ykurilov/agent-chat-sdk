@@ -197,7 +197,7 @@ describe("служба чата: права посетителя (chatCapabiliti
     const chat = await service.createChat("anna");
     await expect(service.getHistory("anna", chat.id)).rejects.toBeInstanceOf(TypeError);
     await expect(service.assertCapability("anna", chat.id, "edit")).rejects.toBeInstanceOf(TypeError);
-    expect(logError).toHaveBeenCalledWith(expect.stringContaining("chatCapabilities"));
+    expect(logError).toHaveBeenCalledWith(expect.stringContaining("chatCapabilities"), expect.any(Error));
   });
 
   it("асинхронная функция прав ждётся", async () => {
@@ -402,7 +402,7 @@ describe("права: опечатка в названии права", () => {
     const { service } = setup({ chatCapabilities: () => ({ regenrate: false }) as never, logError });
     const chat = await service.createChat("anna");
     await expect(service.getHistory("anna", chat.id)).rejects.toBeInstanceOf(TypeError);
-    expect(logError).toHaveBeenCalledWith(expect.stringContaining("regenrate"));
+    expect(logError).toHaveBeenCalledWith(expect.stringContaining("regenrate"), expect.any(Error));
   });
 });
 
@@ -702,7 +702,7 @@ describe("закрытие из инструмента: запись и сбои
     const chunks: UIMessageChunk[] = await readAll(await service.sendMessage("anna", chat.id, userMessage("u1", "Отправь")));
     expect(chunks.some((chunk) => chunk.type === CHAT_CLOSED_PART_TYPE)).toBe(true);
     expect((await storage.listMessages(chat.id)).at(-1)!.status).toBe("complete");
-    expect(logError).toHaveBeenCalledWith(expect.stringContaining("Копия закрытия"));
+    expect(logError).toHaveBeenCalledWith(expect.stringContaining("Копия закрытия"), expect.any(Error));
     expect(events.some((event) => event.type === "chat-closed")).toBe(true);
     expect((await service.getHistory("anna", chat.id)).chat.closed).toEqual(CLOSURE);
     await expect(service.sendMessage("anna", chat.id, userMessage("u2", "Ещё"))).rejects.toBeInstanceOf(ChatClosedError);
@@ -738,7 +738,7 @@ describe("создание чата: хук приложения beforeCreateCha
     const beforeCreateChat = vi.fn(() => ({ code: "Плохой Код", message: "x" }));
     const { service } = setup({ beforeCreateChat, logError });
     await expect(service.createChat("anna")).rejects.toBeInstanceOf(TypeError);
-    expect(logError).toHaveBeenCalledWith(expect.stringContaining("beforeCreateChat"));
+    expect(logError).toHaveBeenCalledWith(expect.stringContaining("beforeCreateChat"), expect.any(Error));
     beforeCreateChat.mockClear();
     await service.openSubjectChat({ ownerId: "anna", key: "lesson-1" });
     expect(beforeCreateChat).not.toHaveBeenCalled();

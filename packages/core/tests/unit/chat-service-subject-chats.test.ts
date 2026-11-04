@@ -249,6 +249,6 @@ describe("служба чата: приветствие", () => {
     const { chat, created } = await service.openSubjectChat({ ownerId: "anna", key: "lesson:1", greeting: { instruction: "Поздоровайся." } });
     expect(created).toBe(true);
     expect(chat.subjectKey).toBe("lesson:1");
-    expect(logError).toHaveBeenCalledWith(expect.stringContaining("база недоступна"));
+    expect(logError).toHaveBeenCalledWith(expect.stringContaining("база недоступна"), expect.any(Error));
   });
 });

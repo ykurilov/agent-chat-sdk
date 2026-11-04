@@ -26,7 +26,7 @@ export interface TurnThoughtTitlesInput {
   existing?: { count: number; titles: ThoughtTitles; asked?: number };
   /** Карта заголовков изменилась: полная копия. После `close` не зовётся. */
   onChange: (titles: ThoughtTitles) => void;
-  logError: (message: string) => void;
+  logError: (message: string, error?: unknown) => void;
 }
 
 export type TurnThoughtTitles = ReturnType<typeof createTurnThoughtTitles>;
@@ -86,7 +86,7 @@ export function createTurnThoughtTitles(input: TurnThoughtTitlesInput) {
       })
       .catch((error: unknown) => {
         // «Стоп» — не сбой: пересказ отменён вместе с ходом.
-        if (!input.signal?.aborted) input.logError(`[заголовок раздумья] не вышел: ${error instanceof Error ? error.message : String(error)}`);
+        if (!input.signal?.aborted) input.logError(`[заголовок раздумья] не вышел: ${error instanceof Error ? error.message : String(error)}`, error);
       })
       .finally(() => pending.delete(job));
     pending.add(job);

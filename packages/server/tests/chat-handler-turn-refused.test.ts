@@ -58,7 +58,7 @@ describe("обработчик чата: отказ приложения в хо
     const response = await call("POST", `/${chatId}/messages`, { body: message("u1", "Привет") });
     expect(response.status).toBe(500);
     expect(await response.json()).toEqual({ error: { kind: "other" } });
-    expect(logError).toHaveBeenCalledWith(expect.stringContaining("база урока недоступна"));
+    expect(logError).toHaveBeenCalledWith(expect.stringContaining("база урока недоступна"), expect.any(Error));
     expect(await storage.listMessages(chatId)).toEqual([]);
   });
 
@@ -69,7 +69,7 @@ describe("обработчик чата: отказ приложения в хо
     const response = await call("POST", `/${chatId}/messages`, { body: message("u1", "Привет") });
     expect(response.status).toBe(500);
     expect(await response.json()).toEqual({ error: { kind: "other" } });
-    expect(logError).toHaveBeenCalledWith(expect.stringContaining("beforeTurn"));
+    expect(logError).toHaveBeenCalledWith(expect.stringContaining("beforeTurn"), expect.any(Error));
     expect(await storage.listMessages(chatId)).toEqual([]);
   });
 

@@ -331,7 +331,7 @@ export interface AgentTurnInput {
   /** Время создания ответа; по умолчанию — сейчас. */
   createdAt?: string;
   /** Журнал сервера для сбоев, которые чинит администратор, а не собеседник. По умолчанию `console.error`. */
-  logError?: (message: string) => void;
+  logError?: (message: string, error?: unknown) => void;
   /**
    * Вызывается сразу после записи итога хода, до последних кусков потока: клиент, узнавший о конце ответа, застаёт
    * уже сделанное хуком. Ход хук не ждёт, сбой уходит в журнал. Для дел «после ответа», например сжатия.
@@ -486,7 +486,7 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
   const noNewAttempts = new AbortController();
   const input: AgentTurnInput = { ...turnInput, abortSignal: AbortSignal.any([turnInput.abortSignal, takeover.signal, noNewAttempts.signal, ...(turnInput.leaseSignal ? [turnInput.leaseSignal] : [])]) };
   const { storage, messageId, modelId, resume } = input;
-  const logError = input.logError ?? console.error;
+  const logError = input.logError ?? ((message: string) => console.error(message));
   const startedAt = new Date().toISOString();
   // Новый ответ и сосед-продолжение после «Повторить» (со скопированными шагами) записываются здесь, уже запущенным ходом.
   if (!resume || resume.replay) {
@@ -828,7 +828,7 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
           });
         } catch (error) {
           // Сбой до запроса к модели (нет ключа, конфликт имён инструментов): переходить некуда.
-          if (error instanceof MissingProviderKeyError) logError(error.message);
+          if (error instanceof MissingProviderKeyError) logError(error.message, error);
           if (!input.abortSignal.aborted) {
             // Запасной не собрался после отказа основного по деньгам или ключу — человеку причина у основного.
             const kind = classify(error);
@@ -996,7 +996,7 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
         errors = errorKind === result.kind ? attempt.errors : [{ type: "error", errorText: errorKind }];
         terminal = attempt.terminal;
         logError(
-          describeProviderFailure(result.error, { chatId: input.chatId, modelId, providerId, kind: result.kind, env: input.env, catalog: input.catalog }),
+          describeProviderFailure(result.error, { chatId: input.chatId, modelId, providerId, kind: result.kind, env: input.env, catalog: input.catalog }), result.error,
         );
         break;
       }
@@ -1027,7 +1027,7 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
         } catch (error) {
           // «Стоп» во время сжатия обрывает ожидание отменой: ход остановлен, это не сбой.
           if (!input.abortSignal.aborted) {
-            logError(`[переполнение] чат=${input.chatId} сжатие упало: ${error instanceof Error ? error.message : "неизвестная ошибка"}`);
+            logError(`[переполнение] чат=${input.chatId} сжатие упало: ${error instanceof Error ? error.message : "неизвестная ошибка"}`, error);
           }
           return false;
         }
@@ -1035,7 +1035,7 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
     } catch (error) {
       // История не прочиталась или `agent.viewer` не дала прав.
       if (!input.abortSignal.aborted) {
-        if (error instanceof AgentViewerError) logError(`[agent.viewer] чат=${input.chatId} ход не начат: ${error.message}`);
+        if (error instanceof AgentViewerError) logError(`[agent.viewer] чат=${input.chatId} ход не начат: ${error.message}`, error);
         errorKind = error instanceof AgentViewerError ? "other" : classifyProviderError(error, undefined);
         errorDetails = undefined;
         errors = [{ type: "error", errorText: errorKind }];
@@ -1235,7 +1235,7 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
     async function chatClosedNow(): Promise<boolean> {
       if (!input.isChatClosed) return false;
       return input.isChatClosed().catch((failure: unknown) => {
-        logError(`Не удалось проверить закрытие чата ${input.chatId} в конце хода: ${failure instanceof Error ? failure.message : String(failure)}`);
+        logError(`Не удалось проверить закрытие чата ${input.chatId} в конце хода: ${failure instanceof Error ? failure.message : String(failure)}`, failure);
         return false;
       });
     }
@@ -1246,7 +1246,7 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
       try {
         await input.closeChat!(closure);
       } catch (failure) {
-        logError(`Чат ${input.chatId} не закрылся после хода (closeChat): ${failure instanceof Error ? failure.message : String(failure)}`);
+        logError(`Чат ${input.chatId} не закрылся после хода (closeChat): ${failure instanceof Error ? failure.message : String(failure)}`, failure);
         return;
       }
       emitToClient({ type: CHAT_CLOSED_PART_TYPE, data: closure, transient: true });
@@ -1262,7 +1262,7 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
           (closed) => closed?.status === "streaming" ? null : [closed?.usage ?? {}],
           (failure: unknown) => {
             // Неизвестно, что учла другая копия: лучше недосчитать, чем задвоить.
-            logError(`Расход перехваченного ответа ${messageId} не записан: ${failure instanceof Error ? failure.message : "неизвестная ошибка"}`);
+            logError(`Расход перехваченного ответа ${messageId} не записан: ${failure instanceof Error ? failure.message : "неизвестная ошибка"}`, failure);
             return null;
           },
         );
@@ -1464,7 +1464,7 @@ async function openAttempt(
   },
   attemptSignal: AbortSignal,
 ) {
-  const logError = input.logError ?? console.error;
+  const logError = input.logError ?? ((message: string) => console.error(message));
   const { found } = attempt;
   const providerId = found.provider.id;
   const limit = input.toolResultLimit ?? DEFAULT_TOOL_RESULT_LIMIT;
@@ -1716,7 +1716,7 @@ function createInvalidInputReasons() {
  */
 export function withToolObserver(
   tools: ToolSet,
-  context: { observer: TurnObserver; chatId: string; ownerId: string; messageId: string; skip: ReadonlySet<string>; logError: (message: string) => void },
+  context: { observer: TurnObserver; chatId: string; ownerId: string; messageId: string; skip: ReadonlySet<string>; logError: (message: string, error?: unknown) => void },
 ): ToolSet {
   const observed: ToolSet = {};
   for (const [name, original] of Object.entries(tools)) {
@@ -1743,7 +1743,7 @@ export function withToolObserver(
                   });
                 } catch (failure) {
                   context.logError(
-                    `Наблюдатель хода не принял вызов инструмента ${name} в чате ${context.chatId}: ${failure instanceof Error ? failure.message : String(failure)}`,
+                    `Наблюдатель хода не принял вызов инструмента ${name} в чате ${context.chatId}: ${failure instanceof Error ? failure.message : String(failure)}`, failure,
                   );
                 }
               };
@@ -1814,7 +1814,7 @@ async function continueHelpers(
     appState: AppStateWriter;
     viewer?: AgentViewer;
     emit: (chunk: UIMessageChunk) => void;
-    logError: (message: string) => void;
+    logError: (message: string, error?: unknown) => void;
   },
 ): Promise<void> {
   const found = findModel(input.catalog, input.modelId, input.providerId);
@@ -1857,7 +1857,7 @@ const helperAwaitsApproval: StopCondition<ToolSet> = ({ steps }) =>
   ) ?? false;
 
 /** Всё, что цикл помощника в ходе берёт у хода: расход — на ответ основного агента, очередь инструментов — общая. */
-function helperRunContext(input: AgentTurnInput, toolQueue: ToolQueue, logError: (message: string) => void): HelperRunContext {
+function helperRunContext(input: AgentTurnInput, toolQueue: ToolQueue, logError: (message: string, error?: unknown) => void): HelperRunContext {
   return {
     storage: input.storage,
     catalog: input.catalog,
@@ -1892,7 +1892,7 @@ async function* helperPartOutputs(task: string | null, reports: AsyncIterable<He
 }
 
 /** Помощники рядом с инструментами приложения; `helper_<имя>` у инструмента приложения (функцией) — ошибка хода. */
-function withHelperTools(appTools: ToolSet | undefined, helpers: ToolSet, chatId: string, logError: (message: string) => void): ToolSet {
+function withHelperTools(appTools: ToolSet | undefined, helpers: ToolSet, chatId: string, logError: (message: string, error?: unknown) => void): ToolSet {
   const clash = Object.keys(helpers).find((name) => appTools && Object.hasOwn(appTools, name));
   if (clash) {
     const message = `Инструмент ${clash} задан и помощником, и инструментом приложения (чат ${chatId}): переименуйте один из них`;
@@ -1903,7 +1903,7 @@ function withHelperTools(appTools: ToolSet | undefined, helpers: ToolSet, chatId
 }
 
 /** Браузерные инструменты рядом с инструментами приложения; повтор имени — ошибка (тихо подменить инструмент нельзя). */
-function withBrowserTools(appTools: ToolSet | undefined, browserTools: ToolSet, logError: (message: string) => void): ToolSet {
+function withBrowserTools(appTools: ToolSet | undefined, browserTools: ToolSet, logError: (message: string, error?: unknown) => void): ToolSet {
   const clash = Object.keys(browserTools).find((name) => appTools && Object.hasOwn(appTools, name));
   if (clash) {
     const message = `Инструмент «${clash}» задан и приложением, и браузерными инструментами: переименуйте один из них`;
@@ -1957,7 +1957,7 @@ function onlyAllowedHelpers(helpers: Record<string, AgentHelper>, group: GroupTu
 
 function runFinishedHook(input: AgentTurnInput, status: FinalAnswerStatus, answeredProviderId: string): void {
   const reportFailure = (failure: unknown) =>
-    (input.logError ?? console.error)(`Хук окончания хода упал: ${failure instanceof Error ? failure.message : "неизвестная ошибка"}`);
+    (input.logError ?? ((message: string) => console.error(message)))(`Хук окончания хода упал: ${failure instanceof Error ? failure.message : "неизвестная ошибка"}`, failure);
   try {
     void Promise.resolve(input.onFinished!({ status, messageId: input.messageId, answeredProviderId })).catch(reportFailure);
   } catch (failure) {
@@ -2088,7 +2088,7 @@ async function finishWithRetries(
   storage: ChatStorage,
   messageId: string,
   final: FinishedMessagePatch,
-  logError: (message: string) => void,
+  logError: (message: string, error?: unknown) => void,
 ): Promise<boolean> {
   for (let attempt = 0; ; attempt += 1) {
     let failure: unknown;
@@ -2115,7 +2115,7 @@ async function finishWithRetries(
     }
     const pause = FINISH_RETRY_PAUSES_MS[attempt];
     logError(
-      `Конечная запись ответа ${messageId} не удалась (попытка ${attempt + 1}): ${failure instanceof Error ? failure.message : "неизвестная ошибка"}${pause === undefined ? "" : `; повтор через ${pause} мс`}`,
+      `Конечная запись ответа ${messageId} не удалась (попытка ${attempt + 1}): ${failure instanceof Error ? failure.message : "неизвестная ошибка"}${pause === undefined ? "" : `; повтор через ${pause} мс`}`, failure,
     );
     if (pause === undefined) return isOurFinal(storage, messageId, final).catch(() => false);
     await new Promise((resolve) => setTimeout(resolve, pause));

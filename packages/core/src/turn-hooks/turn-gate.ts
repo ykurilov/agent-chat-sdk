@@ -79,7 +79,7 @@ export function createTurnGate(hooks: {
   isInvalidRequest: (error: unknown) => boolean;
   /** Ошибка после начала хода (ход закроет `afterTurn`): `turnNotStarted` на неё не зовётся. */
   isStartedTurn: (error: unknown) => boolean;
-  logError: (message: string) => void;
+  logError: (message: string, error?: unknown) => void;
 }): TurnGate {
   const { beforeTurn, turnNotStarted, isInvalidRequest, isStartedTurn, logError } = hooks;
 
@@ -103,7 +103,7 @@ export function createTurnGate(hooks: {
       const text = decision.reply?.text;
       if (typeof text !== "string" || text.trim().length === 0) {
         const error = new TypeError("Готовый текст beforeTurn — непустая строка: { reply: { text } }");
-        logError(`beforeTurn вернул неверный готовый текст (чат ${input.chat.id}, действие ${input.action}): ${error.message}`);
+        logError(`beforeTurn вернул неверный готовый текст (чат ${input.chat.id}, действие ${input.action}): ${error.message}`, error);
         throw error;
       }
       return REPLY_ACTIONS.has(input.action) ? { kind: "reply", text } : new TurnRefusedError({ code: TURN_HELD_CODE, message: TURN_HELD_MESSAGE });
@@ -111,7 +111,7 @@ export function createTurnGate(hooks: {
     try {
       return new TurnRefusedError(decision as TurnRefusal);
     } catch (error) {
-      logError(`beforeTurn вернул неверный отказ (чат ${input.chat.id}, действие ${input.action}): ${error instanceof Error ? error.message : String(error)}`);
+      logError(`beforeTurn вернул неверный отказ (чат ${input.chat.id}, действие ${input.action}): ${error instanceof Error ? error.message : String(error)}`, error);
       throw error;
     }
   }
@@ -131,7 +131,7 @@ export function createTurnGate(hooks: {
         ...abandonedOf(input),
       });
     } catch (error) {
-      logError(`turnNotStarted упал (чат ${input.chat.id}, действие ${input.action}, причина ${reason}): ${error instanceof Error ? error.message : String(error)}`);
+      logError(`turnNotStarted упал (чат ${input.chat.id}, действие ${input.action}, причина ${reason}): ${error instanceof Error ? error.message : String(error)}`, error);
     }
   }
 

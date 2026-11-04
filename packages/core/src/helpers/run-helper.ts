@@ -66,7 +66,7 @@ export interface HelperRunContext {
   turnObserver?: TurnObserver;
   /** Проверка лимита расходов перед каждым шагом; бросает `SpendingLimitReachedError`. Нет — без лимита. */
   assertWithinLimit?: () => Promise<void>;
-  logError: (message: string) => void;
+  logError: (message: string, error?: unknown) => void;
 }
 
 const HELPER_RUN_CONTEXT = Symbol("agent-chat-sdk.helper-run-context");
@@ -185,7 +185,7 @@ export async function* helperSteps(input: {
         providerId = next.providerId;
         continue;
       }
-      context.logError(describeProviderFailure(error, { chatId: context.chatId, modelId, providerId, kind, env: context.env, catalog: context.catalog }));
+      context.logError(describeProviderFailure(error, { chatId: context.chatId, modelId, providerId, kind, env: context.env, catalog: context.catalog }), error);
       yield report("failed", { error: FAILURE_REASONS[errorKindForPerson(kind, firstOutage)] });
       return;
     }

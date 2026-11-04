@@ -360,7 +360,7 @@ describe("данные чата: кто их видит на ходе", () => {
     await ask(service, chat.id);
     expect(afterTurn).toHaveBeenCalledTimes(1);
     expect(afterTurn.mock.calls[0]![0].chatData).toEqual(formData);
-    expect(logError).toHaveBeenCalledWith(expect.stringContaining("база недоступна"));
+    expect(logError).toHaveBeenCalledWith(expect.stringContaining("база недоступна"), expect.any(Error));
   });
 
   it("новое значение после updateChatData инструмент видит со следующего хода", async () => {

@@ -32,7 +32,7 @@ export interface AgentWidgets {
   /** Виджеты, которые чат может выключить (`enabledFor`): все имена; нет `enabledFor` — пусто. */
   switchable: ReadonlySet<string>;
   /** Инструменты виджетов, включённых в чате запроса: по `enabledFor`, без него — все. Неизвестное имя — строка в журнал. */
-  toolsFor(model: AgentToolsModel, logError: (message: string) => void): ToolSet;
+  toolsFor(model: AgentToolsModel, logError: (message: string, error?: unknown) => void): ToolSet;
 }
 
 const REJECTED: WidgetAnswerCheck = { ok: false };
@@ -116,7 +116,7 @@ export function createAgentWidgets(settings: AgentWidgetSettings | undefined): A
 export function withWidgetTools(
   tools: AgentToolsSource | undefined,
   widgets: AgentWidgets,
-  logError: (message: string) => void,
+  logError: (message: string, error?: unknown) => void,
 ): AgentToolsSource | undefined {
   const widgetNames = Object.keys(widgets.tools);
   if (widgetNames.length === 0) return tools;

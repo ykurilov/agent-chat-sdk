@@ -48,7 +48,7 @@ describe("обработчик чата: данные нового чата (new
       const { call, storage } = createTestChat({ newChatData: async () => answer as never, logError });
       const response = await call("POST", "");
       expect({ answer, status: response.status }).toEqual({ answer, status: 500 });
-      expect(logError).toHaveBeenCalledWith(expect.stringContaining("newChatData"));
+      expect(logError).toHaveBeenCalledWith(expect.stringContaining("newChatData"), expect.any(Error));
       expect(await storage.listChats("anna", { subjects: "include" })).toEqual([]);
     }
   });

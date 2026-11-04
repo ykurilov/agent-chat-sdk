@@ -58,7 +58,7 @@ export async function checkWidgetAnswerByApp(input: {
   timeoutMs: number;
   /** Отмена проверки снаружи («Стоп»); служба сама держит её и отменяет. Срок отменяет её же. */
   controller: AbortController;
-  logError: (message: string) => void;
+  logError: (message: string, error?: unknown) => void;
 }): Promise<CheckedWidgetAnswer> {
   const records: AppStateRecord[] = [];
   const writer = createAppStateWriter({

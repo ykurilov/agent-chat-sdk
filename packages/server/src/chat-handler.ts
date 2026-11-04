@@ -236,8 +236,8 @@ export interface ChatHandlerOptions extends ServiceOptionsOfServer {
   allowedOrigins?: string[];
   /** Откуда брать ключи провайдеров. По умолчанию `process.env`. */
   env?: Record<string, string | undefined>;
-  /** Журнал сервера: нет ключа провайдера, непредвиденные сбои. По умолчанию `console.error`. */
-  logError?: (message: string) => void;
+  /** Журнал сервера. Второй аргумент — исходная ошибка, если она есть; сообщения без ошибки сохраняют один аргумент. По умолчанию `console.error`. */
+  logError?: (message: string, error?: unknown) => void;
   /** Промежуток между признаками жизни в потоках ответа. По умолчанию 10 000 мс, не меньше 1000. */
   heartbeatIntervalMs?: number;
   /** Наблюдатель хода (песочница): см. `ChatServiceOptions.turnObserver`. Нет — запрос к модели побайтно прежний. */
@@ -389,7 +389,7 @@ export function createChatServer(options: ChatHandlerOptions): { handler: ChatHa
     ...serviceOptionsOf(options),
     registry: createRunningAnswerRegistry(),
     logError,
-    chatEvents: createChatEvents((error) => logError(`События чата: сбой слушателя: ${describe(error)}`)),
+    chatEvents: createChatEvents((error) => logError(`События чата: сбой слушателя: ${describe(error)}`, error)),
   });
   /** Ключи состояния, которые не уходят вкладке (служба уже проверила имена). */
   const hiddenStateKey = hiddenStateKeyOf(options.privateStateKeys);
@@ -708,7 +708,7 @@ export function createChatServer(options: ChatHandlerOptions): { handler: ChatHa
         return await route(request, user.id, segments);
       } catch (error) {
         const response = errorToResponse(error);
-        if (response.status >= 500) logError(`Чат: сбой на ${request.method} ${new URL(request.url).pathname}: ${describe(error)}`);
+        if (response.status >= 500) logError(`Чат: сбой на ${request.method} ${new URL(request.url).pathname}: ${describe(error)}`, error);
         return response;
       }
     },

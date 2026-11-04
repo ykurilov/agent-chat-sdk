@@ -117,7 +117,7 @@ export async function buildModelRequest(input: {
   env: Record<string, string | undefined>;
   fetch?: typeof globalThis.fetch;
   /** Журнал сервера: строки `[повтор]` и `[молчание модели]`. Нет — повторы молчат. */
-  logError?: (message: string) => void;
+  logError?: (message: string, error?: unknown) => void;
   /** Сроки молчания потока для обёртки повторов. Сам запрос они не меняют (кэш). Нет — по умолчанию. */
   modelSilence?: ModelSilenceLimits;
   /** Повторять ли молчание до первого куска у того же провайдера (`TransientRetryContext.repeatSilence`). Нет — да. */

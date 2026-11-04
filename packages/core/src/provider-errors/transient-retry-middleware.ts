@@ -74,7 +74,7 @@ export interface TransientRetryContext {
   modelId?: string;
   providerId?: string;
   /** Строка `[повтор]` на каждую попытку. Нет — повторы молчат. */
-  logError?: (message: string) => void;
+  logError?: (message: string, error?: unknown) => void;
   /** Случайность разброса пауз, 0 ≤ x < 1. По умолчанию `Math.random`. */
   random?: () => number;
   /** Пауза перед повтором; обрывается сигналом отмены. */
@@ -127,7 +127,7 @@ export function createTransientRetryMiddleware(context: TransientRetryContext = 
         if (abortSignal?.aborted || delay === undefined || !isTransient(error) || silences >= silenceAttempts()) throw error;
         const remainingMs = Math.max(0, delays.reduce((sum, value) => sum + value, 0) - waitedMs);
         const pauseMs = requestedPauseMs(error, remainingMs, now()) ?? Math.round(Math.min(delay * (1 + random() * RETRY_JITTER), remainingMs));
-        context.logError?.(retryLine(context, attempt + 2, error, pauseMs));
+        context.logError?.(retryLine(context, attempt + 2, error, pauseMs), error);
         await pause(pauseMs, abortSignal);
         waitedMs += pauseMs;
       }

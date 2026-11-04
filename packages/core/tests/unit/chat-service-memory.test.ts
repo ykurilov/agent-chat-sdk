@@ -215,7 +215,7 @@ describe("options.memory: блок памяти на каждом ходе", () 
     await ask(service, "anna", chat.id, "u1", "привет");
     expect((await service.getHistory("anna", chat.id)).messages.at(-1)?.metadata?.status).toBe("complete");
     expect(lastUser(model).content).toEqual([{ type: "text", text: "привет" }]);
-    expect(logError).toHaveBeenCalledWith(expect.stringContaining("база недоступна"));
+    expect(logError).toHaveBeenCalledWith(expect.stringContaining("база недоступна"), expect.any(Error));
   });
 
   it("продолжение после подтверждения память заново не читает: блок застыл в ответе", async () => {

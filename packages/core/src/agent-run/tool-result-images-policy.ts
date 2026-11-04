@@ -67,7 +67,7 @@ function refusalsOf(catalog: ModelCatalog): Set<string> {
  */
 export function withToolResultImagePolicy(
   model: LanguageModel,
-  context: { catalog: ModelCatalog; profile: ModelProfile; provider: ProviderDescription; logError?: (message: string) => void },
+  context: { catalog: ModelCatalog; profile: ModelProfile; provider: ProviderDescription; logError?: (message: string, error?: unknown) => void },
 ): LanguageModel {
   if (typeof model === "string") return model;
   const { profile, provider } = context;

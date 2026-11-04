@@ -26,7 +26,7 @@ export interface ObserveModelCallsContext extends ModelCallObservation {
   providerId: string;
   /** Цена модели у провайдера; нет — `costUsd: null`. */
   price?: ModelPrice;
-  logError: (message: string) => void;
+  logError: (message: string, error?: unknown) => void;
   /** Часы; в тестах подменяются. */
   now?: () => number;
 }
@@ -165,7 +165,7 @@ export function observeModelCalls(model: LanguageModel, context: ObserveModelCal
           context.observer.modelCall(event);
         } catch (failure) {
           context.logError(
-            `Наблюдатель хода не принял обращение к модели в чате ${context.chatId}: ${failure instanceof Error ? failure.message : String(failure)}`,
+            `Наблюдатель хода не принял обращение к модели в чате ${context.chatId}: ${failure instanceof Error ? failure.message : String(failure)}`, failure,
           );
         }
       },

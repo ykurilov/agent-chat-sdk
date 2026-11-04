@@ -105,7 +105,7 @@ describe("обработчик чата: права посетителя", () =>
     const response = await call("GET", `/${chatId}`);
     expect(response.status).toBe(500);
     expect(await response.json()).toEqual({ error: { kind: "other" } });
-    expect(logError).toHaveBeenCalledWith(expect.stringContaining("chatCapabilities"));
+    expect(logError).toHaveBeenCalledWith(expect.stringContaining("chatCapabilities"), expect.any(Error));
   });
 });
 

@@ -50,7 +50,7 @@ export function createStateChanged(context: {
   timeoutMs?: number;
   attempts?: number;
   chatEvents: ChatEvents;
-  logError: (message: string) => void;
+  logError: (message: string, error?: unknown) => void;
 }): StateChanged {
   const timeoutMs = context.timeoutMs ?? DEFAULT_STATE_CHANGED_TIMEOUT_MS;
   const attempts = context.attempts ?? DEFAULT_STATE_CHANGED_ATTEMPTS;
@@ -63,7 +63,9 @@ export function createStateChanged(context: {
   async function callHandler(handler: StateChangedHandler, input: StateChangedInput): Promise<void> {
     const failure = await callWithRetries(handler, input, timeoutMs, attempts);
     if (failure === undefined) return;
-    context.logError(`onStateChanged не отработал (чат ${input.chatId}, причина ${input.reason}): ${failure}`);
+    const message = `onStateChanged не отработал (чат ${input.chatId}, причина ${input.reason}): ${failure.reason}`;
+    if ("error" in failure) context.logError(message, failure.error);
+    else context.logError(message);
     context.chatEvents.emit({ type: "state-changed-failed", ownerId: input.ownerId, chatId: input.chatId });
   }
 
@@ -90,15 +92,18 @@ export function createStateChanged(context: {
   };
 }
 
-/** Попытки в пределах срока; удалось — `undefined`, иначе — причина. */
-async function callWithRetries(handler: StateChangedHandler, input: StateChangedInput, timeoutMs: number, attempts: number): Promise<string | undefined> {
+type StateChangedFailure = { reason: string; error?: unknown };
+
+/** Попытки в пределах срока; удалось — `undefined`, иначе — причина и исходное исключение, если оно было. */
+async function callWithRetries(handler: StateChangedHandler, input: StateChangedInput, timeoutMs: number, attempts: number): Promise<StateChangedFailure | undefined> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let expired = false;
-  const deadline = new Promise<string>((resolve) => {
-    timer = setTimeout(() => resolve(`срок ${timeoutMs} мс вышел`), timeoutMs);
+  const deadline = new Promise<StateChangedFailure>((resolve) => {
+    timer = setTimeout(() => resolve({ reason: `срок ${timeoutMs} мс вышел` }), timeoutMs);
   });
-  const tries = (async (): Promise<string | undefined> => {
+  const tries = (async (): Promise<StateChangedFailure | undefined> => {
     let reason = "";
+    let lastError: unknown;
     for (let attempt = 1; attempt <= attempts && !expired; attempt++) {
       if (attempt > 1) await new Promise((resolve) => setTimeout(resolve, RETRY_PAUSES_MS[Math.min(attempt - 2, RETRY_PAUSES_MS.length - 1)]));
       if (expired) break;
@@ -106,10 +111,11 @@ async function callWithRetries(handler: StateChangedHandler, input: StateChanged
         await handler(structuredClone(input));
         return undefined;
       } catch (failure) {
+        lastError = failure;
         reason = `попытка ${attempt} из ${attempts}: ${failure instanceof Error ? failure.message : String(failure)}`;
       }
     }
-    return reason;
+    return { reason, error: lastError };
   })();
   try {
     return await Promise.race([tries, deadline]);

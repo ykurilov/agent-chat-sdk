@@ -49,7 +49,7 @@ export interface StepSnapshots {
 
 interface StepSnapshotsOptions {
   stepContext: StepContext;
-  logError: (message: string) => void;
+  logError: (message: string, error?: unknown) => void;
   chatId: string;
   /** Срок ответа функции, мс; `Infinity` — без срока. Нет — `DEFAULT_STEP_CONTEXT_TIMEOUT_MS`. */
   timeoutMs?: number;

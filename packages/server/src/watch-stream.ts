@@ -22,7 +22,7 @@ export interface WatchStreamOptions {
   /** Ход, ответ которого идёт в базе, но не на этой копии сервера, с источником и каналом по истории; нет — `null`. */
   detachedTurn(): Promise<{ messageId: string; trigger: ChatTurnTrigger; channel: AgentChannel } | null>;
   onClose(): void;
-  logError(message: string): void;
+  logError(message: string, error?: unknown): void;
 }
 
 /**
@@ -78,7 +78,7 @@ export function createWatchStream(options: WatchStreamOptions): ReadableStream<W
           }
           if (live) scheduleReconcile();
         } catch (error) {
-          options.logError(`Наблюдение за чатом ${chatId}: сверка с базой не удалась: ${error instanceof Error ? error.message : String(error)}`);
+          options.logError(`Наблюдение за чатом ${chatId}: сверка с базой не удалась: ${error instanceof Error ? error.message : String(error)}`, error);
           scheduleReconcile();
         }
       };
@@ -111,7 +111,7 @@ export function createWatchStream(options: WatchStreamOptions): ReadableStream<W
             if (live) scheduleReconcile();
           })
           .catch((error: unknown) => {
-            options.logError(`Наблюдение за чатом ${chatId}: задачи не прочитаны: ${error instanceof Error ? error.message : String(error)}`);
+            options.logError(`Наблюдение за чатом ${chatId}: задачи не прочитаны: ${error instanceof Error ? error.message : String(error)}`, error);
             // Идут ли задачи, неизвестно: сверка повторится, как после сбоя очередной сверки.
             scheduleReconcile();
           });

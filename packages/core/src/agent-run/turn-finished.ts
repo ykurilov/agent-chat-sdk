@@ -17,9 +17,9 @@ export interface TurnFinished {
 export type TurnFinishedHandler = (turn: TurnFinished) => void | Promise<void>;
 
 /** Зовёт обработчик приложения, не дожидаясь его: бросок или отказ уходит в журнал сервера, ход и дела после него идут дальше. */
-export function notifyTurnFinished(handler: TurnFinishedHandler, turn: TurnFinished, logError: (message: string) => void): void {
+export function notifyTurnFinished(handler: TurnFinishedHandler, turn: TurnFinished, logError: (message: string, error?: unknown) => void): void {
   const reportFailure = (failure: unknown) =>
-    logError(`onTurnFinished упал (чат ${turn.chatId}, ответ ${turn.messageId}): ${failure instanceof Error ? failure.message : String(failure)}`);
+    logError(`onTurnFinished упал (чат ${turn.chatId}, ответ ${turn.messageId}): ${failure instanceof Error ? failure.message : String(failure)}`, failure);
   try {
     void Promise.resolve(handler(turn)).catch(reportFailure);
   } catch (failure) {

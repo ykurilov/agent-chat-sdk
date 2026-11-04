@@ -170,7 +170,7 @@ describe("долгая память: afterAnswer после законченно
     const chat = await service.createChat("anna");
     await answer(service, "anna", chat.id);
     await service.flush();
-    expect(logError).toHaveBeenCalledWith(expect.stringContaining("оптимизатор упал"));
+    expect(logError).toHaveBeenCalledWith(expect.stringContaining("оптимизатор упал"), expect.any(Error));
     await answer(service, "anna", chat.id, "u2");
   });
 
@@ -253,7 +253,7 @@ describe("долгая память: расход оптимизатора", () 
     await answer(service, "anna", chat.id);
     await service.flush();
     expect(id).toBeNull();
-    expect(logError).toHaveBeenCalledWith(expect.stringContaining("Не удалось записать расход"));
+    expect(logError).toHaveBeenCalledWith(expect.stringContaining("Не удалось записать расход"), expect.any(Error));
   });
 
   it("пустой расход не пишется", async () => {
@@ -335,8 +335,8 @@ describe("долгая память: тихие повторы и журнал �
       await service.flush();
       expect(done).toEqual(["склеено"]);
       expect(model.doGenerateCalls).toHaveLength(2);
-      expect(logError).toHaveBeenCalledWith(expect.stringMatching(new RegExp(`^\\[повтор\\] чат=${chat.id} модель=${mockModelId} провайдер=mock попытка=2 код=429`)));
-      expect(logError).not.toHaveBeenCalledWith(expect.stringContaining("[сбой провайдера]"));
+      expect(logError).toHaveBeenCalledWith(expect.stringMatching(new RegExp(`^\\[повтор\\] чат=${chat.id} модель=${mockModelId} провайдер=mock попытка=2 код=429`)), expect.any(Error));
+      expect(logError.mock.calls.some(([message]) => message.includes("[сбой провайдера]"))).toBe(false);
     }
   });
 

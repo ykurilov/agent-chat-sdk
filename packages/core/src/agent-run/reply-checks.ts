@@ -127,14 +127,14 @@ export function seenTextsOfBranch(input: { instructions: string | SystemModelMes
  * Тексты приложения для проверок (`replyChecks.knownTexts`). Сбой или не список — строка в журнал и пустой список:
  * проверки идут с тем, что видел агент.
  */
-export async function knownTextsOf(known: KnownTexts | undefined, context: KnownTextsContext, logError: (message: string) => void): Promise<string[]> {
+export async function knownTextsOf(known: KnownTexts | undefined, context: KnownTextsContext, logError: (message: string, error?: unknown) => void): Promise<string[]> {
   if (!known) return [];
   try {
     const texts = await known({ ...context });
     if (Array.isArray(texts)) return texts.filter((text): text is string => typeof text === "string" && text !== "");
     logError(`[replyChecks] чат=${context.chatId} knownTexts вернул не список — проверка без текстов приложения`);
   } catch (failure) {
-    logError(`[replyChecks] чат=${context.chatId} knownTexts упал: ${failure instanceof Error ? failure.message : String(failure)} — проверка без текстов приложения`);
+    logError(`[replyChecks] чат=${context.chatId} knownTexts упал: ${failure instanceof Error ? failure.message : String(failure)} — проверка без текстов приложения`, failure);
   }
   return [];
 }
@@ -156,7 +156,7 @@ export async function runReplyChecks(input: {
   messageId: string;
   seenTexts: readonly string[];
   rewrite: (system: string, prompt: string) => Promise<string>;
-  logError: (message: string) => void;
+  logError: (message: string, error?: unknown) => void;
 }): Promise<{ text: string; notes: string[] }> {
   const { ownerId, chatId, messageId, rewrite, logError } = input;
   let text = input.text;
@@ -167,7 +167,7 @@ export async function runReplyChecks(input: {
     try {
       result = await check({ text, ownerId, chatId, messageId, seenTexts: [...input.seenTexts], rewrite });
     } catch (failure) {
-      logError(`${where} упала: ${failure instanceof Error ? failure.message : String(failure)} — оставлен текст до неё`);
+      logError(`${where} упала: ${failure instanceof Error ? failure.message : String(failure)} — оставлен текст до неё`, failure);
       continue;
     }
     if (result === undefined || result === null) continue;
@@ -197,7 +197,7 @@ export function createReplyRewrite(input: {
   /** Ответ, на который идёт расход; вне хода (`service.checkReply`) — `null`. */
   messageId: string | null;
   abortSignal: AbortSignal;
-  logError: (message: string) => void;
+  logError: (message: string, error?: unknown) => void;
 }): (system: string, prompt: string) => Promise<string> {
   const { catalog, modelId, providerId, chatId, logError } = input;
   return async (system, prompt) => {

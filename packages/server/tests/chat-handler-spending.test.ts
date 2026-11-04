@@ -112,7 +112,7 @@ describe("обработчик чата: лимит расходов", () => {
     const response = await call("POST", `/${chatId}/messages`, { body: message("u1", "Привет") });
     expect(response.status).toBe(500);
     expect(await storage.listMessages(chatId)).toEqual([]);
-    expect(logError).toHaveBeenCalledWith(expect.stringContaining("база недоступна"));
+    expect(logError).toHaveBeenCalledWith(expect.stringContaining("база недоступна"), expect.any(Error));
   });
 });
 

@@ -70,7 +70,7 @@ describe("служба чата: выбор модели человеком", ()
     const chat = await service.createChat("anna");
     const { chat: shown } = await service.getHistory("anna", chat.id);
     await service.setModel("anna", chat.id, { modelId: shown.modelId, providerId: shown.providerId });
-    expect(logError).toHaveBeenCalledWith(expect.stringContaining("база приложения легла"));
+    expect(logError).toHaveBeenCalledWith(expect.stringContaining("база приложения легла"), expect.any(Error));
     expect(await storage.getUserModelChoice?.("anna")).toMatchObject({ modelId: shown.modelId });
   });
 });

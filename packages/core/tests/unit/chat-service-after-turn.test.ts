@@ -190,7 +190,7 @@ describe("afterTurn: итог хода для приложения", () => {
     expect(answer).toMatchObject({ status: "complete", afterTurn: "failed" });
     expect(answer.parts.some((part) => part.type === "text")).toBe(true);
     expect(chunks.at(-1)?.type).toBe("finish");
-    expect(logError).toHaveBeenCalledWith(expect.stringContaining("afterTurn не отработал"));
+    expect(logError).toHaveBeenCalledWith(expect.stringContaining("afterTurn не отработал"), expect.any(Error));
     expect(events).toContainEqual({ type: "after-turn-failed", ownerId: "anna", chatId, messageId: answer.id });
     await readAll(await service.sendMessage("anna", chatId, userMessage("u-next", "дальше")));
   });

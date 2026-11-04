@@ -32,12 +32,12 @@ export async function freezeContext(input: {
   /** Тот же триггер для приложения в opt-in режиме; нет — прежнее чтение каждого хода. */
   appContextFrom?: string;
   base: { id: string; data: FrozenContextData } | null;
-  logError?: (message: string) => void;
+  logError?: (message: string, error?: unknown) => void;
   /** «Стоп»: источник, прерванный им, не считается сбоем — блоки из базы, строки в журнале нет. */
   signal?: AbortSignal;
 }): Promise<FrozenContextData> {
   const { chatId, sources, base, signal, memoryFrom, appContextFrom } = input;
-  const log = input.logError ?? console.error;
+  const log = input.logError ?? ((message: string) => console.error(message));
   const fromBase = (source: SourceName) => base?.data.blocks.filter((block) => sourceOf(block.key) === source) ?? [];
   // Один механизм снимка для памяти и приложения: ошибка не подтверждает новое начало.
   const read = async (source: SourceName, fetch: (() => Promise<readonly ContextBlockEntry[] | null | undefined>) | undefined, from?: string): Promise<{ blocks: readonly ContextBlockEntry[]; from?: string }> => {
@@ -49,7 +49,7 @@ export async function freezeContext(input: {
       if (blocks !== null && blocks !== undefined && !Array.isArray(blocks)) throw new TypeError(`ждём список блоков, а пришло ${typeof blocks}`);
       return { blocks: blocks ?? [], ...(from !== undefined && { from }) };
     } catch (error) {
-      if (!signal?.aborted) log(`[блоки контекста] чат=${chatId} источник=${source} сбой: ${error instanceof Error ? error.message : "неизвестная ошибка"}; блоки из прошлого хода`);
+      if (!signal?.aborted) log(`[блоки контекста] чат=${chatId} источник=${source} сбой: ${error instanceof Error ? error.message : "неизвестная ошибка"}; блоки из прошлого хода`, error);
       return { blocks: fromBase(source) };
     }
   };
