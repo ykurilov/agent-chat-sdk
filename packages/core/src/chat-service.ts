@@ -1786,6 +1786,16 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     await options.attachments!.confirmUserParts(fileParts);
   }
 
+  function filesStored(userId: string, chatId: string, messageId: string, parts: Parameters<NonNullable<typeof options.attachments>["confirmUserParts"]>[0]): void {
+    if (!parts.length || !options.attachments?.userMessageStored) return;
+    // The message is durable. Never turn a notification failure into a rejected send.
+    const failed = (error: unknown) => {
+      try { logError(`Уведомление о файлах сообщения не выполнено: ${String(error)}`, error); } catch { /* a logger cannot undo the insert */ }
+    };
+    try { void Promise.resolve(options.attachments.userMessageStored({ userId, chatId, messageId, parts })).catch(failed); }
+    catch (error) { failed(error); }
+  }
+
   async function ownChat(userId: string, chatId: string): Promise<Chat> {
     const chat = await storage.getChat(chatId);
     if (!chat || chat.ownerId !== userId) throw new ChatNotFoundError(chatId);
@@ -2820,6 +2830,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
       });
       await confirmFiles(fileParts);
       await storage.insertMessage(question);
+      filesStored(userId, chatId, question.id, fileParts);
       return question;
     });
     // Запрос подтверждения закрывается, только когда новое сообщение принято: при отказе вставки он ждёт дальше.
@@ -3174,6 +3185,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
           });
           await confirmFiles(fileParts);
           await storage.insertMessage(correction);
+          filesStored(userId, chatId, correction.id, fileParts);
           return correction;
         }, page);
         if (!queued) throw new SteeringClosed();

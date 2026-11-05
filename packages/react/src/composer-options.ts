@@ -1,5 +1,12 @@
+import type { ReactNode } from "react";
+
 /** Optional, skin-independent controls. The host owns context and enabled tool configuration. */
 export interface ComposerOptions {
+  /** Standard/extended Oduvanchik plus menu. Missing fromDevice preserves File + Image. */
+  addMenu?: {
+    fromDevice?: { label: string } | false;
+    items?: Array<{ id: string; label: string; icon?: ReactNode; onPick: () => void }>;
+  };
   variant?: "compact" | "standard" | "extended";
   /** Oduvanchik extended composer: keep only the reasoning icon and caret; the accessible name and tooltip retain the selected level. */
   reasoningChip?: "label" | "icon";

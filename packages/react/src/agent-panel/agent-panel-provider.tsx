@@ -1,3 +1,4 @@
+import { ComposerRegistryContext, createComposerRegistry } from "../composer-helper-context";
 import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 import type { AgentAppBridge, AppDataChange, BrowserToolFunction } from "../app-bridge/app-bridge";
@@ -55,6 +56,10 @@ export function AgentPanelProvider({ api, userKey, browserTools, mode = "overlay
   const draftCount = useRef(0);
   const launcherRef = useRef<HTMLButtonElement | null>(null);
   const { activeChatId } = list;
+  const composerStore = useMemo(createComposerRegistry, [api, userKey]);
+  const composerTarget = useMemo(() => ({ api, chatId: activeChatId, available: open && !listOpen && activeChatId !== null }), [api, activeChatId, open, listOpen]);
+  composerStore.target = composerTarget;
+  const composerRegistry = useMemo(() => ({ store: composerStore, target: composerTarget }), [composerStore, composerTarget]);
 
   // Сменился человек: его панель, без списка и текста прежнего.
   const [sessionUser, setSessionUser] = useState(userKey);
@@ -162,7 +167,7 @@ export function AgentPanelProvider({ api, userKey, browserTools, mode = "overlay
   return (
     <AppBridgeContext.Provider value={bridgeControl}>
       <PanelControlsContext.Provider value={controls}>
-        <PanelViewContext.Provider value={view}>{children}</PanelViewContext.Provider>
+        <PanelViewContext.Provider value={view}><ComposerRegistryContext.Provider value={composerRegistry}>{children}</ComposerRegistryContext.Provider></PanelViewContext.Provider>
       </PanelControlsContext.Provider>
     </AppBridgeContext.Provider>
   );

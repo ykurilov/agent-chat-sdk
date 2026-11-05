@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
-import type { AgentChatMessage } from "@ykurilov/agent-chat-react";
+import type { AgentChatMessage, ServerFileResult } from "@ykurilov/agent-chat-react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { russianAttachmentsLabels } from "../../src/react/labels";
 import { useAttachmentsController } from "../../src/react/use-attachments-controller";
@@ -331,5 +331,77 @@ describe("контроллер вложений", () => {
     expect(server.calls).toContain("DELETE /api/chat/a%2Fb%20c%3F/attachments/id-1");
     const described = result.current.describe({ id: "u1", role: "user", parts: [{ type: "file", url: "attachment:aaa", mediaType: "image/png", filename: "кот.png" }] } as AgentChatMessage);
     expect(described?.items[0]?.url).toBe("/api/chat/a%2Fb%20c%3F/attachments/aaa");
+  });
+});
+
+describe("server file drafts", () => {
+  it("shows preview before ingest, sends the existing attachment and restores after rejection without POST", async () => {
+    const { result, server } = setup();
+    let finish!: (value: ServerFileResult) => void;
+    const ingest = vi.fn(() => new Promise<ServerFileResult>((resolve) => { finish = resolve; }));
+    act(() => result.current.addServerFiles!([{ name: "library.png", previewUrl: "/library/preview", ingest }]));
+    expect(result.current.composer.items[0]).toMatchObject({ name: "library.png", previewUrl: "/library/preview", status: "uploading" });
+    expect(result.current.ready).toBe(false);
+    await act(async () => finish({ ok: true, attachment: { id: "server-file", name: "stored.png", mediaType: "image/png", kind: "image", size: 20 } }));
+    expect(result.current.readFiles()).toEqual([{ type: "file", url: "attachment:server-file", mediaType: "image/png", filename: "stored.png" }]);
+    act(() => result.current.markSent());
+    act(() => result.current.restoreFiles(undefined));
+    expect(result.current.ready).toBe(true);
+    expect(result.current.composer.items).toHaveLength(1);
+    expect(server.calls.some((call) => call.startsWith("POST"))).toBe(false);
+    expect(revoked).not.toContain("/library/preview");
+  });
+  it("aborts removal and cleans late success in the original chat without resurrecting a draft", async () => {
+    const { result, server, rerender } = setup();
+    let signal!: AbortSignal;
+    let finish!: (value: ServerFileResult) => void;
+    act(() => result.current.addServerFiles!([{ name: "late.png", ingest: (received) => { signal = received; return new Promise<ServerFileResult>((resolve) => { finish = resolve; }); } }]));
+    const id = result.current.composer.items[0]!.id;
+    act(() => result.current.composer.onRemove(id));
+    expect(signal.aborted).toBe(true);
+    rerender({ chatId: "c2", modelSeesImages: true });
+    await act(async () => finish({ ok: true, attachment: { id: "late", name: "late.png", mediaType: "image/png", kind: "image", size: 20 } }));
+    expect(result.current.composer.items).toHaveLength(0);
+    expect(server.calls).toContain("DELETE /api/chat/c1/attachments/late");
+  });
+});
+
+describe("server draft limits and lifetime", () => {
+  it("shares count and upload concurrency with ordinary files, skips cancelled queued ingest", async () => {
+    const { result, server } = setup(fakeServer({ hold: true }));
+    await waitFor(() => expect(server.calls).toContain("GET /api/chat/attachments/settings"));
+    await add(result, png(), txt());
+    expect(server.uploads).toHaveLength(2);
+    const ingest = vi.fn();
+    act(() => result.current.addServerFiles!([{ name: "queued.png", ingest }, { name: "over-limit.png", ingest }]));
+    expect(result.current.composer.items).toHaveLength(3); expect(ingest).not.toHaveBeenCalled();
+    expect(result.current.composer.notice).toContain("3");
+    act(() => result.current.composer.onRemove(result.current.composer.items[2]!.id));
+    await act(async () => { for (const upload of server.uploads) upload.release(Response.json({ id: upload.name, mediaType: "image/png" })); });
+    expect(ingest).not.toHaveBeenCalled();
+  });
+  it.each(["throw", "unreadable", "oversize", "text-limit"])("retains errors and normal send readiness for %s", async (mode) => {
+    const { result } = setup(); await waitFor(() => expect(result.current.composer.accept).toBe(settings.accept));
+    const ingest = async (): Promise<ServerFileResult> => {
+      if (mode === "throw") throw new Error("network");
+      if (mode === "unreadable") return { ok: false, reason: "unreadable" };
+      return { ok: true, attachment: { id: "ingested", name: "large.txt", mediaType: "text/plain", kind: "text", size: mode === "oversize" ? 1001 : 20, textTokens: mode === "text-limit" ? 101 : 1 } };
+    };
+    await act(async () => result.current.addServerFiles!([{ name: "draft", ingest }]));
+    expect(result.current.ready).toBe(false); expect(result.current.composer.notice).toBeTruthy();
+    expect(result.current.composer.items[0]!.status).toBe(mode === "text-limit" ? "ready" : "error");
+  });
+  it("chat switch and unmount abort ingest; supplied preview is never revoked", async () => {
+    const { result, rerender, unmount, server } = setup();
+    let finish!: (value: ServerFileResult) => void;
+    let signal!: AbortSignal;
+    act(() => result.current.addServerFiles!([{ name: "old.png", previewUrl: "https://host/preview", ingest: (s) => { signal = s; return new Promise<ServerFileResult>((resolve) => { finish = resolve; }); } }]));
+    const retained = result.current.addServerFiles!;
+    rerender({ chatId: "c2", modelSeesImages: true });
+    expect(signal.aborted).toBe(true);
+    const stale = vi.fn(); act(() => retained([{ name: "stale", ingest: stale }])); expect(stale).not.toHaveBeenCalled();
+    unmount();
+    await act(async () => finish({ ok: true, attachment: { id: "old", name: "old.png", mediaType: "image/png", kind: "image", size: 1 } }));
+    expect(server.calls).toContain("DELETE /api/chat/c1/attachments/old"); expect(revoked).not.toContain("https://host/preview");
   });
 });

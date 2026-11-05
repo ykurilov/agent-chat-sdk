@@ -1,3 +1,5 @@
+import { useComposerHelper } from "../../src/composer-helper-context";
+import type { ComposerHelper } from "../../src/composer-actions";
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -608,4 +610,27 @@ describe("application composer commands", () => {
     expect(panelFrame().getAttribute("data-list-open")).toBe("false");
     expect(document.activeElement).toBe(pageButton);
   });
+});
+
+
+it("public field helper is available to a panel sibling and retires on chat switch/close", async () => {
+  const server = twoChats(); vi.stubGlobal("fetch", server.fetch);
+  const addServerFiles = vi.fn();
+  const controller = {
+    composer: { items: [], accept: "image/*", onAddFiles: vi.fn(), onRemove: vi.fn() },
+    ready: true, hasFiles: false, readFiles: () => [], markSent: vi.fn(), restoreFiles: vi.fn(), describe: () => undefined, addServerFiles,
+  };
+  let helper: ComposerHelper | null = null;
+  function FieldProbe() { helper = useComposerHelper(); return null; }
+  render(<AgentPanelProvider api="/api/chat" userKey="ivan"><ControlsProbe /><FieldProbe /><AgentPanel skin={stubPanelSkin} attachments={{ useController: () => controller }} /></AgentPanelProvider>);
+  await openPanel(); await waitFor(() => expect(helper?.canSend).toBe(true));
+  const old = helper!;
+  act(() => old.addServerFiles([])); expect(addServerFiles).toHaveBeenCalledOnce();
+  act(() => old.setValue("from sibling")); await waitFor(() => expect(field().value).toBe("from sibling"));
+  act(() => controls!.openChat("c1")); await waitFor(() => expect(helper?.value).toBe(""));
+  act(() => { old.addServerFiles([]); old.setValue("stale"); });
+  expect(addServerFiles).toHaveBeenCalledOnce(); expect(field().value).toBe("");
+  const current = helper!;
+  act(() => controls!.setOpen(false)); await waitFor(() => expect(helper).toBeNull());
+  act(() => current.addFiles([])); expect(controller.composer.onAddFiles).not.toHaveBeenCalled();
 });

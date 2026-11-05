@@ -35,6 +35,8 @@ export interface MessageAttachments {
   acceptUserParts(input: { userId: string; chatId: string; parts: readonly IncomingFilePart[] }): Promise<StoredFilePart[]>;
   /** Отмечает файлы прикреплёнными; вызывается перед записью сообщения: файл, отмеченный зря, безвреден, а неотмеченный файл записанного сообщения удалила бы чистка. */
   confirmUserParts(parts: readonly StoredFilePart[]): Promise<void>;
+  /** Background notification after insertion of a new user message. Not called for edits/imports/retries. Errors go to the service logError. */
+  userMessageStored?(input: { userId: string; chatId: string; messageId: string; parts: readonly StoredFilePart[] }): void | Promise<void>;
   /**
    * Чат удаляется: убирает все его файлы, в том числе прикреплённые к сообщениям. Ошибка останавливает удаление
    * чата целиком: его можно повторить. Не задан — файлы остаются на совести приложения.

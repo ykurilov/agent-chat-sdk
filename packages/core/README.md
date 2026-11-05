@@ -161,3 +161,12 @@ docs/getting-started.md, «Значки шагов и заголовки раз�
 считают все виды вместе; отчёт по одному виду — `sumUsage({ source })`.
 
 Контракты интеграции приложения: [HTTP-приветствие, текущий вопрос, номера фото, метаданные и тесты](https://github.com/ykurilov/agent-chat-sdk/blob/main/docs/app-chat-contracts.md).
+
+## Уведомление о записанном сообщении с файлами
+
+С 0.96.0 необязательный `MessageAttachments.userMessageStored({ userId, chatId, messageId, parts })`
+вызывается после успешной вставки новой реплики человека, в том числе пачки мессенджера и поправки.
+Редактирование, импорт, повтор и ошибка вставки уведомления не создают. Служба не ждёт Promise;
+ошибка попадает в `logError(message, error)` и не отменяет запись. Встроенный плагин предоставляет
+приложению `createAttachments.onFilesAttached` с проверенными записями `StoredAttachment[]`.
+Это фоновое уведомление без долговечной очереди. [Контракт](../../docs/composer-attachments.md).

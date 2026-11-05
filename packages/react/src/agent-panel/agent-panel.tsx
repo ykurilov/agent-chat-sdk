@@ -1,3 +1,4 @@
+import { PanelComposerBindingContext } from "../composer-helper-context";
 import { useEffect, useRef } from "react";
 import { AgentChat } from "../agent-chat";
 import type { AgentChatProps } from "../agent-chat";
@@ -39,6 +40,7 @@ export function AgentPanel({ skin, ...chatProps }: AgentPanelProps) {
   return (
     <>
       <skin.AgentPanelLauncher open={controls.open} busy={controls.busy} onToggle={controls.toggle} buttonRef={launcherRef} />
+      <PanelComposerBindingContext.Provider value={true}>
       <skin.AgentPanel
         open={controls.open}
         focusRequest={view.focusRequest}
@@ -64,6 +66,7 @@ export function AgentPanel({ skin, ...chatProps }: AgentPanelProps) {
           />
         )}
       </skin.AgentPanel>
+      </PanelComposerBindingContext.Provider>
     </>
   );
 }

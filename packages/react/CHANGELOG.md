@@ -1,5 +1,11 @@
 # @ykurilov/agent-chat-react
 
+## 0.96.0
+
+### Minor Changes
+
+- c6be487: Server file drafts and a public composer helper for app panel parts; custom Oduvanchik add menus and non-file drop propagation; background notification after a new user message with attachments is stored. Existing integrations remain compatible.
+
 ## 0.95.3
 
 ### Patch Changes

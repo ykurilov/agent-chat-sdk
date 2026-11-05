@@ -1,5 +1,12 @@
 # @ykurilov/agent-chat-reply-check
 
+## 0.96.0
+
+### Patch Changes
+
+- Updated dependencies [c6be487]
+  - @ykurilov/agent-chat-core@0.96.0
+
 ## 0.95.3
 
 ### Patch Changes

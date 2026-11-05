@@ -1,3 +1,5 @@
+export { useComposerHelper } from "../composer-helper-context";
+export type { ComposerHelper } from "../composer-actions";
 export { AgentPanelProvider } from "./agent-panel-provider";
 export type { AgentPanelProviderProps } from "./agent-panel-provider";
 export { AgentPanel } from "./agent-panel";

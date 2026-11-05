@@ -21,6 +21,9 @@ export interface CreateAttachmentsOptions {
   /** Номер [Фото №N] рядом с новой картинкой человека. Старые файлы без метки не нумеруются. */
   imageNumbers?: boolean;
   storage: AttachmentStorage;
+  /** New user message with files has been inserted. Background, once per insertion, not on edits/imports.
+   * Failure goes to the chat service logError; this is not a durable job queue. */
+  onFilesAttached?: (input: { userId: string; chatId: string; messageId: string; attachments: StoredAttachment[] }) => void | Promise<void>;
   limits?: Partial<AttachmentLimits>;
   /** Срок неотправленных файлов, мс (по умолчанию сутки). null — хранить до явного удаления/подтверждения.
    * Для очередей мессенджеров задайте срок ожидания или null. Квоты неотправленных файлов сохраняются. */
@@ -153,6 +156,13 @@ export function createAttachments(options: CreateAttachmentsOptions): Attachment
     serviceBlocks: [{ tag: "attachment" }],
     acceptUserParts,
     confirmUserParts,
+    ...(options.onFilesAttached && { async userMessageStored({ userId, chatId, messageId, parts }: Parameters<NonNullable<MessageAttachments["userMessageStored"]>>[0]) {
+      const ids = [...new Set(parts.flatMap((part) => part.url.startsWith(PREFIX) ? [part.url.slice(PREFIX.length)] : []))];
+      const records = await Promise.all(ids.map((id) => storage.get(id)));
+      const attachments = records.filter((record): record is StoredAttachment => !!record && record.chatId === chatId && record.ownerId === userId && record.attached);
+      if (attachments.length !== ids.length) throw new Error("Stored message attachment is unavailable");
+      if (attachments.length) await options.onFilesAttached!({ userId, chatId, messageId, attachments });
+    } }),
     prepareHistory: (input) => prepareHistory({ storage, imagePlans, ...input, ...(options.imageNumbers && { imageNumbers: true }), ...(blindImages && { imagesForBlindModels: blindImages }) }),
     async readChatImage({ chatId, attachmentId }) {
       const record = isAttachmentId(attachmentId) ? await storage.get(attachmentId) : undefined;

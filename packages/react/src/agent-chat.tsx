@@ -60,7 +60,8 @@ import type { AgentAppBridge } from "./app-bridge/app-bridge";
 import { useMessageActionRuns } from "./message-actions";
 import type { MessageAction, MessageActionTarget } from "./message-actions";
 import { renderComposerActions } from "./composer-actions";
-import type { ComposerActions } from "./composer-actions";
+import { ComposerHelperProvider } from "./composer-helper-context";
+import type { ComposerHelper, ComposerActions } from "./composer-actions";
 import { useTurnFinishedReport } from "./turn-finished";
 import { appEventOfPart, useAppEventReport } from "./app-events";
 import type { AppEvent, AppEventHandler } from "./app-events";
@@ -647,7 +648,7 @@ function AgentChatBody({ history, header, completion, composerOptions, api, chat
     const accepted = chat.submit(sendingFiles ? attachments!.readFiles() : undefined, attachments && ((kind) => attachments.restoreFiles(kind)));
     if (accepted && sendingFiles) attachments!.markSent();
   };
-  const composerActionsNode = renderComposerActions(composerActions, {
+  const composerHelper: ComposerHelper = {
     value: chat.value,
     setValue: chat.setValue,
     send: (text) => {
@@ -659,10 +660,12 @@ function AgentChatBody({ history, header, completion, composerOptions, api, chat
       feedRef.current?.scrollToBottom();
     },
     addFiles: (files) => composerAttachments?.composer.onAddFiles(files),
+    addServerFiles: (drafts) => composerAttachments?.addServerFiles?.(drafts),
     busy: chat.busy,
     blocked: sendingBlocked,
     canSend,
-  });
+  };
+  const composerActionsNode = renderComposerActions(composerActions, composerHelper);
   const connection = connectionNotice(skin, chat.connection, chat.retry, chat.sendFailed || chat.loadFailed, chat.refusal, chat.serverRefusal);
   // Область для диктора стоит в странице всегда: живой регион, который появился уже с текстом, читают не везде.
   const spendingNotice = spendingLimits && skin.SpendingNotice && (
@@ -743,12 +746,14 @@ function AgentChatBody({ history, header, completion, composerOptions, api, chat
   );
   const viewer = skin.MediaViewer && mediaViewer.viewer && <skin.MediaViewer {...mediaViewer.viewer} />;
   return (
-    <ChatStateContext.Provider value={chatState}>
-      <ThinkingClocksProvider>
-        {layout}
-        {viewer}
-      </ThinkingClocksProvider>
-    </ChatStateContext.Provider>
+    <ComposerHelperProvider api={api} chatId={chatId} helper={composerHelper} enabled={!!composerAttachments && chat.loaded}>
+      <ChatStateContext.Provider value={chatState}>
+        <ThinkingClocksProvider>
+          {layout}
+          {viewer}
+        </ThinkingClocksProvider>
+      </ChatStateContext.Provider>
+    </ComposerHelperProvider>
   );
 }
 

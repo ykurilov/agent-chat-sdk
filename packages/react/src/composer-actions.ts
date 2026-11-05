@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import type { ServerFileDraft } from "./attachments-contract";
 
 /** Что `AgentChat.composerActions` может сделать с полем ввода и отправкой. */
 export interface ComposerHelper {
@@ -14,6 +15,8 @@ export interface ComposerHelper {
   send(text?: string): void;
   /** Положить файлы в поле ввода, как скрепка. Без плагина вложений ничего не делает. */
   addFiles(files: File[]): void;
+  /** Add existing server files through the attachments controller, without a browser upload. */
+  addServerFiles(drafts: ServerFileDraft[]): void;
   /** Агент отвечает: отправка сейчас не пройдёт. */
   busy: boolean;
   /** Отправка остановлена (исчерпан лимит расходов). */

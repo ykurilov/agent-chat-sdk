@@ -1,6 +1,18 @@
 import type { FileUIPart } from "ai";
 import type { AgentChatMessage } from "./chat-types";
 
+/** Server-side ingest result, structurally compatible with attachments.IngestFileResult. */
+export type ServerFileResult =
+  | { ok: true; attachment: { id: string; name: string; mediaType: string; kind: "image" | "pdf" | "text" | "file"; size: number; textTokens?: number; textTruncated?: boolean } }
+  | { ok: false; reason: string };
+
+/** An existing server file: no bytes pass through the browser. The callback must enforce owner/chat access. */
+export interface ServerFileDraft {
+  name: string;
+  previewUrl?: string;
+  ingest: (signal: AbortSignal) => Promise<ServerFileResult>;
+}
+
 /** Файл в поле ввода до отправки. */
 export interface ComposerAttachmentItem {
   id: string;
@@ -55,6 +67,8 @@ export interface MessageAttachmentsView {
 /** Состояние вложений в открытом чате: его ведёт плагин, слой поведения только связывает с полем ввода и лентой. */
 export interface AttachmentsController {
   composer: ComposerAttachments;
+  /** Optional capability for custom plugins; the built-in attachments client implements it. */
+  addServerFiles?: (drafts: ServerFileDraft[]) => void;
   /** Все файлы загружены без ошибок и вложений не больше допустимого: можно отправлять. */
   ready: boolean;
   /** В поле ввода есть хотя бы один файл. */

@@ -129,3 +129,44 @@ describe("три вида поля Одуванчик", () => {
     expect(container.querySelector('.oduvanchik-field-mic + .oduvanchik-field-send')).not.toBeNull();
   });
 });
+
+describe("custom attachment menu and parent drop zones", () => {
+  const attachment = () => ({ items: [], accept: "image/png", onAddFiles: vi.fn(), onRemove: vi.fn() });
+  it("custom entries precede the single device option, picker retains accept and menu closes", () => {
+    const files = attachment(); const pick = vi.fn();
+    const { container } = render(<OduvanchikComposer {...base()} attachments={files} options={{ addMenu: { fromDevice: { label: "С компьютера" }, items: [{ id: "library", label: "Мои загрузки", onPick: pick }] } }} />);
+    fireEvent.click(screen.getByRole("button", { name: "Файл" }));
+    const menu = container.querySelector(".oduvanchik-add-menu")!;
+    expect(Array.from(menu.querySelectorAll("button")).map((button) => button.textContent)).toEqual(["Мои загрузки", "С компьютера"]);
+    fireEvent.click(screen.getByRole("button", { name: "Мои загрузки" })); expect(pick).toHaveBeenCalledOnce();
+    expect(container.querySelector(".oduvanchik-add-menu")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Файл" }));
+    const input = container.querySelector('input[type="file"]')!; const click = vi.spyOn(input as HTMLInputElement, "click");
+    fireEvent.click(screen.getByRole("button", { name: "С компьютера" }));
+    expect(click).toHaveBeenCalledOnce(); expect(input.getAttribute("accept")).toBe("image/png");
+  });
+  it("custom-only plus works without attachments, busy disables it, omitted menu retains both defaults", () => {
+    const pick = vi.fn();
+    const { rerender } = render(<OduvanchikComposer {...base()} options={{ addMenu: { fromDevice: false, items: [{ id: "library", label: "Мои загрузки", onPick: pick }] } }} />);
+    fireEvent.click(screen.getByRole("button", { name: "Файл" }));
+    fireEvent.click(screen.getByRole("button", { name: "Мои загрузки" })); expect(pick).toHaveBeenCalledOnce();
+    rerender(<OduvanchikComposer {...base()} busy attachments={attachment()} />);
+    expect((screen.getByRole("button", { name: "Файл" }) as HTMLButtonElement).disabled).toBe(true);
+    rerender(<OduvanchikComposer {...base()} attachments={attachment()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Файл" }));
+    expect(screen.getAllByRole("button", { name: "Файл" })).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "Картинка" })).toBeTruthy();
+  });
+  it("non-file drag/drop remains uncancelled for a panel ancestor, actual files still attach", () => {
+    const files = attachment(); const parent = vi.fn();
+    render(<div onDrop={(event) => parent(event.defaultPrevented)}><OduvanchikComposer {...base()} attachments={files} /></div>);
+    const field = screen.getByRole("textbox");
+    expect(fireEvent.dragOver(field, { dataTransfer: { files: [], types: ["application/x-ykcreator-result"] } })).toBe(true);
+    expect(fireEvent.drop(field, { dataTransfer: { files: [], types: ["application/x-ykcreator-result"] } })).toBe(true);
+    expect(parent).toHaveBeenLastCalledWith(false); expect(files.onAddFiles).not.toHaveBeenCalled();
+    const png = new File(["png"], "a.png", { type: "image/png" });
+    expect(fireEvent.dragOver(field, { dataTransfer: { files: [], types: ["Files"] } })).toBe(false);
+    fireEvent.drop(field, { dataTransfer: { files: [png], types: ["Files"] } });
+    expect(files.onAddFiles).toHaveBeenCalledWith([png]); expect(parent).toHaveBeenLastCalledWith(true);
+  });
+});

@@ -134,3 +134,51 @@ describe.each(failures)("отметка вложений не удалась (%s
     expect(JSON.stringify(model.doStreamCalls[1]!.prompt)).toContain("и покрась");
   });
 });
+
+describe("durable file notification", () => {
+  it("starts after insertion, does not block the answer and does not repeat for retry/edit/plain text", async () => {
+    const attachments = failingOnce(new Error("unused"));
+    vi.mocked(attachments.confirmUserParts).mockReset().mockResolvedValue(undefined);
+    let release!: () => void;
+    const wait = new Promise<void>((resolve) => { release = resolve; });
+    const observed: string[] = [];
+    const { service, storage } = noticeService(scriptedModel(), { attachments });
+    attachments.userMessageStored = vi.fn(async ({ messageId, chatId, parts }) => {
+      expect((await storage.listMessages(chatId)).some((message) => message.id === messageId)).toBe(true);
+      expect(parts).toEqual([fileRef]); observed.push(messageId); await wait;
+    });
+    const chat = await service.createChat("anna");
+    await readAll(await service.sendMessage("anna", chat.id, withFile("u1", "file")));
+    expect(observed).toEqual(["u1"]);
+    await expect(service.sendMessage("anna", chat.id, withFile("u1", "file"))).rejects.toThrow("уже есть");
+    await readAll(await service.editMessage("anna", chat.id, "u1", withFile("edit", "edit")));
+    await readAll(await service.sendMessage("anna", chat.id, plain("text", "text")));
+    expect(attachments.userMessageStored).toHaveBeenCalledOnce(); release();
+  });
+  it("notification failures, including a throwing logger, never reject an already inserted message", async () => {
+    const attachments = failingOnce(new Error("unused"));
+    vi.mocked(attachments.confirmUserParts).mockReset().mockResolvedValue(undefined);
+    const error = new Error("library unavailable");
+    attachments.userMessageStored = vi.fn().mockRejectedValueOnce(error).mockImplementationOnce(() => { throw error; });
+    const logError = vi.fn((_message: string, _error?: unknown) => { throw new Error("logger unavailable"); });
+    const { service } = noticeService(scriptedModel(), { attachments, logError });
+    const chat = await service.createChat("anna");
+    await readAll(await service.sendMessage("anna", chat.id, withFile("u1", "one")));
+    await readAll(await service.sendMessage("anna", chat.id, withFile("u2", "two")));
+    expect(logError).toHaveBeenCalledTimes(2); expect(logError.mock.calls[0]![1]).toBe(error);
+  });
+  it("failed insert and rejected confirmation produce no notification; burst delivery produces one per new message", async () => {
+    const attachments = failingOnce(new Error("confirm"));
+    attachments.userMessageStored = vi.fn();
+    const { service, storage } = noticeService(scriptedModel(), { attachments });
+    const chat = await service.createChat("anna");
+    await expect(service.sendMessage("anna", chat.id, withFile("refused", "x"))).rejects.toThrow("confirm");
+    const insert = vi.spyOn(storage, "insertMessage").mockRejectedValueOnce(new Error("disk"));
+    await expect(service.sendMessage("anna", chat.id, withFile("disk", "x"))).rejects.toThrow("disk");
+    expect(attachments.userMessageStored).not.toHaveBeenCalled(); insert.mockRestore();
+    const burst = await service.sendBurstMessage("anna", chat.id, withFile("burst", "telegram"), { channel: "telegram", quietMs: 0 });
+    const stream = await burst.turn; if (stream) await readAll(stream);
+    expect(attachments.userMessageStored).toHaveBeenCalledWith({ userId: "anna", chatId: chat.id, messageId: "burst", parts: [fileRef] });
+    expect(attachments.userMessageStored).toHaveBeenCalledOnce();
+  });
+});

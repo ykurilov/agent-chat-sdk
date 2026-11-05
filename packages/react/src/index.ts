@@ -1,3 +1,4 @@
+export { useComposerHelper } from "./composer-helper-context";
 export type { ComposerOptions } from "./composer-options";
 export { AgentChat } from "./agent-chat";
 export { STEP_RESET_PART_TYPE, withoutResetSteps } from "./step-reset";
@@ -6,6 +7,8 @@ export type {
   AttachmentsPlugin,
   ComposerAttachmentItem,
   ComposerAttachments,
+  ServerFileDraft,
+  ServerFileResult,
   MessageAttachmentItem,
   MessageAttachmentsView,
 } from "./attachments-contract";

@@ -6,6 +6,19 @@
 - Обновление приложения: обновить пакеты SDK одной версией после выпуска, пересобрать и убрать временные подмены значков. API и CSS-импорты прежние, миграций нет.
 
 
+## 0.96.0
+
+### Minor Changes
+
+- c6be487: Server file drafts and a public composer helper for app panel parts; custom Oduvanchik add menus and non-file drop propagation; background notification after a new user message with attachments is stored. Existing integrations remain compatible.
+
+### Patch Changes
+
+- Updated dependencies [c6be487]
+  - @ykurilov/agent-chat-react@0.96.0
+  - @ykurilov/agent-chat-flows@0.96.0
+  - @ykurilov/agent-chat-sandbox@0.96.0
+
 ## 0.95.3
 
 ### Patch Changes

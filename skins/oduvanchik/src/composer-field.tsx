@@ -28,6 +28,8 @@ export function ComposerField(props: Props) {
     return () => document.removeEventListener("pointerdown", outside);
   }, [addMenu]);
   const attachments = props.attachments;
+  const deviceMenu = attachments && options.addMenu?.fromDevice !== false;
+  const hasAddMenu = deviceMenu || !!options.addMenu?.items?.length || !!options.projects?.length;
   const hasContent = props.value.trim().length > 0 || (attachments?.items.length ?? 0) > 0 || (options.contextAttachments?.length ?? 0) > 0;
   const steering = props.busy && props.canSteer !== undefined;
   const stoppingOnly = props.busy && !steering;
@@ -48,9 +50,9 @@ export function ComposerField(props: Props) {
     disabled={disabled} onClick={props.onStop}><SquareIcon size={15} weight="fill" aria-hidden /></button>;
   const send = <>{steering && stop}{stoppingOnly ? stop : <button type="button" className="oduvanchik-field-send" aria-label={labels.send}
     disabled={!canSend} onClick={submit}><ArrowUpIcon size={19} aria-hidden /></button>}</>;
-  return <div data-composer-variant={variant} className={`oduvanchik-field oduvanchik-field-${variant}${variant === "standard" && !attachments && !options.projects?.length && !options.context && !props.actions && !props.dialogButton ? " oduvanchik-field-inline" : ""}`} onKeyDown={(event) => { if (event.key === "Escape") setAddMenu(false); }}
-    onDragOver={(event) => { if (!compact && attachments && !controlsDisabled) event.preventDefault(); }}
-    onDrop={(event) => { if (compact || !attachments || controlsDisabled) return; event.preventDefault(); if (event.dataTransfer.files.length) attachments.onAddFiles(Array.from(event.dataTransfer.files)); }}>
+  return <div data-composer-variant={variant} className={`oduvanchik-field oduvanchik-field-${variant}${variant === "standard" && !attachments && !hasAddMenu && !options.context && !props.actions && !props.dialogButton ? " oduvanchik-field-inline" : ""}`} onKeyDown={(event) => { if (event.key === "Escape") setAddMenu(false); }}
+    onDragOver={(event) => { if (!compact && attachments && !controlsDisabled && (event.dataTransfer.files.length > 0 || Array.from(event.dataTransfer.types).includes("Files"))) event.preventDefault(); }}
+    onDrop={(event) => { if (compact || !attachments || controlsDisabled || !event.dataTransfer.files.length) return; event.preventDefault(); attachments.onAddFiles(Array.from(event.dataTransfer.files)); }}>
     {!compact && ((attachments?.items.length ?? 0) > 0 || (options.contextAttachments?.length ?? 0) > 0) && <ul className="oduvanchik-field-files" aria-label={fileLabels.attachments}>
       {attachments?.items.map((item) => <li key={item.id}>
         {item.kind === "image" && item.previewUrl ? <img src={item.previewUrl} alt="" /> : <FileTextIcon size={18} aria-hidden />}
@@ -64,10 +66,10 @@ export function ComposerField(props: Props) {
       onPaste={(event) => { if (!compact && attachments && !controlsDisabled && event.clipboardData.files.length) { event.preventDefault(); attachments.onAddFiles(Array.from(event.clipboardData.files)); } }}
       onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229) { event.preventDefault(); submit(); } }} />
     {compact ? send : <div className="oduvanchik-field-bar">
-      {(attachments || options.projects?.length) ? <div className="oduvanchik-add" ref={addRoot}>
+      {hasAddMenu ? <div className="oduvanchik-add" ref={addRoot}>
         <button type="button" className="oduvanchik-field-tool" disabled={controlsDisabled} aria-label={settings.file} aria-expanded={addMenu && !controlsDisabled} onClick={() => setAddMenu(!addMenu)}><PlusIcon size={20} aria-hidden /></button>
         <input ref={files} type="file" hidden multiple disabled={controlsDisabled} accept={attachments?.accept} onChange={(event) => { if (!controlsDisabled && event.target.files?.length) attachments?.onAddFiles(Array.from(event.target.files)); event.target.value = ""; }} />
-        {addMenu && !controlsDisabled && <div className="oduvanchik-add-menu">{attachments && <><button type="button" onClick={() => pickFile(attachments.accept)}><FileTextIcon size={16} aria-hidden />{settings.file}</button><button type="button" onClick={() => pickFile("image/*")}><ImageIcon size={16} aria-hidden />{settings.image}</button></>}{options.projects?.map((project) => <button type="button" key={project.id} onClick={() => { if (!controlsDisabled) project.onPick(); setAddMenu(false); }}><FolderIcon size={16} aria-hidden />{project.label}</button>)}</div>}
+        {addMenu && !controlsDisabled && <div className="oduvanchik-add-menu">{options.addMenu?.items?.map((item) => <button type="button" key={item.id} data-add-menu-item={item.id} onClick={() => { setAddMenu(false); if (!controlsDisabled) item.onPick(); }}>{item.icon}{item.label}</button>)}{deviceMenu && attachments && (options.addMenu?.fromDevice ? <button type="button" onClick={() => pickFile(attachments.accept)}><FileTextIcon size={16} aria-hidden />{options.addMenu.fromDevice.label}</button> : <><button type="button" onClick={() => pickFile(attachments.accept)}><FileTextIcon size={16} aria-hidden />{settings.file}</button><button type="button" onClick={() => pickFile("image/*")}><ImageIcon size={16} aria-hidden />{settings.image}</button></>)}{options.projects?.map((project) => <button type="button" key={project.id} onClick={() => { if (!controlsDisabled) project.onPick(); setAddMenu(false); }}><FolderIcon size={16} aria-hidden />{project.label}</button>)}</div>}
       </div> : null}
       {variant === "standard" && options.context && <button type="button" className="oduvanchik-context oduvanchik-label" disabled={controlsDisabled || !options.context.onPick} onClick={options.context.onPick}>@ {options.context.label}</button>}
       {variant === "extended" && <ComposerSettings choice={props.modelChoice} options={options} disabled={controlsDisabled} />}

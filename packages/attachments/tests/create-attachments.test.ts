@@ -210,3 +210,15 @@ describe("хранилище для других пакетов (024, карти
     expect(detectFileKind(new Uint8Array([0xff, 0xd8, 0xff, 0xe0]), "")).toEqual({ kind: "image", mediaType: "image/jpeg" });
   });
 });
+
+it("onFilesAttached receives unique, attached, owner/chat-scoped records only after the durable notification", async () => {
+  const { storage, add } = await setup(); const record = await add();
+  const calls: unknown[] = [];
+  const attachments = createAttachments({ storage, onFilesAttached: (input) => { calls.push(input); } });
+  const parts = await attachments.acceptUserParts({ userId: "anna", chatId: "chat-1", parts: [{ type: "file", url: `attachment:${record.id}` }] });
+  await attachments.confirmUserParts(parts); expect(calls).toEqual([]);
+  await attachments.userMessageStored!({ userId: "anna", chatId: "chat-1", messageId: "u1", parts: [...parts, ...parts] });
+  expect(calls).toEqual([{ userId: "anna", chatId: "chat-1", messageId: "u1", attachments: [{ ...record, attached: true }] }]);
+  await expect(attachments.userMessageStored!({ userId: "another", chatId: "chat-1", messageId: "u2", parts })).rejects.toThrow("unavailable");
+  expect(calls).toHaveLength(1);
+});
