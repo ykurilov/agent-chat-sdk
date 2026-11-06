@@ -1,5 +1,13 @@
 # @ykurilov/agent-chat-attachments
 
+## 0.96.1
+
+### Patch Changes
+
+- 61d13b1: Fix the browser fetch receiver for device uploads and attachment deletion, including late ingest cleanup. Existing attachments retain their original transport; no application fetch wrapper is required.
+- @ykurilov/agent-chat-core@0.96.1
+  - @ykurilov/agent-chat-react@0.96.1
+
 ## 0.96.0
 
 ### Minor Changes

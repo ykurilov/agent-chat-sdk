@@ -405,3 +405,27 @@ describe("server draft limits and lifetime", () => {
     expect(server.calls).toContain("DELETE /api/chat/c1/attachments/old"); expect(revoked).not.toContain("https://host/preview");
   });
 });
+
+describe("attachment transport receiver", () => {
+  it.each([false, true])("calls the captured fetch without an item receiver (custom=%s)", async (custom) => {
+    const server = fakeServer();
+    const browserFetch = function(this: unknown, input: RequestInfo | URL, init?: RequestInit) {
+      if (this !== undefined && this !== globalThis) throw new TypeError("Illegal invocation");
+      return server.fetch(input, init);
+    } as typeof globalThis.fetch;
+    const other = vi.fn<typeof globalThis.fetch>();
+    vi.stubGlobal("fetch", browserFetch);
+    const hook = renderHook(({ transport }) => useAttachmentsController({ api: "/api/chat", chatId: "c1", modelSeesImages: true, ...(transport && { fetch: transport }) }, russianAttachmentsLabels), { initialProps: { transport: custom ? browserFetch : undefined as typeof globalThis.fetch | undefined } });
+    try {
+      await add(hook.result, png());
+      await waitFor(() => expect(hook.result.current.ready).toBe(true));
+      expect(hook.result.current.readFiles()[0]?.url).toBe("attachment:id-1");
+      // An existing item retains the chosen transport, even if the host/global fetch changes later.
+      vi.stubGlobal("fetch", other);
+      hook.rerender({ transport: custom ? other : undefined });
+      act(() => hook.result.current.composer.onRemove(hook.result.current.composer.items[0]!.id));
+      await waitFor(() => expect(server.deleted).toEqual(["id-1"]));
+      expect(other).not.toHaveBeenCalled();
+    } finally { hook.unmount(); vi.unstubAllGlobals(); }
+  });
+});

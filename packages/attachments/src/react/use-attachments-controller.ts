@@ -63,6 +63,11 @@ export interface AttachmentsControllerInput {
   busyRetryDelayMs?: number;
 }
 
+/** Capture the transport without making Window.fetch a method of FieldItem (illegal browser receiver). */
+function captureFetch(transport: typeof globalThis.fetch): typeof globalThis.fetch {
+  return (input, init) => transport(input, init);
+}
+
 /** Файлы в поле ввода: загрузка на сервер, превью, отказы, потолки и вложения сообщений в ленте. */
 export function useAttachmentsController(
   { api, chatId, modelSeesImages, fetch: fetchImpl, busyRetryDelayMs = 500 }: AttachmentsControllerInput,
@@ -231,7 +236,7 @@ export function useAttachmentsController(
             name: file.name,
             fileName: file.name,
             uploadUrl: `${api}/${encodeURIComponent(chatId)}/attachments`,
-            fetchFile: latest.current.fetchImpl ?? globalThis.fetch,
+            fetchFile: captureFetch(latest.current.fetchImpl ?? globalThis.fetch),
             size: file.size,
             kind: isImage ? "image" : "file",
             status: refused ? "error" : "uploading",
@@ -262,7 +267,7 @@ export function useAttachmentsController(
         id: crypto.randomUUID(), name: draft.name, fileName: draft.name, size: 0,
         kind: "image", status: "uploading", abort: new AbortController(),
         uploadUrl: `${api}/${encodeURIComponent(chatId)}/attachments`,
-        fetchFile: latest.current.fetchImpl ?? globalThis.fetch,
+        fetchFile: captureFetch(latest.current.fetchImpl ?? globalThis.fetch),
         ...(draft.previewUrl && { previewUrl: draft.previewUrl }),
       };
       added.push({ item, draft });
