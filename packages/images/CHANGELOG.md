@@ -1,5 +1,14 @@
 # @ykurilov/agent-chat-images
 
+## 0.97.2
+
+### Patch Changes
+
+- @ykurilov/agent-chat-attachments@0.97.2
+  - @ykurilov/agent-chat-core@0.97.2
+  - @ykurilov/agent-chat-react@0.97.2
+  - @ykurilov/agent-chat-web-tools@0.97.2
+
 ## 0.97.1
 
 ### Patch Changes
