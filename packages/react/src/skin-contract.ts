@@ -357,7 +357,7 @@ export interface StaffMessageView {
 }
 
 /**
- * Договор скина, версия 31: необязательные Layout.header и Layout.completion. Версия 30: необязательный Layout.empty. Версия 29: необязательные Composer.options, AgentMessage.modelDetails и WorkSteps.live.completed.
+ * Договор скина, версия 32: необязательный AnswerTextEditor для штатной правки ответа; docs/skin-v32.md. Версия 31: необязательные Layout.header и Layout.completion. Версия 30: необязательный Layout.empty. Версия 29: необязательные Composer.options, AgentMessage.modelDetails и WorkSteps.live.completed.
  * Скины 28 работают без правок. В версии 28 добавились только необязательные значки шагов и заголовки раздумий:
  * `WorkStepsView.live.icon`, `WorkStepsView.done.items`, `icons`, `moreIcons` и `Reasoning.title`, docs/skin-v28.md;
  * скин версии 27 работает без правок: шаги без значков, раздумья — «Думал N сек».
@@ -466,6 +466,17 @@ export interface ChatSkin {
     /** Почему правку не удалось отправить (текст уже на языке собеседника): показать под полем как `role="alert"`; текст в поле остаётся. */
     error?: string;
     attachments?: MessageAttachmentsView;
+  }>;
+  /** Built-in ordinary answer text editor. Optional for older/custom skins. */
+  AnswerTextEditor?: ComponentType<{
+    value: string;
+    onValueChange: (value: string) => void;
+    onSave: () => void;
+    onCancel: () => void;
+    canSave: boolean;
+    saving: boolean;
+    error?: string;
+    fields?: ReactNode;
   }>;
   AgentMessage: ComponentType<{
     /** Actual answer settings, not the current composer selection. */

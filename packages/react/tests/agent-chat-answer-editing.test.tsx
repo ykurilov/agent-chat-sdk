@@ -143,3 +143,66 @@ it("compact editor waits for full message, shows a local failure and retries wit
  fireEvent.click(editButtons()[0]!);await waitFor(()=>expect(document.querySelector('[data-kind="answer-editor"]')).not.toBeNull());
  expect(editing.renderEditor.mock.calls.at(-1)![0].message.parts).toEqual(complete.parts);expect(attempts).toBe(2);
 });
+
+const textSkin: ChatSkin = {
+  ...skin,
+  AnswerTextEditor: p => <section aria-label="Редактор ответа">
+    <textarea aria-label="Текст ответа" value={p.value} onChange={e => p.onValueChange(e.target.value)} />
+    {p.fields}{p.error && <p role="alert">{p.error}</p>}
+    <button disabled={!p.canSave || p.saving} onClick={p.onSave}>Записать правку</button>
+    <button disabled={p.saving} onClick={p.onCancel}>Закрыть правку</button>
+  </section>,
+};
+
+it("built-in editor sends application fields and refreshes without branches permission; cancel does not save", async () => {
+  const server = fakeChatServer({ history: [question("u1", "Привет"), answer("a1", "Ответ")] });
+  server.state.capabilities = { answerEditing: true, branches: false, modelChoice: false };
+  server.state.watch = true;
+  const ordinaryFetch = server.fetch;
+  const writes: unknown[] = [];
+  const transport = vi.fn(async (url: Parameters<typeof fetch>[0], init?: RequestInit) => {
+    if (String(url).endsWith("/messages/a1/answer-edit")) {
+      const body = JSON.parse(String(init?.body)) as { text: string };
+      writes.push(body); server.state.history = [question("u1", "Привет"), answer("a2", body.text)];
+      return Response.json({ messageId: "a2" });
+    }
+    return ordinaryFetch(url, init);
+  });
+  renderAgentChat({ ...server, fetch: transport }, { skin: textSkin, answerEditor: { renderFields: p => <input aria-label="Почему так лучше" disabled={p.disabled} value={String(p.data.why ?? "")} onChange={e => p.setData({ why: e.target.value })} /> } });
+  await screen.findByText("Ответ"); fireEvent.click(editButtons()[0]!);
+  fireEvent.click(screen.getByText("Закрыть правку")); expect(writes).toEqual([]);
+  fireEvent.click(editButtons()[0]!);
+  expect((screen.getByText("Записать правку") as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.change(screen.getByLabelText("Текст ответа"), { target: { value: "Точнее" } });
+  fireEvent.change(screen.getByLabelText("Почему так лучше"), { target: { value: "По делу" } });
+  fireEvent.click(screen.getByText("Записать правку"));
+  await screen.findByText("Точнее");
+  await waitFor(() => expect(screen.queryByLabelText("Редактор ответа")).toBeNull());
+  expect(writes).toEqual([{ text: "Точнее", data: { why: "По делу" } }]);
+  await waitFor(() => expect(server.watches.length).toBeGreaterThan(0));
+  server.state.history = [question("u1", "Привет"), answer("a1", "Ответ")];
+  server.emit({ type: "answer-edited", chatId: "c1", sourceMessageId: "a2", messageId: "a1" });
+  await screen.findByText("Ответ");
+  expect(screen.queryByLabelText("Редактор ответа")).toBeNull();
+});
+
+it("a rejected ordinary save retains both drafts; late save cannot affect another chat", async () => {
+  const server = fakeChatServer({ history: [question("u1", "Привет"), answer("a1", "Ответ")] });
+  const ordinaryFetch = server.fetch;
+  vi.stubGlobal("fetch", vi.fn(async (url: Parameters<typeof fetch>[0], init?: RequestInit) => String(url).endsWith("/answer-edit") ? Response.json({ error: { kind: "busy" } }, { status: 409 }) : ordinaryFetch(url, init)));
+  const { render } = await import("@testing-library/react");
+  const { AgentChat } = await import("../src/agent-chat");
+  const props = { api: "/api/chat", skin: textSkin, answerEditor: true as const };
+  const mounted = render(<AgentChat {...props} chatId="c1" />);
+  await screen.findByText("Ответ"); fireEvent.click(editButtons()[0]!);
+  fireEvent.change(screen.getByLabelText("Текст ответа"), { target: { value: "Черновик" } });
+  fireEvent.click(screen.getByText("Записать правку")); await screen.findByRole("alert");
+  expect((screen.getByLabelText("Текст ответа") as HTMLTextAreaElement).value).toBe("Черновик");
+  let finish!: (response: Response) => void;
+  vi.stubGlobal("fetch", vi.fn(async (url: Parameters<typeof fetch>[0], init?: RequestInit) => String(url).endsWith("/answer-edit") ? new Promise<Response>(resolve => { finish = resolve; }) : ordinaryFetch(url, init)));
+  fireEvent.click(screen.getByText("Записать правку")); await waitFor(() => expect(finish).toBeTypeOf("function"));
+  mounted.rerender(<AgentChat {...props} chatId="c2" />);
+  finish(Response.json({ messageId: "a2" }));
+  await waitFor(() => expect(screen.queryByLabelText("Редактор ответа")).toBeNull());
+  expect(server.requestsTo("branch")).toHaveLength(0);
+});

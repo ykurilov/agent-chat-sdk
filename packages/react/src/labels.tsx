@@ -272,6 +272,9 @@ export interface ChatLabels {
   toolOutputEdited?: string;
   /** Кнопка «изменить» у ответа агента (версия 15). Нет — русская по умолчанию. */
   editAnswer?: string;
+  /** Ordinary answer editor: the draft remains open after a rejected request. */
+  answerEditFailed?: string;
+  answerEditSave?: string;
   /** Пометка у поправки, которую агент ещё не взял (версия 21): «учтёт на следующем шаге». Нет — русская по умолчанию. */
   steeringPending?: string;
   retry: string;
@@ -485,7 +488,7 @@ export type ResolvedChatLabels = Omit<ChatLabels, "widgets" | "diagram" | "demo"
   Required<
     Pick<
       ChatLabels,
-      "externalImageLink" | "answerCutByLength" | "answerEdited" | "answerUndelivered" | "toolOutputEdited" | "editAnswer" | "steeringPending" | "thinkingPhrases" | "thinkingElapsed" | "spendingMessagesLeft" | "spendingMessagesExhausted" | "editMessageLimit"
+      "externalImageLink" | "answerCutByLength" | "answerEdited" | "answerUndelivered" | "toolOutputEdited" | "editAnswer" | "answerEditFailed" | "answerEditSave" | "steeringPending" | "thinkingPhrases" | "thinkingElapsed" | "spendingMessagesLeft" | "spendingMessagesExhausted" | "editMessageLimit"
     >
   > & {
     history: NonNullable<ChatLabels["history"]>;
@@ -739,6 +742,8 @@ export const russianLabels: ResolvedChatLabels = {
   toolOutputEdited: "Результат изменён",
   steeringPending: "Агент учтёт на следующем шаге",
   editAnswer: "Изменить ответ",
+  answerEditSave: "Сохранить",
+  answerEditFailed: "Не удалось сохранить правку. Текст остался в редакторе. Повторите попытку.",
   history: { loading: "Загружаю подробности…", failed: "Не удалось загрузить", older: "Более ранние сообщения" },
   retry: "Повторить",
   reconnecting: "Переподключаемся…",
@@ -1064,6 +1069,8 @@ export const englishLabels: ResolvedChatLabels = {
   answerUndelivered: "Not delivered",
   toolOutputEdited: "Result edited",
   editAnswer: "Edit reply",
+  answerEditSave: "Save",
+  answerEditFailed: "Could not save the edit. Your draft is still here. Please try again.",
   history: { loading: "Loading details…", failed: "Could not load", older: "Earlier messages" },
   retry: "Retry",
   reconnecting: "Reconnecting…",
@@ -1326,6 +1333,8 @@ export function ChatLabelsProvider({ labels, children }: { labels: ChatLabels; c
       answerUndelivered: labels.answerUndelivered ?? russianLabels.answerUndelivered,
       toolOutputEdited: labels.toolOutputEdited ?? russianLabels.toolOutputEdited,
       editAnswer: labels.editAnswer ?? russianLabels.editAnswer,
+      answerEditFailed: labels.answerEditFailed ?? russianLabels.answerEditFailed,
+      answerEditSave: labels.answerEditSave ?? russianLabels.answerEditSave,
       steeringPending: labels.steeringPending ?? russianLabels.steeringPending,
       spendingMessagesLeft: labels.spendingMessagesLeft ?? russianLabels.spendingMessagesLeft,
       spendingMessagesExhausted: labels.spendingMessagesExhausted ?? russianLabels.spendingMessagesExhausted,

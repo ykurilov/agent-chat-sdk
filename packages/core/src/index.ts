@@ -65,6 +65,8 @@ export { branchForks, currentChildOf, nextSiblingTime, selectCurrentBranch, touc
 export type { BranchFork } from "./conversation/branches";
 export { withoutGlueFragments } from "./conversation/glue-fragments";
 export { loadCurrentBranch, loadCurrentBranchLinks } from "./conversation/load-current-branch";
+export { answerEditOf } from "./conversation/answer-edit-record";
+export type { AnswerEditRecord, AnswerEditedInput, AnswerEditedHandler } from "./conversation/answer-edit-record";
 export type { AnswerEdit, AnswerEditErrorKind } from "./conversation/answer-edit";
 export { AnswerEditError, answerText, EDITED_TOOL_OUTPUT_MAX_BYTES } from "./conversation/edit-answer-parts";
 export { deliverableParts } from "./conversation/deliverable-parts";

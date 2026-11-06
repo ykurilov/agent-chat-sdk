@@ -1,5 +1,6 @@
 export { useComposerHelper } from "./composer-helper-context";
 export type { ComposerOptions } from "./composer-options";
+export type { AnswerEditorFields, AnswerTextEditing } from "./answer-editing/answer-editing";
 export { AgentChat } from "./agent-chat";
 export { STEP_RESET_PART_TYPE, withoutResetSteps } from "./step-reset";
 export type {

@@ -185,6 +185,8 @@ export interface AgentChatState {
   sendReply: (text: string) => boolean;
   /** Переключает текущую ветку на соседнее сообщение развилки; во время ответа не делает ничего. `true` — история новой ветки показана. */
   selectBranch: (messageId: string) => Promise<boolean>;
+  /** Save an ordinary text edit, then refresh the current history; null means rejected/stale. */
+  editAnswer: (messageId: string, text: string, data: Record<string, unknown>, signal: AbortSignal) => Promise<string | null>;
   /** Последний ответ можно переделать: он законченный и непустой (у остальных — «повторить»). */
   canRegenerate: boolean;
   /** Новый ответ на последний вопрос; прежний остаётся соседней веткой. */
@@ -1564,7 +1566,7 @@ export function useAgentChat({
           if (appEvent) reportAppEvent.current?.(appEvent, messageId);
           // Событие хука после «Стопа» уже лежит в ответе: перечитанная история покажет его в ленте.
           if (appEvent && messageId && !ownTurnStarting()) void refreshFromServer(chatSignal, { unlessFeedChanged: true });
-        } else if ((event.type === "turn-started" || event.type === "notice-added" || event.type === "message-added") && !ownTurnStarting()) {
+        } else if ((event.type === "turn-started" || event.type === "notice-added" || event.type === "message-added" || event.type === "answer-edited") && !ownTurnStarting()) {
           void refreshFromServer(chatSignal, { unlessFeedChanged: true });
         }
       },
@@ -1994,6 +1996,22 @@ export function useAgentChat({
     return false;
   }
 
+  /** Text answer edit uses the same authenticated transport, deadlines and chat lifetime as other writes. */
+  const editAnswer = useCallback(async (messageId: string, text: string, data: Record<string, unknown>, signal: AbortSignal): Promise<string | null> => {
+    if (!loaded || busyRef.current || !capabilities.answerEditing || signal.aborted) return null;
+    const lifetime = chatLifetime.current.signal;
+    const epoch = hydrationEpoch.current;
+    const response = await fetchWithDeadline(request, `${chatUrl}/messages/${encodeURIComponent(messageId)}/answer-edit`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text, data }), signal,
+    }, { timeoutMs: settingsRef.current.requestTimeoutMs, wholeBody: true, signal: lifetime });
+    if (!response.ok) return null;
+    const result = await response.json() as { messageId?: unknown };
+    if (signal.aborted || lifetime.aborted || chatUrlRef.current !== chatUrl || typeof result.messageId !== "string") return null;
+    // A branch/page changed while saving: never reselect it from a delayed result.
+    if (hydrationEpoch.current === epoch) await rereadHistory(lifetime);
+    return result.messageId;
+  }, [loaded, capabilities.answerEditing, chatUrl, request, rereadHistory]);
+
   /** Переключение ветки: сервер записывает выбор и отдаёт историю новой ветки; на отказ — свежая история. */
   const selectBranch = useCallback(
     async (messageId: string): Promise<boolean> => {
@@ -2129,6 +2147,7 @@ export function useAgentChat({
     connection,
     retry,
     selectBranch,
+    editAnswer,
     canRegenerate,
     regenerate: regenerateAnswer,
     canEdit,

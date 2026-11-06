@@ -80,6 +80,9 @@ import type { AppNoticeViews } from "./app-state/state-messages";
 import type { BranchFork } from "./conversation/branches";
 import { toAgentChatMessage } from "./conversation/to-agent-chat-message";
 import { newStoredMessage, subjectOfChat } from "./conversation/types";
+import { checkedAnswerEditData, withAnswerEdit } from "./conversation/answer-edit-record";
+import type { AnswerEditedHandler, AnswerEditedInput } from "./conversation/answer-edit-record";
+import { createAnswerEdited } from "./conversation/answer-edited";
 import type { AnswerEdit } from "./conversation/answer-edit";
 import { AnswerEditError, answerText, editAnswerParts } from "./conversation/edit-answer-parts";
 import { deliverableParts } from "./conversation/deliverable-parts";
@@ -599,6 +602,8 @@ export interface ChatServiceOptions {
    * сроке, затем строка в журнал и событие `state-changed-failed`. Нет — только событие `state-changed`.
    */
   onStateChanged?: StateChangedHandler;
+  /** Каждая записанная правка, даже без изменения app state. 3 попытки в течение 30 с; flush ждёт доставку. */
+  onAnswerEdited?: AnswerEditedHandler;
   /** Срок хука смены состояния на все попытки и паузы, мс. По умолчанию 30 000. */
   onStateChangedTimeoutMs?: number;
   /** Попыток хука смены состояния. По умолчанию 3. */
@@ -1396,6 +1401,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
       logError,
       ...(options.staffOfChat && { staffOf: options.staffOfChat }),
     });
+  const answerEdited = createAnswerEdited(options.onAnswerEdited, logError);
   const stateChanged = createStateChanged({
     ...(options.onStateChanged && { handler: options.onStateChanged }),
     ...(options.onStateChangedTimeoutMs !== undefined && { timeoutMs: options.onStateChangedTimeoutMs }),
@@ -3771,6 +3777,8 @@ export function createChatService(input: ChatServiceOptions): ChatService {
       await assertChatRules(userId, chat, { capabilities: ["answerEditing"] });
       if (starting.has(chatId) || registry.isRunning(chatId)) throw new AnswerEditError("answer_busy");
       let before: AppStateValues = {};
+      const data = checkedAnswerEditData(edit.data);
+      let editEvent!: AnswerEditedInput;
       const replaced = await holdingChat(chatId, async () => {
         await carryLegacyClosure(chatId);
         const { messages, selections, branch } = await loadTree(chatId);
@@ -3788,15 +3796,18 @@ export function createChatService(input: ChatServiceOptions): ChatService {
           chatId,
           parentId: answer.parentId,
           role: "assistant",
-          parts: edited.parts,
+          parts: withAnswerEdit(edited.parts, { sourceMessageId: answer.id, ownerId: chat.ownerId, editedAt: createdAt, ...(data !== undefined && { data }) }),
           modelId: answer.modelId,
           providerId: answer.providerId,
           createdAt,
         });
         await storage.insertMessage(replacement);
         await storage.insertBranchSelection({ id: crypto.randomUUID(), chatId, messageId: replacement.id, selectedAt: createdAt });
+        editEvent = { ownerId: chat.ownerId, chatId, sourceMessageId: answer.id, messageId: replacement.id, editedAt: createdAt, sourceText: answerText(answer.parts), text: edit.text, ...(data !== undefined && { data }) };
         return replacement;
       });
+      answerEdited.notify(editEvent);
+      chatEvents.emit({ type: "answer-edited", ownerId: chat.ownerId, chatId, sourceMessageId: messageId, messageId: replaced.id });
       await branchChanged(chat.ownerId, chatId, "editAnswer", before);
       return replaced;
     },
@@ -4043,6 +4054,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
         // Работа после ходов (закрытие, состояние), затем хуки смены состояния в своём сроке.
         while (afterTurnWork.size > 0) await Promise.allSettled([...afterTurnWork]);
         await stateChanged.drain();
+        await answerEdited.drain();
         await Promise.all([
           // Ходы уже записаны; запись, если где-то ещё идёт, дописывает остаток.
           ...[...flushers].map((flushAnswer) => flushAnswer()),

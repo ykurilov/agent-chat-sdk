@@ -79,6 +79,7 @@ describe("102 createChatServer передаёт службе все её опц�
       afterTurnTimeoutMs: 1000,
       afterTurnAttempts: 2,
       onStateChanged: () => {},
+      onAnswerEdited: () => {},
       onStateChangedTimeoutMs: 1000,
       onStateChangedAttempts: 2,
       onModelChosen: () => {},
@@ -89,12 +90,12 @@ describe("102 createChatServer передаёт службе все её опц�
 
     const create = vi.mocked(core.createChatService);
     create.mockImplementationOnce(() => ({}) as ReturnType<typeof core.createChatService>);
-    createChatServer({ ...base, ...(everyServiceOption as unknown as Partial<ChatHandlerOptions>) });
+    createChatServer({ ...base, answerEditing: true, ...(everyServiceOption as unknown as Partial<ChatHandlerOptions>) });
 
     const received = create.mock.calls[0]![0] as unknown as Record<string, unknown>;
     for (const [key, value] of Object.entries(everyServiceOption)) expect(received[key], key).toBe(value);
     expect(received.registry).toBeDefined();
     expect(received.chatEvents).toBeDefined();
-    for (const serverOnly of ["basePath", "resolveUser"]) expect(received, serverOnly).not.toHaveProperty(serverOnly);
+    for (const serverOnly of ["basePath", "resolveUser", "answerEditing"]) expect(received, serverOnly).not.toHaveProperty(serverOnly);
   });
 });

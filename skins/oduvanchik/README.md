@@ -264,3 +264,8 @@ function ApplicationChat() {
 ## Свои пункты меню вложений
 
 С 0.96.0 `composerOptions.addMenu.items` добавляет пункты над выбором файлов; `fromDevice: { label }` заменяет «Файл»/«Картинка» одной кнопкой, `false` скрывает выбор, отсутствие сохраняет прежнее меню. Варианты `standard`/`extended`. События перетаскивания без файлов доходят до зоны приложения. [Помощник поля и серверные вложения](../../docs/composer-attachments.md).
+
+
+### Правка ответа в обычном чате (с 0.97.0)
+
+Серверный `answerEditing: true` и право `chatCapabilities.answerEditing` включают адрес правки ответа для Next/Hono. В `AgentChat` со скином «Одуванчик» передайте `answerEditor={true}` либо объект с `renderFields({ data, setData, disabled, message })` для своих полей. `onAnswerEdited` получает id исходного и нового ответа, оба текста, владельца, чат и JSON `data` приложения. Прежний пользовательский `answerEditing={{ edits, renderEditor }}` совместим и имеет приоритет. [Контракт, пределы доставки хука и обновление приложения](../../docs/answer-editing.md).

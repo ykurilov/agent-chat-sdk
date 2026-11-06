@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { compactHistory, historyPart, historyMessage, HistoryViewConflict, InvalidHistoryView } from "./history-view";
 import {
+  AnswerEditError,
   ApprovalNotPendingError,
   AttachmentRejectedError,
   BrowserCallNotPendingError,
@@ -45,6 +46,7 @@ import type {
   ReplyChecksSetting,
   ThoughtTitlesSetting,
   StateChangedHandler,
+  AnswerEditedHandler,
   AgentSettings,
   BackgroundTasks,
   BeforeTurnHandler,
@@ -277,6 +279,9 @@ export interface ChatHandlerOptions extends ServiceOptionsOfServer {
    * через `watch`.
    */
   onStateChanged?: StateChangedHandler;
+  /** Opt-in ordinary text-answer edit route, additionally gated by chatCapabilities.answerEditing. */
+  answerEditing?: boolean;
+  onAnswerEdited?: AnswerEditedHandler;
   /** Срок хука смены состояния на все попытки, мс. По умолчанию 30 000. */
   onStateChangedTimeoutMs?: number;
   /** Попыток хука смены состояния. По умолчанию 3. */
@@ -342,6 +347,7 @@ const logValue = (value: string): string => (/[\p{Cc}\u2028\u2029]/u.test(value)
 
 /** Поля сервера, которых у службы нет: всё остальное уходит в `createChatService` как есть. */
 const SERVER_ONLY_OPTIONS = {
+  answerEditing: true,
   basePath: true,
   resolveUser: true,
   chatList: true,
@@ -459,6 +465,17 @@ export function createChatServer(options: ChatHandlerOptions): { handler: ChatHa
   async function route(request: Request, userId: string, segments: string[]): Promise<Response> {
     const [chatId, action, ...rest] = segments;
     const method = request.method.toUpperCase();
+
+    if (options.answerEditing === true && chatId !== undefined && action === "messages" && rest.length === 2 && rest[1] === "answer-edit" && method === "POST") {
+      const body = await readJsonBody(request);
+      if (!body || typeof body !== "object" || Array.isArray(body)) return errorResponse(400, "invalid");
+      const { text, data } = body as Record<string, unknown>;
+      if (typeof text !== "string" || text.length > 100_000) return errorResponse(400, "invalid");
+      // Ordinary chat edits only text; tool output editing remains a sandbox API.
+      if (Object.hasOwn(body, "toolOutputs")) return errorResponse(400, "invalid");
+      const answer = await service.editAnswer(userId, chatId, rest[0]!, { text, ...(data !== undefined && { data: data as Record<string, unknown> }) });
+      return Response.json({ messageId: answer.id });
+    }
 
     if (options.attachments) {
       // Идентификаторы чатов — UUID, поэтому путь `attachments/settings` с чатом не пересекается.
@@ -810,6 +827,10 @@ function describe(error: unknown): string {
 }
 
 function errorToResponse(error: unknown): Response {
+  if (error instanceof AnswerEditError) {
+    const status = error.kind === "chat_not_found" || error.kind === "message_not_found" ? 404 : error.kind === "answer_busy" || error.kind === "not_on_current_branch" ? 409 : 400;
+    return Response.json({ error: { kind: "answer_edit", reason: error.kind } }, { status });
+  }
   if (error instanceof RequestBodyTooLargeError) return errorResponse(413, "too_large");
   if (error instanceof ChatNotFoundError) return errorResponse(404, "not_found");
   if (error instanceof InvalidChatTitleError) return errorResponse(400, "invalid");

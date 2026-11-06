@@ -129,6 +129,8 @@ export interface VoiceCut {
 
 /** Что сообщение несёт в `UIMessage.metadata` по дороге в браузер. */
 export interface ChatMessageMetadata {
+  /** Direct source of a human edit; app annotation remains server-only. */
+  answerEdit?: { sourceMessageId: string; editedAt: string };
   reasoningLevel?: string;
   modelId?: string;
   providerId?: string;

@@ -2071,3 +2071,8 @@ pnpm update "@ykurilov/agent-chat-*" --latest
 С 0.96.0 [публичный контракт вложений приложения](composer-attachments.md) описывает `useComposerHelper`, серверный `addServerFiles`, своё меню «+» Одуванчика и `createAttachments.onFilesAttached`. API необязательные; прежнее подключение вложений сохраняется.
 
 Для браузерных вложений используйте SDK 0.96.1 или новее: исправлена регрессия 0.96.0 с вызовом `window.fetch` при загрузке с устройства и удалении файла. Обёртка только ради привязки `fetch` больше не требуется; пользовательские заголовки и авторизацию сохраняйте.
+
+
+### Правка ответа в обычном чате (с 0.97.0)
+
+Серверный `answerEditing: true` и право `chatCapabilities.answerEditing` включают адрес правки ответа для Next/Hono. В `AgentChat` со скином «Одуванчик» передайте `answerEditor={true}` либо объект с `renderFields({ data, setData, disabled, message })` для своих полей. `onAnswerEdited` получает id исходного и нового ответа, оба текста, владельца, чат и JSON `data` приложения. Прежний пользовательский `answerEditing={{ edits, renderEditor }}` совместим и имеет приоритет. [Контракт, пределы доставки хука и обновление приложения](../docs/answer-editing.md).

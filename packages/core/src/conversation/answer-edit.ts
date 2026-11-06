@@ -2,6 +2,8 @@
 export interface AnswerEdit {
   /** Весь текст ответа после правки. */
   text: string;
+  /** JSON приложения (до 16 КиБ), не передаётся модели. */
+  data?: Record<string, unknown>;
   /** toolCallId → новый результат (JSON до 64 КБ). */
   toolOutputs?: Record<string, unknown>;
 }
@@ -15,4 +17,5 @@ export type AnswerEditErrorKind =
   | "not_on_current_branch"
   | "empty_text"
   | "invalid_tool_output"
-  | "nothing_changed";
+  | "nothing_changed"
+  | "invalid_data";

@@ -95,7 +95,7 @@ export function createStateChanged(context: {
 type StateChangedFailure = { reason: string; error?: unknown };
 
 /** Попытки в пределах срока; удалось — `undefined`, иначе — причина и исходное исключение, если оно было. */
-async function callWithRetries(handler: StateChangedHandler, input: StateChangedInput, timeoutMs: number, attempts: number): Promise<StateChangedFailure | undefined> {
+export async function callWithRetries<Input>(handler: (input: Input) => void | Promise<void>, input: Input, timeoutMs: number, attempts: number): Promise<StateChangedFailure | undefined> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let expired = false;
   const deadline = new Promise<StateChangedFailure>((resolve) => {

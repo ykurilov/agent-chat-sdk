@@ -170,3 +170,8 @@ docs/getting-started.md, «Значки шагов и заголовки раз�
 ошибка попадает в `logError(message, error)` и не отменяет запись. Встроенный плагин предоставляет
 приложению `createAttachments.onFilesAttached` с проверенными записями `StoredAttachment[]`.
 Это фоновое уведомление без долговечной очереди. [Контракт](../../docs/composer-attachments.md).
+
+
+### Правка ответа в обычном чате (с 0.97.0)
+
+Серверный `answerEditing: true` и право `chatCapabilities.answerEditing` включают адрес правки ответа для Next/Hono. В `AgentChat` со скином «Одуванчик» передайте `answerEditor={true}` либо объект с `renderFields({ data, setData, disabled, message })` для своих полей. `onAnswerEdited` получает id исходного и нового ответа, оба текста, владельца, чат и JSON `data` приложения. Прежний пользовательский `answerEditing={{ edits, renderEditor }}` совместим и имеет приоритет. [Контракт, пределы доставки хука и обновление приложения](../../docs/answer-editing.md).

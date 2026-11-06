@@ -83,6 +83,8 @@ export interface VoiceCut {
 }
 
 export interface ChatMessageMetadata {
+  /** Direct source of a human edit; app annotation remains server-only. */
+  answerEdit?: { sourceMessageId: string; editedAt: string };
   /** Payload omitted by the browser-only history view; indices and part identity are unchanged. */
   historyRevision?: string;
   historyDetails?: Record<number, import("./history-view").HistoryPartReference>;

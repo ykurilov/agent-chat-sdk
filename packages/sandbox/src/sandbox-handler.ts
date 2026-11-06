@@ -49,6 +49,7 @@ const answerEditStatus: Record<AnswerEditErrorKind, number> = {
   empty_text: 400,
   invalid_tool_output: 400,
   nothing_changed: 400,
+  invalid_data: 400,
 };
 
 /**

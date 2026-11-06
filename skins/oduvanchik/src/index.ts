@@ -1,6 +1,7 @@
 import type { ChatListSkin, ChatSkin, MemorySkin } from "@ykurilov/agent-chat-react";
 import type { AgentPanelSkin } from "@ykurilov/agent-chat-react/panel";
 import { OduvanchikAgentPanel, OduvanchikAgentPanelLauncher } from "./agent-panel";
+import { OduvanchikAnswerTextEditor } from "./answer-text-editor";
 import { OduvanchikAgentMessage } from "./agent-message";
 import { OduvanchikBranchSwitcher } from "./branch-switcher";
 import { OduvanchikAgentText } from "./agent-text";
@@ -44,6 +45,7 @@ export const oduvanchikSkin: ChatSkin & ChatListSkin & AgentPanelSkin = {
   UserMessage: OduvanchikUserMessage,
   BranchSwitcher: OduvanchikBranchSwitcher,
   MessageEditor: OduvanchikMessageEditor,
+  AnswerTextEditor: OduvanchikAnswerTextEditor,
   AgentMessage: OduvanchikAgentMessage,
   AgentText: OduvanchikAgentText,
   Reasoning: OduvanchikReasoning,
@@ -85,6 +87,7 @@ export const oduvanchikMemorySkin: MemorySkin = {
 };
 
 export {
+  OduvanchikAnswerTextEditor,
   OduvanchikAgentMessage,
   OduvanchikAgentPanel,
   OduvanchikAgentPanelLauncher,

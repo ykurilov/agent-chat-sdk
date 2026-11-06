@@ -9,6 +9,7 @@ export type ChatTurnTrigger = "human" | "notice";
 
 /** События чата вне потока ответа: по ним открытая вкладка и пакеты расширений узнают о ходах и задачах. */
 export type ChatEvent =
+  | { type: "answer-edited"; ownerId: string; chatId: string; sourceMessageId: string; messageId: string }
   | {
       type: "turn-started";
       ownerId: string;

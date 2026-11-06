@@ -186,6 +186,8 @@ describe("словарь надписей", () => {
       answerUndelivered: "Не доставлено",
       toolOutputEdited: "Результат изменён",
       editAnswer: "Изменить ответ",
+      answerEditSave: "Сохранить",
+      answerEditFailed: "Не удалось сохранить правку. Текст остался в редакторе. Повторите попытку.",
       steeringPending: "Агент учтёт на следующем шаге",
       retry: "Повторить",
       reconnecting: "Переподключаемся…",

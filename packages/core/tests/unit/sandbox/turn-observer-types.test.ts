@@ -67,7 +67,7 @@ describe("типы ядра для журнала песочницы и прав
     expect(textOnly.toolOutputs).toBeUndefined();
   });
 
-  it("AnswerEditErrorKind — восемь отказов правки ответа", () => {
+  it("AnswerEditErrorKind — отказы правки ответа", () => {
     expectTypeOf<AnswerEditErrorKind>().toEqualTypeOf<
       | "chat_not_found"
       | "message_not_found"
@@ -76,7 +76,7 @@ describe("типы ядра для журнала песочницы и прав
       | "not_on_current_branch"
       | "empty_text"
       | "invalid_tool_output"
-      | "nothing_changed"
+      | "nothing_changed" | "invalid_data"
     >();
     expect(true).toBe(true);
   });

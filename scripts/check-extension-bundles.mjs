@@ -12,7 +12,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const extensionMarks = {
-  песочница: ["Вернуть боевую", "Открыть журнал", "answer-edit", "journal/calls"],
+  // answer-edit is also an ordinary chat API now; journal/blob payloads remain sandbox-only.
+  песочница: ["Вернуть боевую", "Открыть журнал", "journal/blobs", "journal/calls"],
   мессенджеры: ["Откройте ссылку в мессенджере", "Открыть в мессенджере"],
   навыки: ["Выберите навык слева или создайте новый", "Агент ещё не загружал этот навык"],
 };

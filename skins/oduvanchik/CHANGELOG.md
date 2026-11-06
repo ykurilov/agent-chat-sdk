@@ -6,6 +6,21 @@
 - Обновление приложения: обновить пакеты SDK одной версией после выпуска, пересобрать и убрать временные подмены значков. API и CSS-импорты прежние, миграций нет.
 
 
+## 0.97.0
+
+### Minor Changes
+
+- ed2b0d0: Штатная правка текста готового ответа в обычном чате Next/Hono и «Одуванчика», включаемая приложением. Дополнительные поля передаются как JSON data; onAnswerEdited получает прежний/новый текст, оба id, владельца и чат. Происхождение правки сохраняется без передачи аннотации модели или браузеру.
+  
+  Как обновить приложение: включить серверный answerEditing: true и право chatCapabilities.answerEditing, передать AgentChat.answerEditor; для своих полей - renderFields, для журнала - onAnswerEdited. Старый пользовательский answerEditing совместим. Подробнее docs/answer-editing.md; хук повторяется в процессе, долговечная запись доступна для сверки после аварии.
+
+### Patch Changes
+
+- Updated dependencies [ed2b0d0]
+  - @ykurilov/agent-chat-react@0.97.0
+  - @ykurilov/agent-chat-flows@0.97.0
+  - @ykurilov/agent-chat-sandbox@0.97.0
+
 ## 0.96.1
 
 ### Patch Changes

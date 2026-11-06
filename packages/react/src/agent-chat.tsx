@@ -24,6 +24,8 @@ import { useMessageEditing } from "./message-editing/use-message-editing";
 import type { MessageFeedHandle } from "./message-feed";
 import type { AgentChatExtensions, NoticeLines } from "./agent-chat-extensions";
 import { answerEdited } from "./answer-editing/answer-editing";
+import { AnswerTextEditor } from "./answer-editing/answer-text-editor";
+import type { AnswerTextEditing } from "./answer-editing/answer-editing";
 import type { AnswerEditing, AnswerEditMark } from "./answer-editing/answer-editing";
 import { createDiagramRenders } from "./diagrams/diagram-renders";
 import type { DiagramRenders } from "./diagrams/diagram-renders";
@@ -115,6 +117,8 @@ export interface AgentChatProps extends AgentChatExtensions {
   initialDraft?: string;
   /** Правка ответов агента (песочница): кнопка правки у законченных ответов, отметки «изменено», редактор страницы. Нет — ответы не правятся. */
   answerEditing?: AnswerEditing;
+  /** Built-in ordinary text editor; server also opts in with answerEditing: true. Custom answerEditing takes precedence. */
+  answerEditor?: true | AnswerTextEditing;
   /** Сообщения текущей ветки и занятость чата; вызывается при каждой смене. Для панелей рядом с чатом, например журнала песочницы. */
   onFeedChange?: (feed: { messages: AgentChatMessage[]; busy: boolean; change: FeedChange }) => void;
   /** Свои кнопки под ответами агента («Нравится», «В заметки»): рисует скин в ряду действий ответа. Массив держите постоянным. */
@@ -188,7 +192,7 @@ function SubjectAgentChat(props: AgentChatProps & { subject: string }) {
   return <SubjectChatLoading skin={props.skin} />;
 }
 
-function AgentChatBody({ history, header, completion, composerOptions, api, chatId, skin, liveness, voice, voiceDialog, attachments: attachmentsPlugin, spendingLimits, onBusyChange, appBridge, initialDraft, answerEditing, onFeedChange, messageActions, onTurnFinished, onTurnRefused, composerActions, onAppEvent, onChatAccessChange, onStateChange, onModelChosen, onChatUnavailable, reloadKey, steering, widgets, diagrams, liveDemos, images, videos, appEvents, workView, stepPhrases, noticeLines, answerDetails }: AgentChatProps & { chatId: string }) {
+function AgentChatBody({ history, header, completion, composerOptions, api, chatId, skin, liveness, voice, voiceDialog, attachments: attachmentsPlugin, spendingLimits, onBusyChange, appBridge, initialDraft, answerEditing, answerEditor, onFeedChange, messageActions, onTurnFinished, onTurnRefused, composerActions, onAppEvent, onChatAccessChange, onStateChange, onModelChosen, onChatUnavailable, reloadKey, steering, widgets, diagrams, liveDemos, images, videos, appEvents, workView, stepPhrases, noticeLines, answerDetails }: AgentChatProps & { chatId: string }) {
   const spendingNoticeId = useId();
   const closedNoticeId = useId();
   const chat = useAgentChat({
@@ -327,6 +331,10 @@ function AgentChatBody({ history, header, completion, composerOptions, api, chat
   const forkByMessage = useMemo(() => new Map(chat.forks.map((fork) => [fork.messageId, fork])), [chat.forks]);
   /** Ответ агента, на месте которого стоит редактор страницы. */
   const [editingAnswerId, setEditingAnswerId] = useState<string | null>(null);
+  useEffect(() => {
+    // Saving replaces this message. Returning to its old branch must not reopen the editor.
+    if (editingAnswerId !== null && !chat.messages.some(message => message.id === editingAnswerId)) setEditingAnswerId(null);
+  }, [editingAnswerId, chat.messages]);
   const saving = useRef(false);
   const composerValue = useRef(chat.value);
   composerValue.current = chat.value;
@@ -437,6 +445,8 @@ function AgentChatBody({ history, header, completion, composerOptions, api, chat
     [backgroundTaskList, decideTask, labels, taskDecisions],
   );
   // Ввод в поле не должен трогать ленту: renderMessage меняется только вместе с тем, что рисует.
+  const answerEditingEnabled = Boolean(answerEditing || (answerEditor && skin.AnswerTextEditor));
+  const answerEditorOptions = answerEditor === true ? undefined : answerEditor;
   const renderMessage = useCallback(
     (message: AgentChatMessage, index: number) => {
       if (correctionIds.has(message.id)) return <UserMessage skin={skin} message={message} describe={describeAttachments} branchSwitcher={undefined} pending />;
@@ -486,16 +496,18 @@ function AgentChatBody({ history, header, completion, composerOptions, api, chat
               {...(canEdit && { onEdit: () => editing.open(message.id) })}
             />
           )
-        ) : editingAnswerId === message.id && answerEditing ? (
+        ) : editingAnswerId === message.id && answerEditingEnabled ? (
           <>
-            {answerEditing.renderEditor({
+            {answerEditing ? answerEditing.renderEditor({
               message,
               onSaved: (newMessageId) => {
                 setEditingAnswerId(null);
                 void switchBranch(newMessageId);
               },
               onCancel: () => setEditingAnswerId(null),
-            })}
+            }) : <AnswerTextEditor key={`${chatId}:${message.id}`} skin={skin} message={message} options={answerEditorOptions ?? {}}
+              save={(text, data, signal) => chat.editAnswer(message.id, text, data, signal)}
+              onSaved={() => setEditingAnswerId(null)} onCancel={() => setEditingAnswerId(null)} />}
           </>
         ) : (
           <AgentAnswer
@@ -526,8 +538,8 @@ function AgentChatBody({ history, header, completion, composerOptions, api, chat
               suggestedReplies: <skin.SuggestedReplies replies={suggestedReplies} onPick={pickReply} disabled={exhaustedSpending} />,
             })}
             {...(index === lastIndex && canRegenerate && { onRegenerate: regenerate })}
-            {...(answerEditing && { editMark: answerEditing.edits.get(message.id) })}
-            {...(answerEditing && capabilities.answerEditing && !busy && (message.metadata?.status ?? "complete") === "complete" && {
+            {...((answerEditing || answerEditorOptions?.edits) && { editMark: (answerEditing?.edits ?? answerEditorOptions?.edits)?.get(message.id) })}
+            {...(answerEditingEnabled && capabilities.answerEditing && !busy && (message.metadata?.status ?? "complete") === "complete" && {
               onEdit: () => { if (!message.metadata?.historyRevision) setEditingAnswerId(message.id); else void chat.loadHistoryMessage(message.id).then(ready => { if (ready) setEditingAnswerId(message.id); }); },
             })}
             {...(messageActions && messageActions.length > 0 && {
@@ -564,6 +576,10 @@ function AgentChatBody({ history, header, completion, composerOptions, api, chat
     [
       actionRuns,
       answerEditing,
+      answerEditingEnabled,
+      answerEditorOptions,
+      chat.editAnswer,
+      chatId,
       approvalFailure,
       approvalPendingId,
       busy,

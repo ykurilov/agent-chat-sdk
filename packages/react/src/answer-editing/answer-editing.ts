@@ -25,6 +25,18 @@ export interface AnswerEditing {
   renderEditor: (slot: AnswerEditorSlot) => ReactNode;
 }
 
+/** Additional application fields of the built-in text editor. Values go to onAnswerEdited, never to the model. */
+export interface AnswerEditorFields {
+  message: AgentChatMessage;
+  data: Record<string, unknown>;
+  setData: (data: Record<string, unknown>) => void;
+  disabled: boolean;
+}
+export interface AnswerTextEditing {
+  renderFields?: (fields: AnswerEditorFields) => ReactNode;
+  edits?: ReadonlyMap<string, AnswerEditMark>;
+}
+
 /** Изменён ли ответ человеком хоть в чём-то. */
 export function answerEdited(mark: AnswerEditMark | undefined): boolean {
   return mark !== undefined && (mark.textEdited || mark.editedToolCallIds.length > 0);
