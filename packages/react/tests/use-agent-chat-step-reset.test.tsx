@@ -38,6 +38,29 @@ describe("шаг ответа начат заново у другого пров
     expect(result.current.messages.at(-1)!.parts.map((part) => part.type)).toEqual(["step-start", "text"]);
   });
 
+  it("replyChecks заменяет ранний текст, сохраняя инструмент и последующую часть на месте", async () => {
+    const server = fakeChatServer();
+    const { result } = renderChatHook(server);
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    act(() => result.current.setValue("Вопрос"));
+    act(() => result.current.submit());
+    await waitFor(() => expect(server.streams[0]).toBeDefined());
+    const stream = server.streams[0]!;
+    [{ type: "start", messageId: "a1" }, { type: "start-step" },
+      { type: "text-start", id: "a" }, { type: "text-delta", id: "a", delta: "Actually" }, { type: "text-end", id: "a" },
+      { type: "tool-input-available", toolCallId: "c", toolName: "lookup", input: {} },
+      { type: "tool-output-available", toolCallId: "c", output: "ok" }, { type: "finish-step" }, { type: "start-step" },
+      { type: "text-start", id: "b" }, { type: "text-delta", id: "b", delta: "Готово" }, { type: "text-end", id: "b" }].forEach((chunk) => stream.push(chunk));
+    await waitFor(() => expect(textOf(result.current.messages.at(-1)!.parts)).toBe("ActuallyГотово"));
+    stream.push({ type: "data-reply-text", data: { index: 0, text: "Сейчас" } });
+    await waitFor(() => expect(textOf(result.current.messages.at(-1)!.parts)).toBe("СейчасГотово"));
+    expect(result.current.messages.at(-1)!.parts.filter((part) => part.type === "tool-lookup")).toMatchObject([{ toolCallId: "c", state: "output-available", output: "ok" }]);
+    expect(result.current.messages.at(-1)!.parts.some((part) => part.type === "data-reply-text")).toBe(false);
+    stream.push({ type: "finish-step" });
+    stream.push({ type: "finish" });
+    stream.end();
+  });
+
   it("«Повторить» и «Ответить заново» смотрят на ответ без стёртого: стёрт весь текст, запасной не написал ничего — ответ пустой", async () => {
     const server = fakeChatServer({ history: [{ id: "u0", role: "user", parts: [{ type: "text", text: "Было" }] }] });
     const { result } = renderChatHook(server);

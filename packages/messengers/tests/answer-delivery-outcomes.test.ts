@@ -103,6 +103,24 @@ describe("исход доставки ответа (061)", () => {
     expect(outcome.unsent).toBe("never");
   });
 
+  it("веб-ход с replyChecks: ранняя часть заменена, в бот ушёл только проверенный текст", async () => {
+    const { fake, settled } = setup({ liveText: "edit" });
+    const chunks: AnswerChunk[] = [
+      { type: "start", messageId: "checked" }, { type: "start-step" },
+      { type: "text-start", id: "intro" }, { type: "text-delta", id: "intro", delta: "Actually, это важно." }, { type: "text-end", id: "intro" },
+      { type: "tool-input-available", toolCallId: "c", toolName: "lookup", input: {} }, { type: "tool-output-available", toolCallId: "c", output: "ok" },
+      { type: "finish-step" }, { type: "start-step" },
+      { type: "text-start", id: "final" }, { type: "text-delta", id: "final", delta: "Готово." }, { type: "text-end", id: "final" }, { type: "finish-step" },
+      { type: "data-reply-text", data: { index: 0, text: "На самом деле это важно." } },
+      { type: "finish" },
+    ];
+    const outcome = await settled(streamOf(chunks), { holdText: true });
+    expect(outcome.text).toBe("На самом деле это важно.\n\nГотово.");
+    expect(fake.texts()).toEqual(["На самом деле это важно.\n\nГотово."]);
+    expect(fake.drafts).toEqual([]);
+    expect(fake.edits).toEqual([]);
+  });
+
   it("`holdText`: ни черновика, ни правок по ходу — только итог, уже после сброса шага", async () => {
     const { fake, settled } = setup({ liveText: "edit" });
     const draft = "Пpивет! Это черновик ответа, который проверка перепишет целиком и полностью.";

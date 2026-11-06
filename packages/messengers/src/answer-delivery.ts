@@ -109,6 +109,12 @@ export async function deliverAnswer(input: DeliverAnswerInput): Promise<Delivery
   let text = "";
   /** Длина текста на начале каждого шага: каждый `data-step-reset` стирает последний шаг до его начала. */
   const stepTextStarts: number[] = [];
+  // Текстовые части отдельно: веб-ход может исправить раннюю часть перед доставкой в бот.
+  const textParts: Array<{ id?: string; text: string }> = [];
+  const stepPartStarts: number[] = [];
+  let currentTextPart: { id?: string; text: string } | undefined;
+  const joinedText = (parts = textParts): string => parts.reduce((value, part) =>
+    !part.text ? value : value + (value && !value.endsWith("\n\n") ? "\n\n" : "") + part.text, "");
   /**
    * Ход помечен `data-steps-may-reset`: идущий шаг может стереться. Тогда постоянными сообщениями уходят только части,
    * готовые до начала шага (`committable`), остальное — живым сообщением до конца шага.
@@ -337,12 +343,32 @@ export async function deliverAnswer(input: DeliverAnswerInput): Promise<Delivery
       case "start":
         if (chunk.messageId) messageId = chunk.messageId;
         return false;
+      case "text-start":
+        currentTextPart = { id: chunk.id, text: "" };
+        textParts.push(currentTextPart);
+        return false;
+      case "data-reply-text": {
+        const data = chunk.data as { index?: unknown; text?: unknown } | undefined;
+        if (!data || !Number.isSafeInteger(data.index) || (data.index as number) < 0 || typeof data.text !== "string") return false;
+        const part = textParts[data.index as number];
+        if (!part) return false;
+        part.text = data.text;
+        text = joinedText();
+        for (let index = 0; index < stepTextStarts.length; index += 1) stepTextStarts[index] = joinedText(textParts.slice(0, stepPartStarts[index])).length;
+        update();
+        return false;
+      }
       case "text-delta": {
         if (!chunk.delta) return false;
         if (chunk.id !== textPartId) {
           if (text && !text.endsWith("\n\n")) text += "\n\n";
           textPartId = chunk.id;
         }
+        if (!currentTextPart || currentTextPart.id !== chunk.id) {
+          currentTextPart = { id: chunk.id, text: "" };
+          textParts.push(currentTextPart);
+        }
+        currentTextPart.text += chunk.delta;
         text += chunk.delta;
         status = null;
         update();
@@ -353,6 +379,8 @@ export async function deliverAnswer(input: DeliverAnswerInput): Promise<Delivery
         return false;
       case "start-step":
         stepTextStarts.push(text.length);
+        stepPartStarts.push(textParts.length);
+        currentTextPart = undefined;
         if (stepsMayReset) committable = Math.max(chunksOf(text).length - 1, 0);
         return false;
       case "finish-step":
@@ -361,6 +389,8 @@ export async function deliverAnswer(input: DeliverAnswerInput): Promise<Delivery
         if (stepsMayReset) update();
         return false;
       case "data-step-reset": {
+        textParts.length = stepPartStarts.pop() ?? 0;
+        currentTextPart = undefined;
         text = text.slice(0, stepTextStarts.pop() ?? 0).replace(/\n\n$/, "");
         textPartId = undefined;
         // Живое сообщение или черновик показывали стёртое, а показать на его месте нечего — фраза, что ответ пишется заново.

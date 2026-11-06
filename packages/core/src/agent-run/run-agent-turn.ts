@@ -72,7 +72,7 @@ import { chunksForParts } from "./parts-to-chunks";
 import { cutGarbledTail, createGarbledTailGuard, findGarbledTail } from "./garbled-tail";
 import { CORE_SERVICE_BLOCKS, createForgedBlockGuard, lastQuestionOf } from "./forged-blocks";
 import type { ServiceBlockFormat } from "./forged-blocks";
-import { checkedReplyText, createHeldReplyText, createReplyRewrite, createSeenTexts, createShownSteps, knownTextsOf, lastTextIndex, noticeGroupsOf, replacementChunks, withTextAt } from "./reply-checks";
+import { checkedReplyText, createHeldReplyText, createReplyRewrite, createSeenTexts, createShownSteps, knownTextsOf, noticeGroupsOf, replacementChunks, withTextAt } from "./reply-checks";
 import type { SeenTexts, TurnReplyChecks } from "./reply-checks";
 import { erasableStepStart, STEP_RESET_PART_TYPE, STEPS_MAY_RESET_PART_TYPE } from "./step-reset";
 import type { NextAttempt, ProviderFallbackSetting } from "./next-attempt";
@@ -268,8 +268,8 @@ export interface AgentTurnInput {
    */
   thoughtTitles?: TurnThoughtTitlesSource;
   /**
-   * Проверки законченного ответа перед записью (`createChatService({ replyChecks })`): правят последнюю текстовую часть.
-   * Готовый ответ (`reply`) не проверяется. Веб-чат печатает как обычно и заменяет шаг исправленным (`replace`) или
+   * Проверки законченного ответа перед записью (`createChatService({ replyChecks })`): правят каждую видимую текстовую часть.
+   * Готовый ответ (`reply`) не проверяется. Веб-чат печатает как обычно и заменяет текст исправленным (`replace`) или
    * придерживает текст до проверки (`hold`); мессенджеры придерживают всегда. Нет — ход и поток прежние.
    */
   replyChecks?: TurnReplyChecks;
@@ -465,7 +465,6 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
   // Чужой текст (вызов с пометкой `externalContent`, итог помощника с ней) — клиенту сразу, раньше следующего текста.
   const externalContent = createExternalContentWatch();
   const emitShown = (chunk: UIMessageChunk): void => {
-    shownSteps?.observe(chunk);
     screenSteps.observe(chunk);
     emitRaw(chunk);
     if (turnInput.liveDemos && externalContent.observe(chunk)) emitRaw(externalContentChunk());
@@ -474,7 +473,6 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
   const replyChecks = turnInput.reply === undefined ? turnInput.replyChecks : undefined;
   const seenTexts = replyChecks && createSeenTexts();
   const heldText = replyChecks && (replyChecks.web === "hold" || (turnInput.channel ?? "web") !== "web") ? createHeldReplyText() : undefined;
-  const shownSteps = replyChecks && createShownSteps();
   // Шаги на экране — для замены ответа, обрезанного по срыву в кашу.
   const screenSteps = createShownSteps();
   const emitToClient = (chunk: UIMessageChunk): void => {
@@ -1097,7 +1095,7 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
     if (garbled) {
       logError(`[хвост обрезан] ${garbleLog} признаки=${garbled.signs.join(",")} знаков=${garbled.removedChars} вызовов_не_запущено=${droppedCalls}`);
       const cut = garbled.parts.filter((part) => !garbledTail.isDroppedCall(part));
-      if (!takeover.signal.aborted) showCutAnswer(parts, cut, garbled.textIndex, { heldText, screenSteps, providerId: answeredProviderId, emit: emitShown });
+      if (!takeover.signal.aborted && !heldText) showCutAnswer(parts, cut, garbled.textIndex, { screenSteps, providerId: answeredProviderId, emit: emitShown });
       parts = cut;
     } else if (findGarbledTail(garbledTail.forCut(parts))) logError(`[хвост не обрезан: ответ остался бы пустым] ${garbleLog}`);
     const status: FinalAnswerStatus = input.abortSignal.aborted
@@ -1111,32 +1109,32 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
     // «Стоп», сбой): текст человеку не ушёл. Ход после ответа человека новый — просьба туда не переходит.
     if (endTurns.hasText()) logError(`[endTurn] чат=${input.chatId} готовый текст не показан: ход кончился со статусом ${status}`);
     // Законченный ответ — через проверки до записи: исправленный текст пишется, уходит в итог хода и на экран.
-    const textIndex = lastTextIndex(parts);
-    if (replyChecks && status === "complete" && textIndex !== -1 && !takeover.signal.aborted) {
-      const original = (parts[textIndex] as { text: string }).text;
-      const checked = await checkedReplyText({
-        checks: replyChecks.checks,
-        text: original,
-        ownerId: input.ownerId ?? "",
-        chatId: input.chatId,
-        messageId,
-        seenTexts: [...(seenTexts?.list() ?? []), ...(await knownTextsOf(replyChecks.knownTexts, { ownerId: input.ownerId ?? "", chatId: input.chatId }, logError))],
-        rewrite: createReplyRewrite({ ...input, providerId: answeredProviderId, messageId, logError }),
-        logError,
-      });
-      // Переписанный текст идёт мимо потока хода: служебные блоки в нём вырезаются здесь.
-      const text = checked === original ? checked : withoutForgedBlocksInRewrite(forgedBlocks.cutText(checked), checked, (name) => logError(`[служебный блок вырезан] тег=${name} ${garbleLog}`));
-      if (text !== original) {
-        const corrected = withTextAt(parts, textIndex, text);
-        if (heldText?.holdsText()) for (const chunk of heldText.release(text)) emitShown(chunk);
-        else {
-          const resets = shownSteps?.resetsToLastText();
-          for (const chunk of (resets && replacementChunks(corrected, textIndex, resets, answeredProviderId)) || []) emitToClient(chunk);
+    if (replyChecks && status === "complete" && parts.some((part) => part.type === "text") && !takeover.signal.aborted) {
+      const seen = [...(seenTexts?.list() ?? []), ...(await knownTextsOf(replyChecks.knownTexts, { ownerId: input.ownerId ?? "", chatId: input.chatId }, logError))];
+      const rewrite = createReplyRewrite({ ...input, providerId: answeredProviderId, messageId, logError });
+      let textIndex = 0;
+      for (const [index, part] of parts.entries()) {
+        if (part.type !== "text") continue;
+        const original = part.text;
+        const checked = await checkedReplyText({
+          checks: replyChecks.checks, text: original, ownerId: input.ownerId ?? "", chatId: input.chatId,
+          messageId, seenTexts: seen, rewrite, logError,
+        });
+        if (takeover.signal.aborted) break;
+        const text = checked === original ? checked : withoutForgedBlocksInRewrite(forgedBlocks.cutText(checked), checked, (name) => logError(`[служебный блок вырезан] тег=${name} ${garbleLog}`));
+        if (text !== original) {
+          parts = withTextAt(parts, index, text);
+          // Заменяется только текст, без сброса шагов и повторной выдачи карточек инструментов.
+          if (!heldText) emitShown({ type: "data-reply-text", data: { index: textIndex, text } });
         }
-        parts = corrected;
+        textIndex += 1;
       }
     }
-    for (const chunk of heldText?.release() ?? []) emitShown(chunk);
+    for (const chunk of heldText?.releaseParts(parts) ?? []) emitShown(chunk);
+    // В hold текст ещё не показывался: обрезку применяем после выпуска исправленных частей.
+    if (garbled && heldText && !takeover.signal.aborted) {
+      showCutAnswer(titledParts, parts, garbled.textIndex, { screenSteps, providerId: answeredProviderId, emit: emitShown });
+    }
     // Расход хода: все попытки, вместе с оценкой шага, оборванного «Стопом» или сбоем.
     turnUsage.closeAttempt();
     // В сообщении расход копится по паузам и продолжениям, а в журнал расходов идёт только этот ход: до паузы он уже записан.
@@ -2057,15 +2055,14 @@ export const FINISH_RETRY_PAUSES_MS: readonly number[] = [1_000, 3_000];
  * повторяется по тем же паузам; все попытки оборвались — итог проверяется ещё раз в конце.
  */
 /**
- * Экран после обрезки срыва: придержанный последний текст уходит уже обрезанным; показанное — заменяется шагами от
- * шага текста `anchor` — последнего оставшегося до места срыва (как замена исправленного ответа).
+ * Экран после обрезки срыва: показанное заменяется шагами от шага текста `anchor` —
+ * последнего оставшегося до места срыва. Hold вызывается после выпуска исправленного текста.
  */
 function showCutAnswer(
   original: AgentChatMessage["parts"],
   cut: AgentChatMessage["parts"],
   anchor: number,
   screen: {
-    heldText: ReturnType<typeof createHeldReplyText> | undefined;
     screenSteps: ReturnType<typeof createShownSteps>;
     providerId: string;
     emit: (chunk: UIMessageChunk) => void;
@@ -2073,13 +2070,6 @@ function showCutAnswer(
 ): void {
   if (anchor === -1) return;
   const textsAfter = original.slice(anchor + 1).filter((part) => part.type === "text").length;
-  if (screen.heldText?.holdsText()) {
-    if (textsAfter === 0 && lastTextIndex(cut) === anchor) {
-      for (const chunk of screen.heldText.release((cut[anchor] as { text: string }).text)) screen.emit(chunk);
-      return;
-    }
-    for (const chunk of screen.heldText.release()) screen.emit(chunk);
-  }
   const resets = screen.screenSteps.resetsToText(textsAfter);
   for (const chunk of (resets && replacementChunks(cut, anchor, resets, screen.providerId)) || []) screen.emit(chunk);
 }

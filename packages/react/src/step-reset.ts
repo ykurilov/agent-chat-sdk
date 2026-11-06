@@ -4,11 +4,25 @@
  */
 export const STEP_RESET_PART_TYPE = "data-step-reset";
 
-/** Части ответа без стёртых шагов: каждая часть `data-step-reset` убирает себя и всё от последней `step-start` перед ней. Сброса нет — тот же массив. */
+/** Части ответа без стёртых шагов и с исправлениями текста: `data-step-reset` убирает последний шаг;
+ * `data-reply-text` меняет текст по порядковому номеру среди оставшихся текстовых частей, сохраняя карточки. Сброса нет — тот же массив. */
 export function withoutResetSteps<Part extends { type: string }>(parts: readonly Part[]): Part[] {
-  if (!parts.some((part) => part.type === STEP_RESET_PART_TYPE)) return parts as Part[];
+  if (!parts.some((part) => part.type === STEP_RESET_PART_TYPE || part.type === "data-reply-text")) return parts as Part[];
   const kept: Part[] = [];
   for (const part of parts) {
+    if (part.type === "data-reply-text") {
+      const data = (part as { data?: { index?: unknown; text?: unknown } }).data;
+      if (data && Number.isSafeInteger(data.index) && (data.index as number) >= 0 && typeof data.text === "string") {
+        let index = 0;
+        for (let at = 0; at < kept.length; at += 1) {
+          if (kept[at]!.type === "text" && index++ === data.index) {
+            kept[at] = { ...kept[at]!, text: data.text };
+            break;
+          }
+        }
+      }
+      continue;
+    }
     if (part.type !== STEP_RESET_PART_TYPE) {
       kept.push(part);
       continue;

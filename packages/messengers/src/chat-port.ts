@@ -9,6 +9,7 @@ export interface AnswerChunk {
   type: string;
   id?: string;
   delta?: string;
+  data?: unknown;
   messageId?: string;
   toolCallId?: string;
   toolName?: string;

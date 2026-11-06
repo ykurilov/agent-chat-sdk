@@ -15,8 +15,8 @@ import { chunksForParts } from "./parts-to-chunks";
 import type { KnownTexts, KnownTextsContext, ReplyCheck, ReplyChecksWebMode } from "./reply-check-types";
 import { STEP_RESET_PART_TYPE } from "./step-reset";
 
-// Проверка законченного ответа перед записью (`createChatService({ replyChecks })`): цепочка проверок над последней
-// текстовой частью, что агент видел за ход, переписка моделью хода и замена текста на экране.
+// Проверка законченного ответа перед записью (`createChatService({ replyChecks })`): цепочка проверок над каждой
+// видимой текстовой частью, что агент видел за ход, переписка моделью хода и замена текста на экране.
 
 type MessagePart = AgentChatMessage["parts"][number];
 
@@ -287,58 +287,41 @@ export function replacementChunks(corrected: readonly MessagePart[], index: numb
   return [...erase, ...chunksForParts(corrected.slice(stepStart))];
 }
 
-/** Кусок, после которого придержанный текст уже не последний: ход идёт дальше. */
-const continuesAnswer = (chunk: UIMessageChunk): boolean =>
-  chunk.type === "start-step" ||
-  chunk.type.startsWith("tool-") ||
-  chunk.type.startsWith("reasoning-") ||
-  chunk.type.startsWith("source-") ||
-  chunk.type === "file";
-
 /**
- * Придержка текста до проверки (`web: "hold"` и мессенджеры): от начала текста куски ждут, пока не станет ясно, что
- * ход идёт дальше (вызов, новый шаг, рассуждение) — тогда уходят как были, порядок прежний. Конец хода — `release`:
- * последний текст уходит уже проверенным. Сброс шага выбрасывает придержанное: оно из стёртого шага.
+ * Hold задерживает поток от первого текста до конца проверки, включая последующие инструменты и шаги.
+ * Порядок частей сохраняется; стёртый шаг удаляется из буфера. Временные команды клиенту идут сразу,
+ * иначе browserTools ожидал бы свою же отложенную команду. До первого текста события тоже идут сразу.
  */
 export function createHeldReplyText() {
   let held: UIMessageChunk[] | null = null;
   let released = false;
+  const release = (values: readonly string[]): UIMessageChunk[] => {
+    released = true;
+    const out = held ?? [];
+    held = null;
+    let index = 0;
+    return out.flatMap((chunk): UIMessageChunk[] => {
+      if (chunk.type === "text-delta") return [];
+      if (chunk.type === "text-start") return [chunk, { type: "text-delta", id: chunk.id, delta: values[index++] ?? "" }];
+      return [chunk];
+    });
+  };
   return {
     pass(chunk: UIMessageChunk): UIMessageChunk[] {
-      if (released) return [chunk];
-      if (chunk.type === STEP_RESET_PART_TYPE) {
+      if (released || ("transient" in chunk && chunk.transient)) return [chunk];
+      if (chunk.type === STEP_RESET_PART_TYPE && held) {
+        const start = held.findLastIndex((part) => part.type === "start-step");
+        if (start !== -1) { held.length = start; return []; }
         held = null;
         return [chunk];
       }
-      if (held) {
-        if (!continuesAnswer(chunk)) {
-          held.push(chunk);
-          return [];
-        }
-        const out = [...held, chunk];
-        held = null;
-        return out;
-      }
+      if (held) { held.push(chunk); return []; }
       if (chunk.type !== "text-start") return [chunk];
       held = [chunk];
       return [];
     },
-    /** Придержан последний текст ответа. */
-    holdsText: (): boolean => held !== null,
-    /** Конец хода: придержанное — сейчас, последний текст — `text`, если он задан. Дальше куски идут сразу. */
-    release(text?: string): UIMessageChunk[] {
-      released = true;
-      const out = held ?? [];
-      held = null;
-      if (text === undefined) return out;
-      const lastStart = out.findLast((chunk) => chunk.type === "text-start") as { id: string } | undefined;
-      if (!lastStart) return out;
-      const { id } = lastStart;
-      return out.flatMap((chunk): UIMessageChunk[] => {
-        if (chunk.type === "text-delta" && chunk.id === id) return [];
-        if (chunk.type === "text-start" && chunk.id === id) return [chunk, { type: "text-delta", id, delta: text }];
-        return [chunk];
-      });
+    releaseParts(parts: readonly MessagePart[]): UIMessageChunk[] {
+      return release(parts.flatMap((part) => part.type === "text" ? [part.text] : []));
     },
   };
 }

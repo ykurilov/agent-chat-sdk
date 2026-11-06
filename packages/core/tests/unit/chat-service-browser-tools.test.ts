@@ -76,6 +76,24 @@ function toolResultSeen(model: MockLanguageModelV4, call = 1): unknown {
 describe("браузерные инструменты в службе чата", () => {
   afterEach(() => vi.useRealTimers());
 
+  it("replyChecks hold: browser-call после текста не ждёт конца хода и не зависает", async () => {
+    const first = callTool("open_task", "c1", { taskId: 2 });
+    first.splice(1, 0, ...textParts(["Actually, открываю."], "intro"));
+    const model = scriptedModel([first, saying("Открыл")]);
+    const { service } = build(model, { replyChecks: { checks: [async ({ text }) => ({ text: text.replace("Actually, ", "") })], web: "hold" } });
+    const chat = await service.createChat("anna");
+    const reader = (await service.sendMessage("anna", chat.id, userMessage("u1", "открой"), { page: { tabId: "tab-1" } })).getReader();
+    const seen: UIMessageChunk[] = [];
+    await readUntil(reader, "data-browser-call", seen);
+    expect(seen.some((chunk) => chunk.type === "text-delta")).toBe(false);
+    await service.answerBrowserCall("anna", chat.id, "c1", { tabId: "tab-1", output: { opened: true } });
+    const chunks = await readRest(reader, seen);
+    expect(finalStatus(chunks)).toBe("complete");
+    expect(chunks.flatMap((chunk) => chunk.type === "text-delta" ? [chunk.delta] : [])).toEqual(["открываю.", "Открыл"]);
+    expect(JSON.stringify(toolResultSeen(model))).toContain('"opened":true');
+  });
+
+
   it("вызов уходит своей вкладке куском data-browser-call; ответ вкладки — результат вызова, ход продолжается тем же ответом", async () => {
     const model = scriptedModel([callTool("open_task", "c1", { taskId: 2 }), saying("Открыл задачу 2")]);
     const { service, storage } = build(model);

@@ -1,5 +1,12 @@
 # @ykurilov/agent-chat-server
 
+## 0.97.1
+
+### Patch Changes
+
+- Updated dependencies [bdb32b8]
+  - @ykurilov/agent-chat-core@0.97.1
+
 ## 0.97.0
 
 ### Minor Changes

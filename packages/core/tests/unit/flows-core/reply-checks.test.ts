@@ -4,8 +4,10 @@ import type { UIMessageChunk } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import { foreignWords } from "../../../../reply-check/src";
 import type { AfterTurnHandler, AgentChatMessage, ReplyCheck, ReplyCheckInput, ReplyChecksSetting, UsageRecord } from "../../../src/index";
 import { STEP_RESET_PART_TYPE, withoutResetSteps } from "../../../src/index";
+import { createHeldReplyText } from "../../../src/agent-run/reply-checks";
 import { createInMemoryChatStorage } from "../../../src/storage/in-memory-storage";
 import { finishPart, generateResult, readAll, streamOf, streamStart, textParts } from "../support/mock-model";
 import { noticeService, saying, userMessage } from "../support/notice-chat";
@@ -88,16 +90,72 @@ describe("061 T205: replyChecks — проверка законченного о
     expect(logged.length).toBeGreaterThan(0);
   });
 
-  it("правится только последняя текстовая часть; части инструментов не трогаются", async () => {
-    const lookup = tool({ description: "Найти.", inputSchema: z.object({}), execute: async () => ({ found: "Пpивет из инструмента" }) });
+  it("правится каждая текстовая часть; карточка инструмента сохраняется без повторного выполнения", async () => {
+    const execute = vi.fn(async () => ({ found: "Пpивет из инструмента" }));
+    const lookup = tool({ description: "Найти.", inputSchema: z.object({}), execute });
     const scripts = [
       [streamStart, ...textParts(["Пpивет, ищу."], "t1"), { type: "tool-call", toolCallId: "c1", toolName: "lookup", input: "{}" }, finishPart("tool-calls")],
       [streamStart, ...textParts(["Пpивет, нашёл."], "t2"), finishPart()],
     ] as LanguageModelV4StreamPart[][];
     const { service } = setup([replacing("Пpивет", "Привет")], scripts, { agent: { tools: { lookup } } });
-    const { answer } = await ask(service);
-    expect(textOf(answer)).toBe("Пpивет, ищу.|Привет, нашёл.");
+    const { answer, chunks } = await ask(service);
+    expect(textOf(answer)).toBe("Привет, ищу.|Привет, нашёл.");
+    const shown = await shownAnswer(chunks);
+    expect(textOf(shown)).toBe(textOf(answer));
+    expect(shown.parts.filter((part) => part.type === "tool-lookup")).toEqual(answer.parts.filter((part) => part.type === "tool-lookup"));
+    expect(execute).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(answer.parts)).toContain("Пpивет из инструмента");
+  });
+
+  it.each(["replace", "hold"] as const)("%s: все части, включая несколько в одном шаге и без последнего текста после инструмента", async (web) => {
+    const seen: ReplyCheckInput[] = [];
+    const execute = vi.fn(async () => "ok");
+    const lookup = tool({ description: "Найти.", inputSchema: z.object({}), execute });
+    const scripts = [
+      [streamStart, ...textParts(["Пpивет один"], "a"), ...textParts(["Пpивет два"], "b"), { type: "tool-call", toolCallId: "c1", toolName: "lookup", input: "{}" }, finishPart("tool-calls")],
+      [streamStart, finishPart()],
+    ] as LanguageModelV4StreamPart[][];
+    const { service } = setup({ checks: [replacing("Пpивет", "Привет", seen)], web }, scripts, { agent: { tools: { lookup } } });
+    const { answer, chunks } = await ask(service);
+    expect(seen.map((input) => input.text)).toEqual(["Пpивет один", "Пpивет два"]);
+    const shown = await shownAnswer(chunks);
+    expect(textOf(answer)).toBe("Привет один|Привет два");
+    expect(textOf(shown)).toBe(textOf(answer));
+    expect(shown.parts.filter((part) => part.type === "tool-lookup")).toHaveLength(1);
+    expect(execute).toHaveBeenCalledTimes(1);
+    if (web === "hold") expect(deltasOf(chunks)).toEqual(["Привет один", "Привет два"]);
+  });
+
+  it("переписка каждой части не переигрывает основной ход: текущий запрос прежний, следующий получает исправленную историю", async () => {
+    const lookup = tool({ description: "Найти.", inputSchema: z.object({}), execute: async () => "ok" });
+    const rewriting: ReplyCheck = async ({ text, rewrite }) => text.includes("Actually") ? { text: await rewrite("Редактор", text) } : undefined;
+    const scripts = [
+      [streamStart, ...textParts(["Actually, ищу."], "a"), { type: "tool-call", toolCallId: "c", toolName: "lookup", input: "{}" }, finishPart("tool-calls")],
+      saying("Готово."), saying("Продолжаем."),
+    ] as LanguageModelV4StreamPart[][];
+    const { service, model } = setup([rewriting], scripts, { agent: { tools: { lookup } } }, ["Сейчас ищу."]);
+    const { chat } = await ask(service);
+    expect(JSON.stringify(model.doStreamCalls[1]!.prompt)).toContain("Actually, ищу.");
+    expect(model.doStreamCalls).toHaveLength(2);
+    expect(model.doGenerateCalls).toHaveLength(1);
+    await readAll(await service.sendMessage("anna", chat.id, userMessage("u2", "дальше")));
+    expect(JSON.stringify(model.doStreamCalls[2]!.prompt)).toContain("Сейчас ищу.");
+    expect(JSON.stringify(model.doStreamCalls[2]!.prompt)).not.toContain("Actually, ищу.");
+  });
+
+  it.each(["replace", "hold"] as const)("foreignWords %s: английская фраза до инструмента переписывается прежней проверкой", async (web) => {
+    const lookup = tool({ description: "Найти.", inputSchema: z.object({}), execute: async () => "ok" });
+    const scripts = [
+      [streamStart, ...textParts(["Actually, это важно."], "a"), { type: "tool-call", toolCallId: "c", toolName: "lookup", input: "{}" }, finishPart("tool-calls")],
+      saying("Готово."),
+    ] as LanguageModelV4StreamPart[][];
+    const { service, model, written } = setup({ checks: [foreignWords({ script: "cyrillic" })], web }, scripts, { agent: { tools: { lookup } } }, ["На самом деле это важно."]);
+    const { answer, chunks } = await ask(service);
+    expect(textOf(answer)).toBe("На самом деле это важно.|Готово.");
+    expect(textOf(await shownAnswer(chunks))).toBe(textOf(answer));
+    expect(model.doGenerateCalls).toHaveLength(1);
+    expect(written.filter((record) => record.source === "answer_correction")).toHaveLength(1);
+    if (web === "hold") expect(deltasOf(chunks).join("")).not.toContain("Actually");
   });
 
   it("seenTexts: инструкция, блоки контекста, реплики человека, выводы инструментов; прошлые ответы агента — нет", async () => {
@@ -174,11 +232,12 @@ describe("061 T205: настройка replyChecks", () => {
 });
 
 describe("061 T205: поток в веб-чат (В2)", () => {
-  it("replace (по умолчанию): печатается как обычно, затем шаг заменяется исправленным; экран = запись", async () => {
+  it("replace (по умолчанию): печатается как обычно, затем текст заменяется исправленным; экран = запись", async () => {
     const { service } = setup([replacing("Пpивет", "Привет")], [[streamStart, ...textParts(["Пpи", "вет!"]), finishPart()]]);
     const { chunks, answer } = await ask(service);
     expect(deltasOf(chunks).slice(0, 2)).toEqual(["Пpи", "вет!"]);
-    expect(chunks.some((chunk) => chunk.type === STEP_RESET_PART_TYPE)).toBe(true);
+    expect(chunks.some((chunk) => chunk.type === "data-reply-text")).toBe(true);
+    expect(chunks.some((chunk) => chunk.type === STEP_RESET_PART_TYPE)).toBe(false);
     expect(textOf(await shownAnswer(chunks))).toBe("Привет!");
     expect(textOf(answer)).toBe("Привет!");
   });
@@ -213,17 +272,63 @@ describe("061 T205: поток в веб-чат (В2)", () => {
     expect(textOf(answer)).toBe("Привет!");
   });
 
-  it("hold: текст перед вызовом инструмента уходит сразу, до вызова", async () => {
+  it("hold: текст перед инструментом тоже проверяется; порядок и карточка сохранены", async () => {
     const lookup = tool({ description: "Найти.", inputSchema: z.object({}), execute: async () => "ok" });
     const scripts = [
       [streamStart, ...textParts(["Ищу."], "t1"), { type: "tool-call", toolCallId: "c1", toolName: "lookup", input: "{}" }, finishPart("tool-calls")],
       saying("Нашёл."),
     ] as LanguageModelV4StreamPart[][];
-    const { service } = setup({ checks: [replacing("нет", "x")], web: "hold" }, scripts, { agent: { tools: { lookup } } });
+    const { service } = setup({ checks: [replacing("Ищу.", "Ищу данные.")], web: "hold" }, scripts, { agent: { tools: { lookup } } });
     const { chunks } = await ask(service);
     const order = chunks.map((chunk) => (chunk.type === "text-delta" ? chunk.delta : chunk.type));
-    expect(order.indexOf("Ищу.")).toBeLessThan(order.indexOf("tool-input-available"));
-    expect(textOf(await shownAnswer(chunks))).toBe("Ищу.|Нашёл.");
+    expect(order).not.toContain("Ищу.");
+    expect(order.indexOf("Ищу данные.")).toBeLessThan(order.indexOf("tool-input-available"));
+    expect(textOf(await shownAnswer(chunks))).toBe("Ищу данные.|Нашёл.");
+  });
+
+  it("hold не выдаёт раннюю фразу, пока инструмент выполняется; после проверки выходят обе части", async () => {
+    let unlock!: () => void;
+    let started!: () => void;
+    const gate = new Promise<void>((resolve) => { unlock = resolve; });
+    const running = new Promise<void>((resolve) => { started = resolve; });
+    const lookup = tool({ description: "Найти.", inputSchema: z.object({}), execute: async () => { started(); await gate; return "ok"; } });
+    const scripts = [
+      [streamStart, ...textParts(["Пpивет, ищу."], "a"), { type: "tool-call", toolCallId: "c", toolName: "lookup", input: "{}" }, finishPart("tool-calls")],
+      saying("Готово."),
+    ] as LanguageModelV4StreamPart[][];
+    const { service } = setup({ checks: [replacing("Пpивет", "Привет")], web: "hold" }, scripts, { agent: { tools: { lookup } } });
+    const chat = await service.createChat("anna");
+    const stream = await service.sendMessage("anna", chat.id, userMessage("u", "вопрос"));
+    const chunks: UIMessageChunk[] = [];
+    const done = (async () => { for await (const chunk of stream) chunks.push(chunk); })();
+    try {
+      await running;
+      expect(deltasOf(chunks)).toEqual([]);
+    } finally { unlock(); }
+    await done;
+    expect(deltasOf(chunks)).toEqual(["Привет, ищу.", "Готово."]);
+  });
+
+  it("hold: сброс непоказанного шага оставляет предыдущие части и не выпускает стёртый текст", () => {
+    const held = createHeldReplyText();
+    const visible: UIMessageChunk[] = [];
+    const pass = (chunk: UIMessageChunk) => visible.push(...held.pass(chunk));
+    pass({ type: "start-step" });
+    pass({ type: "text-start", id: "a" });
+    pass({ type: "text-delta", id: "a", delta: "Первый" });
+    pass({ type: "text-end", id: "a" });
+    pass({ type: "finish-step" });
+    pass({ type: "start-step" });
+    pass({ type: "text-start", id: "b" });
+    pass({ type: "text-delta", id: "b", delta: "Стёртый" });
+    pass({ type: STEP_RESET_PART_TYPE, data: { providerId: "backup" } });
+    pass({ type: "start-step" });
+    pass({ type: "text-start", id: "c" });
+    pass({ type: "text-delta", id: "c", delta: "Второй" });
+    pass({ type: "text-end", id: "c" });
+    visible.push(...held.releaseParts([{ type: "text", text: "Первый!" }, { type: "text", text: "Второй!" }]));
+    expect(deltasOf(visible)).toEqual(["Первый!", "Второй!"]);
+    expect(visible.some((chunk) => chunk.type === STEP_RESET_PART_TYPE)).toBe(false);
   });
 
   it("мессенджер (не веб) — текст придерживается и в режиме replace: наружу только проверенный", async () => {
