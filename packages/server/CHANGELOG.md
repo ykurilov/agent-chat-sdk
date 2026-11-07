@@ -1,5 +1,20 @@
 # @ykurilov/agent-chat-server
 
+## 0.99.0
+
+### Minor Changes
+
+- 5e688b2: Добавлен opt-in чат с историей только в браузере: отдельный createBrowserChatHandler создаёт RAM-хранилище на запрос, а createBrowserChatTransport сохраняет owner-bound шифрованный снимок до показа потока. Обычный AgentChat/Одуванчик поддерживает текст, модели, Stop, ветки и серверные инструменты. После reload/обрыва показанный текст остаётся; продолжение явное. Обычные серверные чаты и idle watch по умолчанию не меняются.
+  
+  ### Как обновить приложение
+  
+  Подключите createBrowserChatHandler из @ykurilov/agent-chat-server к отдельному POST endpoint, с resolveUser, серверными catalog/agent, постоянными namespace и snapshotKey (32 случайных байта). createBrowserChatTransport из @ykurilov/agent-chat-react получает endpoint/ownerId/chatId/loadSnapshot/saveSnapshot; передайте его chatProps в обычный AgentChat, вызывайте dispose при замене. Приложение сохраняет весь снимок атомарно в IndexedDB с revision guards. Не подключайте обычные attachments/voice/subject/appBridge: первая версия без файлов, голоса, памяти, helpers, widgets, browser RPC, фона и approval-инструментов. Биллинг/лимиты между запросами — внешние numeric callbacks, не transient ledger. Контракт и ограничения: docs/browser-owned-chat.md. Старым приложениям менять подключение не требуется.
+
+### Patch Changes
+
+- Updated dependencies [5e688b2]
+  - @ykurilov/agent-chat-core@0.99.0
+
 ## 0.98.1
 
 ### Patch Changes

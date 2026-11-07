@@ -121,3 +121,7 @@ await chat.flush({ waitForAnswersMs: 20_000 }); // при штатной ост�
 ### Правка ответа в обычном чате (с 0.97.0)
 
 Серверный `answerEditing: true` и право `chatCapabilities.answerEditing` включают адрес правки ответа для Next/Hono. В `AgentChat` со скином «Одуванчик» передайте `answerEditor={true}` либо объект с `renderFields({ data, setData, disabled, message })` для своих полей. `onAnswerEdited` получает id исходного и нового ответа, оба текста, владельца, чат и JSON `data` приложения. Прежний пользовательский `answerEditing={{ edits, renderEditor }}` совместим и имеет приоритет. [Контракт, пределы доставки хука и обновление приложения](../../docs/answer-editing.md).
+
+## История только в браузере
+
+`createBrowserChatHandler` из главного входа пакета — отдельный opt-in POST handler со свежим RAM-хранилищем на запрос и owner-bound шифрованным снимком. Не принимает ChatStorage/SQL, не подключается к обычным чатам. Настройки, лимиты, биллинг, отмена и граница первой версии: [browser-owned-chat.md](../../docs/browser-owned-chat.md). Инструменты с approval, файлы, голос, widgets и фон в этом режиме не поддержаны; обычный обработчик не меняется.

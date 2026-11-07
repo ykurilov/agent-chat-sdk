@@ -295,10 +295,13 @@ export function createAnswerSaver(
       await current;
       return latest;
     },
-    /**
-     * Штатная остановка сервера: пишет всё несохранённое сейчас, не дожидаясь окна, и помечает ответ брошенным —
-     * следующий старт прервёт его сразу, без ожидания порога (FR-060).
-     */
+    /** Сохраняет принятую сборку до контрольной метки, не останавливая запись и знак жизни. */
+    async checkpoint(): Promise<void> {
+      await rewinding?.catch(() => {});
+      await settleAssembly();
+      await writeNow();
+    },
+    /** Штатная остановка: пишет остаток и освобождает ответ для восстановления без порога тишины. */
     async flush(): Promise<void> {
       released = true;
       clearTimeout(aliveTimer);

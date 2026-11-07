@@ -7,3 +7,6 @@ export type { SubjectChatSettings, SubjectChatsResolver } from "./subject-chat-r
 export type { NewChatGreetingResolver } from "./new-chat-greeting";
 
 export type { HistoryPartReference, HistoryView } from "./history-view";
+
+export { createBrowserChatHandler } from "./browser-chat/index";
+export type { BrowserChatHandler, BrowserChatHandlerOptions, BrowserChatSettings, BrowserChatUsage, BrowserChatOperation, BrowserChatRequest } from "./browser-chat/types";

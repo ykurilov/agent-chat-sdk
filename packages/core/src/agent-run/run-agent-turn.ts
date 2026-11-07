@@ -368,6 +368,7 @@ export interface AgentTurnInput {
   isChatClosed?: () => Promise<boolean>;
   /** Пока ход идёт, кладёт сюда функцию «записать несохранённое сейчас»: её зовёт `ChatService.flush`. */
   flushers?: Set<() => Promise<void>>;
+  checkpointers?: Set<() => Promise<void>>;
   /** Предел результата инструмента, уже проверенный. Нет — 50 000 знаков. */
   toolResultLimit?: ResolvedToolResultLimit;
   /** Запасные провайдеры той же модели, уже проверенные. Нет — значение по умолчанию из `next-attempt`. */
@@ -568,6 +569,11 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
     emitToClient({ type: "message-metadata", messageMetadata: metadata });
   };
   input.flushers?.add(saver.flush);
+  let finalizingSnapshot = false;
+  let finishSnapshot!: () => void;
+  const snapshotFinished = new Promise<void>(resolve => { finishSnapshot = resolve; });
+  const checkpoint = async () => { await saver.checkpoint(); if (finalizingSnapshot) await snapshotFinished; };
+  input.checkpointers?.add(checkpoint);
   try {
     // Лимит шагов — на весь ход: каждая попытка получает остаток.
     const maxSteps = input.maxSteps ?? DEFAULT_MAX_STEPS;
@@ -1067,6 +1073,7 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
     browser?.close();
 
     input.flushers?.delete(saver.flush);
+    finalizingSnapshot = true;
     // Недоделанные заголовки ждём недолго и только у живого хода: «Стоп» и сбой не ждут.
     if (thoughtTitles) {
       if (!input.abortSignal.aborted && errors.length === 0) await thoughtTitles.settle(input.thoughtTitles!.settleMs ?? THOUGHT_TITLES_SETTLE_MS);
@@ -1291,6 +1298,8 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
     input.leaseSignal?.removeEventListener("abort", onLeaseLost);
     thoughtTitles?.close();
     input.flushers?.delete(saver.flush);
+    input.checkpointers?.delete(checkpoint);
+    finishSnapshot();
   }
 }
 

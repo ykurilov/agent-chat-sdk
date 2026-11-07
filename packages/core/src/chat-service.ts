@@ -1,3 +1,4 @@
+import { registerTransientCheckpoint, registerTransientHistory } from "./transient-chat";
 import type { ToolSet, UIMessageChunk } from "ai";
 import { AttachmentRejectedError } from "./attachments/message-attachments";
 import type { IncomingFilePart, MessageAttachments, StoredFilePart } from "./attachments/message-attachments";
@@ -1513,6 +1514,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
   /** Работа после хода (состояние, закрытие): остановка службы её ждёт. */
   const afterTurnWork = new Set<Promise<void>>();
   const flushers = new Set<() => Promise<void>>();
+  const checkpointers = new Set<() => Promise<void>>();
   /** Ответы ходов этой копии: проверка брошенных их не трогает, даже если база не принимала знаки жизни. */
   const liveAnswerIds = new Set<string>();
   /** Поправки человека к идущим ходам этой копии (`steer`). */
@@ -2097,7 +2099,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
   }
 
   /** История текущей ветки; `write: false` — только чтение, без записей (`peekHistory`). */
-  async function historyOf(userId: string, chatId: string, { write, scope }: { write: boolean; scope?: RequestScope }): Promise<ChatHistory> {
+  async function historyOf(userId: string, chatId: string, { write, scope, includeRunning }: { write: boolean; scope?: RequestScope; includeRunning?: boolean }): Promise<ChatHistory> {
     const stored = await ownChat(userId, chatId);
     const runningId = registry.runningMessageId(chatId);
     let { messages, selections, branch } = await loadTree(chatId);
@@ -2139,8 +2141,8 @@ export function createChatService(input: ChatServiceOptions): ChatService {
       messages: visible(
         publicMessages(
           shown
-            .filter((message) => message.id !== runningAnswerId || resumeBases.get(chatId)?.id === runningAnswerId)
-            .map((message) => (message.id === runningAnswerId ? resumeBases.get(chatId)! : markedUndelivered(toAgentChatMessage(message)))),
+            .filter((message) => includeRunning || message.id !== runningAnswerId || resumeBases.get(chatId)?.id === runningAnswerId)
+            .map((message) => (message.id === runningAnswerId && !includeRunning ? resumeBases.get(chatId)! : markedUndelivered(toAgentChatMessage(message)))),
           hiddenStateKey,
           screenNotices,
         ),
@@ -2688,6 +2690,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
           createdAt: launch.createdAt,
           logError,
           flushers,
+          checkpointers,
         });
       });
     } catch (error) {
@@ -4298,6 +4301,8 @@ export function createChatService(input: ChatServiceOptions): ChatService {
   });
   if (storage.listSilentAnswerIds) startStaleSweep();
   else logError("Автоматическое восстановление ответов недоступно: у хранилища нет listSilentAnswerIds. Обновите адаптер; для единственной копии сервера явно вызовите recoverInterruptedAnswers при запуске.");
+  registerTransientHistory(service, (userId, chatId) => historyOf(userId, chatId, { write: true, includeRunning: true }));
+  registerTransientCheckpoint(service, async () => { await Promise.all([...checkpointers].map(checkpoint => checkpoint())); });
   return service;
 
   function isDetachedAnswer(last: StoredMessage | undefined, runningId: string | null): boolean {

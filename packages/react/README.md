@@ -176,3 +176,9 @@ const labels = {
 Проверки ответа (`replyChecks`, с 0.97.1): сервер может исправить любую текстовую часть через `data-reply-text`.
 Штатная лента сохраняет карточки инструментов и порядок частей. Своя лента на сырых UI-частях использует
 `withoutResetSteps(parts)` из этого пакета; сервер и клиент обновляются одной версией.
+
+## Локальная история без серверного чата
+
+`createBrowserChatTransport({endpoint,ownerId,chatId,loadSnapshot,saveSnapshot,fetch?})` возвращает `chatProps` для AgentChat, `getSnapshot()` и `dispose()`. Список/IndexedDB остаются приложению; saveSnapshot должен завершаться после атомарного commit и отвергать старую revision. Поток показывается после сохранения checkpoint. [Контракт, reload/Stop и ограничения](../../docs/browser-owned-chat.md).
+
+Для других адаптеров `AgentChat` принимает `fetch` либо `transport={{fetch,watch?}}`; собственный fetch используется для встроенных запросов, включая меню моделей и поиск чата объекта. По умолчанию транспорт и idle watch прежние. Не передавайте одновременно fetch и transport.

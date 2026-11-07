@@ -175,3 +175,9 @@ docs/getting-started.md, «Значки шагов и заголовки раз�
 ### Правка ответа в обычном чате (с 0.97.0)
 
 Серверный `answerEditing: true` и право `chatCapabilities.answerEditing` включают адрес правки ответа для Next/Hono. В `AgentChat` со скином «Одуванчик» передайте `answerEditor={true}` либо объект с `renderFields({ data, setData, disabled, message })` для своих полей. `onAnswerEdited` получает id исходного и нового ответа, оба текста, владельца, чат и JSON `data` приложения. Прежний пользовательский `answerEditing={{ edits, renderEditor }}` совместим и имеет приоритет. [Контракт, пределы доставки хука и обновление приложения](../../docs/answer-editing.md).
+
+## Transient-снимок
+
+Серверный `createTransientChatStorage(snapshot?)` экспортирует копию истории, веток, сжатия и числового расхода через `exportSnapshot()`. Живые аренды, знаки жизни и долговременная память не переносятся. Конструктор принимает **только доверенный серверный** `InMemoryChatSnapshot`, не JSON от браузера. Для публичного HTTP используйте `createBrowserChatHandler` сервера с проверкой владельца и seal. `createInMemoryChatStorage()` сохраняет старый контракт.
+
+`checkpointTransientChat(service)` сохраняет текущую сборку без остановки хода; `getTransientChatHistory(service,userId,chatId)` ждёт checkpoint и отдаёт обычную проекцию прав видимости вместе с активным ответом. Обычный getHistory не меняется. [Режим browser-owned](../../docs/browser-owned-chat.md).

@@ -54,6 +54,8 @@ export interface LivenessOptions {
 export type ConnectionState = "online" | "reconnecting" | "offline";
 
 export interface UseAgentChatOptions {
+  /** Disable idle server watch for a client-owned transport. Active turn streaming remains enabled. */
+  watch?: boolean;
   /** Browser-only paged history with deferred completed reasoning/tools. Server handle remains full. */
   history?: "full" | "compact";
   /** Адрес обработчика чата, например `/api/chat`. */
@@ -391,6 +393,7 @@ export function useAgentChat({
   api,
   chatId,
   fetch: customFetch,
+  watch: watchEnabled = true,
   liveness,
   spendingLimits = false,
   appBridge,
@@ -1536,7 +1539,7 @@ export function useAgentChat({
   const reportAppEvent = useRef(onAppEvent);
   reportAppEvent.current = onAppEvent;
   useEffect(() => {
-    if (!loaded || busy || notFound || watchUnavailableFor.current === chatUrl) return;
+    if (!watchEnabled || !loaded || busy || notFound || watchUnavailableFor.current === chatUrl) return;
     const chatSignal = chatLifetime.current.signal;
     const watch = new AbortController();
     const stopWatch = () => watch.abort();
@@ -1577,7 +1580,7 @@ export function useAgentChat({
       chatSignal.removeEventListener("abort", stopWatch);
       watch.abort();
     };
-  }, [busy, chatUrl, loaded, notFound, ownTurnStarting, refreshFromServer, request, showClosure]);
+  }, [watchEnabled, busy, chatUrl, loaded, notFound, ownTurnStarting, refreshFromServer, request, showClosure]);
   useEffect(() => setTasksVersion(0), [chatId]);
 
   /** Ответ, ждавший человека, закрывается новым сообщением: запомнить, каким он был, чтобы вернуть при отказе. */

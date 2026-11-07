@@ -1,0 +1,32 @@
+import { test, expect } from "@playwright/test";
+for (const theme of ["light", "dark"]) test(`browser-owned Stop/reload/continue ${theme}`, async ({ page }, info) => {
+  const forbidden: string[] = [];
+  page.on("request", request => { if (/\/__agent_chat_browser\//.test(request.url())) forbidden.push(request.url()); });
+  await page.goto(`/browser-chat.html?theme=${theme}`);
+  const field = page.locator("textarea"); await expect(field).toBeEnabled();
+  await field.fill("Первый вопрос"); await field.press("Enter");
+  await expect(page.getByText(/сохранённый префикс/)).toBeVisible();
+  await page.getByRole("button", { name: /Остановить/ }).click();
+  await expect.poll(async () => (await (await page.request.get("/browser-chat-fixture/stats")).json()).active).toBe(0);
+  await page.reload(); await expect(page.getByText(/сохранённый префикс/)).toBeVisible();
+  await expect(page.getByText("Первый вопрос", { exact: true })).toBeVisible();
+  await field.fill("Продолжение после перезагрузки"); await field.press("Enter");
+  await expect(page.locator("p").filter({ hasText: /Готово\./ })).toBeVisible({ timeout: 15000 });
+  await page.getByRole("button", { name: /Модель:/ }).click();
+  await expect(page.getByRole("dialog").locator(".oduvanchik-model-option")).toHaveCount(11);
+  await page.getByRole("dialog").getByRole("button", { name: "Модель 11", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Модель: Модель 11", exact: true })).toBeVisible();
+  expect(forbidden).toEqual([]);
+  await page.screenshot({ path: info.outputPath(`browser-owned-${theme}.png`), fullPage: true });
+});
+for (const theme of ["light", "dark"]) test(`browser-owned reload during stream ${theme}`, async ({ page }) => {
+  await page.goto(`/browser-chat.html?theme=${theme}`);
+  const field = page.locator("textarea"); await expect(field).toBeEnabled();
+  await field.fill("Перезагрузка во время ответа"); await field.press("Enter");
+  await expect(page.locator("p").filter({ hasText: /сохранённый префикс/ })).toBeVisible();
+  await page.reload();
+  await expect(page.locator("p").filter({ hasText: /сохранённый префикс/ })).toBeVisible();
+  await expect.poll(async () => (await (await page.request.get("/browser-chat-fixture/stats")).json()).active).toBe(0);
+  await field.fill("Новый запрос после обрыва"); await field.press("Enter");
+  await expect(page.locator("p").filter({ hasText: /Готово\./ })).toBeVisible({ timeout: 15000 });
+});

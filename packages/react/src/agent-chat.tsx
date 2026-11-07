@@ -81,7 +81,15 @@ interface FeedExtensions extends AgentChatExtensions {
   modelNames?: ModelChoiceView["providers"];
 }
 
+export interface AgentChatTransport {
+  fetch: typeof globalThis.fetch;
+  watch?: boolean;
+  kind?: "browser-owned";
+}
 export interface AgentChatProps extends AgentChatExtensions {
+  /** Custom transport for every built-in chat request. Keep its identity stable. */
+  fetch?: typeof globalThis.fetch;
+  transport?: AgentChatTransport;
   history?: "full" | "compact";
   /** Optional application heading and trailing content, rendered by the selected skin. */
   header?: ChatHeaderView;
@@ -174,28 +182,34 @@ export interface AgentChatProps extends AgentChatExtensions {
 
 /** Лента чата с агентом. Всё видимое рисуют компоненты скина. */
 export function AgentChat(props: AgentChatProps) {
+  if (props.fetch && props.transport) throw new TypeError("AgentChat: pass fetch or transport, not both");
+  if (props.transport?.kind === "browser-owned" && (props.subject !== undefined || props.attachments || props.voice || props.voiceDialog || props.appBridge || props.history === "compact"))
+    throw new TypeError("AgentChat: unsupported extension for browser-owned history");
   if (props.chatId !== undefined && props.subject !== undefined) throw new Error("AgentChat: pass either chatId or subject, not both.");
   if (props.subject !== undefined) return <SubjectAgentChat {...props} subject={props.subject} />;
   if (props.chatId === undefined) throw new Error("AgentChat: chatId or subject is required.");
   // Плагин вложений — хук: пока он есть или нет, порядок хуков внутри неизменен, а смена превращается в новый экземпляр.
   // Другой чат — новый экземпляр, как у чата объекта: состояние ленты (в том числе учёт событий приложения) не
   // переходит из чата в чат.
-  return <AgentChatBody key={`${props.chatId}:${props.attachments ? "attachments" : "plain"}`} {...props} chatId={props.chatId} />;
+  return <AgentChatBody key={`${props.api}:${props.chatId}:${props.attachments ? "attachments" : "plain"}`} {...props} chatId={props.chatId} />;
 }
 
 /** Чат объекта: сначала id чата по ключу у сервера, потом обычный чат; отказ — текстом с «Повторить». */
 function SubjectAgentChat(props: AgentChatProps & { subject: string }) {
-  const found = useSubjectChatId(props.api, props.subject, props.onTurnRefused);
-  if (found.state === "ready") return <AgentChatBody key={`${found.chatId}:${props.attachments ? "attachments" : "plain"}`} {...props} chatId={found.chatId} />;
+  const found = useSubjectChatId(props.api, props.subject, props.onTurnRefused, props.transport?.fetch ?? props.fetch);
+  if (found.state === "ready") return <AgentChatBody key={`${props.api}:${found.chatId}:${props.attachments ? "attachments" : "plain"}`} {...props} chatId={found.chatId} />;
   if (found.state === "refused") return <props.skin.ErrorNotice kind="other" text={found.text} onRetry={found.retry} />;
   if (found.state === "failed") return <props.skin.ErrorNotice kind="other" onRetry={found.retry} />;
   return <SubjectChatLoading skin={props.skin} />;
 }
 
-function AgentChatBody({ history, header, completion, composerOptions, api, chatId, skin, liveness, voice, voiceDialog, attachments: attachmentsPlugin, spendingLimits, onBusyChange, appBridge, initialDraft, answerEditing, answerEditor, onFeedChange, messageActions, onTurnFinished, onTurnRefused, composerActions, onAppEvent, onChatAccessChange, onStateChange, onModelChosen, onChatUnavailable, reloadKey, steering, widgets, diagrams, liveDemos, images, videos, appEvents, workView, stepPhrases, noticeLines, answerDetails }: AgentChatProps & { chatId: string }) {
+function AgentChatBody({ history, header, completion, composerOptions, api, chatId, skin, fetch: customFetch, transport: chatTransport, liveness, voice, voiceDialog, attachments: attachmentsPlugin, spendingLimits, onBusyChange, appBridge, initialDraft, answerEditing, answerEditor, onFeedChange, messageActions, onTurnFinished, onTurnRefused, composerActions, onAppEvent, onChatAccessChange, onStateChange, onModelChosen, onChatUnavailable, reloadKey, steering, widgets, diagrams, liveDemos, images, videos, appEvents, workView, stepPhrases, noticeLines, answerDetails }: AgentChatProps & { chatId: string }) {
+  const fetchImpl = chatTransport?.fetch ?? customFetch;
   const spendingNoticeId = useId();
   const closedNoticeId = useId();
   const chat = useAgentChat({
+    fetch: fetchImpl,
+    watch: chatTransport?.watch,
     history,
     api,
     chatId,
@@ -212,6 +226,7 @@ function AgentChatBody({ history, header, completion, composerOptions, api, chat
     onExpectLiveAppEvents: (messageId: string) => appEventReport.expectLive(messageId),
   });
   const backgroundTasks = useBackgroundTasks({
+    fetch: fetchImpl,
     chatUrl: `${api}/${encodeURIComponent(chatId)}`,
     enabled: chat.loaded && chat.backgroundTasksAvailable && Boolean(skin.TaskCard || skin.AgentNoticeView),
     version: chat.tasksVersion,
@@ -224,12 +239,12 @@ function AgentChatBody({ history, header, completion, composerOptions, api, chat
     !savedChoicePending &&
     chat.capabilities.modelDetails !== false &&
     (chat.capabilities.modelChoice || (attachmentsPlugin !== undefined && chat.modelAcceptsImages === undefined));
-  const modelChoice = useModelChoice({ api, chatId, savedChoice: chat.savedModelChoice, savedChoicePending, menuWanted, onModelChosen });
+  const modelChoice = useModelChoice({ api, chatId, fetch: fetchImpl, savedChoice: chat.savedModelChoice, savedChoicePending, menuWanted, onModelChosen });
   // Меню не нужно — и прежнее в памяти не в счёт: выбор мог смениться без него. Видит ли модель картинки — по истории.
   const chatModelSeesImages = menuWanted ? (modelSeesImages(modelChoice) ?? chat.modelAcceptsImages) : chat.modelAcceptsImages;
   const dictation = useVoiceDictation({ voice, value: chat.value, setValue: chat.setValue, chatId });
   const dialog = useVoiceDialog({ engine: voiceDialog, chatId, chat, ...(videos && { videos }) });
-  const attachments = attachmentsPlugin?.useController({ api, chatId, modelSeesImages: chatModelSeesImages });
+  const attachments = attachmentsPlugin?.useController({ api, chatId, modelSeesImages: chatModelSeesImages, fetch: fetchImpl });
   const describeFiles = attachments?.describe;
   const imageClients = useSameList(imageClientsOf(images));
   const [localReasoningVisible, setLocalReasoningVisible] = useState(true);

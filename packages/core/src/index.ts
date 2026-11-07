@@ -350,3 +350,9 @@ export type { EndTurnOptions } from "./agent-run/end-turn";
 export { buildModelMenu } from "./models/model-choice";
 
 export { hasChatMessages } from "./storage/chat-storage";
+
+export type { BrowserChatSnapshot } from "./conversation/browser-chat";
+export type { InMemoryChatSnapshot, TransientChatStorage } from "./storage/in-memory-storage";
+export { checkpointTransientChat, getTransientChatHistory } from "./transient-chat";
+
+export { createTransientChatStorage } from "./storage/in-memory-storage";

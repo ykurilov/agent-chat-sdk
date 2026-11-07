@@ -39,7 +39,22 @@ function sumRecords<K extends Pick<UsageSum, "modelId" | "providerId">>(records:
   return [...sums.values()];
 }
 
-export function createInMemoryChatStorage(): ChatStorage {
+/** Trusted server-side state only. Never accept this object directly from an HTTP client. */
+export interface InMemoryChatSnapshot {
+  version: 1;
+  chats: Chat[];
+  messages: StoredMessage[];
+  compactions: StoredCompaction[];
+  branchSelections: StoredBranchSelection[];
+  usageRecords: UsageRecord[];
+  userModelChoices: Array<[string, ModelChoice]>;
+}
+export interface TransientChatStorage extends ChatStorage {
+  exportSnapshot(): InMemoryChatSnapshot;
+}
+export function createInMemoryChatStorage(): ChatStorage { return createTransientChatStorage(); }
+
+export function createTransientChatStorage(snapshot?: InMemoryChatSnapshot): TransientChatStorage {
   const chats = new Map<string, Chat>();
   const messages = new Map<string, StoredMessage>();
   /** Время последнего знака жизни идущих ответов по id: при чтении не отдаётся. */
@@ -57,6 +72,17 @@ export function createInMemoryChatStorage(): ChatStorage {
   /** Долгая память: у каждого человека свои записи; у скрытых оригиналов слияния есть `mergedInto`. */
   const memoryNotes = new Map<string, Map<string, StoredNote>>();
   const optimizationRuns = new Map<string, MemoryOptimizationRun[]>();
+
+  if (snapshot) {
+    if (snapshot.version !== 1) throw new TypeError("Unsupported transient storage snapshot");
+    const saved = structuredClone(snapshot);
+    for (const chat of saved.chats) chats.set(chat.id, chat);
+    for (const message of saved.messages) messages.set(message.id, message);
+    compactions.push(...saved.compactions);
+    branchSelections.push(...saved.branchSelections);
+    usageRecords.push(...saved.usageRecords);
+    for (const [owner, choice] of saved.userModelChoices) userModelChoices.set(owner, choice);
+  }
 
   function assertTurnHolder(chatId: string, holder: string | undefined, messageId: string): void {
     if (holder === undefined) return;
@@ -177,6 +203,10 @@ export function createInMemoryChatStorage(): ChatStorage {
   }
 
   return {
+    exportSnapshot() {
+      return structuredClone({ version: 1 as const, chats: [...chats.values()], messages: [...messages.values()],
+        compactions, branchSelections, usageRecords, userModelChoices: [...userModelChoices.entries()] });
+    },
     guardedTurnWrites: true,
     async createChat({ createdAt, ...input }) {
       const at = createdAt ?? new Date().toISOString();

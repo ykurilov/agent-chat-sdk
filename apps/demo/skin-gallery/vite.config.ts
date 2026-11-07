@@ -1,3 +1,4 @@
+import { browserChatFixturePlugin } from "./browser-chat-fixture-plugin";
 import { chatPartsFixturePlugin } from "./chat-parts-fixture-plugin";
 import { oduvanchikCatalogPlugin } from "./oduvanchik-catalog-plugin";
 import tailwindcss from "@tailwindcss/vite";
@@ -7,7 +8,7 @@ import { defaultClientConditions, defineConfig, searchForWorkspaceRoot } from "v
 /** Витрина скина для снимков экрана: пакеты чата берутся из исходников, как в демо. */
 export default defineConfig({
   root: import.meta.dirname,
-  plugins: [react(), tailwindcss(), oduvanchikCatalogPlugin(), chatPartsFixturePlugin()],
+  plugins: [browserChatFixturePlugin(), react(), tailwindcss(), oduvanchikCatalogPlugin(), chatPartsFixturePlugin()],
   ssr: { noExternal: [/^@ykurilov\/agent-chat/], resolve: { conditions: ["node", "development", "@ykurilov/agent-chat-source"] } },
   resolve: { conditions: [...defaultClientConditions, "@ykurilov/agent-chat-source"] },
   server: {

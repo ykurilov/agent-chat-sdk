@@ -14,21 +14,21 @@ export type SubjectChatState =
  * помнится вместе с запросом, на который он пришёл: при смене ключа прежний чат не показывается ни одного кадра.
  * Отказ самого приложения (`turn_refused`, `access_refused`) уходит в `onAppRefusal` — по разу на ответ сервера.
  */
-export function useSubjectChatId(api: string, subject: string, onAppRefusal?: (refusal: AppRefusal) => void): SubjectChatState & { retry: () => void } {
+export function useSubjectChatId(api: string, subject: string, onAppRefusal?: (refusal: AppRefusal) => void, customFetch?: typeof globalThis.fetch): SubjectChatState & { retry: () => void } {
   const [attempt, setAttempt] = useState(0);
   const onAppRefusalRef = useRef(onAppRefusal);
   onAppRefusalRef.current = onAppRefusal;
   const request = `${attempt}\n${api}\n${subject}`;
-  const [found, setFound] = useState<{ request: string; state: SubjectChatState } | null>(null);
+  const [found, setFound] = useState<{ request: string; fetch: typeof globalThis.fetch | undefined; state: SubjectChatState } | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
     const settle = (state: SubjectChatState) => {
-      if (!controller.signal.aborted) setFound({ request, state });
+      if (!controller.signal.aborted) setFound({ request, fetch: customFetch, state });
     };
     void (async () => {
       try {
-        const response = await fetch(`${api}/subject`, {
+        const response = await (customFetch ?? globalThis.fetch)(`${api}/subject`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ key: subject }),
@@ -48,8 +48,8 @@ export function useSubjectChatId(api: string, subject: string, onAppRefusal?: (r
       }
     })();
     return () => controller.abort();
-  }, [api, subject, request]);
+  }, [api, subject, request, customFetch]);
 
   const retry = useCallback(() => setAttempt((value) => value + 1), []);
-  return { ...(found?.request === request ? found.state : { state: "loading" }), retry };
+  return { ...(found?.request === request && found.fetch === customFetch ? found.state : { state: "loading" }), retry };
 }

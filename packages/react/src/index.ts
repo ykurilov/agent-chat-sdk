@@ -13,7 +13,7 @@ export type {
   MessageAttachmentItem,
   MessageAttachmentsView,
 } from "./attachments-contract";
-export type { AgentChatProps } from "./agent-chat";
+export type { AgentChatProps, AgentChatTransport } from "./agent-chat";
 export type { AgentChatExtensions, NoticeLines, CustomWidgets, DiagramsClient, ImagesClient, VideosClient } from "./agent-chat-extensions";
 export type { AppNotice } from "./notices/agent-notices";
 export type { MediaViewerItem } from "./media-viewer/media-viewer-types";
@@ -153,3 +153,7 @@ export { ChatAppViewport, useChatViewport } from "./viewport/chat-app-viewport";
 export type { ChatAppViewportProps } from "./viewport/chat-app-viewport";
 
 export type { FeedChange, FeedChangeKind, HistoryView, HistoryPartReference } from "./history-view";
+
+export { createBrowserChatTransport } from "./browser-chat/index";
+export type { BrowserChatSnapshot } from "./browser-chat/types";
+export type { BrowserChatTransport, BrowserChatTransportOptions } from "./browser-chat/index";
