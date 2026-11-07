@@ -14,3 +14,7 @@ export { FLOW_SIDE_TASK_TOOL } from "./side-task-tool";
 export { factId } from "./client-facts";
 
 export { FLOW_TRANSITION_DECISION_EVENT } from "./transition-policy";
+
+export { judgeExchange } from "./judge-exchange";
+export type { JudgeExchangeInput, JudgeExchangeResult, JudgeExchangeOptions } from "./judge-exchange";
+export type { JudgePort } from "./judge";

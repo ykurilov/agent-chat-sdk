@@ -662,6 +662,8 @@ export interface FlowSignalInput {
 }
 
 export interface AgentFlowHandle {
+  /** Проверить готовый разговор тем же судьёй без записи состояния и запуска хода. */
+  judgeExchange(input: import("./judge-exchange").JudgeExchangeInput): Promise<import("./judge-exchange").JudgeExchangeResult>;
   /** Read-only strict preview. Старый path/card/currentState не восстанавливают proof. */
   previewMigration(input: Pick<MigrateChatsInput, "flowId" | "toVersionId" | "requiresConfirmation" | "chatIds" | "filter" | "includeEnded" | "includeTestChats"> & { requiresConfirmation: import("../engine/confirmation").FlowConfirmationRef }): Promise<{
     eligible: string[];

@@ -1,6 +1,6 @@
 {
   "name": "@ykurilov/agent-chat-storage-sqlite",
-  "version": "0.97.2",
+  "version": "0.98.0",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,

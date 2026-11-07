@@ -1,3 +1,4 @@
+import { evaluateExchange } from "./judge-exchange";
 import { compactVerdict, decisionAppEvent, decisionEvent, publishDecision, validateTransitionMode } from "./transition-policy";
 import { FLOW_SERVICE_BLOCKS } from "./flow-service-blocks";
 import { confirmationHash, createConfirmations, type FlowRevokeConfirmationInput, type FlowRevokeConfirmationResult } from "./confirmations";
@@ -1064,6 +1065,9 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
           await chat.onStateChanged?.(input);
         },
       };
+    },
+    judgeExchange(input) {
+      return evaluateExchange(input, judge(), (state, exitId) => Boolean(confirmations.guardFor(input.flow.id, state, exitId)), logError);
     },
     attach(target) {
       if ("portFor" in target && target.deliver && typeof store.swapDelivery !== "function") {
