@@ -105,6 +105,27 @@ describe("три вида поля Одуванчик", () => {
     expect(props.onSubmit).toHaveBeenCalledTimes(2);
     expect((screen.getByRole("button", { name: "Остановить" }) as HTMLButtonElement).disabled).toBe(false);
   });
+  it("single provider has one heading, image badges and no meaningless via control", () => {
+    const model = choice(); const change = vi.fn();
+    model.providers = [{ id: "wildwest", name: "WildWest", models: Array.from({ length: 11 }, (_, i) => ({ id: `model-${i}`, name: `Модель ${i}`, group: "Все модели через WildWest", acceptsImages: i % 2 === 0 })) }];
+    model.current = { modelId: "model-0", providerId: "wildwest" }; model.onChange = change;
+    const { container } = render(<OduvanchikComposer {...base()} options={{ variant: "extended" }} modelChoice={model} />);
+    fireEvent.click(screen.getByRole("button", { name: /Модель:/ }));
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getAllByText("Все модели через WildWest")).toHaveLength(1);
+    expect(dialog.querySelectorAll(".oduvanchik-model-option")).toHaveLength(11);
+    expect(dialog.querySelectorAll(".oduvanchik-model-tags")).toHaveLength(11);
+    expect(dialog.querySelectorAll(".oduvanchik-tag")).toHaveLength(6);
+    expect(container.querySelector(".oduvanchik-via")).toBeNull();
+    fireEvent.click(within(dialog).getByRole("button", { name: /^Модель 3/ }));
+    expect(change).toHaveBeenCalledWith({ modelId: "model-3", providerId: "wildwest" });
+  });
+  it("hides via when only the selected model has one provider among several", () => {
+    const model = choice(); model.current.modelId = "two";
+    const { container } = render(<OduvanchikComposer {...base()} options={{ variant: "extended" }} modelChoice={model} />);
+    fireEvent.click(screen.getByRole("button", { name: /Модель:/ }));
+    expect(container.querySelector(".oduvanchik-via")).toBeNull();
+  });
   it("меню ищет модели, выбор сохраняет совместимого провайдера, через меняет провайдера", () => {
     const change = vi.fn();
     render(<OduvanchikComposer {...base()} options={{ variant: "extended" }} modelChoice={choice(change)} />);

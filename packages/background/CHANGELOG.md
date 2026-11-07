@@ -1,5 +1,11 @@
 # @ykurilov/agent-chat-background
 
+## 0.98.1
+
+### Patch Changes
+
+- @ykurilov/agent-chat-core@0.98.1
+
 ## 0.98.0
 
 ### Patch Changes
