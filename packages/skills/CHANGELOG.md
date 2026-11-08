@@ -1,5 +1,11 @@
 # @ykurilov/agent-chat-skills
 
+## 0.100.1
+
+### Patch Changes
+
+- @ykurilov/agent-chat-core@0.100.1
+
 ## 0.100.0
 
 ### Patch Changes

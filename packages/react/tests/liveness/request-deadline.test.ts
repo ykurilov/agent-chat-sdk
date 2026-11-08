@@ -168,3 +168,24 @@ describe("сроки запросов", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 });
+
+it("releases request resources only after stream consumption or cancellation, once", async () => {
+  const onEnd = vi.fn();
+  const source = new ReadableStream<Uint8Array>({ start(controller) { controller.enqueue(new TextEncoder().encode("prefix")); } });
+  const response = await fetchWithDeadline(async () => new Response(source), "/stream", undefined, { timeoutMs: 1000, onEnd });
+  expect(onEnd).not.toHaveBeenCalled();
+  const reader = response.body!.getReader();
+  await reader.read();
+  expect(onEnd).not.toHaveBeenCalled();
+  await reader.cancel();
+  await reader.cancel();
+  expect(onEnd).toHaveBeenCalledTimes(1);
+});
+
+it("releases request resources when headers fail", async () => {
+  const onEnd = vi.fn();
+  await expect(fetchWithDeadline(async () => { throw new TypeError("network"); }, "/stream", undefined, { timeoutMs: 1000, onEnd })).rejects.toBeInstanceOf(ConnectionLostError);
+  expect(onEnd).toHaveBeenCalledTimes(1);
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(onEnd).toHaveBeenCalledTimes(1);
+});

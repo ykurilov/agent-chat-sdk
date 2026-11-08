@@ -9,6 +9,8 @@ export interface DeadlineOptions {
   signal?: AbortSignal;
   /** Срок покрывает и тело ответа: для запросов без потока. */
   wholeBody?: boolean;
+  /** Release request-scoped resources when headers fail or the response body ends/cancels. */
+  onEnd?: () => void;
   /** Следить за тишиной в теле потока; параметры строятся по ответу (например, по заголовку сервера). */
   silence?: (response: Response) => Omit<SilenceWatchOptions, "translateError" | "onEnd">;
 }
@@ -45,10 +47,14 @@ export async function fetchWithDeadline(
     failDeadline(lost);
     abortOwn(lost);
   }, options.timeoutMs);
+  let cleaned = false;
   const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
     clearTimeout(timer);
     userSignal?.removeEventListener("abort", forwardUserAbort);
     options.signal?.removeEventListener("abort", forwardAttemptAbort);
+    options.onEnd?.();
   };
   /** Сетевой обрыв и своя отмена — потеря связи; отмена собеседником — как есть. */
   const translate = (error: unknown): unknown => {

@@ -1,3 +1,4 @@
+import { usePageRequestLifetime } from "./liveness/page-request-lifetime";
 import type { FeedChange, FeedChangeKind, HistoryView } from "./history-view";
 import { closeStoppedToolCalls } from "./close-stopped-tool-calls";
 import { useChat } from "@ai-sdk/react";
@@ -467,6 +468,9 @@ export function useAgentChat({
   );
   // Приложение может передавать новую функцию `fetch` при каждой перерисовке: запросы берут последнюю, а сама
   // `request` не меняется — иначе от перерисовки страницы заново грузилась бы история и пропадал набранный текст.
+  const page = usePageRequestLifetime();
+  const [pageWake, setPageWake] = useState(0);
+  const pausedAnswer = useRef<Promise<void> | undefined>(undefined);
   const customFetchRef = useRef(customFetch);
   customFetchRef.current = customFetch;
   const warnedForbiddenOrigin = useRef(false);
@@ -474,7 +478,14 @@ export function useAgentChat({
   // Чужая для сервера страница получает 403 только на запись: снимает отказ успешная запись, а не чтение.
   const request = useCallback(
     async (input: string, init?: RequestInit) => {
-      const response = await (customFetchRef.current ?? globalThis.fetch)(input, init);
+      const signal = init?.signal ? AbortSignal.any([init.signal, page.controller.signal]) : page.controller.signal;
+      signal.throwIfAborted();
+      const releaseEarly = page.acquireEarly();
+      let response: Response;
+      try {
+        response = await (customFetchRef.current ?? globalThis.fetch)(input, { ...init, signal });
+      } finally { releaseEarly(); }
+      signal.throwIfAborted();
       const writes = (init?.method ?? "GET").toUpperCase() !== "GET";
       // 401 со словами приложения — отказ в доступе, а не «вход истёк»: надпись говорит его слова.
       if (response.status === 401 && !(await appRefusalOf(response))) setRefusal("signed_out");
@@ -584,9 +595,11 @@ export function useAgentChat({
           // Текст прежнего отказа к новому ходу не относится: сбой этого хода покажет свою надпись.
           if (turnRequest) setServerRefusal(null);
           let response: Response;
+          const releaseEarly = page.acquireEarly();
           try {
             response = await fetchWithDeadline(request, url, init, {
               timeoutMs: requestTimeoutMs,
+              onEnd: releaseEarly,
               ...(probe && { signal: probe.signal }),
               silence: (streamed) => {
                 const heartbeatMs = Number(streamed.headers.get(HEARTBEAT_HEADER)) || 0;
@@ -604,6 +617,7 @@ export function useAgentChat({
               },
             });
           } catch (error) {
+            releaseEarly();
             probe?.settle("failed");
             throw error;
           }
@@ -866,6 +880,7 @@ export function useAgentChat({
     },
     onFinish: ({ messages: received, isAbort }) => {
       answeringRef.current = false;
+      if (page.suspended) return;
       // Стёртые шаги (`data-step-reset`) не видны ни ленте, ни решениям хука.
       const messages = withoutResetMessages(received);
       // Ход после ответа на виджет кончился: отвеченный вызов больше не «в пути» (widgets/widget-messages.ts).
@@ -1110,10 +1125,11 @@ export function useAgentChat({
 
   /** Одна попытка переподключения: история сервера главнее того, что успела показать вкладка. */
   const reconnectAttempt = useCallback(
-    async (signal: AbortSignal): Promise<boolean> => {
+    async (signal: AbortSignal, unlessFeedChanged = false): Promise<boolean> => {
       const before = messagesRef.current;
       const history = await loadHistory(signal);
       if (signal.aborted) return false;
+      if (unlessFeedChanged && messagesRef.current !== before) return true;
       if (history === "not_found") {
         setNotFound(true);
         return true;
@@ -1177,7 +1193,7 @@ export function useAgentChat({
    */
   const startSeries = useCallback(
     (options: { quietFirst?: boolean; resendUnsent?: boolean } = {}) => {
-      if (seriesRef.current) return;
+      if (page.suspended || page.controller.signal.aborted || seriesRef.current) return;
       const controller = new AbortController();
       seriesRef.current = controller;
       setSeriesRunning(true);
@@ -1242,7 +1258,7 @@ export function useAgentChat({
     compactionPoll.current?.abort();
     void (async () => {
       const history = await loadHistory(controller.signal);
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted || page.suspended) return;
       if (history === "unreachable") {
         setConnection("offline");
         return;
@@ -1539,9 +1555,10 @@ export function useAgentChat({
   const reportAppEvent = useRef(onAppEvent);
   reportAppEvent.current = onAppEvent;
   useEffect(() => {
-    if (!watchEnabled || !loaded || busy || notFound || watchUnavailableFor.current === chatUrl) return;
-    const chatSignal = chatLifetime.current.signal;
+    if (page.suspended || page.restoring || page.controller.signal.aborted || !watchEnabled || !loaded || busy || notFound || watchUnavailableFor.current === chatUrl) return;
+    const chatSignal = AbortSignal.any([chatLifetime.current.signal, page.controller.signal]);
     const watch = new AbortController();
+    const releaseEarly = page.acquireEarly();
     const stopWatch = () => watch.abort();
     chatSignal.addEventListener("abort", stopWatch, { once: true });
     void watchChat({
@@ -1574,13 +1591,55 @@ export function useAgentChat({
         }
       },
     }).then((end) => {
+      releaseEarly();
       if (end === "unavailable") watchUnavailableFor.current = chatUrl;
     });
     return () => {
       chatSignal.removeEventListener("abort", stopWatch);
       watch.abort();
+      releaseEarly();
     };
-  }, [watchEnabled, busy, chatUrl, loaded, notFound, ownTurnStarting, refreshFromServer, request, showClosure]);
+  }, [watchEnabled, busy, chatUrl, loaded, notFound, ownTurnStarting, refreshFromServer, request, showClosure, pageWake]);
+
+  page.onHide = () => {
+    cancelSeries();
+    compactionPoll.current?.abort();
+    // Local stream only. /stop is a user action and must not be sent by navigation.
+    pausedAnswer.current = stopChat().catch(() => {});
+  };
+  page.onRestore = (signal) => {
+    const chatSignal = chatLifetime.current.signal;
+    const samePage = () => !signal.aborted && page.controller.signal === signal;
+    void (async () => {
+      // Drain the old transport's finish callback before recovering the cached document.
+      await pausedAnswer.current;
+      if (!samePage()) return;
+      page.suspended = false;
+      page.syncEarly?.();
+      if (!chatSignal.aborted) {
+        if (!loaded) setLoadAttempt(attempt => attempt + 1);
+        else {
+          const combined = AbortSignal.any([signal, chatSignal]);
+          const connected = await reconnectAttempt(combined, true);
+          if (!combined.aborted) {
+            if (connected) setConnection("online");
+            else startSeries();
+          }
+        }
+      }
+      if (samePage()) {
+        page.restoring = false;
+        setPageWake(version => version + 1);
+      }
+    })().catch(() => {
+      if (samePage() && !chatSignal.aborted) {
+        page.suspended = false;
+        page.restoring = false;
+        startSeries();
+        setPageWake(version => version + 1);
+      }
+    });
+  };
   useEffect(() => setTasksVersion(0), [chatId]);
 
   /** Ответ, ждавший человека, закрывается новым сообщением: запомнить, каким он был, чтобы вернуть при отказе. */

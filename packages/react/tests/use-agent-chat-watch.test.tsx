@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
-import { act, cleanup, waitFor } from "@testing-library/react";
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
+import { StrictMode } from "react";
+import { useAgentChat } from "../src/use-agent-chat";
 import { renderChatHook } from "./support/chat-dom";
 import { fakeChatServer } from "./support/fake-chat-server";
 import type { HistoryMessage } from "./support/fake-chat-server";
@@ -317,4 +319,98 @@ describe("watch snapshot handshake in the hook", () => {
     await waitFor(() => expect(result.current.messages.map(message => message.id)).toContain("n1"));
     expect(server.requestsTo("history")).toHaveLength(2);
   });
+});
+
+
+describe("page lifecycle", () => {
+  it("aborts watch synchronously on pagehide, stays paused, then reconciles after persisted pageshow", async () => {
+    const server = watchingServer();
+    const { result, unmount } = renderChatHook(server);
+    await waitFor(() => expect(server.watches).toHaveLength(1));
+    act(() => window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true })));
+    expect(server.watches[0]!.signal?.aborted).toBe(true);
+    server.state.history = [question, answer, notice];
+    act(() => window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: false })));
+    expect(server.watches).toHaveLength(1);
+    act(() => window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })));
+    await waitFor(() => expect(server.watches).toHaveLength(2));
+    await waitFor(() => expect(result.current.messages.map(m => m.id)).toContain("n1"));
+    expect(server.requestsTo("stop")).toHaveLength(0);
+    unmount();
+    act(() => window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })));
+    expect(server.watches).toHaveLength(2);
+  });
+
+  it("aborts the answer connection without stopping the server turn, then resumes on return", async () => {
+    const server = watchingServer();
+    let answerSignal: AbortSignal | null | undefined;
+    const send = server.fetch;
+    server.fetch = async (input, init) => {
+      if (String(input).endsWith("/messages")) answerSignal = init?.signal;
+      return send(input, init);
+    };
+    const { result } = renderChatHook(server);
+    await waitFor(() => expect(server.watches).toHaveLength(1));
+    act(() => result.current.setValue("Вопрос"));
+    act(() => result.current.submit());
+    await waitFor(() => expect(server.streams).toHaveLength(1));
+    act(() => window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true })));
+    expect(answerSignal?.aborted).toBe(true);
+    expect(server.requestsTo("stop")).toHaveLength(0);
+    server.state.running = true;
+    act(() => window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })));
+    await waitFor(() => expect(server.resumed).toHaveLength(1));
+  });
+});
+
+
+it("page lifecycle survives StrictMode and repeated hide/restore without accumulating watches", async () => {
+  const server = watchingServer();
+  const { result } = renderHook(() => useAgentChat({ api: "/api/chat", chatId: "c1", fetch: server.fetch }), { wrapper: StrictMode });
+  await waitFor(() => expect(server.watches).toHaveLength(1));
+  act(() => result.current.setValue("Неотправленный текст"));
+  for (let cycle = 0; cycle < 3; cycle++) {
+    act(() => window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true })));
+    expect(server.watches.at(-1)!.signal?.aborted).toBe(true);
+    act(() => window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })));
+    await waitFor(() => expect(server.watches).toHaveLength(cycle + 2));
+    act(() => window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })));
+    expect(server.watches).toHaveLength(cycle + 2);
+    expect(result.current.value).toBe("Неотправленный текст");
+  }
+});
+
+it("recovers when pagehide interrupted the initial history load", async () => {
+  const server = watchingServer();
+  let release!: () => void;
+  server.state.gate.history = new Promise<void>(resolve => { release = resolve; });
+  const { result } = renderChatHook(server);
+  await waitFor(() => expect(server.requestsTo("history")).toHaveLength(1));
+  act(() => window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true })));
+  act(() => window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })));
+  await waitFor(() => expect(server.requestsTo("history")).toHaveLength(2));
+  await act(async () => release());
+  await waitFor(() => expect(server.watches).toHaveLength(1));
+  expect(result.current.connection).toBe("online");
+});
+
+it("keeps an unaccepted message retryable after a cancelled departure", async () => {
+  const server = watchingServer();
+  server.state.hang.add("messages");
+  const { result } = renderChatHook(server);
+  await waitFor(() => expect(server.watches).toHaveLength(1));
+  act(() => result.current.setValue("Не терять вопрос"));
+  act(() => result.current.submit());
+  await waitFor(() => expect(server.requestsTo("messages")).toHaveLength(1));
+  const first = server.requestsTo("messages")[0]!.body as { message: { id: string } };
+  act(() => window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true })));
+  act(() => window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })));
+  await waitFor(() => expect(server.watches).toHaveLength(2));
+  expect(result.current.messages.at(-1)?.id).toBe(first.message.id);
+  expect(result.current.sendFailed).toBe(true);
+  server.state.hang.delete("messages");
+  act(() => result.current.retry());
+  await waitFor(() => expect(server.streams).toHaveLength(1));
+  const retried = server.requestsTo("messages")[1]!.body as { message: { id: string } };
+  expect(retried.message.id).toBe(first.message.id);
 });
