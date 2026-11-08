@@ -3,6 +3,8 @@
 Поведение чата с агентом для React 19, без внешнего вида. Всё видимое рисует скин —
 объект компонентов. Это низкоуровневый API: `skin` обязателен.
 
+Стандарт приложения с историей — `AppShellChatWorkspace` из `@ykurilov/agent-chat-skin-oduvanchik/chat`: [единый AppShell](../../docs/app-shell-chat.md). `ChatWorkspace.renderWorkspace(view)` даёт `children`, `activeTitle` и разрешённый `list` для своей оболочки без дублирования состояния. Прежний каркас используется, если renderWorkspace не передан.
+
 Стандартный экран SDK - `AgentChat`, `ChatWorkspace`, `AgentPanel` из `@ykurilov/agent-chat-skin-oduvanchik/chat`: без `skin` используется Одуванчик, явный скин имеет приоритет. [Подключение CSS и переход](../../skins/oduvanchik/README.md). Существующий импорт из React сам не меняет оформление приложения.
 
 ```tsx

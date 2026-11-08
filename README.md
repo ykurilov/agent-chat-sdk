@@ -1,5 +1,9 @@
 # Agent Chat SDK
 
+Автосжатие истории включено по умолчанию у всех агентов: порог 250 000 токенов, но не выше 80% окна выбранной модели. Пропущенный `compaction`, `{}` и поля со значением `undefined` сохраняют это поведение; только явный `compaction: false` выключает сжатие. Приложение может задать свой `compaction.thresholdTokens`; хвост и потолок сводки по умолчанию остаются по 20 000 токенов.
+
+Стандартный приоритет провайдеров: `deepseek` → `openrouter` → `fireworks` → `together`. Без явного `defaultChoice` выбирается DeepSeek 4.1 Flash через прямой DeepSeek API; если его ключа нет, используется первый доступный провайдер в этом порядке. Тот же порядок задаёт меню и стандартных запасных (для модели берутся только поддерживаемые провайдеры с ключами, выбранный пропускается). Первый запасной прямого DeepSeek — OpenRouter с `deepseek/deepseek-v4.1-flash-1017`. Явные `defaultChoice` и `providerFallback.byModel` имеют приоритет; `providerFallback: false` по-прежнему отключает запасных.
+
 Готовый чат с ИИ-агентом для вашего веб-приложения. Ставите несколько пакетов, пишете два коротких файла — и
 у приложения есть окно чата, где агент отвечает по частям, думает вслух, вызывает ваши функции и помнит переписку.
 
@@ -13,7 +17,7 @@
 - Действия с подтверждением показывают карточку. Если она пришла до конца ответа агента, кнопки ждут
   завершения хода; свои карточки блокируют решения по `approval.pending`.
 - Переписка хранится в SQLite или PostgreSQL. Сервер можно перезапустить посреди ответа: ничего не потеряется.
-- Модели DeepSeek, GLM, GPT, Gemini и Claude через DeepSeek, Fireworks, Together AI и OpenRouter. Человек выбирает
+- Модели DeepSeek, GLM, GPT, Gemini и Claude через DeepSeek, OpenRouter, Fireworks и Together AI. Человек выбирает
   модель прямо в поле ввода. Одуванчик предлагает переключение провайдера только при наличии выбора.
 - По желанию: поиск в интернете, голосовой ввод и голосовой разговор, вложения, список чатов, долгая память, лимиты
   расходов, картинки и схемы в ответах, фоновые задачи, чат в Telegram, VK и MAX.
@@ -23,7 +27,7 @@
 - Одуванчик: контрастное выделение текста в сообщениях и поле ввода в обеих темах; готовый `/embedded.css` ограничивает стили элементами скина.
 - Внешний вид отделён от поведения. Стандартный вид - Одуванчик через `/chat`; явный Тандем или свой скин сохраняют приоритет.
 
-Версия 0.99.0.
+Версия 0.100.0.
 
 ## Установка
 
@@ -47,7 +51,7 @@
 ## Первый чат за 10 минут
 
 Пример — приложение на Hono (сервер) и React со сборкой Vite (страница). Понадобится ключ хотя бы одного провайдера
-моделей: DeepSeek, Fireworks, Together AI или OpenRouter.
+моделей: DeepSeek, OpenRouter, Fireworks или Together AI.
 
 **1. Новая папка и пакеты.**
 
@@ -122,27 +126,15 @@ console.log("Сервер чата: http://localhost:3000");
 
 ```tsx
 // src/main.tsx
-import { AgentChat } from "@ykurilov/agent-chat-skin-oduvanchik/chat";
-import { useEffect, useState } from "react";
+import { AppShellChatWorkspace } from "@ykurilov/agent-chat-skin-oduvanchik/chat";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
 function App() {
-  const [chatId, setChatId] = useState<string | null>(null);
-
-  useEffect(() => {
-    // Новый чат при каждом открытии страницы. В своём приложении храните id чата: в адресе страницы или в базе.
-    void fetch("/api/chat", { method: "POST" })
-      .then((response) => response.json() as Promise<{ id: string }>)
-      .then(({ id }) => setChatId(id));
-  }, []);
-
-  if (!chatId) return null;
-  return (
-    <div style={{ height: "100dvh" }}>
-      <AgentChat api="/api/chat" chatId={chatId} />
-    </div>
-  );
+  return <div style={{ height: "100dvh" }}>
+    <AppShellChatWorkspace api="/api/chat"
+      shell={{ brand: { label: "Мой агент" }, navigation: [] }} />
+  </div>;
 }
 
 createRoot(document.getElementById("root")!).render(<App />);
@@ -168,7 +160,7 @@ export default defineConfig({
 });
 ```
 
-Стандартный экран использует Одуванчик без `skin`. `ChatWorkspace` и `AgentPanel` доступны из того же `/chat`; провайдер панели и хуки остаются в `@ykurilov/agent-chat-react/panel`. [Другой скин и переход со старого импорта](skins/oduvanchik/README.md). Редактор `FlowEditor`/`FlowTestChat` также поддерживает официальный `oduvanchikFlowEditorSkin` из `/flows`; [подключение редактора и вложенного чата](skins/oduvanchik/README.md#редактор-сценария). Остальные административные расширения используют отдельные скины Тандема.
+Стандарт приложения с историей — `AppShellChatWorkspace`: история сама попадает в `AppShell` вида A (`ds-react` ≥0.6.0), «Новый чат» — в `primaryAction`. Единственный `main` принадлежит оболочке. Бренд, разделы и аккаунт передаются в `shell`; тема меняется только в настройках через `ThemeSettings`. [Контракт оболочки](docs/app-shell-chat.md). Отдельный `AgentChat` остаётся для одного чата внутри существующего экрана. Стандартный экран использует Одуванчик без `skin`. `ChatWorkspace` и `AgentPanel` доступны из того же `/chat`; провайдер панели и хуки остаются в `@ykurilov/agent-chat-react/panel`. [Другой скин и переход со старого импорта](skins/oduvanchik/README.md). Редактор `FlowEditor`/`FlowTestChat` также поддерживает официальный `oduvanchikFlowEditorSkin` из `/flows`; [подключение редактора и вложенного чата](skins/oduvanchik/README.md#редактор-сценария). Остальные административные расширения используют отдельные скины Тандема.
 
 **5. Запуск.** В двух окнах терминала:
 

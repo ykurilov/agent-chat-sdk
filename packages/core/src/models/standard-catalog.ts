@@ -12,5 +12,5 @@ import { togetherProvider } from "./providers/together";
 /** Стандартные модели и провайдеры ядра. Новая версия модели приходит только с новой версией пакета. */
 export const standardCatalog = createModelCatalog({
   models: [deepseek41FlashProfile, glm53FlashProfile, gpt6LunaProfile, gemini38FlashProfile, claudeHaiku55Profile],
-  providers: [fireworksProvider, deepseekProvider, togetherProvider, openrouterProvider],
+  providers: [deepseekProvider, openrouterProvider, fireworksProvider, togetherProvider],
 });

@@ -1,5 +1,9 @@
 # @ykurilov/agent-chat-core
 
+Автосжатие истории включено по умолчанию у всех агентов: порог 250 000 токенов, но не выше 80% окна выбранной модели. Пропущенный `compaction`, `{}` и поля со значением `undefined` сохраняют это поведение; только явный `compaction: false` выключает сжатие. Приложение может задать свой `compaction.thresholdTokens`; хвост и потолок сводки по умолчанию остаются по 20 000 токенов.
+
+Стандартный приоритет провайдеров: `deepseek` → `openrouter` → `fireworks` → `together`. Без явного `defaultChoice` выбирается DeepSeek 4.1 Flash через прямой DeepSeek API; если его ключа нет, используется первый доступный провайдер в этом порядке. Тот же порядок задаёт меню и стандартных запасных (для модели берутся только поддерживаемые провайдеры с ключами, выбранный пропускается). Первый запасной прямого DeepSeek — OpenRouter с `deepseek/deepseek-v4.1-flash-1017`. Явные `defaultChoice` и `providerFallback.byModel` имеют приоритет; `providerFallback: false` по-прежнему отключает запасных.
+
 Ядро чата с агентом. Работает только на сервере: ходит к провайдерам моделей, ведёт ход
 агента с инструментами, хранит переписку, останавливает и повторяет ответы.
 
@@ -12,8 +16,8 @@ import type { ChatStorage } from "@ykurilov/agent-chat-core";
 ```
 
 - `standardCatalog` — стандартные модели и провайдеры. Модели: `deepseek-4.1-flash`, `glm-5.3-flash`,
-  `gpt-6-luna`, `gemini-3.8-flash`, `claude-haiku-5.5` (через OpenRouter, кэш на час). Провайдеры и ключи: `deepseek` (`DEEPSEEK_API_KEY`), `fireworks`
-  (`FIREWORKS_API_KEY`), `together` (`TOGETHER_API_KEY`), `openrouter` (`OPENROUTER_API_KEY`, сортировка по скорости).
+  `gpt-6-luna`, `gemini-3.8-flash`, `claude-haiku-5.5` (через OpenRouter, кэш на час). Провайдеры и ключи: `deepseek` (`DEEPSEEK_API_KEY`), `openrouter` (`OPENROUTER_API_KEY`, сортировка по скорости),
+  `fireworks` (`FIREWORKS_API_KEY`), `together` (`TOGETHER_API_KEY`).
   Кто какую модель отдаёт — в [docs/getting-started.md](https://github.com/ykurilov/agent-chat-sdk/blob/main/docs/getting-started.md), шаг 3.
 - `extendCatalog(base, { addModels, removeModels, addProviders, removeProviders, pinModelVersions, connectProviders })` — свой набор
   моделей: убрать, добавить, закрепить версию модели у провайдера. Порядок: убрать → добавить → закрепить.

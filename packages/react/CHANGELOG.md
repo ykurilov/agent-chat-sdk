@@ -1,5 +1,15 @@
 # @ykurilov/agent-chat-react
 
+## 0.100.0
+
+### Minor Changes
+
+- 34dd7be: Новый AppShellChatWorkspace связывает историю SDK со стандартным AppShell Одуванчика (ds-react ≥0.6.0): история в groups, Новый чат в primaryAction, один main и стандартная мобильная навигация. Прежний ChatWorkspace совместим; renderWorkspace и appShellChatNavigation позволяют подключить существующую оболочку.
+  
+  ### Как обновить приложение
+  
+  Для нового экрана импортировать AppShellChatWorkspace из @ykurilov/agent-chat-skin-oduvanchik/chat и передать api и shell с brand/navigation/account/onSettings. Не ставить вокруг второй sidebar/main. Прежние ChatWorkspace/AgentChat можно оставить. Для своих компонентов настроек использовать ThemeSettings из ds-react ^0.6.0; отдельная кнопка темы не требуется. Полный контракт — docs/app-shell-chat.md.
+
 ## 0.99.0
 
 ### Minor Changes

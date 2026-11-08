@@ -1,4 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { fallbackProviders } from "../../../src/agent-run/next-attempt";
+import { buildModelMenu, resolveDefaultChoice } from "../../../src/models/model-choice";
 import { standardCatalog } from "../../../src/models/standard-catalog";
 
 /** Таблица FR-001: у каких провайдеров какая модель и с каким id. */
@@ -147,5 +149,45 @@ describe("DeepSeek 4.1 Flash 1017", () => {
       peakHours: model.pricing?.deepseek?.peakHours,
     });
     expect(model.pricing?.openrouter?.cacheWritePerMillion).toBeUndefined();
+  });
+});
+
+
+describe("стандартный приоритет провайдеров", () => {
+  const order = ["deepseek", "openrouter", "fireworks", "together"];
+  const env = Object.fromEntries(standardCatalog.providers.map(provider => [provider.apiKeyEnv, "synthetic-key"]));
+  const modelId = "deepseek-4.1-flash";
+  it("каталог и меню используют один порядок", () => {
+    expect(standardCatalog.providers.map(provider => provider.id)).toEqual(order);
+    expect(buildModelMenu(standardCatalog, env, { modelId, providerId: "deepseek" }).providers.map(provider => provider.id)).toEqual(order);
+  });
+  it.each([
+    [env, "deepseek"],
+    [{ OPENROUTER_API_KEY: "synthetic-key", FIREWORKS_API_KEY: "synthetic-key", TOGETHER_API_KEY: "synthetic-key" }, "openrouter"],
+    [{ FIREWORKS_API_KEY: "synthetic-key", TOGETHER_API_KEY: "synthetic-key" }, "fireworks"],
+    [{ TOGETHER_API_KEY: "synthetic-key" }, "together"],
+    [{}, "deepseek"],
+  ])("первая доступная модель сохраняет приоритет: %j → %s", (keys, providerId) => {
+    expect(resolveDefaultChoice(standardCatalog, keys, undefined, vi.fn())).toMatchObject({ modelId, providerId, reasoning: "high" });
+  });
+  it("OpenRouter — первый запасной DeepSeek, с точным id модели 1017", () => {
+    expect(fallbackProviders({ catalog: standardCatalog, modelId, chosenProviderId: "deepseek", env })).toEqual(["openrouter", "fireworks", "together"]);
+    expect(standardCatalog.models[0]!.providerModelIds.openrouter).toBe("deepseek/deepseek-v4.1-flash-1017");
+  });
+  it("порядок профилей всех стандартных моделей согласован с меню и запасными", () => {
+    for (const model of standardCatalog.models) {
+      const supported = order.filter(id => model.providerModelIds[id]);
+      expect(Object.keys(model.providerModelIds), model.id).toEqual(supported);
+      expect(fallbackProviders({ catalog: standardCatalog, modelId: model.id, chosenProviderId: supported[0]!, env }), model.id).toEqual(supported.slice(1));
+    }
+  });
+  it("явный defaultChoice главнее стандартного порядка", () => {
+    expect(resolveDefaultChoice(standardCatalog, env, { modelId, providerId: "together", reasoning: "low" }, vi.fn())).toEqual({ modelId, providerId: "together", reasoning: "low" });
+  });
+  it("явный byModel главнее порядка профиля; false по-прежнему выключает запасных", () => {
+    const input = { catalog: standardCatalog, modelId, chosenProviderId: "deepseek", env };
+    expect(fallbackProviders({ ...input, setting: { byModel: { [modelId]: ["together", "fireworks", "openrouter"] } } })).toEqual(["together", "fireworks", "openrouter"]);
+    expect(fallbackProviders({ ...input, setting: { byModel: { [modelId]: false } } })).toEqual([]);
+    expect(fallbackProviders({ ...input, setting: false })).toEqual([]);
   });
 });

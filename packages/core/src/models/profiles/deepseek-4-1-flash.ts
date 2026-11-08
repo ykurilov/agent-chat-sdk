@@ -22,9 +22,9 @@ export const deepseek41FlashProfile: ModelProfile = {
   // 1017: прямой DeepSeek обновляет alias сам; остальные провайдеры используют датированный id.
   providerModelIds: {
     deepseek: "deepseek-flash",
+    openrouter: "deepseek/deepseek-v4.1-flash-1017",
     fireworks: "accounts/fireworks/models/deepseek-v4p1-flash-1017",
     together: "deepseek-ai/DeepSeek-V4.1-Flash-1017",
-    openrouter: "deepseek/deepseek-v4.1-flash-1017",
   },
   // Цены за миллион токенов: каталоги провайдеров 2026-10-22.
   pricing: {

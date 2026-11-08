@@ -1,5 +1,14 @@
 # @ykurilov/agent-chat-mcp
 
+## 0.100.0
+
+### Patch Changes
+
+- Updated dependencies [2f96ad1]
+- Updated dependencies [79b85b8]
+  - @ykurilov/agent-chat-core@0.100.0
+  - @ykurilov/agent-chat-web-tools@0.100.0
+
 ## 0.99.0
 
 ### Patch Changes

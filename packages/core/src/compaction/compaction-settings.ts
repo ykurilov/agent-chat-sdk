@@ -21,7 +21,7 @@ export interface ResolvedCompactionSettings extends CompactionSettings {
   flushWaitMs: number;
 }
 
-const DEFAULTS = { thresholdTokens: 200_000, tailTokens: 20_000, summaryCeilingTokens: 20_000, flushWaitMs: 30_000 };
+const DEFAULTS = { thresholdTokens: 250_000, tailTokens: 20_000, summaryCeilingTokens: 20_000, flushWaitMs: 30_000 };
 /** Доля окна, выше которой порог не поднимается. */
 const THRESHOLD_WINDOW_SHARE = 0.8;
 /** Доля окна, с которой следующий ответ ждёт сжатия: дальше запрос рискует не поместиться. */

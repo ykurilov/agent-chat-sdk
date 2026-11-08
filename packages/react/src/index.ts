@@ -111,7 +111,7 @@ export { useModelChoice } from "./use-model-choice";
 export type { UseModelChoiceOptions } from "./use-model-choice";
 export type { DictatedText, VoiceErrorDetails, VoiceErrorKind, VoiceInput, VoiceListener, VoiceSession, VoiceStartContext } from "./voice-input";
 export { ChatWorkspace } from "./chat-list/chat-workspace";
-export type { ChatWorkspaceProps } from "./chat-list/chat-workspace";
+export type { ChatWorkspaceProps, ChatWorkspaceView } from "./chat-list/chat-workspace";
 export type { ChatListDeleteRequestView, ChatListItemView, ChatListSkin } from "./chat-list/chat-list-skin";
 export { useChatList } from "./chat-list/use-chat-list";
 export type { ChatListActionError, ChatListState, ChatListStatus, UseChatListOptions } from "./chat-list/use-chat-list";

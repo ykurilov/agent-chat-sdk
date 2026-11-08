@@ -24,3 +24,10 @@ import { ChatProgress, CompletionCard } from "@ykurilov/ds-react";
 import type { ChatHeaderView } from "@ykurilov/agent-chat-react";
 const header: ChatHeaderView = {title:"Application",aside:<ChatProgress label="Progress" value={1} max={2}/>,headingLevel:2};
 <AgentChat api="/api/chat" chatId="c1" header={header} completion={<CompletionCard title="Application result" action={<button>Continue</button>}/>}/>;
+
+import { AppShellChatWorkspace, appShellChatNavigation } from "@ykurilov/agent-chat-skin-oduvanchik/chat";
+import type { ChatWorkspaceView } from "@ykurilov/agent-chat-react";
+import { russianLabels } from "@ykurilov/agent-chat-react";
+<AppShellChatWorkspace api="/api/chat" shell={{ brand: { label: "App" }, navigation: [] }} />;
+declare const view: ChatWorkspaceView;
+appShellChatNavigation(view, russianLabels, 10);

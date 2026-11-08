@@ -23,3 +23,6 @@ export function AgentPanel({ skin = oduvanchikSkin, ...props }: AgentPanelProps)
 
 export { ChatAppViewport } from "@ykurilov/agent-chat-react";
 export type { ChatAppViewportProps } from "@ykurilov/agent-chat-react";
+
+export { AppShellChatWorkspace, appShellChatNavigation } from "./app-shell-chat";
+export type { AppShellChatWorkspaceProps } from "./app-shell-chat";

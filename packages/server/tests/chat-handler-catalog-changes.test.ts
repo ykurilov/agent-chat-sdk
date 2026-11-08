@@ -10,7 +10,7 @@ describe("суженный каталог приложения", () => {
   it("меню не показывает убранных провайдеров и модели без провайдеров", async () => {
     const chat = createTestChat({ env, catalog: narrowed({ removeProviders: ["openrouter"], removeModels: ["glm-5.3-flash"] }) });
     const menu = (await (await chat.call("GET", "/models")).json()) as { providers: Array<{ id: string; models: Array<{ id: string }> }> };
-    expect(menu.providers.map((provider) => provider.id)).toEqual(["fireworks", "deepseek", "mock"]);
+    expect(menu.providers.map((provider) => provider.id)).toEqual(["deepseek", "fireworks", "mock"]);
     const shown = menu.providers.flatMap((provider) => provider.models.map((model) => model.id));
     expect(shown).not.toContain("glm-5.3-flash");
     expect(shown).not.toContain("gpt-6-luna");
@@ -34,6 +34,6 @@ describe("суженный каталог приложения", () => {
     });
     const chatId = await chat.createChat();
     expect(errors.join("\n")).toMatch(/по умолчанию/);
-    expect(await chat.storage.getChat(chatId)).toMatchObject({ providerId: "fireworks" });
+    expect(await chat.storage.getChat(chatId)).toMatchObject({ providerId: "deepseek" });
   });
 });

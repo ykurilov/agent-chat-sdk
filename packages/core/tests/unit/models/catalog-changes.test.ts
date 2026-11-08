@@ -38,9 +38,9 @@ const menuModels = (catalog: ReturnType<typeof extendCatalog>, env: Record<strin
 describe("extendCatalog: убрать провайдеров", () => {
   it("убранного провайдера нет в каталоге и в меню, модели остаются у остальных", () => {
     const catalog = extendCatalog(standardCatalog, { removeProviders: ["together", "openrouter"] });
-    expect(catalog.providers.map((provider) => provider.id)).toEqual(["fireworks", "deepseek"]);
+    expect(catalog.providers.map((provider) => provider.id)).toEqual(["deepseek", "fireworks"]);
     expect(catalog.models.find((model) => model.id === "deepseek-4.1-flash")?.providerModelIds).not.toHaveProperty("together");
-    expect(menuModels(catalog).map(([id]) => id)).toEqual(["fireworks", "deepseek"]);
+    expect(menuModels(catalog).map(([id]) => id)).toEqual(["deepseek", "fireworks"]);
   });
 
   it("модель, которую обслуживал только убранный провайдер, исчезает из каталога и меню", () => {

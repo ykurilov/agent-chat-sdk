@@ -6,13 +6,17 @@ import {
 } from "../../../src/compaction/compaction-settings";
 
 describe("настройки сжатия", () => {
-  it("без настроек — значения по умолчанию из решений: 200 тыс., хвост 20 тыс., потолок сводки 20 тыс.", () => {
+  it("без настроек — значения по умолчанию из решений: 250 тыс., хвост 20 тыс., потолок сводки 20 тыс.", () => {
     expect(resolveCompactionSettings(undefined)).toEqual({
-      thresholdTokens: 200_000,
+      thresholdTokens: 250_000,
       tailTokens: 20_000,
       summaryCeilingTokens: 20_000,
       flushWaitMs: 30_000,
     });
+  });
+
+  it.each([undefined, {}, { thresholdTokens: undefined }])("пропущенная настройка и пустые опции сохраняют автосжатие: %j", setting => {
+    expect(resolveCompactionSettings(setting)).toMatchObject({ thresholdTokens: 250_000 });
   });
 
   it("false выключает сжатие", () => {
@@ -44,7 +48,9 @@ describe("настройки сжатия", () => {
 
   it("порог для модели — не больше 80% её окна", () => {
     const settings = resolveCompactionSettings(undefined)!;
-    expect(effectiveThreshold(settings, 1_000_000)).toBe(200_000);
+    expect(effectiveThreshold(settings, 1_000_000)).toBe(250_000);
+    expect(effectiveThreshold(settings, 400_000)).toBe(250_000);
+    expect(effectiveThreshold(settings, 312_500)).toBe(250_000);
     expect(effectiveThreshold(settings, 128_000)).toBe(102_400);
     expect(effectiveThreshold(settings, 250_000)).toBe(200_000);
     expect(effectiveThreshold(settings, 200_000)).toBe(160_000);

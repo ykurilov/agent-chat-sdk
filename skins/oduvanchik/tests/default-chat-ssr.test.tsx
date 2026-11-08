@@ -3,10 +3,11 @@ import { createElement } from "react";
 import { renderToString } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { AgentPanelProvider } from "@ykurilov/agent-chat-react/panel";
-import { AgentChat, AgentPanel, ChatWorkspace } from "@ykurilov/agent-chat-skin-oduvanchik/chat";
+import { AgentChat, AgentPanel, ChatWorkspace, AppShellChatWorkspace } from "@ykurilov/agent-chat-skin-oduvanchik/chat";
 
 describe("standard UI server rendering", () => {
   it("imports and renders without browser globals or CSS side effects", () => {
+    expect(renderToString(createElement(AppShellChatWorkspace, { api: "/api/chat", shell: { brand: { label: "App" }, navigation: [] } }))).toContain("yk-app-shell");
     expect(typeof window).toBe("undefined");
     expect(renderToString(createElement(AgentChat, { api: "/api/chat", chatId: "c1", header: { title: "Server header" } }))).toContain("oduvanchik-chat");
     expect(renderToString(createElement(ChatWorkspace, { api: "/api/chat" }))).toBeTruthy();

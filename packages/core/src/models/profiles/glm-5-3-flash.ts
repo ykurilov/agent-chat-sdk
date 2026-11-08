@@ -19,9 +19,9 @@ export const glm53FlashProfile: ModelProfile = {
   // Запрет стоит всегда, а не только при картинке: запрос одинаков в каждом ходе, кэш и выбранный хозяин не теряются.
   providerOptions: { openrouter: { provider: { ignore: ["cloudflare", "deepinfra", "open-inference", "sail-research", "venice"] } } },
   providerModelIds: {
+    openrouter: "z-ai/glm-5.3-flash",
     fireworks: "accounts/fireworks/models/glm-5p3-flash",
     together: "zai-org/GLM-5.3-Flash",
-    openrouter: "z-ai/glm-5.3-flash",
   },
   // Цены: прайс-листы провайдеров на 2026-09-30, доллары за миллион токенов (docs/research/model-prices.md).
   pricing: {

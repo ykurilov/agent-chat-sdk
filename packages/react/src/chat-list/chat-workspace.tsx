@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { AgentChat } from "../agent-chat";
 import type { AgentChatProps } from "../agent-chat";
 import type { ChatAccess } from "../chat-access";
@@ -6,8 +7,16 @@ import { useChatLabels } from "../labels";
 import type { ChatSkin } from "../skin-contract";
 import type { ChatListSkin } from "./chat-list-skin";
 import { useChatList } from "./use-chat-list";
+import type { ChatListViewProps } from "./use-chat-list-view";
 import { activeChatTitle, useChatListView } from "./use-chat-list-view";
 import { useWorkspaceListSync } from "./use-workspace-list-sync";
+
+/** Data and chat content for an application-owned shell. Undefined list means chatList is not allowed yet. */
+export interface ChatWorkspaceView {
+  list?: ChatListViewProps;
+  activeTitle: string;
+  children: ReactNode;
+}
 
 export interface ChatWorkspaceProps extends Omit<AgentChatProps, "chatId" | "subject" | "skin" | "onBusyChange" | "onChatUnavailable" | "initialDraft"> {
   /** Скин чата плюс скин списка (например, `tandemSkin`). */
@@ -16,6 +25,8 @@ export interface ChatWorkspaceProps extends Omit<AgentChatProps, "chatId" | "sub
   initialChatId?: string;
   /** Открытый чат сменился (выбор, создание, удаление): например, чтобы поменять адрес страницы. */
   onChatChange?: (chatId: string | null) => void;
+  /** Replaces only the workspace frame, retaining access checks, list lifecycle and chat behavior. */
+  renderWorkspace?: (view: ChatWorkspaceView) => ReactNode;
 }
 
 /**
@@ -23,7 +34,7 @@ export interface ChatWorkspaceProps extends Omit<AgentChatProps, "chatId" | "sub
  * запрещено право `chatList` — списка нет, только чат: он не показывается и не обновляется, пока права открытого чата неизвестны
  * (до первой истории) и если запрещён.
  */
-export function ChatWorkspace({ skin, initialChatId, onChatChange, onChatAccessChange, ...chatProps }: ChatWorkspaceProps) {
+export function ChatWorkspace({ skin, initialChatId, onChatChange, onChatAccessChange, renderWorkspace, ...chatProps }: ChatWorkspaceProps) {
   const labels = useChatLabels();
   const { api } = chatProps;
   const list = useChatList({ api, ...(initialChatId !== undefined && { initialChatId }), ...(chatProps.onTurnRefused && { onCreateRefused: chatProps.onTurnRefused }) });
@@ -57,6 +68,11 @@ export function ChatWorkspace({ skin, initialChatId, onChatChange, onChatAccessC
   const closeList = useCallback(() => setListOpen(false), []);
   const listView = useChatListView(list, closeList);
 
+  const children = activeChatId !== null && (
+    <AgentChat key={activeChatId} {...chatProps} chatId={activeChatId} skin={skin} onBusyChange={setActiveBusy} onChatAccessChange={onActiveAccessChange} onChatUnavailable={onActiveChatUnavailable} />
+  );
+  if (renderWorkspace) return renderWorkspace({ activeTitle: activeChatTitle(list, labels), ...(listShown && { list: listView }), children });
+
   return (
     <skin.ChatWorkspace
       activeTitle={activeChatTitle(list, labels)}
@@ -64,9 +80,7 @@ export function ChatWorkspace({ skin, initialChatId, onChatChange, onChatAccessC
       onListOpenChange={setListOpen}
       {...(listShown && { list: <skin.ChatList {...listView} /> })}
     >
-      {activeChatId !== null && (
-        <AgentChat key={activeChatId} {...chatProps} chatId={activeChatId} skin={skin} onBusyChange={setActiveBusy} onChatAccessChange={onActiveAccessChange} onChatUnavailable={onActiveChatUnavailable} />
-      )}
+      {children}
     </skin.ChatWorkspace>
   );
 }
