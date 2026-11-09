@@ -192,3 +192,22 @@ test("combined chat and flows CSS imports DS controls once", async ({ page }) =>
  });
  expect(fonts.actual).toBe(fonts.expected);
 });
+
+test("phone 390: header actions menu opens fully inside the screen", async ({ page }) => {
+ await page.setViewportSize({ width: 390, height: 844 });
+ await page.goto(route());
+ const scenario = page.getByRole("tab", { name: "Сценарий" });
+ if (await scenario.count()) await scenario.click();
+ await page.getByRole("button", { name: "Ещё действия" }).click();
+ const menu = page.getByRole("menu", { name: "Ещё действия" });
+ await expect(menu).toBeVisible();
+ const box = (await menu.boundingBox())!;
+ expect(box.x).toBeGreaterThanOrEqual(0);
+ expect(box.x + box.width).toBeLessThanOrEqual(390);
+ for (const item of await menu.getByRole("menuitem").all()) {
+  const itemBox = (await item.boundingBox())!;
+  expect(itemBox.x).toBeGreaterThanOrEqual(0);
+  expect(itemBox.x + itemBox.width).toBeLessThanOrEqual(390);
+ }
+ await page.screenshot({ path: `${screenshots}/phone-header-menu.png`, animations: "disabled" });
+});

@@ -172,7 +172,10 @@ export function useFlowEditor(options: UseFlowEditorOptions) {
 
   const edit = useCallback((change: (flow: AgentFlow) => AgentFlow) => {
     if (latest.current.readOnly) return;
-    onChange(change(latest.current.value));
+    const next = change(latest.current.value);
+    // Несколько правок за одно событие (например, два поля одного переключателя) ложатся друг на друга, а не затирают первую.
+    latest.current = { ...latest.current, value: next };
+    onChange(next);
   }, [onChange]);
 
   /** Переключение вида сохраняет черновик; полное условие заменяет его явно. */

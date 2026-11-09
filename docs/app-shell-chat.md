@@ -13,7 +13,7 @@ import { AppShellChatWorkspace } from "@ykurilov/agent-chat-skin-oduvanchik/chat
     storageKey: "app-navigation" }} />;
 ```
 
-Родитель задаёт высоту (`100dvh` для обычного веб-экрана, `ChatAppViewport` для полноэкранного мобильного приложения). CSS — прежний `styles.css` с Tailwind либо готовый `embedded.css`. Самостоятельный импорт компонентов настроек требует прямой зависимости приложения `@ykurilov/ds-react@^0.6.0` и его peer-зависимостей. Если приложение использует только embedded.css скина, для собственных настроек/порталов ds-react дополнительно подключаются `@ykurilov/ds-tokens/tokens.css` и `@ykurilov/ds-react/styles.css`.
+Родитель задаёт высоту (`100dvh` для обычного веб-экрана, `ChatAppViewport` для полноэкранного мобильного приложения). CSS — прежний `styles.css` с Tailwind либо готовый `embedded.css`. Самостоятельный импорт компонентов настроек требует прямой зависимости приложения `@ykurilov/ds-react@^0.6.2` и его peer-зависимостей. Если приложение использует только embedded.css скина, для собственных настроек/порталов ds-react дополнительно подключаются `@ykurilov/ds-tokens/tokens.css` и `@ykurilov/ds-react/styles.css`.
 
 `shell` — свойства AppShell, кроме `children` и `primaryAction`. Его `groups` сохраняются, после них добавляется группа SDK `agent-chat-history` (этот id зарезервирован). `historyVisibleCount` по умолчанию 20; «Ещё N», автоматическое раскрытие до активного пункта, сохранение сворачивания, мобильное закрытие и возврат фокуса делает AppShell. Строки чатов без значков. При создании повторные нажатия не вызывают новое действие, пока SDK сообщает `creating`.
 
