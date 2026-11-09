@@ -1,5 +1,15 @@
 # @ykurilov/agent-chat-react
 
+## 0.102.0
+
+### Minor Changes
+
+- f43cc44: Диктовка в своём поле ввода: из пакета открыты `useVoiceDictation` и типы `UseVoiceDictationOptions`, `VoiceDictation`. Хук принимает `{ voice, value, setValue, chatId }` и отдаёт `{ view, cancel }`: `view` — состояние кнопки микрофона (`state`, `onToggle`, `polishing`, `error`; `undefined`, если голоса нет), `cancel()` бросает идущую диктовку при отправке. `ChatLabelsProvider` не нужен: без него подписи русские.
+  
+  ### Как обновить приложение
+  
+  Обновление ничего не требует. Если приложение копировало код диктовки к себе, заменить копию на `useVoiceDictation` из `@ykurilov/agent-chat-react` (пример — в README пакета, раздел «Диктовка в своём поле ввода»), проверить `pnpm typecheck` и что слова попадают в поле.
+
 ## 0.101.3
 
 No changes in this release.

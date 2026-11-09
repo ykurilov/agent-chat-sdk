@@ -109,6 +109,8 @@ export type { ServerRefusal } from "./server-refusal";
 export type { AgentChatState, ChatRefusal, ConnectionState, EditNotStartedReason, EditOutcome, EditRefusalReason, LivenessOptions, UseAgentChatOptions } from "./use-agent-chat";
 export { useModelChoice } from "./use-model-choice";
 export type { UseModelChoiceOptions } from "./use-model-choice";
+export { useVoiceDictation } from "./use-voice-dictation";
+export type { UseVoiceDictationOptions, VoiceDictation } from "./use-voice-dictation";
 export type { DictatedText, VoiceErrorDetails, VoiceErrorKind, VoiceInput, VoiceListener, VoiceSession, VoiceStartContext } from "./voice-input";
 export { ChatWorkspace } from "./chat-list/chat-workspace";
 export type { ChatWorkspaceProps, ChatWorkspaceView } from "./chat-list/chat-workspace";

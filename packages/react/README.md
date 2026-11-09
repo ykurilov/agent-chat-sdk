@@ -94,6 +94,41 @@ import { AgentChat, ChatLabelsProvider, russianLabels } from "@ykurilov/agent-ch
 [contracts/labels.md](../../docs/contracts/basic-agent-dialog/labels.md) и
 [дополнение к нему](../../docs/contracts/fast-feed-and-liveness/labels.md).
 
+## Диктовка в своём поле ввода (с 0.102.0)
+
+Своё поле ввода без `ChatWorkspace` подключает диктовку хуком `useVoiceDictation`. Он ведёт состояние кнопки микрофона и сам пишет слова в поле:
+ручная правка остаётся, чистка текста моделью заменяет только надиктованный кусок. `ChatLabelsProvider` не нужен: без него подписи русские, язык записи берётся из словаря.
+
+```tsx
+import { useVoiceDictation } from "@ykurilov/agent-chat-react";
+import { createVoiceInput } from "@ykurilov/agent-chat-voice"; // создаётся один раз, вне компонента
+
+function MyComposer({ chatId, send }: { chatId: string; send: (text: string) => void }) {
+  const [text, setText] = useState("");
+  const { view, cancel } = useVoiceDictation({ voice, value: text, setValue: setText, chatId });
+  const submit = () => {
+    cancel(); // бросить идущую диктовку: поздние слова в поле не попадут
+    send(text);
+    setText("");
+  };
+  return (
+    <form onSubmit={submit}>
+      <textarea value={text} onChange={(event) => setText(event.target.value)} />
+      {view && (
+        <button type="button" onClick={view.onToggle} data-state={view.state} data-polishing={view.polishing}>
+          Микрофон
+        </button>
+      )}
+      {view?.error && <p role="alert">{view.error}</p>}
+    </form>
+  );
+}
+```
+
+- `voice` — результат `createVoiceInput` (см. `@ykurilov/agent-chat-voice`); `undefined` — `view` тоже `undefined`, кнопку не рисуем.
+- `view.state`: `idle` / `connecting` / `listening` / `stopping`; `view.onToggle` — нажатие на микрофон; `view.polishing` — идёт чистка; `view.error` — готовый текст ошибки из словаря.
+- `cancel()` зовите при отправке. Смена `chatId` и уход с экрана обрывают диктовку сами.
+
 ## Лента рисует только видимое
 
 Длинный чат открывается сразу внизу: на странице стоят только сообщения у экрана (не больше
