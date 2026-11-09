@@ -13,6 +13,7 @@ import { EXTERNAL_CONTENT_STATE_KEY } from "../external-content/external-content
 import type { ModelChoice } from "../models/model-choice";
 import { CHAT_DATA_MAX_BYTES, assertChatData, assertNoNulChar, assertNoProtoKey } from "../storage/chat-data";
 import { ChatAlreadyExistsError, DuplicateChatSubjectError } from "../storage/chat-storage";
+import { GREETING_ID_PREFIX } from "./greeting-replacement";
 import type { ChatStorage, NewChatInput } from "../storage/chat-storage";
 
 export const SUBJECT_KEY_MAX_LENGTH = 200;
@@ -334,9 +335,12 @@ function importedStateRecords(state: ImportChatInput["chat"]["state"], logError:
   return records;
 }
 
-/** Приветствие — законченный ответ агента без модели и расхода. */
+/**
+ * Приветствие — законченный ответ агента без модели и расхода. Начало id — метка приветствия (`GREETING_ID_PREFIX`):
+ * по ней `replaceGreeting` узнаёт его без догадок.
+ */
 function greetingMessage(chatId: string, greeting: { text: string }, createdAt: string): StoredMessage {
-  return newStoredMessage({ id: crypto.randomUUID(), chatId, role: "assistant", parts: [{ type: "text", text: greeting.text }], createdAt });
+  return newStoredMessage({ id: `${GREETING_ID_PREFIX}${crypto.randomUUID()}`, chatId, role: "assistant", parts: [{ type: "text", text: greeting.text }], createdAt });
 }
 
 /** Чат для браузера: данные чата и объекта остаются на сервере. */
@@ -365,7 +369,7 @@ function assertSubjectData(data: unknown): void {
   if (new TextEncoder().encode(json).length > SUBJECT_DATA_MAX_BYTES) throw new TypeError(`Данные объекта больше ${SUBJECT_DATA_MAX_BYTES / 1024} КБ.`);
 }
 
-function assertGreeting(greeting: ChatGreeting): asserts greeting is { text: string } | { instruction: string } {
+export function assertGreeting(greeting: ChatGreeting): asserts greeting is { text: string } | { instruction: string } {
   const value = greeting?.text ?? greeting?.instruction;
   if ((greeting?.text === undefined) === (greeting?.instruction === undefined)) {
     throw new TypeError("В приветствии ровно одно из двух: text или instruction.");

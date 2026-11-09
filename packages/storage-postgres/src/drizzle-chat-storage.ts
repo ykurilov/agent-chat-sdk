@@ -445,6 +445,16 @@ export function createDrizzleChatStorage(db: ChatDatabase): ChatStorage {
       });
     },
 
+    async replaceFinishedMessageParts(messageId, { expectedParts, parts }) {
+      // Строка заперта до конца транзакции: другая копия сервера не запишет между сравнением частей и записью.
+      return db.transaction(async (tx) => {
+        const [existing] = await tx.select({ status: messages.status, parts: messages.parts }).from(messages).where(eq(messages.id, messageId)).for("update");
+        if (!existing || existing.status !== "complete" || !sameMessageParts(existing.parts, expectedParts)) return false;
+        await tx.update(messages).set({ parts }).where(eq(messages.id, messageId));
+        return true;
+      });
+    },
+
     async listStreamingMessageIds() {
       const rows = await db.select({ id: messages.id }).from(messages).where(eq(messages.status, "streaming")).orderBy(asc(messages.seq));
       return rows.map((row) => row.id);

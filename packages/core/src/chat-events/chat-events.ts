@@ -51,6 +51,11 @@ export type ChatEvent =
    */
   | { type: "message-added"; ownerId: string; chatId: string; messageId: string }
   /**
+   * Текст приветствия заменён (`replaceGreeting`): то же сообщение `messageId`, новый текст. Вкладке пора перечитать
+   * историю. Клиенты до 0.101.0 такое событие пропускают и видят новый текст при следующем чтении истории.
+   */
+  | { type: "greeting-replaced"; ownerId: string; chatId: string; messageId: string }
+  /**
    * Данные чата изменены (`service.updateChatData`). Самих данных в событии нет, вкладке оно не пересылается: данные
    * чата остаются на сервере. Новое значение видят инструменты и хуки со следующего хода.
    */

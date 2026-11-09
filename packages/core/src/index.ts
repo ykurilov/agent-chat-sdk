@@ -278,6 +278,8 @@ export type {
   OpenSubjectChatInput,
   OpenSubjectChatResult,
 } from "./subject-chats/subject-chats";
+export { GREETING_ID_PREFIX } from "./subject-chats/greeting-replacement";
+export type { GreetingRecognition, NotAGreetingReason, ReplaceGreetingInput, ReplaceGreetingResult } from "./subject-chats/greeting-replacement";
 export { AttachmentRejectedError, withoutFileParts } from "./attachments/message-attachments";
 export type { IncomingFilePart, MessageAttachments, StoredFilePart } from "./attachments/message-attachments";
 export type { ChatImageReference } from "./attachments/chat-image-numbers";

@@ -62,6 +62,14 @@ describe("журнал промахов кэша", () => {
     expect(lines).toEqual([]);
   });
 
+  it("forget(chat): начало истории законно переписано (замена приветствия) — следующий ход строки не пишет", () => {
+    const { watch, lines } = setup();
+    firstTurn(watch);
+    watch.forget("chat-1");
+    watch.forRequest(request(nextTurn(1))).onStep(step(21_000, 0));
+    expect(lines).toEqual([]);
+  });
+
   it("кэш прочитан почти весь: строки нет", () => {
     const { watch, lines } = setup();
     firstTurn(watch);

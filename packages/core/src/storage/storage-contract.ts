@@ -64,6 +64,8 @@ export function describeChatStorageContract(
      * `removePendingBurst`) обязаны быть.
      */
     pendingBursts?: "required";
+    /** `finishedPartsReplace: "required"` — замена частей готового сообщения (`replaceFinishedMessageParts`) обязана быть. */
+    finishedPartsReplace?: "required";
   } = {},
 ): void {
   const chatInput = { id: "chat-1", ownerId: "anna", modelId: "deepseek-4.1-flash", providerId: "deepseek" };
@@ -1925,6 +1927,48 @@ export function describeChatStorageContract(
         const copies = Array.from({ length: 10 }, (_, index) => `copy-${index}`);
         const taken = (await Promise.all(copies.map((holder) => take(storage, at(40), holder)))).flat();
         expect(taken.map((one) => one.chatId).sort()).toEqual([chatInput.id, "chat-2"].sort());
+      });
+    });
+
+    describe("замена частей готового сообщения (replaceFinishedMessageParts, необязательный)", () => {
+      type ReplaceStorage = ChatStorage & Required<Pick<ChatStorage, "replaceFinishedMessageParts">>;
+
+      async function replaceStorage(context: { skip: () => never }): Promise<ReplaceStorage> {
+        const storage = await createStorage();
+        if (!storage.replaceFinishedMessageParts) {
+          if (options.finishedPartsReplace === "required") throw new Error("У хранилища нет replaceFinishedMessageParts");
+          context.skip();
+        }
+        await storage.createChat(chatInput);
+        return storage as ReplaceStorage;
+      }
+
+      const greeting = (): StoredMessage =>
+        newStoredMessage({ id: "g1", chatId: chatInput.id, role: "assistant", parts: [{ type: "text", text: "Здравствуйте!" }], createdAt: "2026-01-01T10:00:00.000Z" });
+
+      it("части те же, что ожидались (порядок ключей не важен), — новые части записаны, остальное сообщение и чат прежние", async (context) => {
+        const storage = await replaceStorage(context);
+        await storage.insertMessage(greeting());
+        await storage.insertMessage(userMessage("u1", "2026-01-01T10:01:00.000Z", "g1"));
+        const chatBefore = await storage.getChat(chatInput.id);
+        const reordered = [{ text: "Здравствуйте!", type: "text" }] as unknown as StoredMessage["parts"];
+        await expect(storage.replaceFinishedMessageParts("g1", { expectedParts: reordered, parts: [{ type: "text", text: "Добрый день!" }] })).resolves.toBe(true);
+        expect(await storage.getMessage("g1")).toEqual({ ...greeting(), parts: [{ type: "text", text: "Добрый день!" }] });
+        expect(await storage.getMessage("u1")).toEqual(userMessage("u1", "2026-01-01T10:01:00.000Z", "g1"));
+        expect((await storage.listMessages(chatInput.id)).map((message) => message.id)).toEqual(["g1", "u1"]);
+        expect((await storage.getChat(chatInput.id))?.updatedAt).toBe(chatBefore!.updatedAt);
+      });
+
+      it("части изменились с прочтения, сообщение не готово или его нет — false, ничего не записано", async (context) => {
+        const storage = await replaceStorage(context);
+        await storage.insertMessage(greeting());
+        await storage.insertMessage(streamingAnswer("a1", "g1", "2026-01-01T10:02:00.000Z"));
+        const stale = [{ type: "text", text: "Старый текст" }] as StoredMessage["parts"];
+        await expect(storage.replaceFinishedMessageParts("g1", { expectedParts: stale, parts: [{ type: "text", text: "Новый" }] })).resolves.toBe(false);
+        expect((await storage.getMessage("g1"))?.parts).toEqual(greeting().parts);
+        await expect(storage.replaceFinishedMessageParts("a1", { expectedParts: [], parts: [{ type: "text", text: "Новый" }] })).resolves.toBe(false);
+        expect((await storage.getMessage("a1"))?.parts).toEqual([]);
+        await expect(storage.replaceFinishedMessageParts("missing", { expectedParts: [], parts: [] })).resolves.toBe(false);
       });
     });
 

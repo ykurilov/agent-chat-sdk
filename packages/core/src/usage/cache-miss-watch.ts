@@ -40,6 +40,8 @@ export interface WatchedStepUsage {
 export interface CacheMissWatch {
   /** Начинает слежку за запросом: шаги хода сообщаются `onStep` по мере готовности. */
   forRequest(request: WatchedRequest): { onStep(usage: WatchedStepUsage): void };
+  /** Начало истории чата законно переписано (замена приветствия): следующий запрос чата сравнивать не с чем. */
+  forget(chatId: string): void;
 }
 
 interface ChatCacheState {
@@ -85,6 +87,9 @@ export function createCacheMissWatch(options: CacheMissWatchOptions): CacheMissW
   }
 
   return {
+    forget(chatId) {
+      chats.delete(chatId);
+    },
     forRequest(request) {
       const modelKey = `${request.providerId}/${request.modelId}`;
       const earlier = chats.get(request.chatId);

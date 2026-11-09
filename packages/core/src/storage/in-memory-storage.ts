@@ -404,6 +404,13 @@ export function createTransientChatStorage(snapshot?: InMemoryChatSnapshot): Tra
       if (patch.alive) aliveAt.set(messageId, aliveAtByLocalClock(patch.alive));
     },
 
+    async replaceFinishedMessageParts(messageId, { expectedParts, parts }) {
+      const message = messages.get(messageId);
+      if (!message || message.status !== "complete" || !sameMessageParts(message.parts, expectedParts)) return false;
+      messages.set(messageId, { ...message, parts: structuredClone(parts) });
+      return true;
+    },
+
     async listStreamingMessageIds() {
       return [...messages.values()].filter((message) => message.status === "streaming").map((message) => message.id);
     },

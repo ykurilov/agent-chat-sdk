@@ -1586,7 +1586,7 @@ export function useAgentChat({
           if (appEvent) reportAppEvent.current?.(appEvent, messageId);
           // Событие хука после «Стопа» уже лежит в ответе: перечитанная история покажет его в ленте.
           if (appEvent && messageId && !ownTurnStarting()) void refreshFromServer(chatSignal, { unlessFeedChanged: true });
-        } else if ((event.type === "turn-started" || event.type === "notice-added" || event.type === "message-added" || event.type === "answer-edited") && !ownTurnStarting()) {
+        } else if ((event.type === "turn-started" || event.type === "notice-added" || event.type === "message-added" || event.type === "answer-edited" || event.type === "greeting-replaced") && !ownTurnStarting()) {
           void refreshFromServer(chatSignal, { unlessFeedChanged: true });
         }
       },

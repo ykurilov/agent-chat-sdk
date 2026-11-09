@@ -210,6 +210,12 @@ export interface ChatStorage {
    * теми же частями; иначе `MessageNotAwaitingError`.
    */
   updateAwaitingMessage(messageId: string, patch: AwaitingMessagePatch): Promise<void>;
+  /**
+   * Новые части готового (`complete`) сообщения, если в базе сейчас ровно `expectedParts` (порядок ключей не важен):
+   * сравнение и запись — одним шагом. Остальные поля сообщения и чата (в том числе `updatedAt`) не меняются. Записано —
+   * `true`; сообщения нет, оно не готово или части уже другие — `false`, ничего не записано. Нужен `replaceGreeting`.
+   */
+  replaceFinishedMessageParts?(messageId: string, replace: { expectedParts: StoredMessage["parts"]; parts: StoredMessage["parts"] }): Promise<boolean>;
   /** Все ответы в состоянии 'streaming'. */
   listStreamingMessageIds(): Promise<string[]>;
   /**

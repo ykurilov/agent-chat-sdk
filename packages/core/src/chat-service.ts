@@ -61,7 +61,10 @@ import type { CompactionMarker, CompactionOutcome } from "./compaction/compactio
 import { resolveCompactionSettings } from "./compaction/compaction-settings";
 import type { CompactionSettings } from "./compaction/compaction-settings";
 import { deriveChatTitle, normalizeChatTitle } from "./conversation/chat-title";
-import { createSubjectChats, withoutSubjectData } from "./subject-chats/subject-chats";
+import { assertGreeting, createSubjectChats, withoutSubjectData } from "./subject-chats/subject-chats";
+import { findGreeting } from "./subject-chats/greeting-replacement";
+import { activeCompaction } from "./compaction/compaction-plan";
+import type { ReplaceGreetingInput, ReplaceGreetingResult } from "./subject-chats/greeting-replacement";
 import type { ChatGreeting, ImportChatInput, OpenSubjectChatInput, OpenSubjectChatResult } from "./subject-chats/subject-chats";
 import { branchForks, currentChildOf, nextSiblingTime, selectCurrentBranch } from "./conversation/branches";
 import { withoutGlueFragments } from "./conversation/glue-fragments";
@@ -927,6 +930,17 @@ export interface ChatService {
    * @throws Error хранилище не умеет `updateChatData`.
    */
   updateChatData(userId: string, chatId: string, patch: Record<string, unknown>): Promise<Record<string, unknown>>;
+  /**
+   * Замена текста приветствия (`greeting.text`) в уже созданном чате; вся переписка после него не меняется. Меняется
+   * только сообщение, которое точно приветствие (`findGreeting`): иначе — `not_a_greeting` без записи. Тот же текст —
+   * `unchanged`, `dryRun` — итог без записи. Идёт ход — `busy`, ничего не записано. Открытые вкладки получают событие
+   * `greeting-replaced` и перечитывают историю. Модель видит новый текст со следующего хода; приветствие внутри сводки
+   * автосжатия (`compacted: true`) модель видит сводкой. Кэш модели после замены один раз прочитывается заново.
+   * @throws TypeError текст не строка от 1 до 10 000 знаков.
+   * @throws Error хранилище не умеет `replaceFinishedMessageParts`.
+   */
+  replaceGreeting(input: ReplaceGreetingInput): Promise<ReplaceGreetingResult>;
+
   /**
    * Данные чата копией, без записи и событий: те же проверки владения, что у `updateChatData`. Нет данных — `{}`.
    * @throws ChatNotFoundError чата нет или он чужой.
@@ -3482,6 +3496,39 @@ export function createChatService(input: ChatServiceOptions): ChatService {
       if (!updated) throw new ChatNotFoundError(chatId);
       chatEvents.emit({ type: "chat-data-changed", ownerId: updated.ownerId, chatId });
       return structuredClone(chatDataOfInput(updated) ?? {});
+    },
+
+    async replaceGreeting({ ownerId, chatId, text, previousText, dryRun }) {
+      assertGreeting({ text });
+      if (!storage.replaceFinishedMessageParts) throw new Error("Замена приветствия требует хранилища с replaceFinishedMessageParts: хранилище приложения его не умеет.");
+      const chat = await storage.getChat(chatId);
+      if (!chat || chat.ownerId !== ownerId) return { status: "chat_not_found", chatId };
+      let replaced: string | undefined;
+      try {
+        const result = await whileStarting(chatId, async (): Promise<ReplaceGreetingResult> => {
+          const [{ messages, branch }, compactions] = await Promise.all([loadTree(chatId), storage.listCompactions(chatId)]);
+          const found = findGreeting(chat, messages, branch);
+          if (!found.ok) return { status: "not_a_greeting", chatId, reason: found.reason };
+          if (previousText !== undefined && previousText !== found.text) return { status: "not_a_greeting", chatId, reason: "previous_text_mismatch" };
+          const known = { chatId, messageId: found.message.id, recognizedBy: found.recognizedBy, compacted: activeCompaction(branch, compactions) !== null };
+          if (found.text === text) return { status: "unchanged", ...known };
+          if (dryRun) return { status: "would_replace", ...known, previousText: found.text };
+          const written = await storage.replaceFinishedMessageParts!(found.message.id, { expectedParts: found.message.parts, parts: [{ type: "text", text }] });
+          // Части сменились между чтением и записью — значит, это уже не то приветствие, что проверено.
+          if (!written) return { status: "busy", chatId };
+          replaced = found.message.id;
+          return { status: "replaced", ...known, previousText: found.text };
+        }, "required");
+        if (replaced) {
+          // Начало истории законно другое: следующий ход не промах кэша, а новое начало.
+          cacheMissWatch?.forget(chatId);
+          chatEvents.emit({ type: "greeting-replaced", ownerId, chatId, messageId: replaced });
+        }
+        return result;
+      } catch (error) {
+        if (error instanceof ChatBusyError) return { status: "busy", chatId };
+        throw error;
+      }
     },
 
     async getChatData(userId, chatId) {

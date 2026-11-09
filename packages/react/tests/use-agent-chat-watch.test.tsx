@@ -124,6 +124,32 @@ describe("useAgentChat: подписка на события чата", () => {
     expect(server.resumed).toHaveLength(0);
   });
 
+  it("greeting-replaced: новый текст приветствия появляется без перезагрузки, переписка прежняя", async () => {
+    const greeting = (text: string): HistoryMessage => ({ id: "greeting-1", role: "assistant", parts: [{ type: "text", text, state: "done" }], metadata: { status: "complete" } });
+    const server = fakeChatServer({ history: [greeting("Старое приветствие"), question, answer], resumable: true });
+    server.state.watch = true;
+    const { result } = renderChatHook(server);
+    await waitFor(() => expect(server.watches).toHaveLength(1));
+    server.state.history = [greeting("Новое приветствие"), question, answer];
+    act(() => server.emit({ type: "greeting-replaced", messageId: "greeting-1" }));
+    await waitFor(() => expect(result.current.messages[0]?.parts).toEqual([{ type: "text", text: "Новое приветствие", state: "done" }]));
+    expect(result.current.messages.map((message) => message.id)).toEqual(["greeting-1", "u1", "a1"]);
+    expect(server.resumed).toHaveLength(0);
+  });
+
+  it("неизвестное событие (новее версии клиента) не ломает ленту и подписку: оно пропускается", async () => {
+    const server = watchingServer();
+    const { result } = renderChatHook(server);
+    await waitFor(() => expect(server.watches).toHaveLength(1));
+    const historyReads = server.requestsTo("history").length;
+    act(() => server.emit({ type: "event-from-a-newer-server", messageId: "x1", payload: { any: [1, 2] } }));
+    act(() => server.emit({ type: "tasks-changed" }));
+    await waitFor(() => expect(result.current.tasksVersion).toBe(2));
+    expect(result.current.messages.map((message) => message.id)).toEqual(["u1", "a1"]);
+    expect(server.requestsTo("history").length).toBe(historyReads);
+    expect(server.watches[0]!.signal?.aborted).toBe(false);
+  });
+
   it("ответ на виджет: turn-started своего продолжения не перечитывает историю — виджет остаётся в ответе", async () => {
     const widgetPart = { type: "tool-ask_choice", toolCallId: "w1", state: "input-available", input: { question: "Куда?", options: ["Море", "Горы"] } };
     const waiting: HistoryMessage = { id: "a1", role: "assistant", parts: [{ type: "step-start" }, widgetPart], metadata: { status: "awaiting_approval" } };

@@ -517,6 +517,19 @@ export function createSqliteChatStorage(options: { filePath: string }): SqliteCh
       );
     },
 
+    async replaceFinishedMessageParts(messageId, { expectedParts, parts }) {
+      // Чтение, сравнение частей и запись — одна транзакция с блокировкой записи: другая копия не вклинится между ними.
+      return db.transaction(
+        (tx) => {
+          const existing = tx.select({ status: messages.status, parts: messages.parts }).from(messages).where(eq(messages.id, messageId)).get();
+          if (!existing || existing.status !== "complete" || !sameMessageParts(existing.parts, expectedParts)) return false;
+          tx.update(messages).set({ parts }).where(eq(messages.id, messageId)).run();
+          return true;
+        },
+        { behavior: "immediate" },
+      );
+    },
+
     async listStreamingMessageIds() {
       return db
         .select({ id: messages.id })

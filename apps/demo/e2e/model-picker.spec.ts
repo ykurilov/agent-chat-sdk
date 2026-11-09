@@ -23,7 +23,7 @@ test("меню с подменю по провайдерам: у каждого 
   await modelButton(page).click();
 
   const providers = await page.getByRole("menuitem").allInnerTexts();
-  expect(providers).toEqual(["Fireworks", "DeepSeek", "Together AI", "OpenRouter"]);
+  expect(providers).toEqual(["DeepSeek", "OpenRouter", "Fireworks", "Together AI"]);
 
   await page.getByRole("menuitem", { name: "OpenRouter", exact: true }).click();
   await expect(page.getByRole("menuitemradio")).toHaveText(["DeepSeek 4.1 Flash", "GLM 5.3 Flash", "GPT 6 Luna", "Gemini 3.8 Flash", "Claude Haiku 5.5"]);
