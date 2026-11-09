@@ -89,6 +89,22 @@ describe("служба чата: замена приветствия (replaceGre
     expect(events).toEqual([]);
   });
 
+  it("повтор того же плана после замены (тот же text, прежний previousText) — unchanged, без записи и события", async () => {
+    const base = createInMemoryChatStorage();
+    const replace = vi.fn(base.replaceFinishedMessageParts!.bind(base));
+    const { service, storage, events } = setup({ storage: { ...base, replaceFinishedMessageParts: replace } });
+    const chat = await service.createChat("anna", { greeting: { text: "Старое" } });
+    const plan = { ownerId: "anna", chatId: chat.id, text: "Новое", previousText: "Старое" };
+    expect(await service.replaceGreeting(plan)).toMatchObject({ status: "replaced" });
+    replace.mockClear();
+    events.length = 0;
+    const again = await service.replaceGreeting(plan);
+    expect(again).toMatchObject({ status: "unchanged", chatId: chat.id, recognizedBy: "marker" });
+    expect(replace).not.toHaveBeenCalled();
+    expect(events).toEqual([]);
+    expect((await storage.listMessages(chat.id))[0]?.parts).toEqual([{ type: "text", text: "Новое" }]);
+  });
+
   it("пробный прогон (dryRun) — would_replace с прежним текстом, без записи и события", async () => {
     const { service, storage, events } = setup();
     const chat = await service.createChat("anna", { greeting: { text: "Старое" } });

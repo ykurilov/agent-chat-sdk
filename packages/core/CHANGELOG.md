@@ -1,5 +1,13 @@
 # @ykurilov/agent-chat-core
 
+## 0.101.1
+
+### Patch Changes
+
+- 0c258ee: Повтор `service.replaceGreeting` с тем же `text` и прежним `previousText` после успешной замены теперь возвращает `unchanged`, а не `not_a_greeting` (`previous_text_mismatch`). Если текущий текст уже равен целевому, ответ `unchanged` при любом `previousText`; несовпадение `previousText` с текстом, не равным целевому, по-прежнему даёт `previous_text_mismatch`.
+  
+  Обновление ничего не требует.
+
 ## 0.101.0
 
 ### Minor Changes

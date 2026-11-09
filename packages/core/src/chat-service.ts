@@ -3509,9 +3509,10 @@ export function createChatService(input: ChatServiceOptions): ChatService {
           const [{ messages, branch }, compactions] = await Promise.all([loadTree(chatId), storage.listCompactions(chatId)]);
           const found = findGreeting(chat, messages, branch);
           if (!found.ok) return { status: "not_a_greeting", chatId, reason: found.reason };
-          if (previousText !== undefined && previousText !== found.text) return { status: "not_a_greeting", chatId, reason: "previous_text_mismatch" };
           const known = { chatId, messageId: found.message.id, recognizedBy: found.recognizedBy, compacted: activeCompaction(branch, compactions) !== null };
+          // Текст уже целевой — unchanged при любом previousText: повтор плана после успешной замены безопасен.
           if (found.text === text) return { status: "unchanged", ...known };
+          if (previousText !== undefined && previousText !== found.text) return { status: "not_a_greeting", chatId, reason: "previous_text_mismatch" };
           if (dryRun) return { status: "would_replace", ...known, previousText: found.text };
           const written = await storage.replaceFinishedMessageParts!(found.message.id, { expectedParts: found.message.parts, parts: [{ type: "text", text }] });
           // Части сменились между чтением и записью — значит, это уже не то приветствие, что проверено.
