@@ -87,7 +87,7 @@ test("сценарий: новое состояние, связь на доск�
   await page.screenshot({ path: `${screenshotDir}/light-run.png` });
   await run.getByRole("button", { name: "Закончить прогон" }).click();
 
-  await page.getByRole("button", { name: "JSON", exact: true }).click();
+  await page.getByRole("button", { name: "Код сценария (JSON)", exact: true }).click();
   const json = page.getByRole("textbox", { name: "Граф в формате JSON" });
   await expect(json).toBeVisible();
   const text = await json.inputValue();
@@ -212,7 +212,7 @@ for (const width of [390, 360]) {
           await expect(page.getByRole("button", { name: /Прогон/ })).toBeVisible();
           await expect(page.getByRole("button", { name: /Проверить граф/ })).toBeVisible();
           // Скрытые кнопки не видны и не берут фокус, их место занимает меню.
-          await expect(page.getByRole("button", { name: "JSON", exact: true })).toHaveCount(0);
+          await expect(page.getByRole("button", { name: "Код сценария (JSON)", exact: true })).toHaveCount(0);
           await expect(page.getByRole("button", { name: "Состояние", exact: true })).toHaveCount(0);
           const more = page.getByRole("button", { name: "Ещё действия" });
           await expect(more).toBeVisible();
@@ -226,7 +226,7 @@ for (const width of [390, 360]) {
           expect(box.x + box.width).toBeLessThanOrEqual(width);
           await page.screenshot({ path: `${headerShots}/flow-header-${width}-${theme}-${header}.png` });
 
-          await menu.getByRole("menuitem", { name: "JSON" }).tap();
+          await menu.getByRole("menuitem", { name: /Код сценария/ }).tap();
           await expect(page.getByRole("textbox", { name: "Граф в формате JSON" })).toBeVisible();
         });
       });
@@ -251,6 +251,41 @@ test.describe("телефон", () => {
     expect(await noHorizontalScroll(page)).toBeLessThanOrEqual(0);
     await page.screenshot({ path: `${screenshotDir}/phone-state.png` });
   });
+});
+
+test.describe("телефон 390: доска вписана в экран, кнопки-значки с именами", () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+
+  for (const [theme, flow] of [["light", "shop-support"], ["dark", "sales-review"]] as const) {
+    test(`${theme}, ${flow}: схема видна целиком при открытии, у значков есть имена`, async ({ page }) => {
+      await open(page, theme, flow);
+      await boardSettled(page);
+      const board = (await page.locator("[data-flow-board]").boundingBox())!;
+      const nodes = page.locator(".react-flow__node");
+      const count = await nodes.count();
+      expect(count).toBeGreaterThan(1);
+      for (let index = 0; index < count; index += 1) {
+        const box = (await nodes.nth(index).boundingBox())!;
+        expect(box.x, `узел ${index} слева`).toBeGreaterThanOrEqual(board.x - 1);
+        expect(box.x + box.width, `узел ${index} справа`).toBeLessThanOrEqual(board.x + board.width + 1);
+        expect(box.y, `узел ${index} сверху`).toBeGreaterThanOrEqual(board.y - 1);
+        expect(box.y + box.height, `узел ${index} снизу`).toBeLessThanOrEqual(board.y + board.height + 1);
+      }
+      // Каждая кнопка без видимого текста (значок) имеет доступное имя и подсказку.
+      const unnamed = await page.evaluate(() =>
+        [...document.querySelectorAll("button")]
+          .filter((button) => !(button.textContent ?? "").trim() && !button.closest("label"))
+          .filter((button) => !(button.getAttribute("aria-label") ?? "").trim() || !(button.getAttribute("title") ?? "").trim())
+          .map((button) => button.outerHTML.slice(0, 120)),
+      );
+      expect(unnamed).toEqual([]);
+      for (const name of ["Мельче", "Крупнее", "Весь граф"]) await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
+      await page.getByRole("button", { name: "Ещё действия" }).tap();
+      await expect(page.getByRole("menuitem", { name: /Код сценария/ })).toBeVisible();
+      await page.keyboard.press("Escape");
+      await page.screenshot({ path: `${screenshotDir}/${theme}-phone-390-fit.png` });
+    });
+  }
 });
 
 test.describe("только просмотр", () => {
@@ -294,7 +329,7 @@ test.describe("только просмотр", () => {
     await run.getByRole("button", { name: "Закончить прогон" }).click();
 
     // JSON — смотреть можно, загружать нельзя.
-    await page.getByRole("button", { name: "JSON", exact: true }).click();
+    await page.getByRole("button", { name: "Код сценария (JSON)", exact: true }).click();
     await expect(page.getByRole("textbox", { name: "Граф в формате JSON" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Копировать" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Загрузить" })).toHaveCount(0);

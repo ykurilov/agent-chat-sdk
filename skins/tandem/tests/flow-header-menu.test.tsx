@@ -46,9 +46,9 @@ describe("меню «⋯» шапки доски", () => {
     fireEvent.click(screen.getByRole("button", { name: "Ещё действия" }));
     const menu = screen.getByRole("menu");
     const names = within(menu).getAllByRole("menuitem").map((item) => item.textContent);
-    expect(names).toEqual(["Состояние", "Карточка и заметки", "JSON", "Перевести чаты", "Тестовый чат", "На весь экран"]);
+    expect(names).toEqual(["Состояние", "Карточка и заметки", "Код сценария (JSON)", "Перевести чаты", "Тестовый чат", "На весь экран"]);
     expect(document.activeElement).toBe(within(menu).getAllByRole("menuitem")[0]);
-    fireEvent.click(within(menu).getByRole("menuitem", { name: "JSON" }));
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "Код сценария (JSON)" }));
     expect(props.onOpenJson).toHaveBeenCalledOnce();
     expect(screen.queryByRole("menu")).toBeNull();
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "Ещё действия" }));

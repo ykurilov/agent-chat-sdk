@@ -1,5 +1,17 @@
 # @ykurilov/agent-chat-skin-tandem
 
+## 0.101.3
+
+### Patch Changes
+
+- Updated dependencies [a028c80]
+  - @ykurilov/agent-chat-flows@0.101.3
+  - @ykurilov/agent-chat-mcp@0.101.3
+  - @ykurilov/agent-chat-messengers@0.101.3
+  - @ykurilov/agent-chat-react@0.101.3
+  - @ykurilov/agent-chat-sandbox@0.101.3
+  - @ykurilov/agent-chat-skills@0.101.3
+
 ## 0.101.2
 
 ### Patch Changes

@@ -232,7 +232,7 @@ function ZoomControls() {
       zoom={zoom}
       onZoomIn={() => void zoomIn({ duration: 150 })}
       onZoomOut={() => void zoomOut({ duration: 150 })}
-      onFit={() => void fitView({ duration: 200, padding: 0.15 })}
+      onFit={() => void fitView({ ...FIT_VIEW_OPTIONS, duration: 200 })}
     />
   );
 }
@@ -244,6 +244,9 @@ function clientPoint(event: MouseEvent | TouchEvent): { x: number; y: number } |
   }
   return { x: event.clientX, y: event.clientY };
 }
+
+/** Схема при открытии вписывается в доску: на телефоне масштаб уходит ниже, но не крупнее натурального. */
+const FIT_VIEW_OPTIONS = { padding: 0.1, minZoom: 0.1, maxZoom: 1 };
 
 const ignoreNodeClick = () => {};
 
@@ -333,8 +336,8 @@ function Board({ editor, space }: { editor: FlowEditorController; space: BoardSp
       zoomOnScroll={false}
       zoomOnPinch
       fitView
-      fitViewOptions={{ padding: 0.15 }}
-      minZoom={0.2}
+      fitViewOptions={FIT_VIEW_OPTIONS}
+      minZoom={0.1}
       maxZoom={2}
       proOptions={{ hideAttribution: true }}
     >

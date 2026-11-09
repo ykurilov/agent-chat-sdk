@@ -87,7 +87,7 @@ test("дни и время, «Длится», касания, попутные �
   await expect(page.getByRole("region", { name: "Состояние" })).toContainText("День 1: знакомство");
 
   // Всё записалось в JSON.
-  await page.getByRole("button", { name: "JSON", exact: true }).click();
+  await page.getByRole("button", { name: "Код сценария (JSON)", exact: true }).click();
   const json = JSON.parse(await page.getByRole("textbox", { name: "Граф в формате JSON" }).inputValue());
   expect(json.schedule.lengthDays).toBe(5);
   expect(json.sideTasks[1]).toMatchObject({ text: "Узнать тариф", field: "tariff" });

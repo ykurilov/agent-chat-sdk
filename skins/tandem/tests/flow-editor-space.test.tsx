@@ -107,7 +107,7 @@ describe("доска сценария: место", () => {
   it("Esc при открытом окне JSON закрывает только его", () => {
     editor();
     fireEvent.click(screen.getByRole("button", { name: "На весь экран" }));
-    fireEvent.click(screen.getByRole("button", { name: "JSON" }));
+    fireEvent.click(screen.getByRole("button", { name: "Код сценария (JSON)" }));
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.getByRole("dialog", { name: "Редактор сценария на весь экран" })).toBeTruthy();
   });
@@ -115,7 +115,7 @@ describe("доска сценария: место", () => {
   it("Tab в окне JSON поверх полного экрана не отменяется", () => {
     editor();
     fireEvent.click(screen.getByRole("button", { name: "На весь экран" }));
-    fireEvent.click(screen.getByRole("button", { name: "JSON" }));
+    fireEvent.click(screen.getByRole("button", { name: "Код сценария (JSON)" }));
     const field = screen.getByRole("textbox", { name: "Граф в формате JSON" });
     field.focus();
     // fireEvent возвращает false, если обработчик вызвал preventDefault.
