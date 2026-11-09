@@ -1,5 +1,14 @@
 # @ykurilov/agent-chat-server
 
+## 0.101.2
+
+### Patch Changes
+
+- 1d78afa: `GET /:chatId/watch?historyVersion=…` теперь отдаёт заголовок `x-agent-chat-history-match` (`1` — история не менялась, `0` — перечитайте) и на `@hono/node-server` 1.x: раньше он терялся, и клиент при каждом подключении перечитывал историю. Заголовок теперь задаётся при создании ответа.
+  
+  Обновление ничего не требует: обновить пакеты SDK одной версией.
+- @ykurilov/agent-chat-core@0.101.2
+
 ## 0.101.1
 
 ### Patch Changes

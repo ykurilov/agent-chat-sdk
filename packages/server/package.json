@@ -1,6 +1,6 @@
 {
   "name": "@ykurilov/agent-chat-server",
-  "version": "0.101.1",
+  "version": "0.101.2",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,
@@ -66,6 +66,8 @@
   },
   "devDependencies": {
     "@ai-sdk/provider": "4.0.19",
+    "@hono/node-server": "^2.1.1",
+    "@hono/node-server-v1": "npm:@hono/node-server@^1.19.18",
     "hono": "^4.13.10"
   }
 }

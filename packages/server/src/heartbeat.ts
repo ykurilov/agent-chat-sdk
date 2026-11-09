@@ -16,6 +16,8 @@ const PING = new TextEncoder().encode(": ping\n\n");
 export function createHeartbeatResponse(options: {
   stream: ReadableStream<unknown>;
   heartbeatIntervalMs: number;
+  /** Дополнительные заголовки: задаются при создании Response, поздний `headers.set` на части серверов теряется. */
+  headers?: Record<string, string>;
 }): Response {
   const { stream, heartbeatIntervalMs } = options;
   assertHeartbeatInterval(heartbeatIntervalMs);
@@ -55,7 +57,7 @@ export function createHeartbeatResponse(options: {
     },
   });
   return new Response(body, {
-    headers: { ...UI_MESSAGE_STREAM_HEADERS, [HEARTBEAT_HEADER]: String(heartbeatIntervalMs), "x-content-type-options": "nosniff" },
+    headers: { ...UI_MESSAGE_STREAM_HEADERS, [HEARTBEAT_HEADER]: String(heartbeatIntervalMs), "x-content-type-options": "nosniff", ...options.headers },
   });
 }
 

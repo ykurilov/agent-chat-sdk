@@ -378,8 +378,8 @@ export function createChatServer(options: ChatHandlerOptions): { handler: ChatHa
   const basePath = options.basePath.replace(/\/+$/, "");
   const heartbeatIntervalMs = options.heartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS;
   assertHeartbeatInterval(heartbeatIntervalMs);
-  const streamResponse = (stream: ReadableStream<unknown>) =>
-    createHeartbeatResponse({ stream, heartbeatIntervalMs });
+  const streamResponse = (stream: ReadableStream<unknown>, headers?: Record<string, string>) =>
+    createHeartbeatResponse({ stream, heartbeatIntervalMs, ...(headers && { headers }) });
   const logError = options.logError ?? ((message: string) => console.error(message));
   const allowsOrigin = createRequestOriginCheck({
     allowedOrigins: options.allowedOrigins,
@@ -449,9 +449,8 @@ export function createChatServer(options: ChatHandlerOptions): { handler: ChatHa
             // Keep the old reload path for a failed read or changed access policy; verification is only an optimization.
           }
         }
-        const response = streamResponse(stream);
-        if (expected) response.headers.set("x-agent-chat-history-match", matches ? "1" : "0");
-        return response;
+        // Заголовок задаётся при создании Response: на @hono/node-server 1.x поздний headers.set теряется.
+        return streamResponse(stream, expected ? { "x-agent-chat-history-match": matches ? "1" : "0" } : undefined);
       } catch (error) {
         await stream.cancel();
         throw error;
