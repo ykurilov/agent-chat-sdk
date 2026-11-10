@@ -1,4 +1,5 @@
 import { TooltipProvider } from "@tandem/ui";
+import { Button, Menu } from "@ykurilov/ds-react";
 import { ChatLabelsProvider, russianLabels, useModelChoice } from "@ykurilov/agent-chat-react";
 import type { ChatSkin, ComposerOptions } from "@ykurilov/agent-chat-react";
 import { oduvanchikSkin, oduvanchikWorkParts, OduvanchikSphere, OduvanchikReasoning } from "@ykurilov/agent-chat-skin-oduvanchik";
@@ -68,6 +69,7 @@ function Chat({ variant }: { variant: typeof variants[number] }) {
     </div>
     <Composer value={value} onValueChange={setValue} onSubmit={send} canSubmit={!!value.trim() || !!files.length || !!projects.length} busy={busy} onStop={stop}
       options={options} {...(variant === "extended" && { modelChoice: choice })}
+      {...(new URLSearchParams(location.search).get("actions") === "1" && { actions: <><Button variant="secondary" size="sm">Автоответ</Button><Menu label="Действия" trigger={<Button variant="secondary" size="sm">Промотать время</Button>} entries={[{ label: "+1 час", onSelect: noop }]} /></> })}
       {...(variant !== "compact" && { voice: { state: recording ? "listening" as const : "idle" as const, onToggle: () => setRecording(!recording) }, attachments: { items: files, accept: "*/*", onAddFiles: (added: File[]) => setFiles((old) => [...old, ...added.map((file, i) => ({ id: `${Date.now()}-${i}`, name: file.name, kind: file.type.startsWith("image/") ? "image" as const : "file" as const, status: "ready" as const }))]), onRemove: (id: string) => setFiles((old) => old.filter((file) => file.id !== id)) } })} />
   </section>;
 }

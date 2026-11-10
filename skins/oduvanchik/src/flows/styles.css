@@ -24,3 +24,7 @@
 .oduvanchik-flow-dialog textarea { min-height: 240px; }
 .oduvanchik-flow .font-mono { font-family: var(--yk-font-mono); }
 @media (prefers-reduced-motion: reduce) { .oduvanchik-flow * { transition-duration: 0s; } }
+
+/* Раздел касаний лежит на фоне --yk-surface-2: кнопка secondary на нём сливается с ним. */
+[data-flow-nudges] .yk-button--secondary { background: var(--yk-surface); border: 1px solid var(--yk-border-strong); }
+[data-flow-nudges] .yk-button--secondary:hover:not(:disabled) { background: var(--yk-surface-3); }

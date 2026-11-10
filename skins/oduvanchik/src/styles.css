@@ -103,15 +103,15 @@
 .oduvanchik-add-menu button { display: flex; align-items: center; gap: 8px; padding: 8px 10px; width: 100%; text-align: left; background: transparent; border: 0; border-radius: 8px; color: var(--yk-text); font-size: 14px; }
 .oduvanchik-add-menu button:hover { background: var(--yk-surface-2); }
 .oduvanchik-settings { display: flex; align-items: center; gap: 4px; min-width: 0; }
-.oduvanchik-chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 6px; border: 0; border-radius: 8px; background: transparent; color: var(--yk-text); font-size: 13px; white-space: nowrap; min-width: 0; }
+.oduvanchik-chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 6px; border: 1px solid var(--yk-border-strong); border-radius: 8px; background: var(--yk-surface); color: var(--yk-text); font-size: 13px; white-space: nowrap; min-width: 0; }
 .oduvanchik-chip svg { flex: none; color: var(--yk-muted); }
 .oduvanchik-chip > span:not(.oduvanchik-label) { overflow: hidden; text-overflow: ellipsis; }
 .oduvanchik-chip-model { max-width: 180px; flex-shrink: 2; }
 .oduvanchik-chip-reasoning { max-width: 110px; }
-.oduvanchik-chip-reasoning-icon { flex: none; }
+.oduvanchik-chip-reasoning-icon { flex: none; background: transparent; border-color: transparent; }
 .oduvanchik-chip-reasoning-icon .oduvanchik-chip-caret { display: block; }
 .oduvanchik-chip-tools { flex: none; }
-.oduvanchik-chip:hover:not(:disabled), .oduvanchik-chip[aria-expanded="true"] { background: var(--yk-surface-2); }
+.oduvanchik-chip:hover:not(:disabled), .oduvanchik-chip[aria-expanded="true"] { background: var(--yk-surface-3); }
 .oduvanchik-chip:disabled { opacity: .45; }
 .oduvanchik-settings-panel { position: absolute; left: 0; bottom: calc(100% + 8px); z-index: 30; width: 420px; max-width: calc(100vw - 32px); max-height: 470px; overflow-y: auto; padding: 6px; border-radius: 14px; background: var(--yk-surface); color: var(--yk-text); box-shadow: var(--yk-shadow-pop); }
 .oduvanchik-model-search { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--yk-border); color: var(--yk-muted); }
@@ -141,7 +141,7 @@
 .oduvanchik-setting-switch input:checked::after { left: 19px; }
 .oduvanchik-settings-empty { padding: 10px; font-size: 13px; color: var(--yk-muted); }
 @media(max-width:640px) {
-  .oduvanchik-chip { background: var(--yk-surface-2); gap: 4px; padding: 0 5px; height: 30px; }
+  .oduvanchik-chip { gap: 4px; padding: 0 4px; height: 30px; }
   .oduvanchik-chip-model { max-width: 125px; }
   .oduvanchik-chip-caret { display: none; }
   .oduvanchik-settings-dim { position: fixed; inset: 0; z-index: 49; background: rgba(0,0,0,.35); }
@@ -287,3 +287,6 @@
   color: var(--yk-on-ink);
   text-shadow: none;
 }
+/* Поле ввода и общий фон --yk-surface-2: кнопка secondary на нём сливается с полем, поэтому у неё свой фон и рамка. */
+.oduvanchik-field .yk-button--secondary { background: var(--yk-surface); border: 1px solid var(--yk-border-strong); color: var(--yk-text); }
+.oduvanchik-field .yk-button--secondary:hover:not(:disabled) { background: var(--yk-surface-3); }
