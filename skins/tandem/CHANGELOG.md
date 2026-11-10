@@ -1,5 +1,21 @@
 # @ykurilov/agent-chat-skin-tandem
 
+## 0.104.0
+
+### Minor Changes
+
+- e59eb20: Доска сценария: раздел «Касания» в обзоре показывает действующие общие касания (`schedule.nudges`, иначе `nudges` сценария) и без «Дней и времени» и правит их там, где они действуют; «выключить» убирает их из обоих мест, выключение «Дней и времени» переносит их касания в касания сценария. Нода в режиме «Как у сценария» показывает получаемые касания. Договор скина: необязательные `FlowNudgesSection` и `FlowStateTimingProps.inheritedNudges` / `scheduleOn`. Обновление: все пакеты SDK одной версией.
+
+### Patch Changes
+
+- Updated dependencies [e59eb20]
+  - @ykurilov/agent-chat-flows@0.104.0
+  - @ykurilov/agent-chat-mcp@0.104.0
+  - @ykurilov/agent-chat-messengers@0.104.0
+  - @ykurilov/agent-chat-react@0.104.0
+  - @ykurilov/agent-chat-sandbox@0.104.0
+  - @ykurilov/agent-chat-skills@0.104.0
+
 ## 0.103.0
 
 ### Patch Changes

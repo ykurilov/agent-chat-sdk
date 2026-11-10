@@ -132,6 +132,18 @@ export interface FlowEditorLabels {
     never: string;
     remove: string;
     on: string;
+    /** «каждый день в 10:00, 19:00» в строке касаний. */
+    summaryDaily: (times: string) => string;
+    /** «молчит 3 дн. — разговор окончен» в строке касаний. */
+    summaryGiveUp: (duration: string) => string;
+  };
+  /** Раздел общих касаний сценария в обзоре (`FlowNudgesSection`). С 0.104. */
+  nudgesSection: {
+    title: string;
+    /** Сценарий без «Дней и времени». */
+    hint: string;
+    /** Включены «Дни и время». */
+    hintWithSchedule: string;
   };
   sideTasks: {
     title: string;
@@ -183,7 +195,13 @@ export interface FlowEditorLabels {
     nudgesDays: string;
     nudgesDaysModes: Record<"always" | "days" | "untilProgramDay", string>;
     nudgesDaysHint: string;
+    /** То же без «Дней и времени»: утреннего сообщения нет. С 0.104. */
+    nudgesDaysHintNoSchedule: string;
     nudgesUntilProgramDayHint: string;
+    /** «Как у сценария»: какие касания получает нода, перед строкой касаний. С 0.104. */
+    inheritedNudges: string;
+    /** «Как у сценария», а у сценария касаний нет. С 0.104. */
+    inheritedNone: string;
   };
   exitCard: {
     when: string;
@@ -403,7 +421,14 @@ export const russianFlowEditorLabels: FlowEditorLabels = {
     giveUpAfter: "Молчит столько — разговор окончен",
     never: "никогда",
     remove: "Убрать",
-    on: "Касания по умолчанию",
+    on: "Касания сценария",
+    summaryDaily: (times) => `каждый день в ${times}`,
+    summaryGiveUp: (duration) => `молчит ${duration} — разговор окончен`,
+  },
+  nudgesSection: {
+    title: "Касания",
+    hint: "Агент пишет сам, когда человек молчит. Так во всех нодах, где не заданы свои касания.",
+    hintWithSchedule: "Агент пишет сам, когда человек молчит. Так во всех нодах, где не заданы свои касания. Ночью касания ждут начала дня.",
   },
   sideTasks: {
     title: "Попутные задачи",
@@ -452,7 +477,10 @@ export const russianFlowEditorLabels: FlowEditorLabels = {
     nudgesDays: "Свои касания действуют",
     nudgesDaysModes: { always: "всё время в ноде", days: "дн., считая день входа", untilProgramDay: "до дня программы включительно" },
     nudgesDaysHint: "Потом — касания сценария: утреннее и общий ряд с начала.",
+    nudgesDaysHintNoSchedule: "Потом — касания сценария, их ряд с начала.",
     nudgesUntilProgramDayHint: "Пришёл в ноду позже — своих касаний нет, сразу касания сценария.",
+    inheritedNudges: "Касания сценария:",
+    inheritedNone: "У сценария касаний нет: здесь агент первым не пишет.",
   },
   exitCard: {
     when: "Когда",
@@ -659,7 +687,14 @@ export const englishFlowEditorLabels: FlowEditorLabels = {
     giveUpAfter: "Silent this long — conversation over",
     never: "never",
     remove: "Remove",
-    on: "Default nudges",
+    on: "Flow nudges",
+    summaryDaily: (times) => `every day at ${times}`,
+    summaryGiveUp: (duration) => `silent ${duration} — conversation over`,
+  },
+  nudgesSection: {
+    title: "Nudges",
+    hint: "The agent writes by itself while the person is silent. Applies in every state without its own nudges.",
+    hintWithSchedule: "The agent writes by itself while the person is silent. Applies in every state without its own nudges. At night nudges wait for the day start.",
   },
   sideTasks: {
     title: "Side tasks",
@@ -708,7 +743,10 @@ export const englishFlowEditorLabels: FlowEditorLabels = {
     nudgesDays: "Own nudges apply",
     nudgesDaysModes: { always: "the whole time in the state", days: "days, counting the entry day", untilProgramDay: "until program day, inclusive" },
     nudgesDaysHint: "Then the flow's nudges: the morning message and the common series from the start.",
+    nudgesDaysHintNoSchedule: "Then the flow's nudges, their series from the start.",
     nudgesUntilProgramDayHint: "Reached the state later — no own nudges, the flow's nudges right away.",
+    inheritedNudges: "Flow nudges:",
+    inheritedNone: "The flow has no nudges: the agent doesn't write first here.",
   },
   exitCard: {
     when: "When",

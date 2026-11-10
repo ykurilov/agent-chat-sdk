@@ -37,9 +37,14 @@ function withOptional<T extends object, K extends keyof T>(target: T, key: K, va
   return (value === undefined ? rest : { ...rest, [key]: value }) as T;
 }
 
+/**
+ * Включение «Дней и времени» действующих касаний не меняет. Выключение сохраняет касания «Дней и времени» касаниями
+ * сценария: доска показывает их и без дней, и они не должны пропасть или уступить место скрытым.
+ */
 export function setScheduleOn(flow: AgentFlow, on: boolean): AgentFlow {
   if (on) return flow.schedule ? flow : { ...flow, schedule: { ...DEFAULT_SCHEDULE } };
-  return withOptional(flow, "schedule", undefined);
+  const off = withOptional(flow, "schedule", undefined);
+  return flow.schedule?.nudges ? { ...off, nudges: flow.schedule.nudges } : off;
 }
 
 export type SchedulePatch = { [K in keyof FlowSchedule]?: FlowSchedule[K] | undefined };
@@ -129,7 +134,7 @@ export function setStateNudges(flow: AgentFlow, stateId: string, mode: NudgesMod
       if (state.id !== stateId || nudgesMode(state) === mode) return state;
       if (mode === "inherit") return withOptional(state, "nudges", undefined);
       if (mode === "off") return { ...state, nudges: "off" };
-      return { ...state, nudges: structuredClone(flow.schedule?.nudges ?? DEFAULT_NUDGES) };
+      return { ...state, nudges: structuredClone(commonNudges(flow) ?? DEFAULT_NUDGES) };
     }),
   };
 }
@@ -200,7 +205,23 @@ export function parseCapsByDay(text: string): number[] | undefined | null {
   return caps.every((cap) => Number.isInteger(cap) && cap >= 0) ? caps : null;
 }
 
-/** Касания по умолчанию в «Днях и времени»; `null` — без общих касаний. */
+/** Общие касания, которые действуют у нод без своих: `schedule.nudges`, иначе касания сценария. Нет — `null`. */
+export function commonNudges(flow: AgentFlow): FlowNudges | null {
+  return flow.schedule?.nudges ?? flow.nudges ?? null;
+}
+
+/**
+ * Правка общих касаний там, где они действуют: в «Днях и времени», если касания заданы там, иначе у сценария (дни не
+ * включаются). Перекрытые касания сценария при этом убираются. `null` — касаний нет нигде: агент не пишет первым.
+ */
+export function updateCommonNudges(flow: AgentFlow, nudges: FlowNudges | null): AgentFlow {
+  const withoutRoot = withOptional(flow, "nudges", undefined);
+  if (nudges === null) return flow.schedule?.nudges ? updateScheduleNudges(withoutRoot, null) : withoutRoot;
+  if (flow.schedule?.nudges) return updateScheduleNudges(withoutRoot, nudges);
+  return { ...flow, nudges: cleanNudges(nudges) };
+}
+
+/** Касания по умолчанию в «Днях и времени»; `null` — без них. Общие касания доска правит `updateCommonNudges`. */
 export function updateScheduleNudges(flow: AgentFlow, nudges: FlowNudges | null): AgentFlow {
   return updateSchedule(flow, { nudges: nudges === null ? undefined : cleanNudges(nudges) });
 }
@@ -217,6 +238,14 @@ function cleanNudges(nudges: FlowNudges): FlowNudges {
 /** «15 мин», «4 ч», «3 дн.». */
 export function durationText(duration: FlowDuration, labels: FlowEditorLabels): string {
   return `${duration.amount} ${labels.units[duration.unit]}`;
+}
+
+/** Касания одной строкой: «30 мин · каждый день в 19:00 · молчит 3 дн. — разговор окончен». */
+export function nudgesSummary(nudges: FlowNudges, labels: FlowEditorLabels): string {
+  const parts = nudges.afterSilence.map((step) => durationText(step, labels));
+  if (nudges.dailyAt?.length) parts.push(labels.nudges.summaryDaily(nudges.dailyAt.join(", ")));
+  if (nudges.giveUpAfter) parts.push(labels.nudges.summaryGiveUp(durationText(nudges.giveUpAfter, labels)));
+  return parts.join(" · ");
 }
 
 /** Подпись «Длится» и касаний на карточке ноды: «1 день · касания 15 мин · 1 ч · 4 ч». Ничего своего — пусто. */

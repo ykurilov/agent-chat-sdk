@@ -170,11 +170,27 @@ export interface FlowScheduleSectionProps {
   states: FlowTargetOption[];
   /** Находки проверки по «Дням и времени». */
   issues: FlowIssue[];
-  /** Касания по умолчанию: `FlowNudgesEditor`. */
+  /**
+   * Касания по умолчанию: `FlowNudgesEditor`. У скина есть `FlowNudgesSection` — `null`: общие касания показывает он,
+   * и без «Дней и времени».
+   */
   nudges: ReactNode;
   onToggle(on: boolean): void;
   onChange(patch: SchedulePatch): void;
   onAfterEndChange(mode: FlowAfterEnd): void;
+}
+
+/**
+ * Раздел общих касаний сценария в обзоре: виден всегда, и без «Дней и времени». Показывает действующие касания
+ * (`schedule.nudges`, иначе `nudges` сценария) и правит их там, где они действуют. С 0.104, необязательный.
+ */
+export interface FlowNudgesSectionProps {
+  /** Общие касания: `FlowNudgesEditor` с `optional`. */
+  nudges: ReactNode;
+  /** Включены «Дни и время»: для подсказки. */
+  scheduleOn: boolean;
+  /** Находки проверки по общим касаниям. */
+  issues: FlowIssue[];
 }
 
 /** Расписание касаний: ряд сроков тишины, потом время каждый день, срок «молчит — конец». */
@@ -214,6 +230,13 @@ export interface FlowStateTimingProps {
   onNudgesModeChange(mode: NudgesMode): void;
   /** Свои касания: `FlowNudgesEditor`; режим не «свои» — `null`. */
   nudges: ReactNode | null;
+  /**
+   * Что нода получает в режиме «как у сценария»: действующие общие касания, только для показа (`nudgesSummary`);
+   * `null` — у сценария касаний нет. С 0.104; нет поля — старый скин.
+   */
+  inheritedNudges?: FlowNudges | null;
+  /** Включены «Дни и время»: для подсказок. С 0.104. */
+  scheduleOn?: boolean;
   /** Свои касания действуют столько дней, считая день входа; `null` — всё время в ноде. С 0.55. */
   nudgesDays: number | null;
   onNudgesDaysChange(days: number | null): void;
@@ -463,4 +486,6 @@ export interface FlowEditorSkin {
   FlowSideTasksSection?: ComponentType<FlowSideTasksSectionProps>;
   FlowStateTiming?: ComponentType<FlowStateTimingProps>;
   FlowNudgesEditor?: ComponentType<FlowNudgesEditorProps>;
+  /** Раздел общих касаний в обзоре. Нет — общие касания внутри «Дней и времени», как до 0.104. */
+  FlowNudgesSection?: ComponentType<FlowNudgesSectionProps>;
 }

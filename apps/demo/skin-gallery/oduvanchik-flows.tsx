@@ -12,7 +12,9 @@ import "./oduvanchik-flows.css";
 const params = new URLSearchParams(location.search);
 document.documentElement.dataset.theme = params.get("theme") === "dark" ? "dark" : "light";
 document.documentElement.lang = params.get("lang") === "en" ? "en" : "ru";
-const fixture = params.get("flow") === "days" ? days : common;
+/** `flow=root-nudges`: общие касания сценария без «Дней и времени» (`flow.nudges`, с 0.50). */
+const rootNudges = { ...common, version: 2, id: "root-nudges", nudges: { afterSilence: [{ amount: 2, unit: "h" }], giveUpAfter: { amount: 3, unit: "d" } } };
+const fixture = params.get("flow") === "days" ? days : params.get("flow") === "root-nudges" ? rootNudges : common;
 const storageKey = `oduvanchik-flow-gallery:${params.get("flow") ?? "common"}`;
 const parsed = parseFlow(JSON.parse(localStorage.getItem(storageKey) ?? JSON.stringify(fixture)));
 if (!parsed.ok) throw new Error("Invalid gallery fixture");

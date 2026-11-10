@@ -261,6 +261,17 @@ import { tandemFlowEditorSkin } from "@ykurilov/agent-chat-skin-tandem/flows";
 
 Свой скин: необязательный `FlowHeaderProps.onOpenAnyState` открывает панель; `FlowExitCardProps.summary` содержит локализованные условие и цель. Существующий `FlowOverviewPanelProps.sections` включает настройки общих переходов. Старые `FlowAnyStateNode`/`FlowAnyStateNodeProps` оставлены для совместимости, но доска их не вызывает. Новых обязательных частей скина нет.
 
+**Общие касания на доске (с 0.104).** Касания сценария хранятся в двух местах: `nudges` сценария (работают и без «Дней и времени») и `schedule.nudges` (если заданы, главнее). Движок их не менял. В обзоре теперь отдельный раздел «Касания», он виден и без «Дней и времени». Раздел показывает те касания, что действуют, и правит их там, где они действуют:
+
+- заданы `schedule.nudges` — правятся они, а перекрытые ими `nudges` сценария убираются;
+- иначе правятся `nudges` сценария, «Дни и время» не включаются;
+- «выключить» убирает касания из обоих мест: агент первым больше не пишет;
+- выключение «Дней и времени» переносит их касания в `nudges` сценария: касания остаются такими, какими их видно.
+
+Старые сценарии работают как раньше: JSON меняется только при правке. В панели ноды режим «Как у сценария» показывает, какие касания нода получает. Образец для «Свои» — действующие общие касания. Подсказки учитывают, включены ли «Дни и время». Для своих правок приложения есть `commonNudges(flow)`, `updateCommonNudges(flow, nudges)` и `nudgesSummary(nudges, labels)` из `@ykurilov/agent-chat-flows/react`.
+
+Свой скин: необязательная часть `FlowNudgesSection` (`nudges`, `scheduleOn`, `issues`) и поля `FlowStateTimingProps.inheritedNudges` и `scheduleOn`. Есть `FlowNudgesSection` — `FlowScheduleSectionProps.nudges` приходит `null`. Нет — общие касания, как раньше, внутри «Дней и времени», но уже действующие. Подписи — `labels.editor.nudgesSection`, `statePanel.inheritedNudges`, `statePanel.inheritedNone`, `statePanel.nudgesDaysHintNoSchedule`, `nudges.summaryDaily`, `nudges.summaryGiveUp`. Одуванчик и Тандем реализуют всё это.
+
 **Место доски.** Встраиваете редактор во вкладку своей страницы, и графу тесно — освободите место (все свойства
 необязательные, подробности и таблица — в `CHANGES.md`, 0.54.0):
 

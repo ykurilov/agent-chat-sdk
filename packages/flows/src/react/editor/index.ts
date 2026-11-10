@@ -23,6 +23,6 @@ export {
   type SimulationChoice,
   type SimulationStep,
 } from "./flow-simulation";
-export { capsByDayText, DEFAULT_NUDGES, DEFAULT_SCHEDULE, parseCapsByDay } from "./schedule-model";
+export { capsByDayText, commonNudges, DEFAULT_NUDGES, DEFAULT_SCHEDULE, nudgesSummary, parseCapsByDay, updateCommonNudges } from "./schedule-model";
 export type { FlowBoardSpaceProps, FlowHeaderMode, FlowInspectorMode, FlowLegendMode, FlowMinimapMode } from "./board-space";
 export { sameFlow } from "./editor-model";

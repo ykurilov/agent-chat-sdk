@@ -35,7 +35,7 @@ test("дни и время, «Длится», касания, попутные �
   await expect(schedule.getByLabel("Начало дня")).toHaveValue("09:00");
   await schedule.getByLabel("Сколько дней").fill("5");
   await expect(schedule.getByLabel("Готовый текст прощания")).toHaveValue("Марафон закончился. Спасибо, что были с нами!");
-  await expect(schedule.locator("[data-flow-nudges]").getByLabel("Молчит — написать через 2", { exact: true })).toHaveValue("4");
+  await expect(page.locator("[data-flow-common-nudges] [data-flow-nudges]").getByLabel("Молчит — написать через 2", { exact: true })).toHaveValue("4");
 
   // Попутные задачи: поле из словаря приложения попадает в карточку.
   const tasks = page.locator("[data-flow-side-tasks]");

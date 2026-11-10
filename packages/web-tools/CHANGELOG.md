@@ -1,5 +1,11 @@
 # @ykurilov/agent-chat-web-tools
 
+## 0.104.0
+
+### Patch Changes
+
+- @ykurilov/agent-chat-core@0.104.0
+
 ## 0.103.0
 
 ### Patch Changes

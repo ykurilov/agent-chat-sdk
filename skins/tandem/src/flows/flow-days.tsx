@@ -3,12 +3,13 @@ import type { FlowAfterEnd, FlowDuration, FlowNudges, FlowTimerUnit } from "@yku
 import type {
   DurationUnit,
   FlowNudgesEditorProps,
+  FlowNudgesSectionProps,
   FlowScheduleSectionProps,
   FlowSideTasksSectionProps,
   FlowStateTimingProps,
   NudgesMode,
 } from "@ykurilov/agent-chat-flows/react";
-import { capsByDayText, DEFAULT_NUDGES, parseCapsByDay, useFlowLabels } from "@ykurilov/agent-chat-flows/react";
+import { capsByDayText, DEFAULT_NUDGES, nudgesSummary, parseCapsByDay, useFlowLabels } from "@ykurilov/agent-chat-flows/react";
 import { ChevronDown, Clock, Plus, Trash2, X } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { IssueList } from "./flow-panels";
@@ -138,6 +139,19 @@ export function TandemFlowNudgesEditor({ nudges, optional, onChange }: FlowNudge
   );
 }
 
+/** Общие касания сценария: видны всегда, и без «Дней и времени». */
+export function TandemFlowNudgesSection({ nudges, scheduleOn, issues }: FlowNudgesSectionProps) {
+  const text = useFlowLabels().editor.nudgesSection;
+  return (
+    <section aria-label={text.title} data-flow-common-nudges="" className="flex flex-col gap-3 border-t border-[var(--border)] pt-4">
+      <h3 className="text-base font-semibold text-[var(--foreground)]">{text.title}</h3>
+      <p className="text-xs text-[var(--foreground-muted)]">{scheduleOn ? text.hintWithSchedule : text.hint}</p>
+      <IssueList issues={issues} />
+      {nudges}
+    </section>
+  );
+}
+
 export function TandemFlowScheduleSection(props: FlowScheduleSectionProps) {
   const labels = useFlowLabels().editor;
   const text = labels.schedule;
@@ -200,11 +214,11 @@ export function TandemFlowScheduleSection(props: FlowScheduleSectionProps) {
               )}
             </>
           )}
-          <div className="flex flex-col gap-1.5">
+          {props.nudges && <div className="flex flex-col gap-1.5">
             <span className="text-sm font-medium text-[var(--foreground)]">{text.nudges}</span>
             <span className="text-xs text-[var(--foreground-muted)]">{text.nudgesHint}</span>
             {props.nudges}
-          </div>
+          </div>}
         </>
       )}
       <More title={text.more}>
@@ -381,7 +395,8 @@ export function TandemFlowSideTasksSection(props: FlowSideTasksSectionProps) {
 }
 
 export function TandemFlowStateTiming(props: FlowStateTimingProps) {
-  const labels = useFlowLabels().editor.statePanel;
+  const editorLabels = useFlowLabels().editor;
+  const labels = editorLabels.statePanel;
   const { duration } = props;
   const units: DurationUnit[] = props.daysAvailable ? ["h", "d", "program_day"] : ["h"];
   // «3 дней», но «до дня программы 3»: номер дня — после варианта.
@@ -457,6 +472,11 @@ export function TandemFlowStateTiming(props: FlowStateTimingProps) {
           ))}
         </div>
         <span className="text-xs text-[var(--foreground-muted)]">{labels.nudgesHint}</span>
+        {props.nudgesMode === "inherit" && props.inheritedNudges !== undefined && (
+          <p data-flow-inherited-nudges="" className="rounded-[var(--radius-nested)] bg-[var(--surface-muted)] px-3 py-2 text-sm text-[var(--foreground)]">
+            {props.inheritedNudges ? `${labels.inheritedNudges} ${nudgesSummary(props.inheritedNudges, editorLabels)}` : labels.inheritedNone}
+          </p>
+        )}
         {props.nudges}
         {props.nudgesMode === "own" && (
           <NudgesDays
@@ -464,6 +484,7 @@ export function TandemFlowStateTiming(props: FlowStateTimingProps) {
             untilProgramDay={props.nudgesUntilProgramDay}
             onDaysChange={props.onNudgesDaysChange}
             onUntilProgramDayChange={props.onNudgesUntilProgramDayChange}
+            scheduleOn={props.scheduleOn ?? true}
           />
         )}
       </div>
@@ -477,11 +498,13 @@ function NudgesDays(props: {
   untilProgramDay: number | null;
   onDaysChange(days: number | null): void;
   onUntilProgramDayChange(day: number | null): void;
+  scheduleOn: boolean;
 }) {
   const labels = useFlowLabels().editor.statePanel;
   const mode = props.untilProgramDay !== null ? "untilProgramDay" : props.days !== null ? "days" : "always";
   const value = mode === "untilProgramDay" ? props.untilProgramDay : props.days;
   const setValue = mode === "untilProgramDay" ? props.onUntilProgramDayChange : props.onDaysChange;
+  const daysHint = props.scheduleOn ? labels.nudgesDaysHint : labels.nudgesDaysHintNoSchedule;
   const setMode = (next: string) => {
     props.onDaysChange(next === "days" ? 1 : null);
     props.onUntilProgramDayChange(next === "untilProgramDay" ? 1 : null);
@@ -507,10 +530,10 @@ function NudgesDays(props: {
           <option value="untilProgramDay">{labels.nudgesDaysModes.untilProgramDay}</option>
         </Select>
       </div>
-      {mode === "days" && <span className="text-xs text-[var(--foreground-muted)]">{labels.nudgesDaysHint}</span>}
+      {mode === "days" && <span className="text-xs text-[var(--foreground-muted)]">{daysHint}</span>}
       {mode === "untilProgramDay" && (
         <span className="text-xs text-[var(--foreground-muted)]">
-          {labels.nudgesUntilProgramDayHint} {labels.nudgesDaysHint}
+          {labels.nudgesUntilProgramDayHint} {daysHint}
         </span>
       )}
     </div>

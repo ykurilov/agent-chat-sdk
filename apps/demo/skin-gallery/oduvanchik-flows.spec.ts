@@ -9,6 +9,12 @@ test.beforeEach(({ page }) => {
 });
 test.afterEach(({ page }) => { expect(pageErrors.get(page)).toEqual([]); });
 const screenshots=screenshotFolder("agent-chat-oduvanchik-flows");
+/*
+ * WebKit сообщает это (ошибкой страницы и в консоль), когда при открытии тестового чата на телефоне доска меняет размер, а наблюдатели размеров
+ * XYFlow получают часть уведомлений в следующем кадре. Источник — библиотека доски, а не наш код (наблюдатель
+ * ленты чата Одуванчика проверен отдельно). Вреда нет: уведомления приходят кадром позже. Пропускается только эта строка.
+ */
+const RO_LOOP="ResizeObserver loop completed with undelivered notifications.";
 const route=(theme="light",extra="")=>`/oduvanchik-flows.html?flow=common&header=compact&inspector=collapsible&minimap=collapsed&theme=${theme}${extra}`;
 async function openSettings(page:import("@playwright/test").Page){
  const direct=page.getByRole("button",{name:"Общие переходы",exact:true});
@@ -32,7 +38,7 @@ test("global transitions are settings: real graph, roundtrip, locked viewing and
  await panel.getByRole("button",{name:"Словами",exact:true}).click();const addedId=await panel.locator("[data-exit-card]").last().getAttribute("data-exit-card");const added=panel.locator(`[data-exit-card="${addedId}"]`);await added.getByRole("textbox",{name:"Когда"}).fill("Человек попросил продолжить");await added.getByRole("combobox",{name:"Куда",exact:true}).selectOption("intro");
  await added.getByRole("button",{name:"Выше",exact:true}).click();await expect(panel.locator("[data-exit-card]").first()).not.toHaveAttribute("data-exit-card","finish_dialog");await added.getByRole("button",{name:"Ниже",exact:true}).click();await added.getByRole("button",{name:"Удалить условие",exact:true}).click();await expect(panel.locator("[data-exit-card]")).toHaveCount(1);
  await card.getByRole("combobox",{name:"Куда",exact:true}).selectOption("");await page.getByRole("button",{name:/^Скрыть панель/}).click();await page.getByRole("button",{name:/Проверить граф/}).click();await page.getByRole("region",{name:"Проверка",exact:true}).getByRole("button").filter({hasText:/никуда не ведёт/}).click();await expect(page.locator('[data-flow-exit-focus="finish_dialog"]')).toBeFocused();await card.getByRole("combobox",{name:"Куда",exact:true}).selectOption("review");
- await page.getByRole("button",{name:"JSON",exact:true}).click();const json=page.getByRole("dialog").getByRole("textbox");const saved=JSON.parse(await json.inputValue());expect(saved.anyState.exits[0].to).toBe("review");expect(saved.anyState.exits[0].when).toEqual({type:"event",event:"tool",name:"finish_dialog"});expect(saved.anyState.except).toContain("intro");expect(saved.layout['@any']).toEqual({x:-5000,y:-5000});await page.keyboard.press("Escape");
+ await page.getByRole("button",{name:"Код сценария (JSON)",exact:true}).click();const json=page.getByRole("dialog").getByRole("textbox");const saved=JSON.parse(await json.inputValue());expect(saved.anyState.exits[0].to).toBe("review");expect(saved.anyState.exits[0].when).toEqual({type:"event",event:"tool",name:"finish_dialog"});expect(saved.anyState.except).toContain("intro");expect(saved.layout['@any']).toEqual({x:-5000,y:-5000});await page.keyboard.press("Escape");
  }
  await page.goto(route("dark","&readonly=1"));await page.locator(".react-flow__node").first().waitFor();const locked=await openSettings(page);await expect(locked.getByRole("combobox",{name:"Куда",exact:true})).toBeDisabled();await expect(locked.getByRole("button",{name:"Словами",exact:true})).toBeDisabled();await saveScreenshot(page,screenshots,"dark-desktop-locked");
  const phoneBrowser=await webkit.launch();const context=await phoneBrowser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,baseURL:new URL(page.url()).origin});await context.addInitScript(()=>localStorage.removeItem("oduvanchik-flow-board"));const phone=await context.newPage();phone.on("pageerror",e=>errors.push(e.message));
@@ -82,7 +88,7 @@ test("actual FlowTestChat retains chatId on reopen, highlights state, and uses O
 
 test("DS fields keep numeric/boolean JSON types through editor save and reload", async ({ page }) => {
  await page.goto(route()); await openSettings(page);
- await page.getByRole("button", { name: "JSON", exact: true }).click();
+ await page.getByRole("button", { name: "Код сценария (JSON)", exact: true }).click();
  const json = page.getByRole("dialog").getByRole("textbox");
  const value = JSON.parse(await json.inputValue());
  value.chatNotes = [{ id: "amount", name: "Сумма", about: "", type: "number", options: [] }, { id: "ready", name: "Готово", about: "", type: "boolean", options: [] }];
@@ -92,7 +98,7 @@ test("DS fields keep numeric/boolean JSON types through editor save and reload",
  await settings.getByRole("textbox", { name: "Значение", exact: true }).fill("42");
  await page.getByRole("button", { name: "Сохранить", exact: true }).click();
  await page.reload(); await openSettings(page);
- await page.getByRole("button", { name: "JSON", exact: true }).click();
+ await page.getByRole("button", { name: "Код сценария (JSON)", exact: true }).click();
  const saved = JSON.parse(await page.getByRole("dialog").getByRole("textbox").inputValue());
  expect(saved.anyState.exits[0].when.value).toBe(42);
  await page.keyboard.press("Escape");
@@ -100,7 +106,7 @@ test("DS fields keep numeric/boolean JSON types through editor save and reload",
  // Changing field normalizes the operation in the headless editor; then choose equality and false.
  await page.getByRole("combobox", { name: "Как сравнить", exact: true }).selectOption("eq");
  await page.getByRole("combobox", { name: "Значение", exact: true }).selectOption("false");
- await page.getByRole("button", { name: "JSON", exact: true }).click();
+ await page.getByRole("button", { name: "Код сценария (JSON)", exact: true }).click();
  const boolean = JSON.parse(await page.getByRole("dialog").getByRole("textbox").inputValue());
  expect(boolean.anyState.exits[0].when.value).toBe(false);
 });
@@ -108,7 +114,7 @@ test("DS fields keep numeric/boolean JSON types through editor save and reload",
 test("JSON dialog is above fullscreen, traps focus and restores it without leaving fullscreen", async ({ page }) => {
  await page.goto(route()); await page.locator(".react-flow__node").first().waitFor();
  await page.getByRole("button", { name: "На весь экран", exact: true }).click();
- await page.getByRole("button", { name: "JSON", exact: true }).click();
+ await page.getByRole("button", { name: "Код сценария (JSON)", exact: true }).click();
  const dialog = page.getByRole("dialog", { name: "Граф в формате JSON", exact: true });
  await expect(dialog).toBeVisible();
  const field = dialog.getByRole("textbox"); await field.click(); await expect(field).toBeFocused();
@@ -117,7 +123,7 @@ test("JSON dialog is above fullscreen, traps focus and restores it without leavi
  for (let i = 0; i < 9; i++) { await page.keyboard.press("Tab"); expect(await dialog.evaluate(el => el.contains(document.activeElement))).toBe(true); }
  await page.keyboard.press("Escape"); await expect(dialog).toHaveCount(0);
  await expect(page.locator("[data-flow-fullscreen]")).toBeVisible();
- await expect(page.getByRole("button", { name: "JSON", exact: true })).toBeFocused();
+ await expect(page.getByRole("button", { name: "Код сценария (JSON)", exact: true })).toBeFocused();
  await page.keyboard.press("Escape"); await expect(page.locator("[data-flow-fullscreen]")).toHaveCount(0);
 });
 
@@ -125,7 +131,7 @@ test("WebKit phone actual test chat in both themes, English flow labels and resp
  const browser = await webkit.launch(); const errors: string[] = [];
  try { for (const theme of ["light", "dark"]) {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, baseURL: new URL(page.url() === "about:blank" ? "http://127.0.0.1:" + (process.env.SKIN_GALLERY_PORT ?? "5953") : page.url()).origin });
-  const phone = await context.newPage(); phone.on("pageerror", e => errors.push(e.message)); phone.on("console", m => { if (m.type() === "error") errors.push(m.text()); });
+  const phone = await context.newPage(); phone.on("pageerror", e => { if (e.message !== RO_LOOP) errors.push(e.message); }); phone.on("console", m => { if (m.type() === "error" && m.text() !== RO_LOOP) errors.push(m.text()); });
   await phone.goto(route(theme, "&lang=en")); await phone.locator(".react-flow__node").first().waitFor();
   await phone.getByRole("button", { name: "More actions" }).click();
   await phone.getByRole("menuitem", { name: "Test chat", exact: true }).click();
@@ -164,7 +170,7 @@ test("DS days, nudges, side tasks and node duration remain editable and fit phon
  await saveScreenshot(page, screenshots, "light-desktop-days");
  await page.evaluate(() => document.documentElement.dataset.theme = "dark");
  await saveScreenshot(page, screenshots, "dark-desktop-days");
- await page.getByRole("button", { name: "JSON", exact: true }).click();
+ await page.getByRole("button", { name: "Код сценария (JSON)", exact: true }).click();
  const json = JSON.parse(await page.getByRole("dialog").getByRole("textbox").inputValue());
  expect(json.schedule.lengthDays).toBe(5);
  expect(json.sideTasks.some((task: { text: string }) => task.text === "Проверить итог")).toBe(true);
@@ -175,6 +181,28 @@ test("DS days, nudges, side tasks and node duration remain editable and fit phon
  // API finishes finite animations without waiting for offscreen animation promises.
  await test.info().attach("phone-resize-animations", { contentType: "application/json", body: JSON.stringify(await page.evaluate(() => document.getAnimations().map(a => ({ state: a.playState, timing: a.effect?.getTiming(), target: ((a.effect as KeyframeEffect)?.target as Element)?.tagName })))) });
  await page.screenshot({ path: `${screenshots}/dark-phone-days.png`, animations: "disabled" });
+});
+
+test("flow nudges without days are shown on the board and saved at the root", async ({ page }) => {
+ await page.addInitScript(() => localStorage.removeItem("oduvanchik-flow-gallery:root-nudges"));
+ await page.goto("/oduvanchik-flows.html?flow=root-nudges&theme=light");
+ await page.getByRole("button", { name: /^Показать панель/ }).click();
+ await expect(page.locator("[data-flow-schedule]").getByRole("switch", { name: "Сценарий по дням" })).not.toBeChecked();
+ const section = page.locator("[data-flow-common-nudges]");
+ await expect(section.getByRole("switch", { name: "Касания сценария" })).toBeChecked();
+ await expect(section.getByText("Так во всех нодах, где не заданы свои касания.")).toBeVisible();
+ await expect(section.getByText("Ночью касания ждут начала дня.")).toHaveCount(0);
+ const first = section.getByRole("spinbutton", { name: "Молчит — написать через 1", exact: true });
+ await expect(first).toHaveValue("2");
+ await first.fill("5");
+ const node = page.locator(".react-flow__node").filter({ hasText: "Знакомство" });
+ await node.getByRole("button").first().click();
+ await expect(page.locator("[data-flow-state-timing] [data-flow-inherited-nudges]")).toHaveText("Касания сценария: 5 ч · молчит 3 дн. — разговор окончен");
+ await saveScreenshot(page, screenshots, "light-desktop-root-nudges");
+ await page.getByRole("button", { name: "Код сценария (JSON)", exact: true }).click();
+ const json = JSON.parse(await page.getByRole("dialog").getByRole("textbox").inputValue());
+ expect(json.nudges).toEqual({ afterSilence: [{ amount: 5, unit: "h" }], giveUpAfter: { amount: 3, unit: "d" } });
+ expect(json.schedule).toBeUndefined();
 });
 
 test("combined chat and flows CSS imports DS controls once", async ({ page }) => {

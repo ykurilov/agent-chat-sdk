@@ -1,5 +1,13 @@
 # @ykurilov/agent-chat-voice-dialog
 
+## 0.104.0
+
+### Patch Changes
+
+- @ykurilov/agent-chat-core@0.104.0
+  - @ykurilov/agent-chat-react@0.104.0
+  - @ykurilov/agent-chat-voice@0.104.0
+
 ## 0.103.0
 
 ### Patch Changes

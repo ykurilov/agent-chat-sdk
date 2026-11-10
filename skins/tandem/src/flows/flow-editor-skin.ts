@@ -11,7 +11,7 @@ import {
   TandemFlowOverviewPanel,
   TandemFlowStatePanel,
 } from "./flow-panels";
-import { TandemFlowNudgesEditor, TandemFlowScheduleSection, TandemFlowSideTasksSection, TandemFlowStateTiming } from "./flow-days";
+import { TandemFlowNudgesEditor, TandemFlowNudgesSection, TandemFlowScheduleSection, TandemFlowSideTasksSection, TandemFlowStateTiming } from "./flow-days";
 import { TandemFlowRunPanel } from "./flow-run-panel";
 import { TandemFlowMigrateDialog } from "./migrate-dialog";
 
@@ -40,4 +40,5 @@ export const tandemFlowEditorSkin: FlowEditorSkin = {
   FlowSideTasksSection: TandemFlowSideTasksSection,
   FlowStateTiming: TandemFlowStateTiming,
   FlowNudgesEditor: TandemFlowNudgesEditor,
+  FlowNudgesSection: TandemFlowNudgesSection,
 };

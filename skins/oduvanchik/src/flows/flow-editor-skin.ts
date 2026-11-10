@@ -11,7 +11,7 @@ import {
   OduvanchikFlowOverviewPanel,
   OduvanchikFlowStatePanel,
 } from "./flow-panels";
-import { OduvanchikFlowNudgesEditor, OduvanchikFlowScheduleSection, OduvanchikFlowSideTasksSection, OduvanchikFlowStateTiming } from "./flow-days";
+import { OduvanchikFlowNudgesEditor, OduvanchikFlowNudgesSection, OduvanchikFlowScheduleSection, OduvanchikFlowSideTasksSection, OduvanchikFlowStateTiming } from "./flow-days";
 import { OduvanchikFlowRunPanel } from "./flow-run-panel";
 import { OduvanchikFlowMigrateDialog } from "./migrate-dialog";
 
@@ -40,4 +40,5 @@ export const oduvanchikFlowEditorSkin: FlowEditorSkin = {
   FlowSideTasksSection: OduvanchikFlowSideTasksSection,
   FlowStateTiming: OduvanchikFlowStateTiming,
   FlowNudgesEditor: OduvanchikFlowNudgesEditor,
+  FlowNudgesSection: OduvanchikFlowNudgesSection,
 };

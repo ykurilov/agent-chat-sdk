@@ -47,7 +47,8 @@ import {
   stateNudgesDays,
   stateNudgesUntilProgramDay,
   updateSchedule,
-  updateScheduleNudges,
+  updateCommonNudges,
+  commonNudges,
   updateStateNudges,
 } from "./schedule-model";
 import { addCatalogField, addSideTask, catalogFieldsToAdd, removeSideTask, setSideTaskField, updateSideTask } from "./side-task-model";
@@ -329,6 +330,7 @@ function EditablePanel({ editor, skin, labels, onNavigate }: { editor: FlowEdito
       sections={
         <>
           <div style={{ flex: "none" }}><AnyStateSettings editor={editor} skin={skin} labels={labels} /></div>
+          <CommonNudgesSection editor={editor} skin={skin} />
           <ScheduleSection editor={editor} skin={skin} labels={labels} />
           <SideTasksSection editor={editor} skin={skin} focused={selection.kind === "overview" ? selection.sideTaskId : undefined} />
         </>
@@ -349,30 +351,43 @@ function AnyStateSettings({ editor, skin, labels }: { editor: FlowEditorControll
 
 /** Находки по «Дням и времени»: их коды из `checkFlow`. */
 const SCHEDULE_ISSUES = new Set(["night_before_day_start", "unknown_deadline_state", "day_frame_soft_after_hard"]);
-const isScheduleIssue = (issue: FlowIssue) => SCHEDULE_ISSUES.has(issue.code) || (issue.code === "empty_nudges" && !issue.place.stateId);
+/** Находки по общим касаниям сценария. */
+const isCommonNudgesIssue = (issue: FlowIssue) => (issue.code === "empty_nudges" || issue.code === "nudges_shadowed") && !issue.place.stateId;
+const isScheduleIssue = (issue: FlowIssue) => SCHEDULE_ISSUES.has(issue.code);
 
 function NudgesEditor({ skin, nudges, optional, onChange }: { skin: FlowEditorSkin; nudges: FlowNudges | null; optional: boolean; onChange(nudges: FlowNudges | null): void }) {
   if (!skin.FlowNudgesEditor) return null;
   return <skin.FlowNudgesEditor nudges={nudges} optional={optional} onChange={onChange} />;
 }
 
+/** Общие касания: показываются действующие, правятся там, где действуют. */
+function CommonNudgesEditor({ editor, skin }: { editor: FlowEditorController; skin: FlowEditorSkin }) {
+  return <NudgesEditor skin={skin} nudges={commonNudges(editor.flow)} optional onChange={(nudges) => editor.edit((current) => updateCommonNudges(current, nudges))} />;
+}
+
+function CommonNudgesSection({ editor, skin }: { editor: FlowEditorController; skin: FlowEditorSkin }): ReactNode {
+  if (!skin.FlowNudgesSection) return null;
+  return (
+    <skin.FlowNudgesSection
+      nudges={<CommonNudgesEditor editor={editor} skin={skin} />}
+      scheduleOn={editor.flow.schedule !== undefined}
+      issues={editor.issues.filter(isCommonNudgesIssue)}
+    />
+  );
+}
+
 function ScheduleSection({ editor, skin, labels }: { editor: FlowEditorController; skin: FlowEditorSkin; labels: FlowEditorLabels }): ReactNode {
   if (!skin.FlowScheduleSection) return null;
   const { flow } = editor;
+  // Скин без своего раздела касаний: общие касания, как раньше, внутри «Дней и времени».
+  const ownSection = skin.FlowNudgesSection !== undefined;
   return (
     <skin.FlowScheduleSection
       schedule={flow.schedule ?? null}
       afterEnd={flow.afterEnd ?? "reply"}
       states={targetOptions(flow, labels, false)}
-      issues={editor.issues.filter(isScheduleIssue)}
-      nudges={
-        <NudgesEditor
-          skin={skin}
-          nudges={flow.schedule?.nudges ?? null}
-          optional
-          onChange={(nudges) => editor.edit((current) => updateScheduleNudges(current, nudges))}
-        />
-      }
+      issues={editor.issues.filter((issue) => isScheduleIssue(issue) || (!ownSection && isCommonNudgesIssue(issue)))}
+      nudges={ownSection ? null : <CommonNudgesEditor editor={editor} skin={skin} />}
       onToggle={(on) => editor.edit((current) => setScheduleOn(current, on))}
       onChange={(patch) => editor.edit((current) => updateSchedule(current, patch))}
       onAfterEndChange={(mode) => editor.edit((current) => setAfterEnd(current, mode))}
@@ -425,6 +440,8 @@ function StateTiming({ editor, skin, labels, state }: { editor: FlowEditorContro
         });
       }}
       nudgesMode={mode}
+      inheritedNudges={commonNudges(flow)}
+      scheduleOn={flow.schedule !== undefined}
       onNudgesModeChange={(next) => editor.edit((current) => setStateNudges(current, state.id, next))}
       nudgesDays={stateNudgesDays(state)}
       onNudgesDaysChange={(days) => editor.edit((current) => setStateNudgesDays(current, state.id, days))}
