@@ -16,8 +16,9 @@ import type { ResolvedChatLabels } from "./labels";
  * Текст для диктора: пустой при открытии чата, итог ответа — когда ответ перешёл из «идёт» в
  * итоговое состояние. Когда начинается новый ответ, текст обнуляется: так одинаковые итоги
  * подряд («Остановлено» дважды) озвучиваются оба раза. `resetKey` (id чата) тоже обнуляет текст.
+ * `spokenAnswer` — настройка скина: текст ответа до снятия разметки, уже без того, что скин прячет на экране.
  */
-export function useFeedAnnouncement(messages: AgentChatMessage[], busy: boolean, resetKey?: string): string {
+export function useFeedAnnouncement(messages: AgentChatMessage[], busy: boolean, resetKey?: string, spokenAnswer?: (markdown: string) => string): string {
   const labels = useChatLabels();
   // Прошлые `busy` и `resetKey` хранятся в состоянии и сравниваются прямо при рендере: итог появляется
   // в том же кадре, в котором ответ закончился, а не в следующем после эффекта.
@@ -28,13 +29,13 @@ export function useFeedAnnouncement(messages: AgentChatMessage[], busy: boolean,
     current = { busy, resetKey, announcement: "" };
   } else if (seen.busy !== busy) {
     // Начался новый ответ: текст прошлого убираем, иначе такой же итог (например «Остановлено») не прозвучит снова.
-    current = { busy, resetKey, announcement: busy ? "" : announcementFor(messages, labels) };
+    current = { busy, resetKey, announcement: busy ? "" : announcementFor(messages, labels, spokenAnswer) };
   }
   if (current !== seen) setSeen(current);
   return current.announcement;
 }
 
-function announcementFor(messages: AgentChatMessage[], labels: ResolvedChatLabels): string {
+function announcementFor(messages: AgentChatMessage[], labels: ResolvedChatLabels, spokenAnswer?: (markdown: string) => string): string {
   const answer = messages.findLast((message) => message.role === "assistant");
   if (!answer) return "";
   const status = answer.metadata?.status ?? "complete";
@@ -43,7 +44,8 @@ function announcementFor(messages: AgentChatMessage[], labels: ResolvedChatLabel
   if (status === "interrupted") return labels.answerInterrupted;
   if (status === "awaiting_approval") return widgetQuestionOf(answer, labels) ?? labels.approvalAnnouncement;
   const text = messageText(answer, { voiceAnswer: voiceAnswerIds(messages).has(answer.id) });
-  const spoken = withoutMarkdown(text);
+  // Скин мог спрятать часть ответа на экране (`ChatSkin.spokenAnswer`): диктор читает то же, что видит человек.
+  const spoken = withoutMarkdown(spokenAnswer ? spokenAnswer(text) : text);
   return spoken.trim().length === 0 ? labels.answerEmpty : spoken;
 }
 

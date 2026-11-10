@@ -139,7 +139,8 @@ function MyComposer({ chatId, send }: { chatId: string; send: (text: string) => 
 Из-за этого прокруткой управляет чат, а не скин. Что нужно от своего скина:
 
 - `Layout` вешает `scrollRef` на прокручиваемый элемент и кладёт `feed` внутрь; лента внутри
-  `role="log"` с `aria-live="off"`; `announcement` — в скрытый элемент с `aria-live="polite"`;
+  `role="log"` с `aria-live="off"`; `announcement` — в скрытый элемент с `aria-live="polite"`; текст `announcement` строит SDK из ответа, а если скин прячет
+  часть ответа на экране, он отдаёт `ChatSkin.spokenAnswer(markdown)` с той же функцией (версия 33, [docs/skin-v33.md](../../docs/skin-v33.md));
 - промежутки между сообщениями — `padding` корня, не `gap` и не `margin`;
 - `Reasoning` и `ToolCallRow` не хранят раскрытие сами, а показывают `open` и зовут `onOpenChange`:
   раскрытое остаётся раскрытым, даже если сообщение уходило за край экрана;

@@ -3,8 +3,19 @@ import { ArrowUpIcon, PlusIcon, SquareIcon, XIcon, FileTextIcon, ImageIcon, Fold
 import { useChatLabels } from "@ykurilov/agent-chat-react";
 import type { ChatSkin } from "@ykurilov/agent-chat-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { ComponentProps, ReactNode } from "react";
+import type { ComponentProps, DragEvent, ReactNode } from "react";
 import { ComposerSettings } from "./composer-settings";
+
+/**
+ * Курсор остался внутри поля. `dragleave` приходит и при переходе на дочерний элемент: тогда цель — внутри поля.
+ * Если браузер цель не назвал (Safari), решает положение курсора.
+ */
+function pointerStaysIn(event: DragEvent<HTMLElement>) {
+  const next = event.relatedTarget as Node | null;
+  if (next) return event.currentTarget.contains(next);
+  const box = event.currentTarget.getBoundingClientRect();
+  return event.clientX > box.left && event.clientX < box.right && event.clientY > box.top && event.clientY < box.bottom;
+}
 
 type Props = ComponentProps<ChatSkin["Composer"]> & { mic?: ReactNode; dialogButton?: ReactNode };
 export function ComposerField(props: Props) {
@@ -18,9 +29,10 @@ export function ComposerField(props: Props) {
   const files = useRef<HTMLInputElement>(null);
   const addRoot = useRef<HTMLDivElement>(null);
   const [addMenu, setAddMenu] = useState(false);
+  const [dropping, setDropping] = useState(false);
   const disabled = props.sendingBlocked === true;
   const controlsDisabled = disabled || props.busy;
-  useEffect(() => { if (controlsDisabled) setAddMenu(false); }, [controlsDisabled]);
+  useEffect(() => { if (controlsDisabled) { setAddMenu(false); setDropping(false); } }, [controlsDisabled]);
   useEffect(() => {
     if (!addMenu) return;
     const outside = (event: PointerEvent) => { if (!addRoot.current?.contains(event.target as Node)) setAddMenu(false); };
@@ -44,15 +56,19 @@ export function ComposerField(props: Props) {
     if (element.scrollHeight > 0) element.style.height = `${Math.min(160, Math.max(26, element.scrollHeight))}px`;
   }
   useLayoutEffect(resizeField, [props.value, variant]);
+  /** Над полем держат файлы (а не текст или данные приложения), и поле может их принять. */
+  const acceptsFiles = (event: DragEvent<HTMLElement>) => !compact && !!attachments && !controlsDisabled
+    && (event.dataTransfer.files.length > 0 || Array.from(event.dataTransfer.types).includes("Files"));
   const submit = () => { if (canSend) props.onSubmit(); };
   const pickFile = (accept: string) => { if (controlsDisabled) return; if (files.current) files.current.accept = accept; files.current?.click(); setAddMenu(false); };
   const stop = <button type="button" className="oduvanchik-field-send oduvanchik-field-stop" aria-label={labels.stop}
     disabled={disabled} onClick={props.onStop}><SquareIcon size={15} weight="fill" aria-hidden /></button>;
   const send = <>{steering && stop}{stoppingOnly ? stop : <button type="button" className="oduvanchik-field-send" aria-label={labels.send}
     disabled={!canSend} onClick={submit}><ArrowUpIcon size={19} aria-hidden /></button>}</>;
-  return <div data-composer-variant={variant} className={`oduvanchik-field oduvanchik-field-${variant}${variant === "standard" && !attachments && !hasAddMenu && !options.context && !props.actions && !props.dialogButton ? " oduvanchik-field-inline" : ""}`} onKeyDown={(event) => { if (event.key === "Escape") setAddMenu(false); }}
-    onDragOver={(event) => { if (!compact && attachments && !controlsDisabled && (event.dataTransfer.files.length > 0 || Array.from(event.dataTransfer.types).includes("Files"))) event.preventDefault(); }}
-    onDrop={(event) => { if (compact || !attachments || controlsDisabled || !event.dataTransfer.files.length) return; event.preventDefault(); attachments.onAddFiles(Array.from(event.dataTransfer.files)); }}>
+  return <div data-composer-variant={variant} data-dropping={dropping || undefined} className={`oduvanchik-field oduvanchik-field-${variant}${variant === "standard" && !attachments && !hasAddMenu && !options.context && !props.actions && !props.dialogButton ? " oduvanchik-field-inline" : ""}`} onKeyDown={(event) => { if (event.key === "Escape") setAddMenu(false); }}
+    onDragOver={(event) => { if (acceptsFiles(event)) { event.preventDefault(); setDropping(true); } }}
+    onDragLeave={(event) => { if (!pointerStaysIn(event)) setDropping(false); }}
+    onDrop={(event) => { setDropping(false); if (compact || !attachments || controlsDisabled || !event.dataTransfer.files.length) return; event.preventDefault(); attachments.onAddFiles(Array.from(event.dataTransfer.files)); }}>
     {!compact && ((attachments?.items.length ?? 0) > 0 || (options.contextAttachments?.length ?? 0) > 0) && <ul className="oduvanchik-field-files" aria-label={fileLabels.attachments}>
       {attachments?.items.map((item) => <li key={item.id}>
         {item.kind === "image" && item.previewUrl ? <img src={item.previewUrl} alt="" /> : <FileTextIcon size={18} aria-hidden />}
@@ -61,6 +77,7 @@ export function ComposerField(props: Props) {
       </li>)}
       {options.contextAttachments?.map((item) => <li key={item.id}><FolderIcon size={18} aria-hidden /><span>{item.label}</span>{item.onRemove && <button type="button" disabled={controlsDisabled} aria-label={fileLabels.removeAttachment(item.label)} onClick={item.onRemove}><XIcon size={16} aria-hidden /></button>}</li>)}
     </ul>}
+    {dropping && <div className="oduvanchik-field-drop" aria-hidden>{fileLabels.dropToAttach}</div>}
     <textarea ref={field} onFocus={resizeField} rows={1} value={props.value} disabled={disabled} aria-describedby={props.sendingBlockedReasonId} aria-label={labels.composerLabel} placeholder={labels.composerPlaceholder}
       onChange={(event) => props.onValueChange(event.target.value)}
       onPaste={(event) => { if (!compact && attachments && !controlsDisabled && event.clipboardData.files.length) { event.preventDefault(); attachments.onAddFiles(Array.from(event.clipboardData.files)); } }}

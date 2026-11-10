@@ -142,3 +142,30 @@ describe("текст для диктора", () => {
     expect(view.result.current).toBe(`${russianLabels.errors.insufficient_funds} (Key limit exceeded)`);
   });
 });
+
+describe("текст для диктора: скин убирает то, что прячет на экране", () => {
+  const hideData = (markdown: string) => markdown.replace(/```result[^\n]*\n[\s\S]*?\n```/g, "").trim();
+  const spoken = (final: AgentChatMessage, spokenAnswer?: (markdown: string) => string) => {
+    const view = renderHook(
+      (props: { messages: AgentChatMessage[]; busy: boolean }) => useFeedAnnouncement(props.messages, props.busy, undefined, spokenAnswer),
+      { initialProps: { messages: [question, answer("", { status: "streaming" })], busy: true } },
+    );
+    view.rerender({ messages: [question, final], busy: false });
+    return view.result.current;
+  };
+  const withData = answer('Разберём тему.\n\n```result\n{"topic":"дроби"}\n```\n\nГотово.');
+
+  it("без настройки читается всё содержимое ответа", () => {
+    expect(spoken(withData)).toContain("topic");
+  });
+  it("`spokenAnswer` скина получает текст ответа до снятия разметки, диктор читает его результат", () => {
+    const heard = spoken(withData, hideData);
+    expect(heard).not.toContain("topic");
+    expect(heard).not.toContain("result");
+    expect(heard).toContain("Разберём тему.");
+    expect(heard).toContain("Готово.");
+  });
+  it("если после скина ничего не осталось, звучит «пустой ответ»", () => {
+    expect(spoken(answer('```result\n{"topic":"дроби"}\n```'), hideData)).toBe(russianLabels.answerEmpty);
+  });
+});

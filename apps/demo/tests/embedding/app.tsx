@@ -22,13 +22,23 @@ function DensityDemo() {
     <section data-fullscreen-control className="oduvanchik-chat" style={{width:700}}><div className="oduvanchik-thread"><p>Полноэкранная лента</p></div><Composer value="Полноэкранное поле" onValueChange={()=>{}} onSubmit={()=>{}} canSubmit busy={false} onStop={()=>{}} /></section>
   </div></ChatLabelsProvider>;
 }
+function DropDemo() {
+  const Composer = oduvanchikSkin.Composer;
+  const [draft, setDraft] = useState('');
+  const [added, setAdded] = useState<string[]>([]);
+  return <ChatLabelsProvider labels={russianLabels}><section className="oduvanchik-chat" style={{width:480}}>
+    <output data-added>{added.join(',')}</output>
+    <Composer value={draft} onValueChange={setDraft} onSubmit={()=>{}} canSubmit busy={false} onStop={()=>{}}
+      attachments={{items:[],accept:'image/png',onAddFiles:files=>setAdded(files.map(file=>file.name)),onRemove:()=>{}}} />
+  </section></ChatLabelsProvider>;
+}
 function App() {
   const [styles, setStyles] = useState(false);
   const buttonRef=useRef<HTMLButtonElement>(null);
   const Launcher=oduvanchikSkin.AgentPanelLauncher;
   const launcherOnly=new URLSearchParams(window.location.search).has('launcher');
   return <><button onClick={async () => { await import('../../../../skins/oduvanchik/dist/embedded.css'); setStyles(true); }}>Load panel styles</button><output>{styles ? 'Styles ready' : 'No panel styles'}</output>
-    {new URLSearchParams(location.search).has('density') ? <DensityDemo/> : launcherOnly ? <ChatLabelsProvider labels={russianLabels}><Launcher open={false} busy={false} onToggle={()=>{}} buttonRef={buttonRef}/></ChatLabelsProvider> : <AgentPanelProvider api="/api/chat" userKey="fixture"><Controls/><AgentPanel skin={oduvanchikSkin}/></AgentPanelProvider>}
+    {new URLSearchParams(location.search).has('drop') ? <DropDemo/> : new URLSearchParams(location.search).has('density') ? <DensityDemo/> : launcherOnly ? <ChatLabelsProvider labels={russianLabels}><Launcher open={false} busy={false} onToggle={()=>{}} buttonRef={buttonRef}/></ChatLabelsProvider> : <AgentPanelProvider api="/api/chat" userKey="fixture"><Controls/><AgentPanel skin={oduvanchikSkin}/></AgentPanelProvider>}
     <section className="oduvanchik-chat" style={{maxWidth:300}}><Menu><MenuTrigger>Portal menu</MenuTrigger><MenuContent><MenuItem>Portal item</MenuItem></MenuContent></Menu>
     <Dialog><DialogTrigger>Portal dialog</DialogTrigger><DialogContent><DialogTitle>Test dialog</DialogTitle><p>Inside portal</p></DialogContent></Dialog></section></>;
 }

@@ -357,7 +357,7 @@ export interface StaffMessageView {
 }
 
 /**
- * Договор скина, версия 32: необязательный AnswerTextEditor для штатной правки ответа; docs/skin-v32.md. Версия 31: необязательные Layout.header и Layout.completion. Версия 30: необязательный Layout.empty. Версия 29: необязательные Composer.options, AgentMessage.modelDetails и WorkSteps.live.completed.
+ * Договор скина, версия 33: необязательное spokenAnswer — текст ответа для диктора; docs/skin-v33.md. Версия 32: необязательный AnswerTextEditor для штатной правки ответа; docs/skin-v32.md. Версия 31: необязательные Layout.header и Layout.completion. Версия 30: необязательный Layout.empty. Версия 29: необязательные Composer.options, AgentMessage.modelDetails и WorkSteps.live.completed.
  * Скины 28 работают без правок. В версии 28 добавились только необязательные значки шагов и заголовки раздумий:
  * `WorkStepsView.live.icon`, `WorkStepsView.done.items`, `icons`, `moreIcons` и `Reasoning.title`, docs/skin-v28.md;
  * скин версии 27 работает без правок: шаги без значков, раздумья — «Думал N сек».
@@ -675,6 +675,12 @@ export interface ChatSkin {
    * `UserMessage.pending` (пометка). Нет — во время ответа поле не отправляет, как до версии 21.
    */
   steering?: boolean;
+  /**
+   * Версия 33. Текст ответа для экранного диктора: получает текст ответа (Markdown) и возвращает его без того, что скин
+   * не показывает на экране (служебные блоки, которые прячет `AgentText`). Разметку после этого снимает SDK. Нет —
+   * диктор читает весь текст ответа.
+   */
+  spokenAnswer?: (markdown: string) => string;
   /** Версия 13. Цвета схемы для светлой (`false`) и тёмной (`true`) темы. Нет — рисовальщик берёт свои. */
   diagramColors?: (dark: boolean) => DiagramColors;
   /** Версия 22. Цвета живых демонстраций для светлой (`false`) и тёмной (`true`) темы. Нет — свои спокойные серые. */

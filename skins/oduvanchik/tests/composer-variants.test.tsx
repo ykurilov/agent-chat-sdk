@@ -190,4 +190,18 @@ describe("custom attachment menu and parent drop zones", () => {
     fireEvent.drop(field, { dataTransfer: { files: [png], types: ["Files"] } });
     expect(files.onAddFiles).toHaveBeenCalledWith([png]); expect(parent).toHaveBeenLastCalledWith(true);
   });
+  it("file over the field shows the drop hint, text and disabled fields do not", () => {
+    const { container, rerender } = render(<OduvanchikComposer {...base()} attachments={attachment()} />);
+    const field = container.querySelector(".oduvanchik-field")!; const area = screen.getByRole("textbox");
+    fireEvent.dragOver(area, { dataTransfer: { files: [], types: ["text/plain"] } });
+    expect(screen.queryByText("Отпустите, чтобы прикрепить")).toBeNull();
+    fireEvent.dragOver(area, { dataTransfer: { files: [], types: ["Files"] } });
+    expect(screen.getByText("Отпустите, чтобы прикрепить")).toBeTruthy(); expect(field.getAttribute("data-dropping")).toBe("true");
+    // Переход курсора на дочерние элементы проверяет браузерный тест (jsdom не знает relatedTarget у drag-событий).
+    fireEvent.dragLeave(area, { relatedTarget: document.body });
+    expect(screen.queryByText("Отпустите, чтобы прикрепить")).toBeNull();
+    fireEvent.dragOver(area, { dataTransfer: { files: [], types: ["Files"] } });
+    rerender(<OduvanchikComposer {...base()} busy attachments={attachment()} />);
+    expect(screen.queryByText("Отпустите, чтобы прикрепить")).toBeNull();
+  });
 });

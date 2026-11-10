@@ -85,6 +85,8 @@
 /* Composer variants: sketches/12-composer-variants.html. */
 .oduvanchik-field { position: relative; }
 .oduvanchik-field:focus-within { box-shadow: 0 0 0 3px var(--yk-accent-soft); }
+.oduvanchik-field[data-dropping] { border-style: dashed; border-color: var(--yk-accent); box-shadow: 0 0 0 3px var(--yk-accent-soft); }
+.oduvanchik-field-drop { position: absolute; inset: 0; z-index: 1; display: grid; place-items: center; border-radius: inherit; background: color-mix(in srgb, var(--yk-surface) 88%, transparent); color: var(--yk-accent); font-size: 14px; font-weight: 600; pointer-events: none; }
 .oduvanchik-field-compact { flex-direction: row; align-items: flex-end; padding: 6px 6px 6px 14px; border-radius: 14px; gap: 8px; }
 .oduvanchik-field-compact textarea { flex: 1; align-self: center; }
 .oduvanchik-field-compact .oduvanchik-field-send { margin-left: 0; }

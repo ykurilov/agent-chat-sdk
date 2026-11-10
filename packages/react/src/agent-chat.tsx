@@ -276,7 +276,7 @@ function AgentChatBody({ history, header, completion, composerOptions, api, chat
   const feedRef = useRef<MessageFeedHandle>(null);
   const labels = useChatLabels();
   const expanded = useExpandedParts(chatId);
-  const announcement = useFeedAnnouncement(chat.messages, chat.busy, chatId);
+  const announcement = useFeedAnnouncement(chat.messages, chat.busy, chatId, skin.spokenAnswer);
   const { busy, canRetry, retry, canEdit, canRegenerate, regenerate, edit, selectBranch, respondToApproval, approvalPendingId, approvalFailure } = chat;
   const { answerWidget, widgetPendingId, widgetFailure, sendReply, capabilities, closed } = chat;
   const chatClosed = closed !== null;
