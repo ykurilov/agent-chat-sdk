@@ -140,7 +140,7 @@ export function OduvanchikFlowHeader(props: FlowHeaderProps) {
   const { editor: labels, testChat: testChatLabels } = useFlowLabels();
   const { mode, onModeChange, issues, compact: narrow } = props;
   const toggle = (target: "check" | "run") => onModeChange(mode === target ? "edit" : target);
-  // Шапка уже 1100px — подписи прячутся у этих кнопок; уже 860px — у всех, второстепенные уходят в меню.
+  // Шапка уже 1100px — подписи прячутся у этих кнопок; уже 860px — у всех; уже 460px второстепенные уходят в меню.
   const compact = "oduvanchik-flow-compact";
   const wide = "oduvanchik-flow-wide";
   const fullscreenLabel = props.fullscreen?.active ? labels.board.space.exitFullscreen : labels.board.space.enterFullscreen;

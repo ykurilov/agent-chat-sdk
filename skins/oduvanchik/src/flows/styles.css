@@ -27,10 +27,13 @@
 @container oduvanchik-flow-header (max-width: 860px) {
   .oduvanchik-flow-header-row { flex-wrap: wrap; gap: 6px; padding-block: 8px; }
   .oduvanchik-flow-header-actions { width: 100%; gap: 4px; }
+  /* Узко: подписи прячутся у всех кнопок, иначе «Сохранить» уезжает за край. Значки все на виду. */
+  .oduvanchik-flow-phone > .label { display: none; }
+}
+/* Совсем узко (телефон): все значки в ряд уже не помещаются — второстепенные уходят в меню «Ещё». */
+@container oduvanchik-flow-header (max-width: 460px) {
   .oduvanchik-flow-header .oduvanchik-flow-wide { display: none; }
   .oduvanchik-flow-header .oduvanchik-flow-more { display: block; }
-  /* Узко: подписи прячутся у всех кнопок, иначе «Сохранить» уезжает за край. */
-  .oduvanchik-flow-phone > .label { display: none; }
 }
 .oduvanchik-flow-scroll { scrollbar-gutter: stable; padding-inline-end: var(--yk-studio-scrollbar-gap); }
 .oduvanchik-flow-dialog { display: flex; flex-direction: column; gap: var(--yk-space-4); min-width: 0; }

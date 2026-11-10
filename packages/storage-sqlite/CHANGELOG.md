@@ -1,5 +1,11 @@
 # @ykurilov/agent-chat-storage-sqlite
 
+## 0.107.1
+
+### Patch Changes
+
+- @ykurilov/agent-chat-core@0.107.1
+
 ## 0.107.0
 
 ### Patch Changes

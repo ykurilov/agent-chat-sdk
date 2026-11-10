@@ -250,7 +250,13 @@ test("desktop window, narrow editor: header folds by its own width; board opens 
  const more = page.getByRole("button", { name: "Ещё действия" });
  await expect(more).toBeHidden();
  // Окно широкое, а редактору дали узкую колонку — как вкладка страницы приложения.
- await page.locator("[data-flow-header]").evaluate(el => { (el.closest(".oduvanchik-flow") as HTMLElement).style.width = "700px"; });
+ const narrowTo = (px: number) => page.locator("[data-flow-header]").evaluate((el, w) => { (el.closest(".oduvanchik-flow") as HTMLElement).style.width = `${w}px`; }, px);
+ // Колонка рядом с конструктором (~575 px): подписи спрятаны, но все значки на виду, меню не нужно.
+ await narrowTo(575);
+ await expect(page.locator("[data-flow-header]").getByRole("button", { name: "Код сценария (JSON)", exact: true })).toBeVisible();
+ await expect(page.locator("[data-flow-header]").getByRole("button", { name: "Состояние", exact: true })).toBeVisible();
+ await expect(more).toBeHidden();
+ await narrowTo(420);
  await expect(more).toBeVisible();
  const header = page.locator("[data-flow-header]");
  for (const button of await header.getByRole("button").all()) {

@@ -68,7 +68,12 @@ describe("шапка редактора Одуванчика", () => {
   it("подписи и меню «Ещё» зависят от ширины шапки, а не окна", () => {
     const css = readFileSync(join(import.meta.dirname, "../src/flows/styles.css"), "utf8");
     expect(css).toMatch(/\.oduvanchik-flow-header \{ container: oduvanchik-flow-header \/ inline-size; \}/);
-    expect(css).toMatch(/@container oduvanchik-flow-header \(max-width: 860px\)[\s\S]*\.oduvanchik-flow-more \{ display: block; \}/);
+    expect(css).toMatch(/@container oduvanchik-flow-header \(max-width: 460px\) \{[^}]*\.oduvanchik-flow-wide \{ display: none; \}\s*\.oduvanchik-flow-header \.oduvanchik-flow-more \{ display: block; \}/);
+    // Средняя ширина (колонка рядом с конструктором): значки на виду, меню не нужно.
+    const mid = css.match(/@container oduvanchik-flow-header \(max-width: 860px\) \{[\s\S]*?\n\}/)?.[0] ?? "";
+    expect(mid).toContain("flex-wrap: wrap");
+    expect(mid).not.toContain("oduvanchik-flow-more");
+    expect(mid).not.toContain("oduvanchik-flow-wide");
     expect(css).not.toMatch(/@media \(max-width: 860px\) \{ \.oduvanchik-flow \.oduvanchik-flow-wide/);
     render(<FlowHeader {...header()} />);
     expect(document.querySelector(".oduvanchik-flow-header [data-flow-header-menu]")).toBeTruthy();
