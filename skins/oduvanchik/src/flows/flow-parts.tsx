@@ -3,7 +3,7 @@ import { Button as DsButton, MonoLabel, ScrollArea, type IconComponent } from "@
 import type { FlowEdgeKind, FlowIssueCount } from "@ykurilov/agent-chat-flows/react";
 import { useFlowLabels } from "@ykurilov/agent-chat-flows/react";
 import { ClockIcon as Clock, DatabaseIcon as Database, ChatTextIcon as MessageSquareText, ArrowUUpLeftIcon as Undo2, LightningIcon as Zap, type Icon as PhosphorIcon } from "@phosphor-icons/react";
-import { isValidElement, type ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 
 // Общие мелочи скина редактора: цвета и значки видов условий, подписи разделов, выпадающий список, счётчик ошибок.
 
@@ -78,14 +78,12 @@ export function IconButton({
   label: string;
   onClick(): void;
   disabled?: boolean;
-  children: ReactNode;
+  children: ReactElement;
   className?: string;
   tone?: "neutral" | "danger";
 }) {
   return (
-    isValidElement(children)
-      ? <DsButton variant="ghost" size="sm" icon={children.type as IconComponent} aria-label={label} title={label} disabled={disabled} onClick={onClick} className={cn(tone === "danger" && "oduvanchik-flow-danger", className)} />
-      : <DsButton variant="ghost" size="sm" aria-label={label} title={label} disabled={disabled} onClick={onClick}>{children}</DsButton>
+    <DsButton variant="ghost" size="sm" icon={children.type as IconComponent} aria-label={label} title={label} disabled={disabled} onClick={onClick} className={cn(tone === "danger" && "oduvanchik-flow-danger", className)} />
   );
 }
 

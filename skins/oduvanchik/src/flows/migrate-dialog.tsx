@@ -62,7 +62,7 @@ export function OduvanchikFlowMigrateDialog(props: FlowMigrateDialogProps) {
         {props.moved !== null && <Alert variant="success" title={labels.moved(props.moved)} />}
         {props.failed && <Alert variant="danger" title={labels.failed} />}
         <footer className="flex flex-wrap gap-2">
-          <Button variant="ghost" onClick={props.onClose}>
+          <Button variant="secondary" onClick={props.onClose}>
             {labels.close}
           </Button>
           <Button onClick={props.onMigrate} disabled={!props.canMigrate} loading={props.busy}>

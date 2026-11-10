@@ -54,7 +54,7 @@ export function OduvanchikFlowRunPanel(props: FlowRunPanelProps) {
         <ul className="flex flex-col gap-1.5">
           {props.choices.map((choice) => (
             <li key={choice.exitId}>
-              <Button variant="ghost" size="sm"
+              <Button variant="outline" size="sm"
                 type="button"
                 onClick={choice.onChoose}
                 disabled={choice.target === null}
@@ -73,7 +73,7 @@ export function OduvanchikFlowRunPanel(props: FlowRunPanelProps) {
             </li>
           ))}
           <li>
-            <Button variant="ghost" size="sm"
+            <Button variant="outline" size="sm"
               type="button"
               onClick={props.onNothing}
               className="h-auto whitespace-normal flex w-full items-start gap-3 rounded-[var(--yk-radius-lg)] border border-dashed border-[var(--yk-border-strong)] bg-[var(--yk-surface)] p-3 text-left hover:bg-[var(--yk-surface-2)]"

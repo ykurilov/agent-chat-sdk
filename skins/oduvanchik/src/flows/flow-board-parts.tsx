@@ -1,4 +1,4 @@
-import { Button, cn } from "./controls";
+import { Button, GhostIconButton, cn } from "./controls";
 import type {
   FlowAnyStateNodeProps,
   FlowEdgeProps,
@@ -213,16 +213,16 @@ export function OduvanchikFlowZoomControls({ zoom, onZoomIn, onZoomOut, onFit }:
     "inline-flex size-9 items-center justify-center rounded-[var(--yk-radius-sm)] text-[var(--yk-muted)] hover:bg-[var(--yk-surface-2)] hover:text-[var(--yk-text)]";
   return (
     <div className="flex items-center gap-0.5 rounded-[var(--yk-radius-md)] border border-[var(--yk-border)] bg-[var(--yk-surface)] p-1 shadow-none">
-      <Button variant="ghost" size="sm" type="button" className={button} onClick={onZoomOut} aria-label={labels.board.zoomOut} title={labels.board.zoomOut}>
+      <GhostIconButton size="sm" type="button" className={button} onClick={onZoomOut} aria-label={labels.board.zoomOut} title={labels.board.zoomOut}>
         <Minus aria-hidden="true" className="size-4" />
-      </Button>
+      </GhostIconButton>
       <span className="w-12 text-center text-xs font-mono tabular-nums text-[var(--yk-text)]">{Math.round(zoom * 100)}%</span>
-      <Button variant="ghost" size="sm" type="button" className={button} onClick={onZoomIn} aria-label={labels.board.zoomIn} title={labels.board.zoomIn}>
+      <GhostIconButton size="sm" type="button" className={button} onClick={onZoomIn} aria-label={labels.board.zoomIn} title={labels.board.zoomIn}>
         <Plus aria-hidden="true" className="size-4" />
-      </Button>
-      <Button variant="ghost" size="sm" type="button" className={button} onClick={onFit} aria-label={labels.board.fit} title={labels.board.fit}>
+      </GhostIconButton>
+      <GhostIconButton size="sm" type="button" className={button} onClick={onFit} aria-label={labels.board.fit} title={labels.board.fit}>
         <Maximize aria-hidden="true" className="size-4" />
-      </Button>
+      </GhostIconButton>
     </div>
   );
 }
@@ -231,7 +231,7 @@ export function OduvanchikFlowZoomControls({ zoom, onZoomIn, onZoomOut, onFit }:
 export function OduvanchikFlowBoardToggle({ kind, label, expanded, showText, onClick }: FlowBoardToggleProps) {
   const Icon = kind === "legend" ? CircleHelp : kind === "minimap" ? MapIcon : expanded ? PanelRightClose : PanelRightOpen;
   return (
-    <Button variant="ghost" size="sm"
+    <Button variant="outline" size="sm"
       type="button"
       onClick={onClick}
       aria-label={label}

@@ -15,7 +15,7 @@ export function OduvanchikJournalList({ state, rows, busy, onRetry, turns, curre
     <ScrollArea label={labels.journalPanel} className="oduvanchik-journal-scroll">
       {busy && <p role="status" className="oduvanchik-journal-working"><Sphere size={18} />{chatLabels.reasoningRunning}</p>}
       {state === "loading" && <p role="status">{labels.journalLoading}</p>}
-      {state === "failed" && <div role="alert"><p>{labels.journalFailed}</p>{onRetry && <Button variant="ghost" size="sm" onClick={onRetry}>{labels.retry}</Button>}</div>}
+      {state === "failed" && <div role="alert"><p>{labels.journalFailed}</p>{onRetry && <Button variant="secondary" size="sm" onClick={onRetry}>{labels.retry}</Button>}</div>}
       {state === "empty" && !busy && <div className="oduvanchik-journal-empty"><span>{labels.journalEmpty}</span></div>}
       {state === "ready" && <ol className="oduvanchik-journal-events">{rows.map((row) => <JournalRow key={row.id} row={row} />)}</ol>}
     </ScrollArea>

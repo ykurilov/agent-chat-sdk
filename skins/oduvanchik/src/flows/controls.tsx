@@ -1,14 +1,21 @@
 /** SDK flow prop adapters. All control rendering belongs to the published design system. */
 import { Button as DsButton, Chip, Banner, TextField, Textarea as DsTextarea, Select as DsSelect } from "@ykurilov/ds-react";
-import type { ButtonAsButtonProps, ChipTone, TextFieldProps, TextareaProps, SelectProps } from "@ykurilov/ds-react";
-import { createContext, useContext, forwardRef, type HTMLAttributes, type ReactNode } from "react";
+import type { ButtonAsButtonProps, ChipTone, TextButtonVariant, TextFieldProps, TextareaProps, SelectProps } from "@ykurilov/ds-react";
+import { createContext, useContext, forwardRef, type HTMLAttributes, type ReactElement, type ReactNode } from "react";
 
 export { Switch } from "@ykurilov/ds-react";
 export const FieldLabel = createContext<string | undefined>(undefined);
 export function cn(...parts: Array<string | false | null | undefined>) { return parts.filter(Boolean).join(" "); }
 
-type ButtonProps = Omit<ButtonAsButtonProps, "variant" | "children"> & { children: ReactNode; variant?: ButtonAsButtonProps["variant"] | "warm" };
-export function Button({ variant, children, ...props }: ButtonProps) { return <DsButton {...props} variant={variant === "warm" ? "secondary" : variant}>{children}</DsButton>; }
+type ButtonCommon = Omit<ButtonAsButtonProps, "variant" | "children" | "icon" | "aria-label">;
+/** Кнопка с текстом: всегда с фоном или рамкой. */
+export function Button({ variant, children, ...props }: ButtonCommon & { children: ReactNode; variant?: TextButtonVariant | "warm" }) {
+  return <DsButton {...props} variant={variant === "warm" ? "secondary" : variant}>{children}</DsButton>;
+}
+/** Кнопка-значок без текста: единственная, которая остаётся невидимой. Значок — элементом, имя обязательно. */
+export function GhostIconButton({ children, ...props }: ButtonCommon & { children: ReactElement; "aria-label": string }) {
+  return <DsButton {...props} variant="ghost">{children}</DsButton>;
+}
 export function Badge({ variant, ...props }: HTMLAttributes<HTMLSpanElement> & { variant?: string }) {
   const tone: ChipTone = variant === "success" ? "success" : variant === "danger" ? "danger" : "neutral";
   return <Chip {...props} tone={tone} />;

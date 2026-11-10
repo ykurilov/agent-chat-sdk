@@ -9,7 +9,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 function Code({ children }: { children: ReactNode }) { return <pre className="oduvanchik-journal-code">{children}</pre>; }
 function NotReady(props: { state: "loading" } | { state: "failed"; onRetry: () => void }) {
   const labels = useSandboxLabels();
-  return props.state === "loading" ? <p role="status">{labels.journalLoading}</p> : <div role="alert"><p>{labels.journalFailed}</p><Button variant="ghost" size="sm" onClick={props.onRetry}>{labels.retry}</Button></div>;
+  return props.state === "loading" ? <p role="status">{labels.journalLoading}</p> : <div role="alert"><p>{labels.journalFailed}</p><Button variant="secondary" size="sm" onClick={props.onRetry}>{labels.retry}</Button></div>;
 }
 export function OduvanchikModelCallDetails(props: ComponentProps<SandboxSkin["ModelCallDetails"]>) {
   const labels = useSandboxLabels();

@@ -1,5 +1,5 @@
 import { Badge, cn } from "@tandem/ui";
-import { Button, TextField as Input } from "@ykurilov/ds-react";
+import { Button, SegmentedControl, TextField as Input } from "@ykurilov/ds-react";
 import type { PeopleChatsView, SandboxSkin } from "@ykurilov/agent-chat-sandbox/react";
 import { usePeopleChatsLabels, useSandboxLabels } from "@ykurilov/agent-chat-sandbox/react";
 import { Copy, Search } from "../icons";
@@ -12,16 +12,19 @@ const wideScreenQuery = "(min-width: 48rem)";
 /** Переключатель «Песочница | Чаты людей» над разделом. */
 export function OduvanchikSandboxSections({ section, onSectionChange, children }: ComponentProps<NonNullable<SandboxSkin["SandboxSections"]>>) {
   const labels = usePeopleChatsLabels();
-  const tab = (value: typeof section, title: string) => (
-    <Button variant={section === value ? "secondary" : "ghost"} size="sm" aria-pressed={section === value} onClick={() => onSectionChange(value)} className="h-8 px-3">
-      {title}
-    </Button>
-  );
   return (
     <div className="oduvanchik-chat oduvanchik-sandbox-sections">
-      <nav aria-label={labels.sections} className="flex shrink-0 gap-1 border-b border-[var(--border)] bg-[var(--surface)] px-2 py-1.5">
-        {tab("sandbox", labels.sandboxSection)}
-        {tab("people", labels.peopleSection)}
+      <nav aria-label={labels.sections} className="flex shrink-0 border-b border-[var(--border)] bg-[var(--surface)] px-2 py-1.5">
+        <SegmentedControl
+          size="sm"
+          aria-label={labels.sections}
+          value={section}
+          onValueChange={(value) => onSectionChange(value as typeof section)}
+          options={[
+            { value: "sandbox", label: labels.sandboxSection },
+            { value: "people", label: labels.peopleSection },
+          ]}
+        />
       </nav>
       <div className="min-h-0 flex-1">{children}</div>
     </div>
@@ -108,7 +111,7 @@ function PersonChats({ person, chatsState, chats, onChatsRetry }: PeopleChatsVie
       {chatsState === "failed" && (
         <div role="alert" className="flex items-center gap-2 text-[var(--destructive-text)]">
           {labels.chatsFailed}
-          <Button variant="ghost" size="sm" onClick={onChatsRetry} className="h-7 px-2">
+          <Button variant="secondary" size="sm" onClick={onChatsRetry}>
             {retry}
           </Button>
         </div>

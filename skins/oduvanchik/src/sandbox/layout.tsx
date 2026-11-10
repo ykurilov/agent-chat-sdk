@@ -13,8 +13,8 @@ export function OduvanchikSandboxLayout({ header, chat, journal, busy, journalOp
   const chatLabels = useChatLabels();
   return <StudioLayout className="oduvanchik-chat oduvanchik-studio" contentLabel={labels.chatPanel}
     header={<><div className="oduvanchik-studio-title"><Sphere size={24} /><span>{labels.title}</span>{busy && <span role="status" className="oduvanchik-label">{chatLabels.reasoningRunning}</span>}</div>
-      <div className="oduvanchik-studio-controls">{header}<Button className="oduvanchik-journal-trigger" variant="ghost" size="sm" icon={ScrollIcon} aria-expanded={journalOpen} onClick={() => onJournalOpenChange(true)}>{labels.openJournal}</Button></div></>}
-    inspector={{ title: labels.journalPanel, open: journalOpen, onClose: () => onJournalOpenChange(false), content: <div className="oduvanchik-studio-journal"><Button className="oduvanchik-journal-close" variant="ghost" size="sm" icon={XIcon} onClick={() => onJournalOpenChange(false)}>{labels.closeJournal}</Button>{journal || <OduvanchikJournalList state="empty" rows={[]} turns={[]} currentTurnId={null} onTurnChange={() => undefined} />}</div> }}>
+      <div className="oduvanchik-studio-controls">{header}<Button className="oduvanchik-journal-trigger" variant="outline" size="sm" icon={ScrollIcon} aria-expanded={journalOpen} onClick={() => onJournalOpenChange(true)}>{labels.openJournal}</Button></div></>}
+    inspector={{ title: labels.journalPanel, open: journalOpen, onClose: () => onJournalOpenChange(false), content: <div className="oduvanchik-studio-journal"><Button className="oduvanchik-journal-close" variant="outline" size="sm" icon={XIcon} onClick={() => onJournalOpenChange(false)}>{labels.closeJournal}</Button>{journal || <OduvanchikJournalList state="empty" rows={[]} turns={[]} currentTurnId={null} onTurnChange={() => undefined} />}</div> }}>
     {chat}
   </StudioLayout>;
 }
@@ -23,10 +23,10 @@ export function OduvanchikSandboxLayout({ header, chat, journal, busy, journalOp
 export function OduvanchikStudioWorkspace({ list, children, activeTitle, listOpen, onListOpenChange }: ComponentProps<ChatListSkin["ChatWorkspace"]>) {
   const labels = useChatLabels();
   const compact = useScreenQuery("(max-width: 700px)", false);
-  const history = <div className="oduvanchik-chat oduvanchik-studio-history"><ScrollArea label={labels.chatListHeading}>{list}</ScrollArea><Button variant="ghost" onClick={() => onListOpenChange(false)}>{labels.composerSettings.done}</Button></div>;
+  const history = <div className="oduvanchik-chat oduvanchik-studio-history"><ScrollArea label={labels.chatListHeading}>{list}</ScrollArea><Button variant="secondary" onClick={() => onListOpenChange(false)}>{labels.composerSettings.done}</Button></div>;
   const close = () => onListOpenChange(false);
   return <div className="oduvanchik-chat oduvanchik-studio-workspace">
-    {list !== undefined && <div className="oduvanchik-studio-thread-heading"><Button variant="ghost" size="sm" icon={ListIcon} aria-expanded={listOpen} onClick={() => onListOpenChange(true)}>{labels.chatListHeading}</Button><span>{activeTitle}</span></div>}
+    {list !== undefined && <div className="oduvanchik-studio-thread-heading"><Button variant="outline" size="sm" icon={ListIcon} aria-expanded={listOpen} onClick={() => onListOpenChange(true)}>{labels.chatListHeading}</Button><span>{activeTitle}</span></div>}
     <div className="oduvanchik-studio-chat">{children}</div>
     {compact ? <Sheet title={labels.chatListHeading} open={listOpen && list !== undefined} onClose={close}>{history}</Sheet> : <Dialog title={labels.chatListHeading} open={listOpen && list !== undefined} onClose={close}>{history}</Dialog>}
   </div>;

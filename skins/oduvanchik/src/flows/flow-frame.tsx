@@ -1,4 +1,4 @@
-import { Badge, Button, Input, cn } from "./controls";
+import { Badge, Button, GhostIconButton, Input, cn } from "./controls";
 import type { FlowEditorFrameProps, FlowHeaderProps } from "@ykurilov/agent-chat-flows/react";
 import { useFlowLabels } from "@ykurilov/agent-chat-flows/react";
 import { BracketsCurlyIcon as Braces, EyeIcon as Eye, IdentificationCardIcon as IdCard, ArrowsOutIcon as Maximize2, ChatsIcon as MessagesSquare, ArrowsInIcon as Minimize2, PlayIcon as Play, PlusIcon as Plus, FloppyDiskIcon as Save, SlidersHorizontalIcon as Settings2, ShieldCheckIcon as ShieldCheck, ShuffleIcon as Shuffle } from "@phosphor-icons/react";
@@ -146,17 +146,16 @@ export function OduvanchikFlowHeader(props: FlowHeaderProps) {
           <Play aria-hidden="true" className="size-4" />
           <span className="label">{labels.header.run}</span>
         </Button>
-        <Button variant="ghost" size="sm" className={wide} onClick={props.onOpenJson} title={labels.header.json} aria-label={labels.header.json}>
+        <GhostIconButton size="sm" className={wide} onClick={props.onOpenJson} title={labels.header.json} aria-label={labels.header.json}>
           <Braces aria-hidden="true" className="size-4" />
-        </Button>
+        </GhostIconButton>
         {props.onOpenMigrate && (
-          <Button variant="ghost" size="sm" className={wide} onClick={props.onOpenMigrate} title={labels.header.migrate} aria-label={labels.header.migrate}>
+          <GhostIconButton size="sm" className={wide} onClick={props.onOpenMigrate} title={labels.header.migrate} aria-label={labels.header.migrate}>
             <Shuffle aria-hidden="true" className="size-4" />
-          </Button>
+          </GhostIconButton>
         )}
         {props.fullscreen && (
-          <Button
-            variant="ghost"
+          <GhostIconButton
             size="sm"
             className={wide}
             data-flow-fullscreen-toggle=""
@@ -166,10 +165,10 @@ export function OduvanchikFlowHeader(props: FlowHeaderProps) {
             aria-label={props.fullscreen.active ? labels.board.space.exitFullscreen : labels.board.space.enterFullscreen}
           >
             {props.fullscreen.active ? <Minimize2 aria-hidden="true" className="size-4" /> : <Maximize2 aria-hidden="true" className="size-4" />}
-          </Button>
+          </GhostIconButton>
         )}
         {props.onOpenTestChat && (
-          <Button variant="ghost" size="sm" className={wide} onClick={props.onOpenTestChat} title={testChatLabels.title}>
+          <Button variant="secondary" size="sm" className={wide} onClick={props.onOpenTestChat} title={testChatLabels.title}>
             <MessagesSquare aria-hidden="true" className="size-4" />
             <span className="label">{testChatLabels.title}</span>
           </Button>
@@ -177,7 +176,7 @@ export function OduvanchikFlowHeader(props: FlowHeaderProps) {
         <FlowHeaderMenu label={labels.header.more} items={menuItems} className="hidden max-[860px]:block" />
         {props.onSave && (
           <Button
-            variant={props.saveFailed ? "secondary" : props.dirty ? "primary" : "ghost"}
+            variant={props.saveFailed ? "secondary" : props.dirty ? "primary" : "secondary"}
             size="sm"
             className={cn(phone, props.saveFailed && "border-[var(--yk-danger)] text-[var(--yk-danger)]")}
             loading={props.saving}

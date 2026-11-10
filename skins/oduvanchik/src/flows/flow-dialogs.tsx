@@ -69,7 +69,7 @@ export function OduvanchikFlowJsonDialog(props: FlowJsonDialogProps) {
               {labels.load}
             </Button>
           )}
-          <Button variant="ghost" onClick={props.onClose}>
+          <Button variant="secondary" onClick={props.onClose}>
             {labels.close}
           </Button>
         </footer>

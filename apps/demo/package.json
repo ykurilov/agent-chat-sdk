@@ -47,7 +47,7 @@
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "zod": "^4.6.5",
-    "@ykurilov/ds-react": "^0.6.3",
+    "@ykurilov/ds-react": "^0.7.0",
     "@ykurilov/ds-tokens": "^0.2.1"
   },
   "devDependencies": {

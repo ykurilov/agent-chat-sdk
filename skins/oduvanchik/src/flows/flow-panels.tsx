@@ -30,7 +30,7 @@ function ChipToggles({ items, selected, onChange }: { items: Array<{ id: string;
       {items.map((item) => {
         const on = selected.includes(item.id);
         return (
-          <Button variant="ghost" size="sm"
+          <Button variant={on ? "secondary" : "outline"} size="sm"
             key={item.id}
             type="button"
             aria-pressed={on}
@@ -51,15 +51,15 @@ function StateLinks({ states }: { states: FlowStateLinkView[] }) {
     <ul className="flex flex-col gap-1">
       {states.map((state) => (
         <li key={state.stateId}>
-          <Button variant="ghost" size="sm"
+          <button
             type="button"
             onClick={state.onSelect}
-            className="flex min-h-9 w-full items-center gap-2 rounded-[var(--yk-radius-sm)] px-2 text-left text-sm text-[var(--yk-text)] hover:bg-[var(--yk-surface-2)]"
+            className="flex min-h-9 w-full cursor-pointer items-center gap-2 rounded-[var(--yk-radius-sm)] border-0 bg-transparent px-2 text-left text-sm text-[var(--yk-text)] hover:bg-[var(--yk-surface-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--yk-accent)]"
           >
             <span className="min-w-0 flex-1 truncate">{state.title}</span>
             {state.start && <Flag aria-label={labels.board.start} className="size-3.5 text-[var(--yk-muted)]" />}
             {state.final && <span className="text-xs text-[var(--yk-muted)]">{labels.board.final}</span>}
-          </Button>
+          </button>
         </li>
       ))}
     </ul>
@@ -410,7 +410,7 @@ export function OduvanchikFlowCheckPanel({ issues }: FlowCheckPanelProps) {
         <ul className="flex flex-col gap-1.5">
           {list.map((issue, index) => (
             <li key={`${issue.code}-${index}`}>
-              <Button variant="ghost" size="sm"
+              <Button variant="outline" size="sm"
                 type="button"
                 onClick={issue.onGo}
                 className="h-auto whitespace-normal flex w-full items-start gap-2 rounded-[var(--yk-radius-lg)] border border-[var(--yk-border)] bg-[var(--yk-surface)] p-3 text-left text-sm hover:bg-[var(--yk-surface-2)]"

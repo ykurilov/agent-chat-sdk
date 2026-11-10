@@ -16,7 +16,7 @@ export function OduvanchikAnswerTextEditor(p: ComponentProps<NonNullable<ChatSki
         {p.error && <p role="alert">{p.error}</p>}
       </DialogBody>
       <DialogFooter>
-        <Button variant="ghost" size="sm" disabled={p.saving} onClick={p.onCancel}>{labels.cancelEdit}</Button>
+        <Button variant="secondary" size="sm" disabled={p.saving} onClick={p.onCancel}>{labels.cancelEdit}</Button>
         <Button size="sm" disabled={!p.canSave || p.saving} onClick={p.onSave}>{labels.answerEditSave}</Button>
       </DialogFooter>
     </DialogContent>
