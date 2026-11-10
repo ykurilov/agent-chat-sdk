@@ -444,3 +444,149 @@ describe("доставка итогов фона при ходе на друго
     await copy.flush();
   });
 });
+
+describe("аренда хода у записей после ожиданий и у правки ответа", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ now: new Date("2026-03-01T10:00:00Z") });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const question = (id: string, text: string) => ({ id, role: "user" as const, parts: [{ type: "text" as const, text }] });
+
+  /** Готовый ответ в чате c1 (вопрос и ответ без вызовов): следующий ход модели снова начнётся с долгого инструмента. */
+  async function answered(storage: ChatStorage) {
+    const at = Date.now();
+    await storage.insertMessage(newStoredMessage({ id: "q0", chatId: "c1", role: "user", parts: [{ type: "text", text: "Привет" }], createdAt: new Date(at - 2_000).toISOString() }));
+    const answer = newStoredMessage({
+      id: "a0",
+      chatId: "c1",
+      parentId: "q0",
+      role: "assistant",
+      parts: [{ type: "text", text: "Здравствуйте." }],
+      modelId: mockModelId,
+      providerId: "mock",
+      createdAt: new Date(at - 1_000).toISOString(),
+    });
+    await storage.insertMessage(answer);
+    return answer;
+  }
+
+  it("правка готового ответа на копии без хода, пока ход идёт на соседней, — answer_busy, ничего не записано", async () => {
+    const { storage } = await sharedStorage();
+    const first = serverCopy(storage);
+    const second = serverCopy(storage);
+    const answer = await answered(storage);
+    const reading = readAll(await first.sendMessage("anna", "c1", question("q1", "Ещё")));
+    await vi.advanceTimersByTimeAsync(20_000);
+
+    await expect(second.editAnswer("anna", "c1", answer.id, { text: "Поправил." })).rejects.toMatchObject({ kind: "answer_busy" });
+    expect((await storage.listMessages("c1")).filter((message) => message.parentId === answer.parentId)).toHaveLength(1);
+
+    await vi.advanceTimersByTimeAsync(80_000);
+    await reading;
+    await first.flush();
+    await second.flush();
+  });
+
+  it("выбор ветки после правки ответа не нужен: сбой такой записи не мешает правке и уведомлению приложения", async () => {
+    const { storage } = await sharedStorage();
+    const copy = serverCopy(storage);
+    const answer = await answered(storage);
+    const failing: ChatStorage = { ...storage, insertBranchSelection: async () => { throw new Error("база недоступна"); } };
+    const edited = vi.fn();
+    const editing = createChatService({
+      storage: failing,
+      catalog: mockCatalog({ mock: callThenAnswer() }, { pricing: price }),
+      defaultChoice: { modelId: mockModelId, providerId: "mock" },
+      agent: { instructions: "Ты помощник." },
+      env: mockEnv,
+      onAnswerEdited: edited,
+    });
+    const replacement = await editing.editAnswer("anna", "c1", answer.id, { text: "Поправил." });
+    expect(edited).toHaveBeenCalledTimes(1);
+    expect((await editing.getHistory("anna", "c1")).messages.at(-1)?.id).toBe(replacement.id);
+    await copy.flush();
+    await editing.flush();
+  });
+
+  it("приём вопроса копией, потерявшей аренду за долгой записью, не вставляет его: ветка соседа остаётся текущей", async () => {
+    const { storage } = await sharedStorage();
+    let renewalsFail = false;
+    let release!: () => void;
+    let reach!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const reached = new Promise<void>((resolve) => (reach = resolve));
+    let held = false;
+    const slow: ChatStorage = {
+      ...storage,
+      claimChatTurn: async (chatId, holder, leaseMs) => (renewalsFail ? false : storage.claimChatTurn!(chatId, holder, leaseMs)),
+      insertMessage: async (message, guard) => {
+        if (!held) {
+          held = true;
+          reach();
+          await gate;
+        }
+        return storage.insertMessage(message, guard);
+      },
+    };
+    const first = serverCopy(slow);
+    const second = serverCopy(storage);
+    const sending = first.sendMessage("anna", "c1", question("qa", "От первой копии"));
+    sending.catch(() => {});
+    await reached;
+    // Продление не подтверждается: первая копия теряет аренду, срок в хранилище истекает, чат берёт соседняя.
+    renewalsFail = true;
+    await vi.advanceTimersByTimeAsync(20_000);
+    const reading = readAll(await second.sendMessage("anna", "c1", question("qb", "От второй копии")));
+    await vi.advanceTimersByTimeAsync(100_000);
+    await reading;
+    release();
+
+    await expect(sending).rejects.toBeInstanceOf(ChatBusyError);
+    const messages = await storage.listMessages("c1");
+    expect(messages.some((message) => message.id === "qa")).toBe(false);
+    expect((await second.getHistory("anna", "c1")).messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+    await first.flush();
+    await second.flush();
+  });
+});
+
+describe("расход законченного ответа пишется вместе с ним", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ now: new Date("2026-03-01T10:00:00Z") });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("хранилище с finishesWithUsage: расход уходит в конечную запись ответа, отдельная запись (которая падает) не нужна", async () => {
+    const memory = createInMemoryChatStorage();
+    await memory.createChat({ id: "c1", ownerId: "anna", modelId: mockModelId, providerId: "mock" });
+    const finals: string[] = [];
+    // Хранилище, которое пишет ответ и расход одной транзакцией; отдельная запись расхода падает, как после сбоя базы.
+    const storage: ChatStorage = {
+      ...memory,
+      finishesWithUsage: true,
+      finishMessage: async (messageId, { usageRecords = [], ...final }) => {
+        await memory.finishMessage(messageId, final);
+        for (const record of usageRecords) await memory.insertUsageRecord(record);
+        finals.push(messageId);
+      },
+      insertUsageRecord: async () => {
+        throw new Error("база расхода недоступна");
+      },
+    };
+    const copy = serverCopy(storage);
+    const reading = readAll(await copy.sendMessage("anna", "c1", { id: "q1", role: "user", parts: [{ type: "text", text: "Сделай" }] }));
+    await vi.advanceTimersByTimeAsync(100_000);
+    await reading;
+    const answer = (await storage.listMessages("c1")).find((message) => message.role === "assistant")!;
+    expect(answer.status).toBe("complete");
+    expect(finals).toEqual([answer.id]);
+    const [spent] = await memory.sumUsage({ messageId: answer.id });
+    expect(spent?.inputTokens).toBeGreaterThan(0);
+    await copy.flush();
+  });
+});

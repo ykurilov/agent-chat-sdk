@@ -52,8 +52,10 @@ export interface OwnServer {
   releaseReport: (topic: string) => Promise<void>;
   /** Человек пишет боту в поддельном Telegram. */
   telegramSay: (person: { personId: number; name: string; username?: string }, text: string) => Promise<void>;
+  /** Человек нажал кнопку под сообщением бота (`callback_data`). */
+  telegramPress: (person: { personId: number; name: string; username?: string }, data: string) => Promise<void>;
   /** Сообщения бота этому человеку в поддельном Telegram. */
-  telegramMessages: (personId: number) => Promise<Array<{ messageId: number; text: string }>>;
+  telegramMessages: (personId: number) => Promise<Array<{ messageId: number; text: string; buttons: Array<Array<{ text: string; data?: string }>> }>>;
   /** Останавливает оба процесса, ждёт их выхода и удаляет базу. */
   stop: () => Promise<void>;
 }
@@ -212,9 +214,17 @@ async function startOnce(options: OwnServerOptions): Promise<OwnServer> {
       });
       expect(response.ok).toBe(true);
     },
+    telegramPress: async (person, data) => {
+      const response = await fetch(`${webUrl}/api/demo/telegram/control/press`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ personId: person.personId, name: person.name, username: person.username, data }),
+      });
+      expect(response.ok).toBe(true);
+    },
     telegramMessages: async (personId) => {
       const response = await fetch(`${webUrl}/api/demo/telegram/control/messages?chatId=${personId}`);
-      return ((await response.json()) as { messages: Array<{ messageId: number; text: string }> }).messages;
+      return ((await response.json()) as { messages: Array<{ messageId: number; text: string; buttons: Array<Array<{ text: string; data?: string }>> }> }).messages;
     },
     stop,
   };

@@ -1,4 +1,5 @@
 import type { ModelChoice } from "../models/model-choice";
+import { assertWellFormedMemoryNote } from "../memory/long-term-memory";
 import type { MemoryNote, MemoryNoteInput } from "../memory/long-term-memory";
 import { isOptimizationBlocked, revertRefusal } from "../memory/memory-optimization";
 import type { MemoryMergeGroup, MemoryOptimizationRun, MergedMemoryNote } from "../memory/memory-optimization";
@@ -136,14 +137,6 @@ export function createTransientChatStorage(snapshot?: InMemoryChatSnapshot): Tra
     return note;
   }
 
-  /** Как база с NOT NULL: разделы — список строк, текст — строка. */
-  function assertWellFormedNote(note: MemoryNoteInput): void {
-    if (!Array.isArray(note?.categories) || !note.categories.every((category) => typeof category === "string")) {
-      throw new TypeError("Разделы записи памяти — список строк");
-    }
-    if (typeof note.content !== "string") throw new TypeError("Текст записи памяти — строка");
-  }
-
   /** Записи, которые видит человек: без скрытых оригиналов, копиями. */
   function visibleNotes(ownerId: string): MemoryNote[] {
     const visible = [...ownerNotes(ownerId).values()].filter((note) => !note.mergedInto);
@@ -152,7 +145,7 @@ export function createTransientChatStorage(snapshot?: InMemoryChatSnapshot): Tra
 
   function insertNotes(ownerId: string, inputs: MemoryNoteInput[]): MemoryNote[] {
     // Сначала проверяем весь пакет: негодная запись не оставляет в памяти и остальных.
-    inputs.forEach(assertWellFormedNote);
+    inputs.forEach(assertWellFormedMemoryNote);
     const now = new Date().toISOString();
     const created = inputs.map(
       ({ categories, content }): MemoryNote => ({
@@ -170,7 +163,7 @@ export function createTransientChatStorage(snapshot?: InMemoryChatSnapshot): Tra
   }
 
   function updateNote(ownerId: string, id: string, expectedVersion: number, input: MemoryNoteInput): MemoryNote | "not_found" | "stale_version" {
-    assertWellFormedNote(input);
+    assertWellFormedMemoryNote(input);
     const notes = ownerNotes(ownerId);
     const note = notes.get(id);
     if (!note || note.mergedInto) return "not_found";
@@ -180,7 +173,8 @@ export function createTransientChatStorage(snapshot?: InMemoryChatSnapshot): Tra
       categories: [...input.categories],
       content: input.content,
       version: note.version + 1,
-      updatedAt: new Date().toISOString(),
+      // Часы не отстают от записи: время правки не убывает.
+      updatedAt: new Date(Math.max(Date.now(), Date.parse(note.updatedAt))).toISOString(),
     };
     notes.set(id, updated);
     return structuredClone(updated);
@@ -629,7 +623,7 @@ export function createTransientChatStorage(snapshot?: InMemoryChatSnapshot): Tra
       if (merges.length === 0) throw new TypeError("Слияние без склеек");
       const seen = new Set<string>();
       for (const { result, originals } of merges) {
-        assertWellFormedNote(result);
+        assertWellFormedMemoryNote(result);
         if (originals.length === 0) throw new TypeError("Склейка без оригиналов");
         for (const { id } of originals) {
           if (seen.has(id)) throw new TypeError(`Запись ${id} названа в двух склейках`);

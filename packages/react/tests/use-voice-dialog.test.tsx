@@ -197,6 +197,37 @@ describe("мост: отправка слов", () => {
   });
 });
 
+describe("мост: сервер отказал голосовой реплике", () => {
+  it("отказ (400) — конец с ошибкой, а не «конец» прежнего ответа, который уже звучал", async () => {
+    const old = { id: "a0", role: "assistant" as const, parts: [{ type: "text" as const, text: "Прежний ответ", state: "done" as const }], metadata: { status: "complete" } };
+    const server = fakeChatServer({ history: [{ id: "u0", role: "user", parts: [{ type: "text", text: "Раньше" }] }, old] });
+    server.state.refuse.messages = { status: 400, kind: "invalid" };
+    const { bridge } = await openDialog(server);
+    const { ends } = listen(bridge());
+
+    act(() => bridge().send("Новая реплика"));
+
+    await waitFor(() => expect(ends).toEqual([{ messageId: "", status: "error" }]));
+    expect(server.requestsTo("messages")).toHaveLength(1);
+  });
+
+  it("отказ и конец «думает» в одной отрисовке: последним снова прежний ответ — это ошибка, а не его конец", () => {
+    const fake = fakeEngine();
+    const before = { id: "u0", role: "user" as const, parts: [{ type: "text" as const, text: "Раньше" }] };
+    const old = { id: "a0", role: "assistant" as const, parts: [{ type: "text" as const, text: "Прежний ответ", state: "done" as const }], metadata: { status: "complete" as const } };
+    const sent = { id: "u1", role: "user" as const, parts: [{ type: "text" as const, text: "Новая реплика" }] };
+    const chat = { messages: [before, old], busy: false, stop: vi.fn(), sendVoiceMessage: vi.fn(() => true), replaceLastVoiceMessage: vi.fn(async () => false), showVoiceCut: vi.fn() };
+    const hook = renderHook(({ chat }) => useVoiceDialog({ engine: fake.engine, chatId: "c1", chat: chat as never }), { initialProps: { chat } });
+    act(() => hook.result.current!.onToggle());
+    const { ends } = listen(fake.bridge());
+    act(() => fake.bridge().send("Новая реплика"));
+    hook.rerender({ chat: { ...chat, busy: true, messages: [before, old, sent] } });
+    // Сервер отказал: сообщение убрано из ленты в той же отрисовке, где чат перестал быть занятым.
+    hook.rerender({ chat: { ...chat, busy: false, messages: [before, old] } });
+    expect(ends).toEqual([{ messageId: "", status: "error" }]);
+  });
+});
+
 describe("мост: склейка фразы (replaceLastMessage)", () => {
   it("пока модель размышляет, слова заменяют прежнее голосовое сообщение: POST …/edit с voiceMode и склеенным текстом, второго сообщения нет", async () => {
     const server = fakeChatServer();

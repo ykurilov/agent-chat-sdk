@@ -117,7 +117,8 @@ export function createVkAdapter(input: { client: VkClient; groupId: number; grou
         if (event.group_id !== groupId || !sameSecret(event.secret, secret)) return rejected(403, "forbidden");
         return { response: new Response(confirmation, { status: 200 }), updates: [] };
       }
-      if (!sameSecret(event.secret, secret)) return rejected(403, "forbidden");
+      // Номер сообщества VK кладёт в каждое событие: без него событие не от VK.
+      if (event.group_id === undefined || !sameSecret(event.secret, secret)) return rejected(403, "forbidden");
       return { response: new Response("ok", { status: 200 }), updates: await toInboundUpdates(event, bot) };
     },
 

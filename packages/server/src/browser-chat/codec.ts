@@ -1,8 +1,18 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { gzipSync, gunzipSync } from "node:zlib";
 import type { BrowserChatSnapshot, ChatHistory, InMemoryChatSnapshot } from "@ykurilov/agent-chat-core";
+import type { BrowserChatUsage } from "./types";
 
-export interface BrowserChatPayload { version: 1; internalChatId: string; storage: InMemoryChatSnapshot }
+/** Сколько неучтённых записей расхода может ждать в снимке повторного `onUsage`. */
+const MAX_UNBILLED = 10_000;
+
+export interface BrowserChatPayload {
+  version: 1;
+  internalChatId: string;
+  storage: InMemoryChatSnapshot;
+  /** Расход, который `onUsage` не принял: повторяется на следующем запросе, пока не примет. */
+  unbilled?: BrowserChatUsage[];
+}
 export function createBrowserChatCodec(keyInput: string | Uint8Array, namespace: string, maxBytes: number) {
   const key = typeof keyInput === "string" ? Buffer.from(keyInput, "base64url") : Buffer.from(keyInput);
   if (key.length !== 32 || !namespace || namespace.length > 200) throw new TypeError("browser chat requires a 32-byte snapshot key and a namespace");
@@ -39,7 +49,9 @@ export function createBrowserChatCodec(keyInput: string | Uint8Array, namespace:
         || payload.storage.messages.some(message => message.chatId !== payload.internalChatId)
         || payload.storage.compactions.some(row => row.chatId !== payload.internalChatId)
         || payload.storage.branchSelections.some(row => row.chatId !== payload.internalChatId)
-        || payload.storage.usageRecords.some(row => row.ownerId !== ownerId || row.chatId !== payload.internalChatId)) throw new TypeError("invalid browser snapshot");
+        || payload.storage.usageRecords.some(row => row.ownerId !== ownerId || row.chatId !== payload.internalChatId)
+        || (payload.unbilled !== undefined && (!Array.isArray(payload.unbilled) || payload.unbilled.length > MAX_UNBILLED
+          || payload.unbilled.some(row => !row || typeof row !== "object" || row.ownerId !== ownerId || typeof row.id !== "string")))) throw new TypeError("invalid browser snapshot");
       return payload;
     },
   };

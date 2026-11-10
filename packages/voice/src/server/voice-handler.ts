@@ -84,6 +84,9 @@ export function createVoiceHandler(options: VoiceHandlerOptions): VoiceHandler {
       const access = await guard(request);
       if ("refusal" in access) return access.refusal;
       const { user, mainKey } = access;
+      // Тело читается до временного ключа и с потолком: огромный запрос не тратит ключ Soniox и память сервера.
+      const body = await sessionBody(request);
+      if (body === TOO_LARGE) return refusal(413, "invalid");
 
       try {
         const key = await requestTemporaryKey({
@@ -102,7 +105,7 @@ export function createVoiceHandler(options: VoiceHandlerOptions): VoiceHandler {
             expiresAt: key.expiresAt,
             websocketUrl: options.websocketUrl ?? DEFAULT_WEBSOCKET_URL,
             model: options.model ?? DEFAULT_MODEL,
-            languageHints: (await requestedLanguageHints(request, options.allowedLanguageHints)) ?? options.languageHints ?? ["ru"],
+            languageHints: requestedLanguageHints(body, options.allowedLanguageHints) ?? options.languageHints ?? ["ru"],
             maxSessionSeconds,
             ...(options.context && { context: options.context }),
           },
@@ -118,10 +121,44 @@ export function createVoiceHandler(options: VoiceHandlerOptions): VoiceHandler {
 }
 
 
-/** Язык записи из тела запроса `{ languageHints }`, если браузер его прислал и он годный. Тело не JSON — подсказки нет. */
-async function requestedLanguageHints(request: Request, allowed: readonly string[] | undefined): Promise<string[] | null> {
+const MAX_SESSION_BODY_BYTES = 16 * 1024;
+const TOO_LARGE = Symbol("too-large");
+
+/** Тело `/session` текстом; больше 16 КиБ — `TOO_LARGE`, остаток потока не читается. */
+async function sessionBody(request: Request): Promise<string | typeof TOO_LARGE> {
+  if (!request.body) return "";
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
   try {
-    const body: unknown = await request.json();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > MAX_SESSION_BODY_BYTES) {
+        await reader.cancel().catch(() => undefined);
+        return TOO_LARGE;
+      }
+      chunks.push(value);
+    }
+  } catch {
+    return "";
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(bytes);
+}
+
+/** Язык записи из тела запроса `{ languageHints }`, если браузер его прислал и он годный. Тело не JSON — подсказки нет. */
+function requestedLanguageHints(text: string, allowed: readonly string[] | undefined): string[] | null {
+  try {
+    const body: unknown = JSON.parse(text);
     return typeof body === "object" && body !== null ? acceptedLanguageHints((body as Record<string, unknown>).languageHints, allowed) : null;
   } catch {
     return null;

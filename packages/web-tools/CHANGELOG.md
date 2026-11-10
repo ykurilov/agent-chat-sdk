@@ -1,5 +1,22 @@
 # @ykurilov/agent-chat-web-tools
 
+## 0.106.0
+
+### Patch Changes
+
+- 44c83ff: Ответ Firecrawl и DeepSeek читается не больше 16 МиБ: больше — `bad_response`. Адреса 192.88.99.0/24 считаются закрытыми.
+- Updated dependencies [4d9f052]
+- Updated dependencies [8a2dd8b]
+- Updated dependencies [6868584]
+- Updated dependencies [78c4f81]
+- Updated dependencies [dd25986]
+- Updated dependencies [2bdba0e]
+- Updated dependencies [4d9f052]
+- Updated dependencies [7a51a46]
+- Updated dependencies [87b7077]
+- Updated dependencies [44c83ff]
+  - @ykurilov/agent-chat-core@0.106.0
+
 ## 0.105.1
 
 ### Patch Changes

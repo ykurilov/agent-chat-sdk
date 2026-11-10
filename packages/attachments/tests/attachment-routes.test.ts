@@ -130,6 +130,18 @@ describe("чтение и удаление", () => {
     expect(new Uint8Array(await response.arrayBuffer()).length).toBeGreaterThan(20);
   });
 
+  it("браузер каждый раз перепроверяет доступ: no-cache с ETag, повтор с If-None-Match — 304 без тела, чужому — 404", async () => {
+    const { call, id } = await uploaded("png");
+    const first = await call("GET", [id]);
+    expect(first.headers.get("cache-control")).toBe("private, no-cache");
+    const etag = first.headers.get("etag")!;
+    expect(etag).toMatch(/^"[^"]+"$/);
+    const again = await call("GET", [id], { headers: { "if-none-match": etag } });
+    expect(again.status).toBe(304);
+    expect(await again.text()).toBe("");
+    expect((await call("GET", [id], { headers: { "if-none-match": etag } }, "boris")).status).toBe(404);
+  });
+
   it("PDF скачивается; текст отдаётся как text/plain; имя в заголовке закодировано", async () => {
     const pdf = await uploaded("pdf");
     const pdfResponse = await pdf.call("GET", [pdf.id]);

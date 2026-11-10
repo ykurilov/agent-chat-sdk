@@ -23,7 +23,7 @@ export interface StateChangedInput {
 
 /**
  * Хук смены состояния чата: копия состояния в таблицах приложения. Повтор с тем же состоянием ничего не должен ломать —
- * сводите копию полной заменой. Бросок или отказ — повтор.
+ * сводите копию полной заменой. Бросок или отказ — повтор. Состояние, которое к попытке уже сменилось, не доставляется.
  */
 export type StateChangedHandler = (input: StateChangedInput) => void | Promise<void>;
 
@@ -51,6 +51,11 @@ export function createStateChanged(context: {
   attempts?: number;
   chatEvents: ChatEvents;
   logError: (message: string, error?: unknown) => void;
+  /**
+   * Состояние чата в хранилище сейчас. Перед каждой попыткой хука: состояние уже другое (его сменила другая копия
+   * сервера или следующий ход) — хук не зовётся, новое разошлёт тот, кто его записал.
+   */
+  currentState?: (chatId: string) => Promise<AppStateValues>;
 }): StateChanged {
   const timeoutMs = context.timeoutMs ?? DEFAULT_STATE_CHANGED_TIMEOUT_MS;
   const attempts = context.attempts ?? DEFAULT_STATE_CHANGED_ATTEMPTS;
@@ -76,7 +81,13 @@ export function createStateChanged(context: {
       if (JSON.stringify(state) === JSON.stringify(previousState)) return;
       context.chatEvents.emit({ type: "state-changed", ownerId, chatId, reason, state, atMessageId });
       if (!context.handler) return;
-      const handler = context.handler;
+      const { handler: deliver, currentState } = context;
+      const handler: StateChangedHandler = currentState
+        ? async (input) => {
+            if (JSON.stringify(publicAppState(await currentState(input.chatId))) !== JSON.stringify(input.state)) return;
+            await deliver(input);
+          }
+        : deliver;
       const input: StateChangedInput = { ownerId, chatId, reason, state, previousState, atMessageId };
       const work = (queues.get(chatId) ?? Promise.resolve()).then(() => callHandler(handler, input));
       queues.set(chatId, work);

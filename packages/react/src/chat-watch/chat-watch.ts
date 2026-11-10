@@ -14,6 +14,10 @@ export type ChatWatchEvent =
   | { type: "message-added"; messageId: string }
   /** Текст приветствия заменён (`replaceGreeting`): то же сообщение, новый текст. */
   | { type: "greeting-replaced"; messageId: string }
+  /** В другой вкладке выбрали другую ветку на развилке: лента должна показать её. */
+  | { type: "branch-selected"; messageId: string }
+  /** Сообщение человека записано без хода (`beforeTurn` вернул `{ hold: true }`): ход придёт позже. */
+  | { type: "turn-held"; messageId: string }
   | { type: "chat-closed"; closed: { code: string; message: string } }
   | { type: "chat-reopened" }
   /** Состояние чата сменилось (ход, смена ветки, правка ответа — в том числе в другой вкладке). */
@@ -38,10 +42,17 @@ export type WatchChatOptions = {
 
 export type WatchChatEnd = "unavailable" | "stopped";
 
+/**
+ * Сколько должен прожить открытый поток, чтобы его конец считался обычным обрывом, а не неудачей. Поток, который прокси
+ * закрывает сразу после открытия, иначе переподключался бы без паузы по кругу.
+ */
+const STABLE_WATCH_MS = 10_000;
+
 export async function watchChat(options: WatchChatOptions): Promise<WatchChatEnd> {
   const { signal, delaysMs } = options;
   let failures = 0;
   while (!signal.aborted) {
+    const began = Date.now();
     const outcome = await readOnce(options);
     if (outcome === "unavailable") return "unavailable";
     if (signal.aborted) break;
@@ -49,7 +60,7 @@ export async function watchChat(options: WatchChatOptions): Promise<WatchChatEnd
       await pause(options.refusedRetryMs ?? 60_000, signal);
       continue;
     }
-    if (outcome === "opened") failures = 0;
+    if (outcome === "opened" && Date.now() - began >= STABLE_WATCH_MS) failures = 0;
     const delay = delaysMs[Math.min(failures, delaysMs.length - 1)] ?? 1000;
     failures += 1;
     await pause(delay, signal);

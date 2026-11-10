@@ -95,6 +95,7 @@ export type {
   ReasoningRequest,
 } from "./models/model-catalog";
 export type { LongTermMemory, MemoryError, MemoryErrorKind, MemoryNote, MemoryNoteInput, MemoryRevertGuard, MemoryWriteGuard } from "./memory/long-term-memory";
+export { assertWellFormedMemoryNote } from "./memory/long-term-memory";
 export type {
   MemoryMergeApplyResult,
   MemoryMergeGroup,
@@ -215,6 +216,7 @@ export { ChatCreationRefusedError } from "./access/chat-creation";
 export type { BeforeCreateChatHandler, ChatCreationRefusal } from "./access/chat-creation";
 export { DEFAULT_MAX_CONCURRENT_TURNS_PER_USER, TooManyTurnsError } from "./running-answers/turn-slots";
 export type {
+  CountedMessageSlot,
   SpendingLimits,
   SpendingPeriod,
   SpendingRefusalReason,

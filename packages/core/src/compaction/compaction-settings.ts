@@ -1,4 +1,4 @@
-/** Настройки сжатия истории; всё необязательно, значения по умолчанию подобраны по опыту. */
+/** Настройки сжатия истории; всё необязательно, значения по умолчанию подобраны в SDK. */
 export interface CompactionSettings {
   /** С какого размера контекста сжимать (токены провайдера). Для малых окон порог не выше 80% окна. */
   thresholdTokens?: number;
@@ -44,6 +44,18 @@ export function resolveCompactionSettings(setting: CompactionSettings | false | 
 
 function definedOnly<T extends object>(values: T): T {
   return Object.fromEntries(Object.entries(values).filter(([, value]) => value !== undefined)) as T;
+}
+
+/** Доля окна модели чата на хвост и сводку вместе: остальное — системному промпту, новому сообщению и ответу. */
+const KEPT_WINDOW_SHARE = 0.6;
+
+/** Хвост и потолок сводки для окна модели чата: в малом окне (32 тыс. токенов) они вместе не уместились бы и пропорционально ужимаются. */
+export function settingsForWindow(settings: ResolvedCompactionSettings, contextWindowTokens: number): ResolvedCompactionSettings {
+  const kept = settings.tailTokens + settings.summaryCeilingTokens;
+  const room = Math.floor(contextWindowTokens * KEPT_WINDOW_SHARE);
+  if (kept <= room) return settings;
+  const scale = room / kept;
+  return { ...settings, tailTokens: Math.floor(settings.tailTokens * scale), summaryCeilingTokens: Math.floor(settings.summaryCeilingTokens * scale) };
 }
 
 /** Порог для выбранной модели: не выше 80% её окна. */

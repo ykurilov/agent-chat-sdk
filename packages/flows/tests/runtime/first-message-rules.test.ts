@@ -29,6 +29,18 @@ describe("T072 правила «писать первым»", () => {
     expect(await rules.check({ ...anna, at: msk(9, 30, 14) })).toEqual({ allowed: true });
   });
 
+  it("потолок дня занимается при проверке: два чата человека одновременно — пишет один, второй ждёт конца занятия (аудит deepseek#6)", async () => {
+    const store = memoryFlowStore();
+    const rules = createFirstMessageRules({ maxPerDay: 1 }, store)!;
+    const [first, second] = await Promise.all([rules.check({ ...anna, chatId: "c1", at: msk(12) }), rules.check({ ...anna, chatId: "c2", at: msk(12) })]);
+    expect(first).toEqual({ allowed: true });
+    expect(second).toEqual({ allowed: false, retryAt: msk(12, 10) });
+    // Повтор того же чата (ход не начался) место не тратит; написал — место засчитано, другим чатам — завтра.
+    expect(await rules.check({ ...anna, chatId: "c1", at: msk(12, 1) })).toEqual({ allowed: true });
+    await rules.record({ ownerId: "anna", chatId: "c1", at: msk(12, 1), timeZone: MSK });
+    expect(await rules.check({ ...anna, chatId: "c2", at: msk(12, 2) })).toEqual({ allowed: false, retryAt: msk(9, 0, 14) });
+  });
+
   it("настройка приложения: свои тихие часы и потолок", async () => {
     const rules = createFirstMessageRules({ quietHours: { from: "22:00", to: "08:00" }, maxPerDay: 1 }, memoryFlowStore())!;
     expect(await rules.check({ ...anna, at: msk(21, 30) })).toEqual({ allowed: true });

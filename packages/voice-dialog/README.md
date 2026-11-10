@@ -52,6 +52,7 @@ injectWebSocket(server); // тот же порт, что у остального
 | `recognition` | `language`, `model` | `ru`, `stt-rt-v5` |
 | `recognition` | `endpointLatencyLevel`, `maxEndpointDelayMs` | 2, 1500: как быстро Soniox считает фразу законченной |
 | `recognition` | `context` | нет: подсказка распознаванию (`general`, `text`, `terms`, `translation_terms`), как у диктовки; Soniox берёт до 8000 токенов |
+| `recognition` | `pricePerHour` | нет: доллары за час распознавания; задана — каждая сессия пишет расход `voice_input` на чат (секунды от первого звука до конца сессии), лимиты расходов его видят |
 | корень | `allowedOrigins` | нет: проходит только свой сайт. Чужая страница (не из списка) получает 403 `forbidden_origin` до подъёма сокета и при смене голоса. Запрос не из браузера (без Origin и Sec-Fetch-Site) проходит, его судит `resolveUser` |
 | корень | `idleSeconds` | 180: тишина дольше — предупреждение, затем закрытие |
 | корень | `maxSessionSeconds` | 1800: самое долгое включение |

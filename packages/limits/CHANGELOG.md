@@ -1,5 +1,23 @@
 # @ykurilov/agent-chat-limits
 
+## 0.106.0
+
+### Patch Changes
+
+- 2bdba0e: Место в окне сообщений больше не теряется, если сервер упал между взятием места и записью сообщения. Служба чата передаёт `takeMessage` id сообщения и после записи зовёт `confirm` у возврата места (тип `CountedMessageSlot`). Лимиты помнят неподтверждённые места; через 10 минут без подтверждения место без записанного сообщения возвращается на следующем сообщении окна. Подтверждённое место не возвращается, даже если чат потом удалили. Свои реализации `takeMessage` без `confirm` работают как раньше.
+- 2bdba0e: Ключи состояния окон лимитов однозначны: `:` и `%` в id окна, человека и чата экранируются. Раньше окно «a:b» человека «x» и окно «b» человека «x:a» делили один счёт. Счёт, записанный до обновления, подхватывается при первом чтении и продолжается под новым ключом; для имён без `:` и `%` ключи не меняются.
+- Updated dependencies [4d9f052]
+- Updated dependencies [8a2dd8b]
+- Updated dependencies [6868584]
+- Updated dependencies [78c4f81]
+- Updated dependencies [dd25986]
+- Updated dependencies [2bdba0e]
+- Updated dependencies [4d9f052]
+- Updated dependencies [7a51a46]
+- Updated dependencies [87b7077]
+- Updated dependencies [44c83ff]
+  - @ykurilov/agent-chat-core@0.106.0
+
 ## 0.105.1
 
 ### Patch Changes

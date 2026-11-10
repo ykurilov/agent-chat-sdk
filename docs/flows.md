@@ -60,8 +60,8 @@ flow.start(); // таймеры; при остановке сервера — aw
   (`privateStateKeys`). Где чат и какой путь прошёл, сервер читает через `flow.readRun`.
 - Сценарий с ошибками сервер не запустит: строка в журнал, чат идёт без сценария.
 - Хранилище: `memoryFlowStore()` (тесты), `sqliteFlowStore(path)`, `postgresFlowStore(pool)`. Таблицы создаются сами
-  при первом обращении: `flow_chats`, `flow_versions`, `flow_client_cards`, `flow_first_messages`, `flow_people`,
-  `flow_side_tasks`.
+  при первом обращении: `flow_chats`, `flow_versions`, `flow_client_cards`, `flow_first_messages`, `flow_first_message_holds`,
+  `flow_people`, `flow_side_tasks`.
 - Ключ судьи — `OPENROUTER_API_KEY` в окружении сервера (или `judge.openrouter.apiKey`).
 
 Что ещё есть у `flow`: `signal` (событие приложения), `admit` (как поступить с сообщением человека), `pause`, `resume` и

@@ -159,7 +159,7 @@ function RenameField({ title, onDone }: { title: string; onDone: (title: string 
       onFocus={(event) => event.currentTarget.select()}
       onBlur={(event) => finish(event.currentTarget.value, false)}
       onKeyDown={(event) => {
-        if (event.key === "Enter") finish(event.currentTarget.value, true);
+        if (event.key === "Enter" && !event.nativeEvent.isComposing && event.keyCode !== 229) finish(event.currentTarget.value, true);
         if (event.key === "Escape") {
           // Escape закрывает только поле: выезжающая панель телефона остаётся открытой.
           event.stopPropagation();

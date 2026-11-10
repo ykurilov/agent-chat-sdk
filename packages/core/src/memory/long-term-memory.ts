@@ -10,6 +10,14 @@ export interface MemoryNoteInput {
   content: string;
 }
 
+/** Как база с NOT NULL: разделы — список строк, текст — строка. Хранилища проверяют вход этим до записи. */
+export function assertWellFormedMemoryNote(note: MemoryNoteInput): void {
+  if (!Array.isArray(note?.categories) || !note.categories.every((category) => typeof category === "string")) {
+    throw new TypeError("Разделы записи памяти — список строк");
+  }
+  if (typeof note.content !== "string") throw new TypeError("Текст записи памяти — строка");
+}
+
 /** Запись памяти. Владелец (`ownerId`) — свойство хранилища и наружу не выдаётся. */
 export interface MemoryNote extends MemoryNoteInput {
   /** Выдаёт хранилище, уникален. */

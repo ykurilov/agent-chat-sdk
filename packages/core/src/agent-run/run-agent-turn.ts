@@ -41,7 +41,7 @@ import type { ChatStorage, FinishedMessagePatch } from "../storage/chat-storage"
 import { createAnswerSaver } from "./answer-saver";
 import { environmentSecrets } from "../text/scrub-secrets";
 import type { CacheMissWatch } from "../usage/cache-miss-watch";
-import { recordSpentTokens, usageMinusJournaled } from "../usage/record-usage";
+import { recordSpentTokens, usageMinusJournaled, usageRecordOf } from "../usage/record-usage";
 import { settleGenerationUsage } from "../usage/settle-generation-usage";
 import {
   AUTO_CONTINUES_PER_TURN,
@@ -1149,13 +1149,43 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
     const error: ChatError | null = status === "error" ? { kind: errorKind ?? "other", ...(errorDetails && { details: errorDetails }) } : null;
     // Ответил запасной — сообщение помнит его (FR-031); выбор чата не меняется.
     const answeredByBackup = answeredProviderId !== input.providerId && { providerId: answeredProviderId };
+    // Остановленный или оборванный ход тоже стоил денег: завершённые шаги и оценка оборванного. Каждому провайдеру хода —
+    // своя запись по его цене: попытки основного до перехода на запасной — по цене основного. Хранилище, которое умеет,
+    // пишет их одной транзакцией с ответом.
+    const spentRecords = input.ownerId
+      ? turnUsage.stepsByProvider().flatMap((group) => {
+          const record = usageRecordOf({
+            catalog: input.catalog,
+            startedAt,
+            ownerId: input.ownerId!,
+            chatId: input.chatId,
+            messageId,
+            source: input.usageSource ?? "answer",
+            modelId,
+            providerId: group.providerId,
+            spent: sumOfSteps(group.steps) ?? emptyTokenUsage(),
+            steps: group.steps,
+          });
+          return record ? [record] : [];
+        })
+      : [];
+    const spentWithAnswer = storage.finishesWithUsage === true && spentRecords.length > 0;
     let finished = false;
     if (!takeover.signal.aborted) {
       try {
         finished = await finishWithRetries(
           storage,
           messageId,
-          { status, parts: withAnswerReasoning(parts, input.reasoning), usage, reasoningDurationsMs, error, ...answeredByBackup, ...(input.afterTurn && { afterTurn: "pending" as const }) },
+          {
+            status,
+            parts: withAnswerReasoning(parts, input.reasoning),
+            usage,
+            reasoningDurationsMs,
+            error,
+            ...answeredByBackup,
+            ...(input.afterTurn && { afterTurn: "pending" as const }),
+            ...(spentWithAnswer && { usageRecords: spentRecords }),
+          },
           logError,
         );
       } catch (failure) {
@@ -1178,24 +1208,13 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
       throw new Error(`Конечная запись ответа ${messageId} не удалась: ответ оставлен для восстановления`);
     }
     input.onAnswerWritten?.();
-    // Остановленный или оборванный ход тоже стоил денег: завершённые шаги и оценка оборванного. Каждому провайдеру хода —
-    // своя запись по его цене: попытки основного до перехода на запасной — по цене основного.
     if (input.ownerId) {
-      for (const group of turnUsage.stepsByProvider()) {
-        await recordSpentTokens({
-          storage,
-          catalog: input.catalog,
-          startedAt,
-          ownerId: input.ownerId,
-          chatId: input.chatId,
-          messageId,
-          source: input.usageSource ?? "answer",
-          modelId,
-          providerId: group.providerId,
-          spent: sumOfSteps(group.steps) ?? emptyTokenUsage(),
-          steps: group.steps,
-          logError,
-        });
+      if (!spentWithAnswer) {
+        for (const record of spentRecords) {
+          await storage.insertUsageRecord(record).catch((failure: unknown) => {
+            logError(`Не удалось записать расход (${record.source}, чат ${input.chatId}): ${failure instanceof Error ? failure.message : "неизвестная ошибка"}`, failure);
+          });
+        }
       }
       // Оборванные генерации: настоящий расход — у провайдера, позже и в фоне; ход его не ждёт (FR-058).
       const stepsToSettle = turnUsage.stepsToSettle();

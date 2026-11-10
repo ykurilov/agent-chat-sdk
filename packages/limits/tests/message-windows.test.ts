@@ -269,6 +269,47 @@ describe("окна сообщений: возврат места не порти
   });
 });
 
+describe("окна сообщений: процесс упал между местом и записью сообщения", () => {
+  const total: SpendingWindowConfig = { id: "all", scope: "user", kind: "total", limitMessages: 1 };
+  const MINUTE = 60_000;
+
+  async function writtenQuestion(storage: ChatStorage, id: string) {
+    if (!(await storage.getChat("chat-1"))) await storage.createChat({ id: "chat-1", ownerId: "anna", modelId: "flat-model", providerId: "openrouter" });
+    await storage.insertMessage({
+      id, chatId: "chat-1", parentId: null, role: "user", parts: [{ type: "text", text: "Привет" }], formatVersion: 1, status: "complete",
+      modelId: null, providerId: null, usage: null, reasoningDurationsMs: {}, error: null, voiceCut: null, createdAt: WEDNESDAY,
+    });
+  }
+
+  it("место без записанного сообщения и без подтверждения возвращается на следующем сообщении через 10 минут", async () => {
+    const { limits, later, refusalOf, windowOf } = setup([total]);
+    await limits.takeMessage!({ userId: "anna", chatId: "chat-1", messageId: "q1" });
+    // Сообщение ещё пишется (файлы, медленная база): место за ним.
+    later(MINUTE);
+    await refusalOf();
+    later(10 * MINUTE);
+    await expect(limits.takeMessage!({ userId: "anna", chatId: "chat-1", messageId: "q2" })).resolves.toBeDefined();
+    expect(await windowOf("all")).toMatchObject({ used: 1 });
+  });
+
+  it("сообщение записалось, а подтверждение — нет: место остаётся за ним", async () => {
+    const { limits, later, refusalOf, storage, windowOf } = setup([total]);
+    await limits.takeMessage!({ userId: "anna", chatId: "chat-1", messageId: "q1" });
+    await writtenQuestion(storage, "q1");
+    later(11 * MINUTE);
+    await refusalOf();
+    expect(await windowOf("all")).toMatchObject({ used: 1 });
+  });
+
+  it("подтверждённое место не возвращается, даже если сообщения потом не стало (удалили чат)", async () => {
+    const { limits, later, refusalOf } = setup([total]);
+    const taken = await limits.takeMessage!({ userId: "anna", chatId: "chat-1", messageId: "q1" });
+    await taken!.confirm!();
+    later(11 * MINUTE);
+    await refusalOf();
+  });
+});
+
 describe("окна сообщений: личные лимиты и исключения", () => {
   it("лимит функцией от человека: null — у этого человека окна нет", async () => {
     const { take, windowOf, refusalOf } = setup([dayOf(({ userId }) => (userId === "vip" ? null : 1))]);

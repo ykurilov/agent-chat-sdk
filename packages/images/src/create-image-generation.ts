@@ -18,6 +18,7 @@ import type { ImagePurpose, ImageSetup } from "./image-setup";
 import { recordImageUsage } from "./images-usage";
 import type { ImageOutputOptions } from "./postprocess-image";
 import { DOWNLOAD_TIMEOUT_MS, saveImageToChat } from "./save-images";
+import type { SaveImageToChatInput } from "./save-images";
 
 const DEFAULT_MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const DEFAULT_REQUEST_TIMEOUT_MS = 150_000;
@@ -58,7 +59,8 @@ export interface CreateImageGenerationOptions {
    * одного шага не проходят лимит все разом.
    */
   spending?: {
-    storage: Pick<ChatStorage, "insertUsageRecord">;
+    /** `getChat` — по желанию: поздняя картинка не ложится в удалённый чат. */
+    storage: Pick<ChatStorage, "insertUsageRecord"> & Partial<Pick<ChatStorage, "getChat">>;
     /** `afterSpending` (если есть) зовётся после каждой записи расхода: пороги лимитов видят и картинки. */
     limits?: Pick<SpendingLimits, "assertWithinLimit" | "afterSpending">;
   };
@@ -277,6 +279,20 @@ export function createImageGeneration(options: CreateImageGenerationOptions): Im
     return { id: saved.id };
   }
 
+  const chatDeleted = async (chatId: string) => {
+    const getChat = options.spending?.storage.getChat;
+    return getChat !== undefined && (await getChat.call(options.spending!.storage, chatId)) === null;
+  };
+
+  /** Файл во вложения чата, если чат ещё есть. Удалили, пока файл записывался, — файл убирается: файлов без чата не бывает. */
+  async function saveToLiveChat(input: Omit<SaveImageToChatInput, "storage" | "now">) {
+    if (await chatDeleted(input.chatId)) return undefined;
+    const saved = await saveImageToChat({ storage: options.attachments.storage, ...input, now });
+    if (!(await chatDeleted(input.chatId))) return saved;
+    await options.attachments.storage.remove(saved.id);
+    return undefined;
+  }
+
   const jobs = createImageJobs({
     receive,
     maxImageBytes: options.maxImageBytes ?? DEFAULT_MAX_IMAGE_BYTES,
@@ -453,7 +469,11 @@ export function createImageGeneration(options: CreateImageGenerationOptions): Im
       jobId: job.id,
     };
     if (deliver) return deliver(image, delivery, context);
-    const saved = await saveImageToChat({ storage: options.attachments.storage, chatId: job.chatId, ownerId: job.ownerId, number, file: image, now });
+    const saved = await saveToLiveChat({ chatId: job.chatId, ownerId: job.ownerId, number, file: image });
+    if (!saved) {
+      logError(`Картинки: чат ${job.chatId} удалён, готовая картинка не сохранена`);
+      return false;
+    }
     try {
       await options.onLateImage?.({
         ownerId: job.ownerId,

@@ -170,3 +170,23 @@ describe("группы включены", () => {
     expect(await chats.checkPress(key, boris)).toEqual({ ok: false, text: messengerTexts.onlyPayer("Анна") });
   });
 });
+
+describe("предел участника на нескольких копиях сервера", () => {
+  it("сообщения участника пришли в три копии одновременно — предел не обойти (аудит kimi#9)", async () => {
+    const shared = createMemoryMessengerStore();
+    // Медленный подсчёт: без замка обе копии успевают увидеть «ещё можно».
+    const store = {
+      ...shared,
+      countMemberHits: async (...args: Parameters<typeof shared.countMemberHits>) => {
+        const used = await shared.countMemberHits(...args);
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        return used;
+      },
+    };
+    await store.saveLink({ messenger: "telegram", botId: "bot1", externalUserId: anna.externalUserId, userId: "anna", name: anna.name, linkedAt: new Date().toISOString() });
+    const copies = [1, 2, 3].map(() => createGroupChats({ store, groups: { perMemberHourly: 1 } }));
+    await copies[0]?.handleUpdate(command("/connect"));
+    const decisions = await Promise.all(copies.map((chats) => chats.handleUpdate(mention())));
+    expect(decisions.filter((decision) => decision.type === "turn")).toHaveLength(1);
+  });
+});

@@ -278,4 +278,33 @@ describe("useAgentChat без key: дела прежнего чата не тр�
     expect(chat.result.current.busy).toBe(false);
     await expectFreeToSend(server, chat, "c2");
   });
+
+  it("набранный текст не переезжает в другой чат: в новом чате поле пустое", async () => {
+    const server = fakeChatServer({ history: [question] });
+    const chat = renderChatHook(server);
+    await waitFor(() => expect(chat.result.current.loaded).toBe(true));
+    act(() => chat.result.current.setValue("Черновик первого чата"));
+    chat.rerender({ chatId: "c2" });
+    await waitFor(() => expect(chat.result.current.loaded).toBe(true));
+    expect(chat.result.current.value).toBe("");
+  });
+
+  it("отказ отправки, пришедший после смены чата, не кладёт текст прежнего чата в поле нового", async () => {
+    const server = fakeChatServer({ history: [question] });
+    const chat = renderChatHook(server);
+    await waitFor(() => expect(chat.result.current.loaded).toBe(true));
+    const releaseMessages = hold(server, "messages");
+    server.state.refuse.messages = { status: 400, kind: "invalid" };
+    act(() => chat.result.current.setValue("Вопрос для первого чата"));
+    act(() => {
+      chat.result.current.submit();
+    });
+    await waitFor(() => expect(urlsTo(server, "messages")).toEqual(["/api/chat/c1/messages"]));
+    chat.rerender({ chatId: "c2" });
+    await waitFor(() => expect(chat.result.current.loaded).toBe(true));
+    releaseMessages();
+    await letLateWorkFinish();
+    expect(chat.result.current.value).toBe("");
+    expect(chat.result.current.messages.map((message) => message.id)).toEqual(["u1"]);
+  });
 });

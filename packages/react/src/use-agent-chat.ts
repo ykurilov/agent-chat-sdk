@@ -1,4 +1,5 @@
 import { usePageRequestLifetime } from "./liveness/page-request-lifetime";
+import { anySignal } from "./liveness/any-signal";
 import type { FeedChange, FeedChangeKind, HistoryView } from "./history-view";
 import { closeStoppedToolCalls } from "./close-stopped-tool-calls";
 import { useChat } from "@ai-sdk/react";
@@ -478,7 +479,7 @@ export function useAgentChat({
   // Чужая для сервера страница получает 403 только на запись: снимает отказ успешная запись, а не чтение.
   const request = useCallback(
     async (input: string, init?: RequestInit) => {
-      const signal = init?.signal ? AbortSignal.any([init.signal, page.controller.signal]) : page.controller.signal;
+      const signal = init?.signal ? anySignal([init.signal, page.controller.signal]) : page.controller.signal;
       signal.throwIfAborted();
       const releaseEarly = page.acquireEarly();
       let response: Response;
@@ -972,6 +973,12 @@ export function useAgentChat({
   /** Число проверок брошенного ответа: каждая, удачная или нет, назначает следующую. */
   const [detachedChecks, setDetachedChecks] = useState(0);
   const [value, setValue] = useState(initialDraft);
+  /** Набранный текст принадлежит своему чату: другой чат открывается со своим черновиком (`initialDraft`) или пустым полем. */
+  const draftChatId = useRef(chatId);
+  if (draftChatId.current !== chatId) {
+    draftChatId.current = chatId;
+    if (value !== initialDraft) setValue(initialDraft);
+  }
   const sending = useRef(false);
 
   /**
@@ -1067,7 +1074,7 @@ export function useAgentChat({
    * `false` — подключиться не вышло: лента возвращается к тому, что было на экране (`before`).
    */
   const applyServerHistory = useCallback(
-    async (history: ServerHistory, before: AgentChatMessage[], signal: AbortSignal): Promise<boolean> => {
+    async (history: ServerHistory, before: AgentChatMessage[], signal: AbortSignal, isLatest: () => boolean = () => true): Promise<boolean> => {
       historyVersion.current = historyVersions.current.get(history) ?? null;
       const previousView = historyViewRef.current;
       applyAccess(history);
@@ -1089,6 +1096,8 @@ export function useAgentChat({
       if (outcome === "nothing") {
         // Ход успел закончиться между загрузкой истории и подключением: готовый ответ уже в истории.
         const finished = await loadHistory(signal);
+        // Пока шло это чтение, более новое уже показало ленту: запоздавшая история её не перетирает.
+        if (!isLatest()) return true;
         if (finished === "not_found") {
           setNotFound(true);
           return true;
@@ -1102,6 +1111,7 @@ export function useAgentChat({
           return true;
         }
       }
+      if (!isLatest()) return true;
       historyViewRef.current = previousView; setHistoryView(previousView);
       historyBoundary.current = { url: chatUrl, first: before[0]?.id };
       setHydratedMessages(before, "history");
@@ -1334,7 +1344,11 @@ export function useAgentChat({
   const chatLifetime = useRef(new AbortController());
   useEffect(() => {
     chatLifetime.current = new AbortController();
-    return () => chatLifetime.current.abort();
+    return () => {
+      chatLifetime.current.abort();
+      // Пропущенное перечитывание относится к прежнему чату: новый читает свою историю сам.
+      rereadWhenFree.current = false;
+    };
   }, [chatId]);
   const [approvalPendingId, setApprovalPendingId] = useState<string | null>(null);
   const [approvalFailure, setApprovalFailure] = useState<{ id: string; kind: ApprovalFailureKind; text?: string } | null>(null);
@@ -1343,6 +1357,8 @@ export function useAgentChat({
 
   /** Номер последнего перечитывания истории и номер самого нового из показанных. */
   const historyReads = useRef({ started: 0, shown: 0 });
+  /** Перечитывание по событию пропущено, потому что чат был занят: история перечитается, когда он освободится. */
+  const rereadWhenFree = useRef(false);
 
   /**
    * Перечитывает историю с сервера и показывает её; идущий ход подхватывается. `unlessFeedChanged` — для опроса: пока
@@ -1357,8 +1373,14 @@ export function useAgentChat({
       const history = await loadHistory(signal);
       if (signal.aborted) return true;
       if (options.unlessFeedChanged) {
-        if (busyRef.current || historyReads.current.shown > read) return true;
+        if (historyReads.current.shown > read) return true;
+        // Ленту сменил человек (вопрос, «Повторить») или его ход: история без этого хода её не стирает и потом.
         if (messagesRef.current !== shown && historyReads.current.shown === shownBefore) return true;
+        // Занят чужим ходом (подхваченный ответ, серия попыток): событие не теряется, история перечитается после.
+        if (busyRef.current) {
+          rereadWhenFree.current = true;
+          return true;
+        }
       }
       if (typeof history !== "string") historyReads.current.shown = Math.max(historyReads.current.shown, read);
       if (history === "not_found") {
@@ -1368,7 +1390,7 @@ export function useAgentChat({
       // Сервер не ответил или ответил сбоем: история не прочитана. Вход и отказ в доступе говорят своими надписями.
       if (history === "unreachable" || history === "server_error") return false;
       if (typeof history === "string") return true;
-      const connected = await applyServerHistory(history, messagesRef.current, signal);
+      const connected = await applyServerHistory(history, messagesRef.current, signal, () => historyReads.current.shown <= read);
       if (!connected && !signal.aborted) startSeries();
       return true;
     },
@@ -1391,12 +1413,25 @@ export function useAgentChat({
     if (!busyRef.current) void rereadHistory(chatLifetime.current.signal);
   };
 
+  // Новый `reloadKey` посреди ответа ждёт его конца: перечитывание не обрывает идущий ответ старой историей.
   const shownReloadKey = useRef(reloadKey);
+  const reloadWanted = useRef(false);
   useEffect(() => {
-    if (shownReloadKey.current === reloadKey) return;
-    shownReloadKey.current = reloadKey;
-    void refreshFromServer(chatLifetime.current.signal);
-  }, [reloadKey, refreshFromServer]);
+    if (shownReloadKey.current !== reloadKey) {
+      shownReloadKey.current = reloadKey;
+      reloadWanted.current = true;
+    }
+    if (busy) return;
+    const signal = chatLifetime.current.signal;
+    if (reloadWanted.current) {
+      reloadWanted.current = false;
+      rereadWhenFree.current = false;
+      void refreshFromServer(signal);
+    } else if (rereadWhenFree.current) {
+      rereadWhenFree.current = false;
+      void refreshFromServer(signal, { unlessFeedChanged: true });
+    }
+  }, [busy, reloadKey, refreshFromServer]);
 
   // Ответ идёт без живого потока: история перечитывается, пока сервер не прервёт его. Сервер так и не ответил итогом —
   // ответ прерывается на экране, и человек может нажать «Повторить» без перезагрузки страницы.
@@ -1556,7 +1591,7 @@ export function useAgentChat({
   reportAppEvent.current = onAppEvent;
   useEffect(() => {
     if (page.suspended || page.restoring || page.controller.signal.aborted || !watchEnabled || !loaded || busy || notFound || watchUnavailableFor.current === chatUrl) return;
-    const chatSignal = AbortSignal.any([chatLifetime.current.signal, page.controller.signal]);
+    const chatSignal = anySignal([chatLifetime.current.signal, page.controller.signal]);
     const watch = new AbortController();
     const releaseEarly = page.acquireEarly();
     const stopWatch = () => watch.abort();
@@ -1586,7 +1621,7 @@ export function useAgentChat({
           if (appEvent) reportAppEvent.current?.(appEvent, messageId);
           // Событие хука после «Стопа» уже лежит в ответе: перечитанная история покажет его в ленте.
           if (appEvent && messageId && !ownTurnStarting()) void refreshFromServer(chatSignal, { unlessFeedChanged: true });
-        } else if ((event.type === "turn-started" || event.type === "notice-added" || event.type === "message-added" || event.type === "answer-edited" || event.type === "greeting-replaced") && !ownTurnStarting()) {
+        } else if ((event.type === "turn-started" || event.type === "notice-added" || event.type === "message-added" || event.type === "answer-edited" || event.type === "greeting-replaced" || event.type === "branch-selected" || event.type === "turn-held") && !ownTurnStarting()) {
           void refreshFromServer(chatSignal, { unlessFeedChanged: true });
         }
       },
@@ -1619,7 +1654,7 @@ export function useAgentChat({
       if (!chatSignal.aborted) {
         if (!loaded) setLoadAttempt(attempt => attempt + 1);
         else {
-          const combined = AbortSignal.any([signal, chatSignal]);
+          const combined = anySignal([signal, chatSignal]);
           const connected = await reconnectAttempt(combined, true);
           if (!combined.aborted) {
             if (connected) setConnection("online");

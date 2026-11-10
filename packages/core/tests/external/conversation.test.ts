@@ -264,3 +264,21 @@ it("another service exposes machine-readable ownership busy code",async()=>{
  try{await expect(other.start("yuri","main")).rejects.toMatchObject({code:"external_conversation_busy"});}
  finally{await other.close();await f.service.close();}
 });
+
+describe("external conversation: две копии сервера",()=>{
+  it("ответ на разрешение, принятый другой копией, держатель метки отдаёт исполнителю один раз",async()=>{
+    const store=createMemoryConversationStore();let sink:(event:ExternalConversationEvent)=>Promise<void>=async()=>{};
+    const responses:unknown[]=[];
+    const executor:ExternalExecutor={status:()=>"idle",onConversation:listener=>{sink=listener;return()=>{};},reconcile:async()=>{},send:async()=>{},stopTurn:async()=>{},respondToPermission:async(_id,response)=>{responses.push(response);}};
+    const holder=createExternalConversationService({store,pollMs:5,resolveExecutor:()=>executor});
+    const other=createExternalConversationService({store,pollMs:5,resolveExecutor:()=>{throw Error("other copy must not run the executor");}});
+    try{
+      await holder.ensureConversation(definition);await holder.start("yuri","main");
+      await sink({type:"permission_requested",request:{id:"read",name:"Read",kind:"tool"}});
+      await other.answerPermission("yuri","main","read","cmd:1",{behavior:"allow"});
+      await vi.waitFor(()=>expect(responses).toEqual([{behavior:"allow"}]),{timeout:2000,interval:5});
+      await new Promise(resolve=>setTimeout(resolve,50));
+      expect(responses).toHaveLength(1);
+    }finally{await holder.close();await other.close();}
+  });
+});

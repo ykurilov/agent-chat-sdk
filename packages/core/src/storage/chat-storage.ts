@@ -45,11 +45,12 @@ export type StreamingMessagePatch = Pick<StoredMessage, "parts"> &
 
 /**
  * `providerId` — только если ответил запасной провайдер, а не выбранный при вставке. `afterTurn` — состояние хука итога
- * (обычно `pending`), ставится той же записью; хранилище без состояния хука его пропускает.
+ * (обычно `pending`), ставится той же записью; хранилище без состояния хука его пропускает. `usageRecords` — записи
+ * расхода хода: хранилище с `finishesWithUsage` пишет их одной транзакцией с ответом, без него ядро их не передаёт.
  */
 export type FinishedMessagePatch = { status: FinalAnswerStatus } & Partial<
   Pick<StoredMessage, "parts" | "usage" | "reasoningDurationsMs" | "error" | "providerId">
-> & { afterTurn?: AfterTurnState } & ChatTurnWriteGuard;
+> & { afterTurn?: AfterTurnState; usageRecords?: readonly UsageRecord[] } & ChatTurnWriteGuard;
 
 /** Новый чат. `createdAt` задан — и создание, и обновление чата получают эту дату; нет — время записи. */
 export interface NewChatInput {
@@ -118,6 +119,11 @@ export interface MessagePartsLink extends MessageLink {
 export interface ChatStorage {
   /** Адаптер атомарно исполняет ChatTurnWriteGuard у всех записей ответа; обязателен при наличии аренд. */
   readonly guardedTurnWrites?: true;
+  /**
+   * `finishMessage` пишет `usageRecords` той же транзакцией, что и конечный ответ: сбой или падение процесса между
+   * ними не теряют расход законченного ответа. Без флага ядро пишет расход отдельной записью после ответа.
+   */
+  readonly finishesWithUsage?: true;
   /** Повтор `subjectKey` у того же владельца — `DuplicateChatSubjectError`, чат не записан. */
   createChat(input: NewChatInput): Promise<Chat>;
   getChat(chatId: string): Promise<Chat | null>;

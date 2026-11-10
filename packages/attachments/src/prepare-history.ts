@@ -14,7 +14,7 @@ const PREFIX = "attachment:";
 
 /** Имя для текста запроса: без кавычек, скобок и управляющих символов, чтобы оно не ломало разметку блока. */
 export function safeName(name: string): string {
-  return name.replace(/[\u0000-\u001f\u007f"<>]/g, " ").slice(0, 200).trim();
+  return name.replace(/[\u0000-\u001f\u007f\u200e\u200f\u202a-\u202e\u2066-\u2069"<>]/g, " ").slice(0, 200).trim();
 }
 
 /** Имя для плашки: ещё и без «ёлочек» и квадратных скобок, которыми плашка размечена. */

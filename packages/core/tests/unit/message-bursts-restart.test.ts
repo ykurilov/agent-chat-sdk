@@ -226,6 +226,31 @@ describe("sendBurstMessage: ждущая пачка переживает пер�
     expect(crashed.model.doStreamCalls).toHaveLength(0);
   });
 
+  it("второе сообщение пачки не записалось, а копия упала: другая копия отвечает на первое, запись пачки снята", async () => {
+    const storage = createInMemoryChatStorage();
+    const insert = storage.insertMessage.bind(storage);
+    storage.insertMessage = async (message, guard) => {
+      if (message.id === "u2") throw new Error("база недоступна");
+      return insert(message, guard);
+    };
+    const crashed = serviceOn(storage, manualClock());
+    const chat = await crashed.service.createChat("anna");
+    void (await crashed.service.sendBurstMessage("anna", chat.id, userMessage("u1", "привет"), KEPT)).turn.catch(() => {});
+    // Запись пачки уже указывает на второе сообщение, а его самого нет.
+    await expect(crashed.service.sendBurstMessage("anna", chat.id, userMessage("u2", "вопрос"), KEPT)).rejects.toThrow("база недоступна");
+
+    const clock = manualClock();
+    const other = serviceOn(storage, clock);
+    await other.service.recoverInterruptedAnswers();
+    clock.set(ABANDONED_AT);
+    await other.service.tickBursts();
+    await vi.waitFor(() => expect(turnsStarted(other.events)).toHaveLength(1));
+    await waitTurn(other.service, chat.id);
+    expect(other.model.doStreamCalls).toHaveLength(1);
+    expect(lastUserTexts(other.model.doStreamCalls[0]!).join("")).toMatch(/^привет/);
+    await vi.waitFor(async () => expect(await pendingOf(storage)).toEqual([]));
+  });
+
   it("срок удержания вышел, а живая копия ещё ждёт: ход один — у вызова, обход его не дублирует", async () => {
     const clock = manualClock();
     const storage = createInMemoryChatStorage();

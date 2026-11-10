@@ -36,6 +36,13 @@
       "when": 1793174400000,
       "tag": "0004_transition_mode",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1794323056710,
+      "tag": "0005_first_message_holds",
+      "breakpoints": true
     }
   ]
 }

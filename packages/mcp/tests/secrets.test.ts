@@ -66,6 +66,25 @@ describe("секреты сервера не утекают", () => {
     expect(leaks(JSON.stringify(check))).toEqual([]);
   });
 
+  it("успешный ответ, в котором сервер повторил токен и адрес с ключом, — секреты вычищены и из ответа модели", async () => {
+    const setup = await setupMcp({
+      onCall: (_name, _args, request) => ({ content: [{ type: "text", text: `Готово. Запрос на ${request.url}, токен ${request.headers.get("authorization")}. ${"Данные. ".repeat(200)}` }] }),
+    });
+    const server = await setup.mcp.admin.addServer({
+      name: "Wiki",
+      prefix: "wiki",
+      url: `https://mcp.example.com/mcp?key=${URL_KEY}`,
+      headers: { Authorization: `Bearer ${TOKEN}` },
+      status: "everyone",
+    });
+    await setup.mcp.admin.setTool(server.id, "ask_question", { enabled: true });
+
+    const answer = String(await callTool(setup.mcp.tools(turn()), "wiki__ask_question", {}));
+    expect(answer).toContain("Готово. Запрос на https://mcp.example.com/mcp");
+    expect(answer).toContain("Данные. Данные.");
+    expect(leaks(answer)).toEqual([]);
+  });
+
   it("правка: заголовок с null сохраняет прежнее значение, без заголовка — удаляется", async () => {
     const setup = await setupMcp();
     const server = await setup.mcp.admin.addServer({ name: "Wiki", prefix: "wiki", url: "https://mcp.example.com/mcp", headers: { Authorization: `Bearer ${TOKEN}`, "X-Team": "team-1234" }, status: "everyone" });

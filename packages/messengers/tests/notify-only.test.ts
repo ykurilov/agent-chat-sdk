@@ -21,6 +21,7 @@ function setup(overrides: Overrides = {}) {
   const errors: unknown[] = [];
   const common = {
     store,
+    linkConfirmation: false as const,
     resolveUser: async (request: Request) => (request.headers.get("x-user") ? { id: request.headers.get("x-user") as string } : null),
     bots: [fake.bot()],
     basePath: BASE,

@@ -246,6 +246,52 @@ describe("T047: GET /:chatId/watch", () => {
     await reader.cancel();
   });
 
+  it("без фоновых задач сверка тоже идёт: ход, который ведёт другая копия, виден", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "setTimeout", "clearTimeout"] });
+    const server = createServer();
+    const chatId = await server.createChat();
+    const reader = (await server.call("GET", `/${chatId}/watch`)).body!.getReader();
+    await readUntil(reader, ": ping");
+    await seedUnfinishedAnswer(server.storage, chatId, "a-other");
+    await server.storage.markAnswerAlive?.("a-other");
+    const started = readUntil(reader, '"turn-started"');
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(parseSse(await started).find((event) => event.type === "turn-started")).toMatchObject({ messageId: "a-other", chatId });
+    await reader.cancel();
+  });
+
+  it("ход другой копии успел закончиться между сверками — вкладке «message-added», чтобы перечитала историю", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "setTimeout", "clearTimeout"] });
+    const tabCopy = createServer();
+    const otherCopy = createServer({ storage: tabCopy.storage });
+    const chatId = await tabCopy.createChat();
+    const reader = (await tabCopy.call("GET", `/${chatId}/watch`)).body!.getReader();
+    await readUntil(reader, ": ping");
+    await (await otherCopy.call("POST", `/${chatId}/messages`, { body: message("m1", "Привет из Телеграма") })).text();
+    const added = readUntil(reader, '"message-added"');
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(parseSse(await added).find((event) => event.type === "message-added")).toMatchObject({ chatId });
+    await reader.cancel();
+  });
+
+  it("свой ход эта копия показывает своими событиями: сверка лишнего «message-added» не шлёт", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "setTimeout", "clearTimeout"] });
+    const server = createServer();
+    const chatId = await server.createChat();
+    const reader = (await server.call("GET", `/${chatId}/watch`)).body!.getReader();
+    let seen = await readUntil(reader, ": ping");
+    const decoder = new TextDecoder();
+    const draining = (async () => {
+      for (let read = await reader.read(); !read.done; read = await reader.read()) seen += decoder.decode(read.value, { stream: true });
+    })();
+    await (await server.call("POST", `/${chatId}/messages`, { body: message("m1", "Привет") })).text();
+    await vi.advanceTimersByTimeAsync(15_000);
+    await reader.cancel();
+    await draining;
+    expect(seen).toContain('"turn-finished"');
+    expect(seen).not.toContain('"message-added"');
+  });
+
   it("первая сверка задач упала — следующая всё равно запланирована", async () => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "setTimeout", "clearTimeout"] });
     const { background, state } = fakeBackground();

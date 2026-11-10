@@ -31,6 +31,7 @@ import {
   ChatClosedError,
   ChatCreationRefusedError,
   turnOriginOf,
+  loadCurrentBranchLinks,
   InvalidWidgetAnswerError,
   WidgetAnswerCheckAbortedError,
   WidgetAnswerCheckTimeoutError,
@@ -430,6 +431,7 @@ export function createChatServer(options: ChatHandlerOptions): { handler: ChatHa
         subscribeEvents: (listener) => service.subscribeEvents(listener),
         hiddenStateKey,
         ...(background && { listTasks: () => background.listForChat(userId, chatId) }),
+        branchTail: async () => (await loadCurrentBranchLinks(options.storage, chatId)).at(-1)?.id ?? null,
         async detachedTurn() {
           const history = await service.getHistory(userId, chatId);
           const answer = history.messages.at(-1);
@@ -580,7 +582,11 @@ export function createChatServer(options: ChatHandlerOptions): { handler: ChatHa
       const history = await service.getHistory(userId, chatId);
       const query = new URL(request.url).searchParams;
       try {
-        return Response.json({ ...(query.get("history") === "compact" ? compactHistory(history, query, options.agent.widgets?.custom?.map(widget => widget.name)) : history), backgroundTasks: background !== undefined }, { headers: { "cache-control": "private, no-store", "x-agent-chat-history-version": historyVersion({ ...history, backgroundTasks: background !== undefined }) } });
+        // Полная история сериализуется один раз: тот же текст идёт и в ответ, и в версию.
+        const full = JSON.stringify({ ...history, backgroundTasks: background !== undefined });
+        const headers = { "cache-control": "private, no-store", "x-agent-chat-history-version": versionOf(full) };
+        if (query.get("history") !== "compact") return new Response(full, { headers: { ...headers, "content-type": "application/json" } });
+        return Response.json({ ...compactHistory(history, query, options.agent.widgets?.custom?.map(widget => widget.name)), backgroundTasks: background !== undefined }, { headers });
       } catch (error) {
         if (error instanceof HistoryViewConflict) return errorResponse(409, "history_changed");
         if (error instanceof InvalidHistoryView) return errorResponse(400, "invalid");
@@ -871,5 +877,6 @@ function errorToResponse(error: unknown): Response {
 
 /** Full authorized snapshot, before compact paging; no process-local cache or missed-event assumptions. */
 function historyVersion(history: unknown): string {
-  return createHash("sha256").update(JSON.stringify(history)).digest("hex");
+  return versionOf(JSON.stringify(history));
 }
+const versionOf = (serialized: string): string => createHash("sha256").update(serialized).digest("hex");

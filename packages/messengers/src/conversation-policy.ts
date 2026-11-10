@@ -4,10 +4,14 @@ import { type CardButton, chatListRows } from "./button-actions";
 import type { MessengerChatService } from "./chat-port";
 import type { BotCommand, ExternalAccount, MessengerAdapter } from "./messenger-adapter";
 import { defaultTextsOf, type MessengerTextsOf } from "./messenger-texts";
-import type { ChatRequestReason, ConversationKey, MessengersBaseOptions, MessengersChatOptions, MessengerStore } from "./types";
+import { chatKeyOf } from "./outbound-queue";
+import { withStoreLock } from "./store-lock";
+import type { ChatRequestReason, ConversationKey, MessengerConversation, MessengersBaseOptions, MessengersChatOptions, MessengerStore } from "./types";
 
 /** Сколько последних чатов показывает `/chats`. */
 export const RECENT_CHATS = 5;
+/** Сколько копия сервера держит право завести первый чат разговора; упала — другая ждёт не дольше. */
+const FIRST_CHAT_LEASE_MS = 30_000;
 
 /** Разговор, для которого решаем: внешний чат, кто пишет и чьим именем. */
 export interface ConversationContext {
@@ -103,13 +107,50 @@ export function createConversationPolicy(options: {
 
   /** Текущий чат разговора; нет — первый по правилу приложения. */
   async function currentChat(input: ConversationContext & { group?: ConversationGroup }): Promise<OpenedChat> {
-    const chatId = (await store.getConversation(input.key))?.currentChatId;
-    return chatId ? { chatId, agentStarted: false } : openChat({ ...input, reason: "first" });
+    const chatId = (await resumeConversation(input))?.currentChatId;
+    return chatId ? { chatId, agentStarted: false } : firstChat(input);
   }
 
-  async function makeCurrent({ key, userId }: ConversationContext, chatId: string) {
+  /**
+   * Первый чат заводит одна копия сервера: первые сообщения разговора пришли в две копии — вторая ждёт замок и берёт
+   * чат первой, а не заводит свой.
+   */
+  async function firstChat(input: ConversationContext & { group?: ConversationGroup }): Promise<OpenedChat> {
+    return withStoreLock(
+      store,
+      `first-chat:${chatKeyOf(input.key)}`,
+      FIRST_CHAT_LEASE_MS,
+      async () => {
+        const chatId = (await store.getConversation(input.key))?.currentChatId;
+        return chatId ? { chatId, agentStarted: false } : openChat({ ...input, reason: "first" });
+      },
+      options.logError,
+    );
+  }
+
+  /**
+   * Личный разговор, выключенный отвязкой, снова включается, когда человеку разрешено писать: ходы сервера опять идут
+   * сюда. Пишет другой пользователь приложения — разговор начинается заново, без чужого текущего чата.
+   */
+  async function resumeConversation({ key, userId }: ConversationContext) {
+    const conversation = await store.getConversation(key);
+    if (!conversation || conversation.active || conversation.type !== "private") return conversation;
+    const { currentChatId, ...rest } = conversation;
+    const resumed: MessengerConversation = {
+      ...rest,
+      userId,
+      active: true,
+      updatedAt: new Date().toISOString(),
+      ...(conversation.userId === userId && currentChatId !== undefined && { currentChatId }),
+    };
+    await store.saveConversation(resumed);
+    return resumed;
+  }
+
+  async function makeCurrent(ctx: ConversationContext, chatId: string) {
+    const { key, userId } = ctx;
     const now = new Date().toISOString();
-    if (await store.getConversation(key)) {
+    if (await resumeConversation(ctx)) {
       await store.setCurrentChat(key, chatId, now);
       return;
     }

@@ -1,5 +1,25 @@
 # @ykurilov/agent-chat-mcp
 
+## 0.106.0
+
+### Patch Changes
+
+- 97accee: SQLite: две копии сервера на одном файле больше не падают при запуске на новой миграции. Журнал миграций читается под замком записи, в одной транзакции с миграциями.
+- 44c83ff: Секреты сервера (ключ из адреса, заголовки) вычищаются и из удачного ответа, а не только из текста ошибки.
+- Updated dependencies [4d9f052]
+- Updated dependencies [8a2dd8b]
+- Updated dependencies [6868584]
+- Updated dependencies [78c4f81]
+- Updated dependencies [dd25986]
+- Updated dependencies [2bdba0e]
+- Updated dependencies [4d9f052]
+- Updated dependencies [7a51a46]
+- Updated dependencies [87b7077]
+- Updated dependencies [44c83ff]
+- Updated dependencies [44c83ff]
+  - @ykurilov/agent-chat-core@0.106.0
+  - @ykurilov/agent-chat-web-tools@0.106.0
+
 ## 0.105.1
 
 ### Patch Changes

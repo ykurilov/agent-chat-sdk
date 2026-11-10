@@ -66,6 +66,8 @@ export function describeChatStorageContract(
     pendingBursts?: "required";
     /** `finishedPartsReplace: "required"` — замена частей готового сообщения (`replaceFinishedMessageParts`) обязана быть. */
     finishedPartsReplace?: "required";
+    /** `finishWithUsage: "required"` — `finishMessage` пишет `usageRecords` одной транзакцией с ответом (`finishesWithUsage`). */
+    finishWithUsage?: "required";
   } = {},
 ): void {
   const chatInput = { id: "chat-1", ownerId: "anna", modelId: "deepseek-4.1-flash", providerId: "deepseek" };
@@ -988,6 +990,35 @@ export function describeChatStorageContract(
           ...fields,
         };
       }
+
+      async function finishingWithUsage(context: { skip: () => never }): Promise<ChatStorage> {
+        const storage = await storageWithChat();
+        if (storage.finishesWithUsage !== true) {
+          if (options.finishWithUsage === "required") throw new Error("Хранилище не пишет расход вместе с конечным ответом");
+          context.skip();
+        }
+        await storage.insertMessage(userMessage("u1", "2099-01-01T00:00:00.000Z"));
+        await storage.insertMessage(streamingAnswer("a1", "u1", "2099-01-01T00:00:01.000Z"));
+        return storage;
+      }
+
+      it("finishMessage с usageRecords: ответ закончен и расход в журнале", async (context) => {
+        const storage = await finishingWithUsage(context);
+        await storage.finishMessage("a1", { status: "complete", usageRecords: [usageRecord("r1", { messageId: "a1" }), usageRecord("r2", { messageId: "a1", providerId: "openrouter" })] });
+        expect((await storage.getMessage("a1"))?.status).toBe("complete");
+        expect((await storage.sumUsage({ messageId: "a1" })).map((sum) => sum.providerId).sort()).toEqual(["deepseek", "openrouter"]);
+      });
+
+      it("finishMessage с usageRecords: расход не записался — ответ остаётся идущим; ответ уже закончен — расход не пишется", async (context) => {
+        const storage = await finishingWithUsage(context);
+        await storage.insertUsageRecord(usageRecord("taken"));
+        await expect(storage.finishMessage("a1", { status: "complete", usageRecords: [usageRecord("taken", { messageId: "a1" })] })).rejects.toThrow();
+        expect((await storage.getMessage("a1"))?.status).toBe("streaming");
+        expect(await storage.sumUsage({ messageId: "a1" })).toEqual([]);
+        await storage.finishMessage("a1", { status: "complete" });
+        await expect(storage.finishMessage("a1", { status: "interrupted", usageRecords: [usageRecord("late", { messageId: "a1" })] })).rejects.toBeInstanceOf(MessageAlreadyFinishedError);
+        expect(await storage.sumUsage({ messageId: "a1" })).toEqual([]);
+      });
 
       it("пустой расход — пустая сумма", async () => {
         const storage = await storageWithChat();
@@ -2294,6 +2325,33 @@ export function describeChatStorageContract(
         while (Date.now() <= start) await new Promise((resolve) => setTimeout(resolve, 1));
       }
 
+      it("кривая запись (разделы не список строк, текст не строка) не ложится ни вставкой, ни правкой", async (context) => {
+        const storage = await storageWithMemory(context);
+        const [kept] = await storage.insertMemoryNotes("anna", [note("Любит чай")]);
+        const bad = [
+          { categories: "О себе", content: "Строка вместо списка" },
+          { categories: ["О себе", 7], content: "Число в разделах" },
+          { categories: ["О себе"], content: { text: "Не строка" } },
+        ] as unknown as MemoryNoteInput[];
+        for (const input of bad) {
+          await expect(storage.insertMemoryNotes("anna", [note("Рядом с кривой"), input])).rejects.toBeInstanceOf(TypeError);
+          await expect(storage.updateMemoryNote("anna", kept!.id, kept!.version, input)).rejects.toBeInstanceOf(TypeError);
+        }
+        expect(await storage.listMemoryNotes("anna")).toEqual([kept]);
+      });
+
+      it("часы сервера отстали: время правки записи не уходит назад", async (context) => {
+        const storage = await storageWithMemory(context);
+        const [written] = await storage.insertMemoryNotes("anna", [note("Любит чай")]);
+        vi.useFakeTimers({ toFake: ["Date"], now: Date.parse(written!.updatedAt) - 60 * 60_000 });
+        try {
+          const edited = await storage.updateMemoryNote("anna", written!.id, written!.version, note("Любит зелёный чай"));
+          expect(typeof edited === "object" && edited.updatedAt >= written!.updatedAt).toBe(true);
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+
       it("у человека без записей список пуст", async (context) => {
         const storage = await storageWithMemory(context);
         expect(await storage.listMemoryNotes("anna")).toEqual([]);
@@ -2896,6 +2954,11 @@ export function describeChatStorageContract(
               runId: run.id,
               finishedAt: at(1),
               merges: [{ result: { categories: ["О себе"], content: null } as unknown as MemoryNoteInput, originals: [original(first), original(second)] }],
+            },
+            {
+              runId: run.id,
+              finishedAt: at(1),
+              merges: [{ result: { categories: "О себе", content: "Строка вместо списка" } as unknown as MemoryNoteInput, originals: [original(first), original(second)] }],
             },
           ];
           for (const merge of bad) await expect(storage.applyMemoryMerge("anna", merge)).rejects.toBeInstanceOf(Error);

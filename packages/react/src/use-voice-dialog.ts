@@ -55,6 +55,8 @@ export function useVoiceDialog({ engine, chatId, chat, videos }: UseVoiceDialogO
   const activityListeners = useRef(new Set<(activity: AssistantActivity) => void>());
   /** Части, о начале которых движку уже сказано: сообщение → номер части → что в ней идёт. */
   const announced = useRef(new Map<string, Map<number, AnnouncedWork>>());
+  /** Последнее сообщение ленты в момент голосовой отправки; `undefined` — отправки не было. */
+  const lastBeforeSend = useRef<string | null | undefined>(undefined);
 
   const emitActivity = useCallback((activity: AssistantActivity) => {
     for (const listener of [...activityListeners.current]) listener(activity);
@@ -67,6 +69,7 @@ export function useVoiceDialog({ engine, chatId, chat, videos }: UseVoiceDialogO
   const bridge = useMemo<DialogChatBridge>(
     () => ({
       send: (text, options) => {
+        lastBeforeSend.current = chatRef.current.messages.at(-1)?.id ?? null;
         if (!chatRef.current.sendVoiceMessage(text, options)) queueMicrotask(() => emitEnd({ messageId: "", status: "error" }));
       },
       stop: () => chatRef.current.stop(),
@@ -167,7 +170,10 @@ export function useVoiceDialog({ engine, chatId, chat, videos }: UseVoiceDialogO
     }
     announced.current.clear();
     const last = chat.messages.at(-1);
-    if (last?.role !== "assistant") emitEnd({ messageId: "", status: "error" });
+    // Отказ убирает новую реплику: последним снова оказывается прежний ответ — это не конец этой реплики.
+    const sameAsBeforeSend = lastBeforeSend.current !== undefined && last?.id === lastBeforeSend.current;
+    lastBeforeSend.current = undefined;
+    if (last?.role !== "assistant" || sameAsBeforeSend) emitEnd({ messageId: "", status: "error" });
     else emitEnd({ messageId: last.id, status: endStatus(last) });
   }, [chat.busy, chat.messages, emitActivity, emitEnd]);
 

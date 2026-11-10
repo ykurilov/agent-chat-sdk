@@ -166,6 +166,32 @@ describe("обработчик голоса: параметры сессии", (
   });
 });
 
+describe("обработчик голоса: тело запроса", () => {
+  it("тело больше 16 КиБ — 413 до обращения к Soniox; огромный поток не дочитывается", async () => {
+    const { handler, soniox } = handlerWith();
+    let pulled = 0;
+    // 64 МиБ пробелов: прежний код читал их целиком. Не бесконечный, чтобы старый код падал проверкой, а не памятью.
+    const endless = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled += 1;
+        if (pulled > 16_384) controller.close();
+        else controller.enqueue(new Uint8Array(4096).fill(32));
+      },
+    });
+    const response = await handler.fetch(sessionRequest({ body: endless, headers: { "content-type": "application/json" }, duplex: "half" } as RequestInit));
+    expect(response.status).toBe(413);
+    expect(soniox.calls).toHaveLength(0);
+    expect(pulled).toBeLessThan(10);
+  });
+
+  it("обычное тело с языком по-прежнему принимается", async () => {
+    const { handler } = handlerWith({ allowedLanguageHints: ["ru", "en"] });
+    const response = await handler.fetch(sessionRequest({ body: JSON.stringify({ languageHints: ["en"] }), headers: { "content-type": "application/json" } }));
+    expect(response.status).toBe(200);
+    expect((await response.json()).languageHints).toEqual(["en"]);
+  });
+});
+
 describe("обработчик голоса: сбои", () => {
   it("Soniox отказал — 502 «сервис недоступен», в журнале причина без ключей", async () => {
     const soniox = fakeSoniox(() => Response.json({ error_type: "limit_exceeded", message: "Too many" }, { status: 429 }));

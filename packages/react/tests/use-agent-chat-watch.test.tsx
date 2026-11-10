@@ -137,6 +137,26 @@ describe("useAgentChat: подписка на события чата", () => {
     expect(server.resumed).toHaveLength(0);
   });
 
+  it("branch-selected: ветку выбрали в другой вкладке — лента перечитывается и показывает выбранную ветку", async () => {
+    const server = watchingServer();
+    const { result } = renderChatHook(server);
+    await waitFor(() => expect(server.watches).toHaveLength(1));
+    const other: HistoryMessage = { id: "u1-v2", role: "user", parts: [{ type: "text", text: "иначе" }] };
+    server.state.history = [other];
+    act(() => server.emit({ type: "branch-selected", messageId: "u1-v2" }));
+    await waitFor(() => expect(result.current.messages.map((message) => message.id)).toEqual(["u1-v2"]));
+  });
+
+  it("turn-held: сообщение, принятое без ответа в другой вкладке, появляется в ленте", async () => {
+    const server = watchingServer();
+    const { result } = renderChatHook(server);
+    await waitFor(() => expect(server.watches).toHaveLength(1));
+    const held: HistoryMessage = { id: "u2", role: "user", parts: [{ type: "text", text: "потом ответишь" }] };
+    server.state.history = [question, answer, held];
+    act(() => server.emit({ type: "turn-held", messageId: "u2", trigger: "human" }));
+    await waitFor(() => expect(result.current.messages.map((message) => message.id)).toEqual(["u1", "a1", "u2"]));
+  });
+
   it("неизвестное событие (новее версии клиента) не ломает ленту и подписку: оно пропускается", async () => {
     const server = watchingServer();
     const { result } = renderChatHook(server);

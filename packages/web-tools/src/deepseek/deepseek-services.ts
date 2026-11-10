@@ -5,6 +5,7 @@ import { createWebTools } from "../create-web-tools";
 import type { WebToolsModel, WebToolsSpending } from "../create-web-tools";
 import { assertPublicWebAddress, isHttpAddress } from "../page-address";
 import type { PageReaderService, SearchHit, WebSearchService } from "../services";
+import { readLimitedText } from "../read-limited-text";
 import { createWebUsageRecorder } from "../spending";
 import { serviceFailure, WebToolError } from "../web-tool-error";
 
@@ -107,7 +108,7 @@ function services(options: DeepSeekOptions, billable?: (name: "web_search" | "re
         const response = await Promise.race([request(`${baseUrl}/v1/tools/${path}`, {
           method: "POST", headers, body: JSON.stringify(body), signal: controller.signal,
         }), aborted]);
-        const text = await Promise.race([response.text(), aborted]);
+        const text = await Promise.race([readLimitedText(response), aborted]);
         if ((response.status === 408 || response.status === 429 || response.status >= 500) && attempt < retries) {
           const retry = response.headers.get("retry-after");
           const seconds = retry !== null && retry.trim() !== "" ? Number(retry) : NaN;

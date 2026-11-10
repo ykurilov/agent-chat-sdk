@@ -55,11 +55,25 @@ export interface ReadWindowInput {
   pendingUsd?: number;
 }
 
-/** Ключ состояния окна; у окна чата без чата — `null` (окно не читается). */
+/**
+ * Ключ состояния окна; у окна чата без чата — `null` (окно не читается). `:` и `%` в именах экранируются: окно «a:b»
+ * человека «x» и окно «b» человека «x:a» — разные ключи.
+ */
 export function windowStateKey(window: SpendingWindow, subject: SpendingSubject): string | null {
-  if (window.scope === "service") return `window:service:${window.id}`;
-  if (window.scope === "user") return `window:user:${subject.userId}:${window.id}`;
-  return subject.chatId === undefined ? null : `window:chat:${subject.chatId}:${window.id}`;
+  const id = keyPart(window.id);
+  if (window.scope === "service") return `window:service:${id}`;
+  if (window.scope === "user") return `window:user:${keyPart(subject.userId)}:${id}`;
+  return subject.chatId === undefined ? null : `window:chat:${keyPart(subject.chatId)}:${id}`;
+}
+
+function keyPart(name: string): string {
+  return name.replace(/[%:]/g, (sign) => (sign === "%" ? "%25" : "%3A"));
+}
+
+/** Ключ окна до экранирования имён; `null` — ключ тот же. Под ним лежит счёт, записанный до обновления. */
+export function legacyWindowStateKey(key: string): string | null {
+  if (!key.startsWith("window:") || !key.includes("%")) return null;
+  return key.replace(/%(25|3A)/g, (_sign, code: string) => (code === "25" ? "%" : ":"));
 }
 
 export function usageFilterOf(window: SpendingWindow, subject: SpendingSubject): UsageFilter {

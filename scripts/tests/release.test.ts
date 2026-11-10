@@ -43,11 +43,21 @@ if (process.env.FAKE_PUBLIC_PUSH_FAIL && process.argv.includes("--push")) proces
 if (process.env.FAKE_EXPORT_FAIL) { console.error("запретный список: 2 мест"); process.exit(1); }
 `,
   );
+  // Подставная проверка архивов npm: пишет в журнал и видит ли ключи, при FAKE_PACK_FAIL падает.
+  writeFileSync(
+    join(project, "scripts/check-npm-packages.mjs"),
+    `import { appendFileSync } from "node:fs";
+appendFileSync(process.env.FAKE_LOG, "check-npm-packages" + (process.env.NPM_TOKEN || process.env.ACTIONS_ID_TOKEN_REQUEST_URL ? " видит ключ" : "") + "\\n");
+if (process.env.FAKE_PACK_FAIL) { console.error("в архивах npm запретное: 1"); process.exit(1); }
+`,
+  );
   fakeCommand(
     "git",
     `case "$1" in
-  rev-parse) echo "\${FAKE_BRANCH:-main}" ;;
+  rev-parse) if [ "$2" = HEAD ]; then echo release-sha; else echo "\${FAKE_BRANCH:-main}"; fi ;;
   status) printf "%s" "\${FAKE_DIRTY:-}" ;;
+  log) echo "\${FAKE_HEAD_SUBJECT-chore(release): v1.2.3}" ;;
+  ls-remote) [ -n "\${FAKE_REMOTE_TAG:-}" ] && echo "abc refs/tags/\$FAKE_REMOTE_TAG" ;;
   tag) if [ "$2" = "--list" ]; then printf "%s" "\${FAKE_EXISTING_TAG:-}"; fi ;;
   # Свой коммит выпуска поверх origin/main: origin/main — предок HEAD, не наоборот.
   merge-base) [ "$3" = origin/main ] && exit 0; exit 1 ;;
@@ -128,7 +138,7 @@ describe("release.mjs: ветки выпуска", () => {
 
   it("нет записей, а версия уже в npm: выпускать нечего", () => {
     addToken();
-    const result = release([], { FAKE_PUBLISHED: "1.2.3" });
+    const result = release([], { FAKE_PUBLISHED: "1.2.3", FAKE_REMOTE_TAG: "v1.2.3" });
     expect(result.status).toBe(1);
     expect(result.output).toContain("выпускать нечего (версия 1.2.3 уже в npm у всех пакетов)");
     expect(result.calls.some((call) => call.includes("publish") || call.startsWith("git push"))).toBe(false);
@@ -140,7 +150,7 @@ describe("release.mjs: ветки выпуска", () => {
     expect(result.status).toBe(0);
     expect(result.output).toContain("подготовлена раньше, но опубликована не у всех пакетов");
     expect(result.calls).toEqual(
-      expect.arrayContaining(["pnpm build", "pnpm exec changeset publish", "git tag -f -a v1.2.3 -m Agent Chat SDK 1.2.3", "git push --atomic origin HEAD:refs/heads/main refs/tags/v1.2.3"]),
+      expect.arrayContaining(["pnpm build", "pnpm exec changeset publish", "git tag -f -a v1.2.3 -m Agent Chat SDK 1.2.3 release-sha", "git push --atomic origin HEAD:refs/heads/main refs/tags/v1.2.3"]),
     );
     expect(result.calls.some((call) => call.includes("changeset version"))).toBe(false);
     expect(result.calls.indexOf("pnpm exec changeset publish")).toBeLessThan(result.calls.indexOf("git push --atomic origin HEAD:refs/heads/main refs/tags/v1.2.3"));
@@ -169,7 +179,7 @@ describe("release.mjs: ветки выпуска", () => {
     addToken();
     const result = release([], { FAKE_EXISTING_TAG: "v1.2.3" });
     expect(result.status).toBe(0);
-    expect(result.calls).toContain("git tag -f -a v1.2.3 -m Agent Chat SDK 1.2.3");
+    expect(result.calls).toContain("git tag -f -a v1.2.3 -m Agent Chat SDK 1.2.3 release-sha");
     expect(result.calls).toContain("git push --atomic origin HEAD:refs/heads/main refs/tags/v1.2.3");
   });
 
@@ -201,7 +211,7 @@ exit 0`);
     addChangeset();
     const result = release(["--full"]);
     expect(result.status).toBe(0);
-    const order = ["export-public HEAD --check-only", "pnpm test", "pnpm typecheck", "pnpm build", "pnpm exec changeset version", "git commit", "pnpm exec changeset publish", "git fetch origin main", "git tag -f -a", "git push --atomic", "export-public v1.2.3 --push"];
+    const order = ["export-public HEAD --check-only", "pnpm test", "pnpm typecheck", "pnpm build", "pnpm exec changeset version", "git commit", "check-npm-packages", "pnpm exec changeset publish", "git fetch origin main", "git tag -f -a", "git push --atomic", "export-public v1.2.3 --push"];
     const positions = order.map((prefix) => result.calls.findIndex((call) => call.startsWith(prefix)));
     expect(positions.every((position) => position >= 0)).toBe(true);
     expect([...positions].sort((a, b) => a - b)).toEqual(positions);
@@ -302,6 +312,65 @@ exit 0`);
     expect(result.output).toContain("опубликована не у всех пакетов");
     expect(result.calls).toContain("pnpm exec changeset publish");
   });
+
+  it("версия уже у части пакетов в npm, а коммита выпуска нет: стоп, правки changeset version отменены, ничего не опубликовано", () => {
+    addToken();
+    addChangeset();
+    const result = release([], { FAKE_PUBLISHED: "1.2.3" });
+    expect(result.status).toBe(1);
+    expect(result.output).toContain("коммита выпуска chore(release): v1.2.3 в этой ветке нет");
+    expect(result.calls).toContain("git reset --hard --quiet HEAD");
+    expect(result.calls.some((call) => call.startsWith("git commit") || call.includes("changeset publish") || call.startsWith("git push"))).toBe(false);
+  });
+
+  it("доводка не с коммита выпуска: стоп до сборки и публикации", () => {
+    addToken();
+    const result = release([], { FAKE_HEAD_SUBJECT: "fix: чужая правка" });
+    expect(result.status).toBe(1);
+    expect(result.output).toContain("HEAD — не коммит выпуска chore(release): v1.2.3");
+    expect(result.calls.some((call) => call.startsWith("pnpm") || call.startsWith("git push"))).toBe(false);
+  });
+
+  it("версия в npm, а тега на GitHub нет: без сборки и публикации ставит тег и пушит", () => {
+    addToken();
+    const result = release([], { FAKE_PUBLISHED: "1.2.3" });
+    expect(result.status).toBe(0);
+    expect(result.output).toContain("уже в npm, но не отправлена на GitHub");
+    expect(result.calls.some((call) => call.startsWith("pnpm") || call.startsWith("check-npm-packages"))).toBe(false);
+    expect(result.calls).toContain("git tag -f -a v1.2.3 -m Agent Chat SDK 1.2.3 release-sha");
+    expect(result.calls).toContain("git push --atomic origin HEAD:refs/heads/main refs/tags/v1.2.3");
+  });
+
+  it("в архивах npm запретное или ключ: стоп до публикации, тега и push", () => {
+    addToken();
+    const result = release([], { FAKE_PACK_FAIL: "1" });
+    expect(result.status).toBe(1);
+    expect(result.output).toContain("в архивах npm запретное");
+    expect(result.calls).toContain("check-npm-packages");
+    expect(result.calls.some((call) => call.includes("changeset publish") || call.startsWith("git tag -f") || call.startsWith("git push"))).toBe(false);
+  });
+
+  it("сухой прогон без gitleaks не падает, настоящий выпуск требует gitleaks", () => {
+    addToken();
+    expect(release(["--dry-run"]).calls).toContain("export-public HEAD --check-only --allow-missing-gitleaks");
+    writeFileSync(logFile, "");
+    expect(release().calls).toContain("export-public HEAD --check-only");
+  });
+
+  it("ключи npm и GitHub видят только публикация и команды git, которые ходят на GitHub", () => {
+    addChangeset();
+    const seen = join(project, "seen.txt");
+    writeFileSync(seen, "");
+    fakeCommand("pnpm", `[ -n "$NPM_TOKEN$RELEASE_GITHUB_TOKEN$ACTIONS_ID_TOKEN_REQUEST_URL" ] && echo "$1 $2 $3" >> "${seen}"\nexit 0`);
+    const auth = `AUTHORIZATION: basic ${Buffer.from("x-access-token:gh-secret").toString("base64")}`;
+    const result = release(["--full"], { NPM_TOKEN: "npm-secret", RELEASE_GITHUB_TOKEN: "gh-secret", ACTIONS_ID_TOKEN_REQUEST_URL: "https://example.invalid/token" });
+    expect(result.status).toBe(0);
+    expect(readFileSync(seen, "utf8").trim().split("\n")).toEqual(["exec changeset publish"]);
+    expect(result.calls).toContain("check-npm-packages");
+    const withAuth = result.calls.filter((call) => call.includes(auth)).map((call) => call.replace(` -c http.https://github.com/.extraheader=${auth}`, ""));
+    expect(withAuth).toEqual(["git fetch origin main", "git push --atomic origin HEAD:refs/heads/main refs/tags/v1.2.3"]);
+    expect(result.output).not.toMatch(/npm-secret|gh-secret/);
+  });
 });
 
 describe("release.mjs с Мака: выпуск запускается на GitHub Actions", () => {
@@ -314,7 +383,7 @@ describe("release.mjs с Мака: выпуск запускается на GitH
   "rev-parse HEAD") if [ -n "\${FAKE_UNPUSHED:-}" ]; then echo local; else echo same; fi ;;
   "rev-parse --verify") case " \${FAKE_REMOTE_BRANCHES:-main} " in *" \${4#origin/} "*) echo same ;; *) exit 1 ;; esac ;;
   "status --porcelain") printf "%s" "\${FAKE_DIRTY:-}" ;;
-  "log -1") echo "abc123 последний коммит" ;;
+  "log -1") if [ "$3" = "--format=%s" ]; then echo "chore(release): v1.2.3"; else echo "abc123 последний коммит"; fi ;;
   "merge-base --is-ancestor") [ "$3" = origin/main ] && exit 0; exit 1 ;;
 esac
 exit 0`,
@@ -388,6 +457,15 @@ exit 0`,
     expect(result.output).not.toContain("Нет ключа npm");
     expect(result.calls).toContain("pnpm exec changeset publish");
   });
+
+  it("на GitHub Actions открытую выгрузку делают следующие шаги: скрипт отдаёт тег и выгрузку не зовёт", () => {
+    addToken();
+    const output = join(project, "github-output.txt");
+    const result = runRelease([], { GITHUB_ACTIONS: "true", GITHUB_OUTPUT: output });
+    expect(result.status).toBe(0);
+    expect(readFileSync(output, "utf8")).toContain("tag=v1.2.3");
+    expect(result.calls.some((call) => call.startsWith("export-public v1.2.3"))).toBe(false);
+  });
 });
 
 /**
@@ -445,14 +523,18 @@ exit 0`,
     return release(["--full"], { ...identity, FAKE_OTHER: other, FAKE_RACE_FILE: raceFile });
   };
 
-  it("коммит выпуска встаёт поверх чужого, теги — на итоговый коммит, всё на GitHub", () => {
+  it("теги — на коммит выпуска, чей код ушёл в npm; чужой коммит вливается в main слиянием, всё на GitHub", () => {
     const result = releaseWithRace("docs/note.md");
     expect(result.output).toContain("выпущен");
     expect(result.status).toBe(0);
-    const head = git(origin, "rev-parse", "main");
-    expect(git(origin, "log", "-2", "--format=%s", "main").split("\n")).toEqual(["chore(release): v1.2.4", "чужой коммит"]);
-    expect(git(origin, "rev-parse", "v1.2.4^{commit}")).toBe(head);
-    expect(git(origin, "rev-parse", "@ykurilov/agent-chat-core@1.2.4^{commit}")).toBe(head);
+    const released = git(origin, "rev-parse", "v1.2.4^{commit}");
+    expect(git(origin, "log", "-1", "--format=%s", released)).toBe("chore(release): v1.2.4");
+    expect(git(origin, "log", "-1", "--format=%s", `${released}^`)).toBe("начало");
+    expect(git(origin, "rev-parse", "@ykurilov/agent-chat-core@1.2.4^{commit}")).toBe(released);
+    const [head, ...parents] = git(origin, "rev-list", "--parents", "-1", "main").split(" ");
+    expect(head).not.toBe(released);
+    expect(parents[0]).toBe(released);
+    expect(git(origin, "log", "-1", "--format=%s", parents[1]!)).toBe("чужой коммит");
   });
 
   it("чужой коммит задел файлы выпуска: честная ошибка «пакеты уже в npm», на GitHub ни коммита, ни тегов", () => {
@@ -463,7 +545,7 @@ exit 0`,
     expect(result.output).not.toContain("ничего не опубликовано");
     expect(git(origin, "log", "-1", "--format=%s", "main")).toBe("чужой коммит");
     expect(git(origin, "tag", "--list")).toBe("");
-    expect(existsSync(join(project, ".git/rebase-merge")) || existsSync(join(project, ".git/rebase-apply"))).toBe(false);
+    expect(existsSync(join(project, ".git/MERGE_HEAD"))).toBe(false);
   });
 
   it("GitHub отверг main: теги тоже не ушли (push атомарный), ошибка честная", () => {

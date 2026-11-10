@@ -5,6 +5,7 @@ import { createButtonActions } from "./button-actions";
 import { createConversationPolicy } from "./conversation-policy";
 import { createGroupChats } from "./group-chats";
 import { createInboundMedia } from "./inbound-media";
+import { createLiveConnection } from "./live-connection";
 import { createMessengerGateway } from "./messenger-gateway";
 import type { MessengerName } from "./messenger-adapter";
 import { createTextsLookup, defaultMessengerTextsWithoutChat } from "./messenger-texts";
@@ -66,7 +67,7 @@ export function createMessengers(options: MessengersOptions) {
     bots,
     textsOf,
     resolveUser: options.resolveUser,
-    ...(options.linkConfirmation && { linkConfirmation: options.linkConfirmation }),
+    ...(options.linkConfirmation !== undefined && { linkConfirmation: options.linkConfirmation }),
     logError,
     ...(options.onLinked !== undefined && { onLinked: options.onLinked }),
     ...(options.onUnlinked !== undefined && { onUnlinked: options.onUnlinked }),
@@ -81,6 +82,7 @@ export function createMessengers(options: MessengersOptions) {
     ...(options.resolveAccount !== undefined && { resolveAccount: options.resolveAccount }),
     ...(options.chatForConversation !== undefined && { chatForConversation: options.chatForConversation }),
   });
+  const isLive = createLiveConnection({ store, ...(options.resolveAccount !== undefined && { resolveAccount: options.resolveAccount }) });
   const groups = createGroupChats({ store, textsOf, ...(options.groups !== undefined && { groups: options.groups }) });
   const media = createInboundMedia({
     textsOf,
@@ -103,6 +105,7 @@ export function createMessengers(options: MessengersOptions) {
     buttons,
     queueFor,
     textsOf,
+    isLive,
     logError,
     ...(options.webChatUrl !== undefined && { webChatUrl: options.webChatUrl }),
     ...(options.onAnswerDelivery !== undefined && { onAnswerDelivery: options.onAnswerDelivery }),
@@ -115,12 +118,13 @@ export function createMessengers(options: MessengersOptions) {
     queue: pingQueue,
     buttons,
     textsOf,
+    isLive,
     logError,
     ...(options.taskReadyPing !== undefined && { taskReadyPing: options.taskReadyPing }),
     ...(options.webChatUrl !== undefined && { webChatUrl: options.webChatUrl }),
   });
 
-  const taskCards = createTaskCards({ store, service, bots, queueFor, buttons, textsOf, logError });
+  const taskCards = createTaskCards({ store, service, bots, queueFor, buttons, textsOf, isLive, logError });
 
   /** События чатов: продолжение хода в мессенджер, карточка паузы задачи, «Задача готова». `flush` ждёт их работу. */
   const eventWork = new Set<Promise<void>>();

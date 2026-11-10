@@ -21,6 +21,13 @@ export interface VkBotOptions {
   texts?: Partial<MessengerTexts>;
 }
 
+/** Пробел или перевод строки по краям (из файла или переменной окружения) — не часть ключа, VK шлёт без них. */
+function trimmedReceive(receive: VkBotOptions["receive"]): VkBotOptions["receive"] {
+  if (!("callback" in receive)) return receive;
+  const { secret, confirmation } = receive.callback;
+  return { callback: { secret: secret.trim(), confirmation: typeof confirmation === "string" ? confirmation.trim() : confirmation } };
+}
+
 /** Бот VK: `vkBot({ token, groupId, groupScreenName, receive })`. */
 export function vkBot(options: VkBotOptions): MessengerBot {
   if (!Number.isInteger(options.groupId) || options.groupId <= 0) throw new Error("vk: groupId — номер сообщества, положительное целое число");
@@ -40,7 +47,7 @@ export function vkBot(options: VkBotOptions): MessengerBot {
       client: createVkClient({ token: options.token, api: options.api }),
       groupId: options.groupId,
       groupScreenName: options.groupScreenName,
-      receive: options.receive,
+      receive: trimmedReceive(options.receive),
     }),
   };
 }

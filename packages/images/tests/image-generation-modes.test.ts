@@ -155,6 +155,39 @@ describe("generate_images в фоне (mode: background)", () => {
     expect(usage.map((record) => record.costUsd)).toEqual([0.004]);
   });
 
+  it("чат удалён, пока картинка готовилась: файл в удалённый чат не ложится, onLateImage не зовётся", async () => {
+    fakeClock();
+    const kie = fakeKie({ states: { 1: { state: "success", credits: 0.8 } } });
+    let chatExists = true;
+    const usage: UsageRecord[] = [];
+    const spending = { storage: { insertUsageRecord: async (record: UsageRecord) => void usage.push(record), getChat: async (chatId: string) => (chatExists ? { id: chatId } : null) as never } };
+    const { images, storage, onLateImage } = setup(kie.fetch, { mode: "background", model: "z-image", pollIntervalMs: 3_000, spending });
+    await generate(images.tools(turn), { prompt: "Красное яблоко" });
+    chatExists = false;
+    await pass(3_000);
+    expect(kie.checks).toHaveLength(1);
+    expect(onLateImage).not.toHaveBeenCalled();
+    expect(await storage.removeAllOfChat("chat-1")).toBe(0);
+    expect(usage).toHaveLength(1);
+  });
+
+  it("чат удалили, пока картинка записывалась: записанный файл убирается", async () => {
+    fakeClock();
+    const kie = fakeKie({ states: { 1: { state: "success", credits: 0.8 } } });
+    let chatExists = true;
+    const spending = { storage: { insertUsageRecord: async () => {}, getChat: async (chatId: string) => (chatExists ? { id: chatId } : null) as never } };
+    const storage = createMemoryAttachmentStorage();
+    const writeFile = storage.save.bind(storage);
+    const save = vi.fn(async (...args: Parameters<typeof storage.save>) => { await writeFile(...args); chatExists = false; });
+    storage.save = save;
+    const { images, onLateImage } = setup(kie.fetch, { mode: "background", model: "z-image", pollIntervalMs: 3_000, spending, attachments: { storage } });
+    await generate(images.tools(turn), { prompt: "Красное яблоко" });
+    await pass(3_000);
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(onLateImage).not.toHaveBeenCalled();
+    expect(await storage.removeAllOfChat("chat-1")).toBe(0);
+  });
+
   it("описание постоянное и говорит, что картинка придёт сама; повтор вызова не советует", () => {
     const { images } = setup(fakeKie().fetch, { mode: "background", model: "z-image" });
     const first = images.tools(turn).generate_images!.description!;

@@ -1,6 +1,7 @@
 import { createMCPClient } from "@ai-sdk/mcp";
 import type { MCPClient } from "@ai-sdk/mcp";
 import { findMcpError, McpError } from "../mcp-error";
+import { errorText } from "./secret-scrub";
 import type { ListedTool } from "../snapshot/tool-snapshot";
 import type { McpTransportKind } from "../types";
 
@@ -13,7 +14,7 @@ export interface ServerEndpoint {
   timeoutMs: number;
   /** `fetch` с проверкой адресов, пределом ответа и, если надо, прокси. */
   fetch: typeof globalThis.fetch;
-  /** Вычистка секретов из текста ошибки. */
+  /** Вычистка секретов из текста сервера, без обрезки. */
   scrub: (text: string) => string;
 }
 
@@ -71,9 +72,9 @@ export function createServerConnection(endpoint: ServerEndpoint): ServerConnecti
       if (signal?.aborted) throw signal.reason instanceof Error ? signal.reason : new McpError("unavailable", "Вызов остановлен.");
       if (deadline.aborted) throw new McpError("timeout", `Сервер «${endpoint.name}» не ответил за ${Math.round(endpoint.timeoutMs / 1000)} с.`);
       const known = findMcpError(error);
-      if (known) throw new McpError(known.kind, endpoint.scrub(known.message));
+      if (known) throw new McpError(known.kind, errorText(endpoint.scrub(known.message)));
       const text = error instanceof Error ? error.message : String(error);
-      throw new McpError("unavailable", endpoint.scrub(`Сервер «${endpoint.name}» недоступен: ${text}`));
+      throw new McpError("unavailable", errorText(endpoint.scrub(`Сервер «${endpoint.name}» недоступен: ${text}`)));
     }
   }
 

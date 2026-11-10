@@ -8,6 +8,8 @@ import { createDialogSession } from "./dialog-session";
 import type { DialogSession, DialogSessionConfig, DialogSoundsConfig, DialogSpeechConfig } from "./dialog-session";
 import { createFillerLibrary } from "./fillers";
 import type { FillerLibrary } from "./fillers";
+import { createRecognitionUsage } from "./recognition-usage";
+import type { RecognitionMeter } from "./recognition-usage";
 import { createSoundsUsage } from "./sounds-usage";
 import type { SoundsUsage } from "./sounds-usage";
 import { createSpeechUsage } from "./speech-usage";
@@ -110,6 +112,11 @@ export interface DialogRecognitionOptions {
   baseUrl?: string | undefined;
   headers?: Record<string, string> | undefined;
   connectUpstream?: ((url: string, headers: Record<string, string>) => UpstreamSocket) | undefined;
+  /**
+   * Доллары за час распознавания (Soniox берёт за время потока). Задана — каждая сессия пишет расход `voice_input` на чат:
+   * секунды от первого куска звука до конца сессии; лимиты расходов его видят. Не задана — расход распознавания не пишется.
+   */
+  pricePerHour?: number | undefined;
 }
 
 export interface DialogRelayOptions {
@@ -215,6 +222,11 @@ export function createDialogRelay(options: DialogRelayOptions): DialogRelay {
     ? createSoundsUsage({ storage, model: soundsOptions.model ?? DEFAULT_SOUNDS_MODEL, pricePerHour: soundsOptions.pricePerHour, spendingLimits: options.spendingLimits, now, logError })
     : undefined;
   let soundsKeyMissingLogged = false;
+  // Цена распознавания тоже проверяется при настройке.
+  const recognitionUsage =
+    options.recognition?.pricePerHour !== undefined
+      ? createRecognitionUsage({ storage, model: options.recognition.model ?? DEFAULT_RECOGNITION_MODEL, pricePerHour: options.recognition.pricePerHour, now, logError })
+      : undefined;
   const limiter = options.rateLimit === false ? null : createRateLimiter(options.rateLimit ?? DEFAULT_RATE_LIMIT, now);
   const maxConnections = options.maxConnectionsPerUser === false ? Infinity : (options.maxConnectionsPerUser ?? DEFAULT_MAX_CONNECTIONS);
   const connections = new Map<string, number>();
@@ -289,6 +301,8 @@ export function createDialogRelay(options: DialogRelayOptions): DialogRelay {
       let over = false;
       let started = false;
       let admittedChatId = "";
+      let recognitionMeter: RecognitionMeter | undefined;
+      const finishRecognition = () => void recognitionMeter?.finish();
 
       const sendMessage = (message: ServerMessage) => client.send(JSON.stringify(message));
 
@@ -306,6 +320,7 @@ export function createDialogRelay(options: DialogRelayOptions): DialogRelay {
         over = true;
         release();
         session?.close();
+        finishRecognition();
         if (error) sendMessage(error);
         client.close(code);
       }
@@ -385,6 +400,7 @@ export function createDialogRelay(options: DialogRelayOptions): DialogRelay {
           close: (code) => {
             over = true;
             release();
+            finishRecognition();
             client.close(code);
           },
           voiceAllowed: (id) => Boolean(catalog?.voices.some((voice) => voice.id === id)),
@@ -394,6 +410,7 @@ export function createDialogRelay(options: DialogRelayOptions): DialogRelay {
           now,
           logError,
         });
+        recognitionMeter = recognitionUsage?.({ ownerId: owner, chatId: admittedChatId });
         session.start(start.message);
       }
 
@@ -405,6 +422,7 @@ export function createDialogRelay(options: DialogRelayOptions): DialogRelay {
           return startSession(data);
         }
         if (typeof data !== "string") {
+          if (session) recognitionMeter?.heard();
           session?.receiveAudio(data instanceof ArrayBuffer ? new Uint8Array(data) : data);
           return;
         }
@@ -432,6 +450,7 @@ export function createDialogRelay(options: DialogRelayOptions): DialogRelay {
           over = true;
           release();
           session?.close();
+          finishRecognition();
         },
       };
     },

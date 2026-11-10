@@ -221,6 +221,43 @@ describe("сжатие после ответа", () => {
   });
 });
 
+describe("две копии сервера", () => {
+  it("одну историю сжимает одна копия: вторая ждёт аренду и решает заново по записанной сводке", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "setInterval", "clearTimeout", "clearInterval", "Date"] });
+    try {
+      const storage: ChatStorage = createInMemoryChatStorage();
+      await storage.createChat({ id: "chat-1", ownerId: "anna", ...choice });
+      for (const message of conversation([100, 300, 600])) await storage.insertMessage(message);
+      const held = heldSummarizer();
+      const other = summarizer();
+      const copy = (model: MockLanguageModelV4) =>
+        createCompactionService({
+          storage,
+          catalog: mockCatalog({ mock: model }),
+          env: mockEnv,
+          agent: { instructions: "Ты помощник." },
+          settings: resolveCompactionSettings(settingsInput),
+          logError: vi.fn(),
+        });
+      const first = copy(held.model);
+      const second = copy(other);
+      await first.afterAnswer({ chatId: "chat-1", answerId: "a3" });
+      await vi.waitFor(() => expect(held.model.doGenerateCalls).toHaveLength(1));
+      await second.afterAnswer({ chatId: "chat-1", answerId: "a3" });
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(other.doGenerateCalls).toHaveLength(0);
+      held.release();
+      await settled(first);
+      await vi.advanceTimersByTimeAsync(5_000);
+      await settled(second);
+      expect(other.doGenerateCalls).toHaveLength(0);
+      expect(await storage.listCompactions("chat-1")).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("команда «сжать сейчас»", () => {
   it("сжимает, не глядя на порог и на паузу после сбоя", async () => {
     let clock = 0;

@@ -2,17 +2,22 @@
 // Один выпуск SDK: `pnpm release`.
 // С Мака команда сама не выпускает, а запускает этот же скрипт на GitHub Actions (release-in-actions.mjs) и ждёт итога.
 // Сам выпуск по шагам ниже идёт на машине GitHub Actions (GITHUB_ACTIONS=true) или на Маке с флагом `--local` — запасной путь.
-//   проверка открытой выгрузки → проверки (юнит-тесты, типы, сборка) → changeset version → коммит → публикация →\n//   коммит выпуска поверх свежего origin/main → теги → атомарный push main и тегов → открытая выгрузка.
+//   проверка открытой выгрузки → проверки (юнит-тесты, типы, сборка) → changeset version → коммит → проверка архивов npm →
+//   публикация → теги на коммит выпуска → слияние со свежим origin/main → атомарный push main и тегов → открытая выгрузка.
+// Теги и открытая выгрузка — ровно тот код, что ушёл в npm: чужие коммиты, пришедшие в main за время выпуска, в них не
+// попадают, а вливаются в main отдельным слиянием.
 // Проверки пропускаются, если `pnpm verify` уже прогнал их на этом же коде (отметка в node_modules/.cache);
 // `--full` проверяет заново принудительно.
 // `--dry-run` показывает, что выпуск сделал бы, и останавливается до changeset version: ничего не меняет и не запускает.
 // Нет записей в .changeset — выпускать нечего, скрипт объясняет и останавливается.
-// Если прошлый выпуск подготовлен, но не опубликован (сбой сети, нет токена), повторный запуск
-// доводит его до конца, не создавая новую версию.
+// Если прошлый выпуск подготовлен, но не опубликован или не отправлен на GitHub (сбой сети, нет токена), повторный
+// запуск доводит его до конца, не создавая новую версию, — и только с самого коммита выпуска: иначе недостающие пакеты
+// той же версии ушли бы в npm с другим кодом.
 // Ключ npm: переменная NPM_TOKEN или файл ~/.config/agent-chat-sdk/npm-token. Другой путь — NPM_TOKEN_FILE в окружении
 // или в ~/.config/agent-chat-sdk/release.env (строка NPM_TOKEN_FILE=…; файл вне репозитория, настройка своей машины).
 // На GitHub Actions — секрет репозитория NPM_TOKEN, а без него доверенная публикация npm (OIDC, RELEASING.md).
-// Ключ попадает в публикацию только через временный .npmrc со ссылкой ${NPM_TOKEN} и нигде не печатается.
+// Ключ попадает в публикацию только через временный .npmrc со ссылкой ${NPM_TOKEN} и нигде не печатается. Ключ npm,
+// право доверенной публикации (OIDC) и ключ git для push проверки, сборка и тесты не видят: им окружение без них.
 // npm показывает новую версию не сразу (бывает, через 10+ минут), поэтому тег и push — только когда
 // у каждого публичного пакета latest стал новой версией.
 import { spawnSync } from "node:child_process";
@@ -27,6 +32,13 @@ if (!process.argv.includes("--local") && process.env.GITHUB_ACTIONS !== "true") 
   const { releaseInActions } = await import("./release-in-actions.mjs");
   process.exit(releaseInActions(process.argv.slice(2)));
 }
+
+/** Доступы, которые нужны только публикации и push: остальным командам выпуска окружение без них. */
+const PUBLISH_ENV_NAMES = ["NPM_TOKEN", "NODE_AUTH_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_URL", "ACTIONS_ID_TOKEN_REQUEST_TOKEN"];
+const publishEnv = Object.fromEntries(PUBLISH_ENV_NAMES.filter((name) => process.env[name]).map((name) => [name, process.env[name]]));
+/** Ключ для push в закрытое хранилище на GitHub Actions: только командам git, которые ходят на GitHub. */
+const gitPushToken = process.env.RELEASE_GITHUB_TOKEN ?? "";
+for (const name of [...PUBLISH_ENV_NAMES, "RELEASE_GITHUB_TOKEN"]) delete process.env[name];
 
 const full = process.argv.includes("--full");
 const dryRun = process.argv.includes("--dry-run");
@@ -127,7 +139,7 @@ const expandHome = (path) => path.replace(/^~(?=\/)/, process.env.HOME ?? "");
 const tokenFile = expandHome(process.env.NPM_TOKEN_FILE ?? machineReleaseEnv().NPM_TOKEN_FILE ?? join(sdkConfigDir, "npm-token"));
 /** Ключ npm из NPM_TOKEN или из файла секретов; null — нет ни того ни другого. */
 function readNpmToken() {
-  if (process.env.NPM_TOKEN) return process.env.NPM_TOKEN;
+  if (publishEnv.NPM_TOKEN) return publishEnv.NPM_TOKEN;
   if (existsSync(tokenFile)) return readFileSync(tokenFile, "utf8").trim() || null;
   return null;
 }
@@ -135,11 +147,11 @@ const npmToken = readNpmToken();
 // npm не выдаёт токен через `npm config get` (он защищён), поэтому ищем строку в пользовательском .npmrc.
 const userNpmrc = join(process.env.HOME ?? "", ".npmrc");
 // На GitHub Actions с id-token: write npm публикует и без ключа — доверенной публикацией (OIDC).
-const hasTrustedPublishing = Boolean(process.env.ACTIONS_ID_TOKEN_REQUEST_URL);
+const hasTrustedPublishing = Boolean(publishEnv.ACTIONS_ID_TOKEN_REQUEST_URL);
 const hasToken =
   Boolean(npmToken) ||
   hasTrustedPublishing ||
-  Boolean(process.env.NODE_AUTH_TOKEN) ||
+  Boolean(publishEnv.NODE_AUTH_TOKEN) ||
   (existsSync(userNpmrc) && /^\/\/registry\.npmjs\.org\/:_authToken=\S+/m.test(readFileSync(userNpmrc, "utf8")));
 if (!hasToken) {
   stopUnlessDryRun(`Нет ключа npm: ни NPM_TOKEN, ни ${tokenFile}, ни строки //registry.npmjs.org/:_authToken в ~/.npmrc (нужен Granular Access Token с правом записи в пакеты @ykurilov). Без него публикация не пройдёт.`);
@@ -166,10 +178,17 @@ function runChecks() {
 }
 
 // Открытая выгрузка (scripts/export-public.mjs) после выпуска падает на запретном и ключах — ловим это до него.
+// Без gitleaks настоящий выпуск не идёт: ключи в выгрузке и в архивах npm иначе не проверить.
 step("Проверка открытой выгрузки: запретный список и ключи на HEAD");
-run("node", ["scripts/export-public.mjs", "HEAD", "--check-only"]);
+run("node", ["scripts/export-public.mjs", "HEAD", "--check-only", ...(dryRun ? ["--allow-missing-gitleaks"] : [])]);
+
+const releaseSubject = (number) => `chore(release): v${number}`;
+const headSubject = () => run("git", ["log", "-1", "--format=%s", "HEAD"], { quiet: true });
+/** Тег выпуска уже на GitHub: выпуск прошлой попытки дошёл до конца. */
+const tagOnGitHub = (name) => tryGit(["ls-remote", "--tags", "origin", `refs/tags/${name}`]).output.includes(`refs/tags/${name}`);
 
 let version;
+let published = false;
 if (pendingChangesets().length > 0) {
   step("Проверки перед выпуском");
   runChecks();
@@ -182,30 +201,54 @@ if (pendingChangesets().length > 0) {
   run("pnpm", ["exec", "changeset", "version"]);
   run("pnpm", ["install", "--lockfile-only"], { quiet: true });
   version = readVersion();
+  // Версия уже в npm у части пакетов, а коммита выпуска здесь нет (прошлая попытка упала до push): новая сборка ушла бы
+  // в npm под той же версией с другим кодом.
+  const already = publicPackages().filter((name) => npmView(`${name}@${version}`, "version") === version);
+  if (already.length > 0) {
+    tryGit(["reset", "--hard", "--quiet", "HEAD"]);
+    tryGit(["clean", "-fdq"]);
+    stop(
+      `Версия ${version} уже в npm у ${already.join(", ")}, а коммита выпуска ${releaseSubject(version)} в этой ветке нет — он остался там, где шла прошлая попытка.\n` +
+        `   Доведите выпуск с того коммита (pnpm release --local на нём) или выпустите следующую версию. Правки changeset version отменены.`,
+    );
+  }
   run("git", ["add", "-A"]);
-  run("git", ["commit", "-m", `chore(release): v${version}`, "-m", coAuthor]);
+  run("git", ["commit", "-m", releaseSubject(version), "-m", coAuthor]);
 } else {
   version = readVersion();
-  if (isPublished(version)) {
+  published = isPublished(version);
+  if (published && tagOnGitHub(`v${version}`)) {
     stop(
       `Нет записей об изменениях в .changeset, выпускать нечего (версия ${version} уже в npm у всех пакетов).\n` +
         "   Создайте запись: pnpm changeset (шаблоны и правила — RELEASING.md), закоммитьте её и запустите pnpm release снова.",
     );
   }
-  console.log(`Версия ${version} подготовлена раньше, но опубликована не у всех пакетов. Довожу выпуск до конца.`);
+  if (headSubject() !== releaseSubject(version)) {
+    stopUnlessDryRun(
+      `Версия ${version} ${published ? "в npm, но не отправлена на GitHub" : "опубликована не у всех пакетов"}, а HEAD — не коммит выпуска ${releaseSubject(version)}.\n` +
+        "   Доводить выпуск можно только с него: иначе пакеты и тег этой версии разойдутся с кодом. Перейдите на этот коммит и запустите снова.",
+    );
+  }
+  console.log(published ? `Версия ${version} уже в npm, но не отправлена на GitHub. Довожу выпуск до конца.` : `Версия ${version} подготовлена раньше, но опубликована не у всех пакетов. Довожу выпуск до конца.`);
   if (dryRun) {
     console.log("\nСухой прогон закончен: сборка, публикация, тег и push — не выполнялись.");
     process.exit(0);
   }
 }
+/** Коммит, чей код уходит в npm: на него встают теги, его же берёт открытая выгрузка. */
+const releaseCommit = run("git", ["rev-parse", "HEAD"], { quiet: true });
 
-// Отметка verify подтверждает исходники, а не наличие/свежесть dist на этой машине.
-// После изменения версии и при повторе выпуска архивы всегда собираются заново.
-step("Сборка актуальных пакетов перед публикацией");
-run("pnpm", ["build"]);
+if (!published) {
+  // Отметка verify подтверждает исходники, а не наличие/свежесть dist на этой машине.
+  // После изменения версии и при повторе выпуска архивы всегда собираются заново.
+  step("Сборка актуальных пакетов перед публикацией");
+  run("pnpm", ["build"]);
+  step("Проверка архивов npm: запретный список и ключи в том, что уйдёт в npm");
+  run("node", ["scripts/check-npm-packages.mjs"]);
 
-step(`Публикация версии ${version} в npm`);
-publishWithToken();
+  step(`Публикация версии ${version} в npm`);
+  publishWithToken();
+}
 step(`Проверяю, что npm показывает ${version} у всех пакетов`);
 waitUntilVisible(version);
 
@@ -213,7 +256,7 @@ waitUntilVisible(version);
 function publishWithToken() {
   const failure = "часть пакетов могла уже уйти в npm. Исправьте причину и запустите pnpm release снова: он опубликует недостающие";
   if (!npmToken) {
-    run("pnpm", ["exec", "changeset", "publish"], { failure });
+    run("pnpm", ["exec", "changeset", "publish"], { env: publishEnv, failure });
     return;
   }
   const dir = mkdtempSync(join(tmpdir(), "release-npmrc-"));
@@ -223,7 +266,7 @@ function publishWithToken() {
   process.on("exit", cleanup);
   try {
     writeFileSync(userconfig, "//registry.npmjs.org/:_authToken=${NPM_TOKEN}\n", { mode: 0o600 });
-    run("pnpm", ["exec", "changeset", "publish"], { env: { NPM_TOKEN: npmToken, NPM_CONFIG_USERCONFIG: userconfig }, failure });
+    run("pnpm", ["exec", "changeset", "publish"], { env: { ...publishEnv, NPM_TOKEN: npmToken, NPM_CONFIG_USERCONFIG: userconfig }, failure });
   } finally {
     cleanup();
   }
@@ -231,43 +274,57 @@ function publishWithToken() {
 
 /** Git без остановки: код выхода и вывод, решение — за вызывающим. */
 function tryGit(args) {
-  const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
+  const result = spawnSync("git", [...githubAuth(args), ...args], { cwd: root, encoding: "utf8" });
   return { ok: result.status === 0, output: `${result.stdout ?? ""}${result.stderr ?? ""}`.trim() };
 }
 const isAncestor = (older, newer) => tryGit(["merge-base", "--is-ancestor", older, newer]).ok;
 
-// Пока шёл выпуск, в main могли запушить: коммит выпуска встаёт поверх свежего origin/main, теги — на итоговый
-// коммит, main и теги уходят одним атомарным push (или всё, или ничего). Пакеты к этому шагу уже в npm.
-step("Коммит выпуска поверх свежего main, теги и push");
+/** Ключ GitHub Actions — только командам, которые ходят на GitHub, и только через настройку на одну команду. */
+function githubAuth(args) {
+  if (!gitPushToken || !["fetch", "push", "ls-remote"].includes(args[0])) return [];
+  const basic = Buffer.from(`x-access-token:${gitPushToken}`).toString("base64");
+  return ["-c", `http.https://github.com/.extraheader=AUTHORIZATION: basic ${basic}`];
+}
+
+// Пока шёл выпуск, в main могли запушить. Теги встают на коммит выпуска — ровно тот код, что ушёл в npm; свежий
+// origin/main вливается в main слиянием поверх него. main и теги уходят одним атомарным push (или всё, или ничего).
+// Пакеты к этому шагу уже в npm.
+step("Теги на коммит выпуска, слияние со свежим main и push");
 const tag = `v${version}`;
 const tagMessage = (name) => (name === tag ? `Agent Chat SDK ${version}` : name);
-// Теги пакетов ставит changeset publish на HEAD; тег SDK — свой.
-const releaseTags = [...new Set([...run("git", ["tag", "--points-at", "HEAD"], { quiet: true }).split("\n").filter(Boolean), tag])];
+// Теги пакетов ставит changeset publish на коммит выпуска; тег SDK — свой.
+const releaseTags = [...new Set([...run("git", ["tag", "--points-at", releaseCommit], { quiet: true }).split("\n").filter(Boolean), tag])];
 const notPushed = (reason, todo) =>
   stop(
     `${reason}\n   Пакеты ${version} уже в npm, а на GitHub не хватает коммита выпуска chore(release): v${version} и тегов: ${releaseTags.join(", ")}.\n` +
       `   Сделайте: ${todo}`,
   );
 const manualFix =
-  "на свежем main повторите правки выпуска (pnpm exec changeset version даст ту же версию), закоммитьте chore(release): v" +
-  `${version}, поставьте на этот коммит теги и отправьте: git push --atomic origin main ${releaseTags.map((name) => `refs/tags/${name}`).join(" ")}`;
+  `поставьте теги на коммит выпуска ${releaseCommit.slice(0, 12)} (именно его код в npm), влейте свежий origin/main в main поверх него, ` +
+  `решив конфликт, и отправьте: git push --atomic origin main ${releaseTags.map((name) => `refs/tags/${name}`).join(" ")}`;
 
 const fetched = tryGit(["fetch", "origin", "main"]);
 if (!fetched.ok) notPushed(`Не получил свежий main с GitHub:\n${fetched.output}`, `проверьте доступ к GitHub; затем ${manualFix}`);
 // Есть ли свой коммит, которого нет на GitHub (при доводке прошлого выпуска его может не быть).
 const hasOwnCommit = !isAncestor("HEAD", "origin/main");
 if (hasOwnCommit && !isAncestor("origin/main", "HEAD")) {
-  console.log("main на GitHub ушёл вперёд — ставлю коммит выпуска поверх него.");
-  const rebased = tryGit(["rebase", "origin/main"]);
-  if (!rebased.ok) {
-    tryGit(["rebase", "--abort"]);
-    notPushed(`Свежие правки в main задели файлы выпуска (package.json, CHANGELOG.md, файл-замок) — коммит выпуска не встал поверх:\n${rebased.output}`, manualFix);
+  console.log("main на GitHub ушёл вперёд — вливаю его слиянием; теги остаются на коммите выпуска.");
+  const merged = tryGit(["merge", "--no-edit", "-m", `Merge origin/main into ${releaseSubject(version)}`, "origin/main"]);
+  if (!merged.ok) {
+    tryGit(["merge", "--abort"]);
+    notPushed(`Свежие правки в main задели файлы выпуска (package.json, CHANGELOG.md, файл-замок) — слияние не прошло:\n${merged.output}`, manualFix);
   }
 }
-for (const name of releaseTags) run("git", ["tag", "-f", "-a", name, "-m", tagMessage(name)], { quiet: true, failure: `пакеты ${version} уже в npm, теги не поставлены` });
+for (const name of releaseTags) run("git", ["tag", "-f", "-a", name, "-m", tagMessage(name), releaseCommit], { quiet: true, failure: `пакеты ${version} уже в npm, теги не поставлены` });
 const pushed = tryGit(["push", "--atomic", "origin", ...(hasOwnCommit ? ["HEAD:refs/heads/main"] : []), ...releaseTags.map((name) => `refs/tags/${name}`)]);
 if (!pushed.ok) notPushed(`GitHub не принял push (атомарный: не ушло ничего):\n${pushed.output}`, `запустите pnpm release снова — опубликованное в npm он пропустит; или вручную: ${manualFix}`);
 
+// На GitHub Actions выгрузку делают следующие шаги прогона: ключ открытого хранилища появляется только для push.
+if (process.env.GITHUB_ACTIONS === "true" && process.env.GITHUB_OUTPUT) {
+  appendFileSync(process.env.GITHUB_OUTPUT, `tag=${tag}\n`);
+  console.log(`\n✅ Agent Chat SDK ${version}: npm, main и теги готовы. Открытую выгрузку ${tag} делают следующие шаги прогона.`);
+  process.exit(0);
+}
 step(`Выгрузка ${tag} в открытое хранилище (проверки очищенного дерева и push)`);
 const exported = spawnSync("node", ["scripts/export-public.mjs", tag, "--push"], { cwd: root, stdio: "inherit" });
 if (exported.status !== 0) {

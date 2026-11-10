@@ -79,6 +79,9 @@ export interface TurnSpendingRules {
   maxToolCalls?: number;
 }
 
+/** Место под сообщение в окнах сообщений: вызов отдаёт его назад, `confirm` — сообщение записано, место за ним. */
+export type CountedMessageSlot = (() => Promise<void>) & { confirm?: () => Promise<void> };
+
 /**
  * Лимиты расходов (расширение `@ykurilov/agent-chat-limits`). Ядро зовёт проверку до начала хода и ничего не знает
  * о деньгах: токены оно только записывает в журнал расхода.
@@ -106,8 +109,10 @@ export interface SpendingLimits {
    * Счёт сообщений: служба чата зовёт его при отправке и правке сообщения человека, после проверки хода и до записи.
    * Окно сообщений исчерпано — `SpendingLimitReachedError` с `unit: "messages"`. Нет метода — сообщения не считаются.
    * Возвращает, как отдать место назад: служба зовёт это, если сообщение так и не записалось. Нечего отдавать — `undefined`.
+   * У возврата может быть `confirm`: служба зовёт его, когда сообщение `messageId` записано. Неподтверждённое место
+   * лимиты вправе вернуть сами, если сообщения так и нет (процесс упал между местом и записью).
    */
-  takeMessage?(input: { userId: string; chatId: string }): Promise<(() => Promise<void>) | undefined>;
+  takeMessage?(input: { userId: string; chatId: string; messageId?: string }): Promise<CountedMessageSlot | undefined>;
   /**
    * Чат удалён: лимиты стирают то, что хранили про этот чат (окна области `chat`). Расход в журнале остаётся.
    * Ошибка удаление не отменяет — чата уже нет — и уходит в журнал сервера.

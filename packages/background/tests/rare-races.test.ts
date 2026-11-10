@@ -332,6 +332,29 @@ describe("ответ человека против долгой доставки
     await Promise.all([a.background.flush(), b.background.flush()]);
   });
 
+  it("«Разрешить» между чтением и записью ключа доставки — ключ вопроса не ложится на продолжение, итог доходит до чата", async () => {
+    const shared = memoryTaskStore();
+    const helper = pausingHelper();
+    const a = helperCopy(shared, helper);
+    let taskId = "";
+    a.beforeUpdate(
+      (patch) => patch.deliveryKey !== undefined,
+      async () => {
+        helper.next("finish");
+        expect(await a.background.answerApproval("anna", "chat-1", taskId, "approval-1", "allow")).toBe("resumed");
+      },
+    );
+    ({ taskId } = await callTool(a.background.tools(toolsModel()), "helper_researcher", { task: "Найди цены" }));
+    await settle();
+    await a.hooksDone();
+    await vi.advanceTimersByTimeAsync(10_000);
+    await settle();
+    expect(await shared.get("anna", taskId)).toMatchObject({ status: "done", deliveredAt: expect.any(String) });
+    const notices = a.port.delivered.flatMap((item) => item.notices);
+    expect(notices).toEqual([expect.objectContaining({ kind: "task_done", result: "готово" })]);
+    await a.background.flush();
+  });
+
   it("«Отменить» во время доставки — пометка «отменена» доходит до чата", async () => {
     const shared = memoryTaskStore();
     const helper = pausingHelper();

@@ -120,9 +120,9 @@ import {
 } from "./models/model-choice";
 import type { ModelChoice, ModelMenu } from "./models/model-choice";
 import { createCacheMissWatch } from "./usage/cache-miss-watch";
-import { recordSpentTokens, usageMinusJournaled } from "./usage/record-usage";
+import { usageMinusJournaled, usageRecordOf } from "./usage/record-usage";
 import { ChatBusyError, createRunningAnswerRegistry } from "./running-answers/running-answer-registry";
-import { BURST_BUSY_RETRY_MS, BURST_HOLD_MS, BURST_HOLD_RENEW_MS, BURST_PART_TYPE, BURST_PENDING_GRACE_MS, BURST_SWEEP_LIMIT, burstPart, burstText, burstToAnswer, burstVerdict, createBurstWaits, isBurstPending, resolveQuietMs } from "./bursts/message-bursts";
+import { BURST_BUSY_RETRY_MS, BURST_HOLD_MS, BURST_HOLD_RENEW_MS, BURST_PART_TYPE, BURST_PENDING_GRACE_MS, BURST_SWEEP_LIMIT, burstPart, burstText, burstToAnswer, burstVerdict, createBurstWaits, isBurstMessage, isBurstPending, resolveQuietMs } from "./bursts/message-bursts";
 import { createChatTurnLeases } from "./chat-turn-lease";
 import { guardedTurnStorage } from "./chat-turn-storage";
 import { createTurnSteering, isCorrection, steerPart } from "./steering/turn-steering";
@@ -1423,6 +1423,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     ...(options.onStateChangedAttempts !== undefined && { attempts: options.onStateChangedAttempts }),
     chatEvents,
     logError,
+    currentState: async (chatId) => (await readBranchState(storage, chatId)).values,
   });
   const {
     voiceModeHint,
@@ -1775,15 +1776,19 @@ export function createChatService(input: ChatServiceOptions): ChatService {
   /**
    * Сообщение человека (отправка, правка) берёт место в окнах сообщений до записи — после проверки хода, денег и занятости
    * чата. `write` не дошла до записи (файлы, повтор id, сбой базы) — место отдаётся назад: сообщения нет, счёт прежний.
+   * Записала — место подтверждается за сообщением `messageId`; упал процесс посередине — лимиты вернут место сами.
    */
-  async function writingCountedMessage<T>(userId: string, chatId: string, write: () => Promise<T>): Promise<T> {
-    const giveBack = await options.limits?.takeMessage?.({ userId, chatId });
+  async function writingCountedMessage<T>(userId: string, chatId: string, messageId: string, write: () => Promise<T>): Promise<T> {
+    const slot = await options.limits?.takeMessage?.({ userId, chatId, messageId });
+    let written: T;
     try {
-      return await write();
+      written = await write();
     } catch (error) {
-      await giveBack?.().catch((failure: unknown) => logError(`Место в лимите сообщений не вернулось (чат ${chatId}): ${failure instanceof Error ? failure.message : String(failure)}`, failure));
+      await slot?.().catch((failure: unknown) => logError(`Место в лимите сообщений не вернулось (чат ${chatId}): ${failure instanceof Error ? failure.message : String(failure)}`, failure));
       throw error;
     }
+    await slot?.confirm?.().catch((failure: unknown) => logError(`Место в лимите сообщений не подтвердилось (чат ${chatId}): ${failure instanceof Error ? failure.message : String(failure)}`, failure));
+    return written;
   }
 
   /** Ход по служебному сообщению: лимит исчерпан — сообщение пишется без хода, ошибки человеку не показать. */
@@ -2832,7 +2837,9 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     sendOptions: SendMessageOptions | undefined,
     burst?: { quietMs: number },
   ): Promise<StoredMessage> {
-    const question = await writingCountedMessage(userId, chatId, async () => {
+    // Поколение аренды — то, под которым принят вопрос: потерянная за ожиданием лимита и файлов аренда его не запишет.
+    const writes = turnStorage(chatId);
+    const question = await writingCountedMessage(userId, chatId, message.id, async () => {
       // Файлы принимаются, когда чат и место уже за ходом: при отказе по месту или занятости они не остаются ничьими.
       const fileParts = await acceptFiles(userId, chatId, files);
       const writtenAt = now();
@@ -2852,7 +2859,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
         ...(burst && { createdAt: writtenAt.toISOString() }),
       });
       await confirmFiles(fileParts);
-      await storage.insertMessage(question);
+      await writes.insertMessage(question);
       filesStored(userId, chatId, question.id, fileParts);
       return question;
     });
@@ -3027,11 +3034,13 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     chatId: string,
     questionId: string,
     page: TurnRequestContext | undefined,
-    burst: { kept: false } | { kept: true; dueAt: number; unattended?: boolean; holder?: string },
+    burst: { kept: false } | { kept: true; dueAt: number; unattended?: boolean; holder?: string; recordedId?: string },
   ): Promise<ReadableStream<UIMessageChunk> | null> {
     const unattended = burst.kept && burst.unattended === true;
     if (!burst.kept || !keepsPendingBursts) return burstWaits.holding(chatId, () => answeringBurst(ownerId, chatId, questionId, page, unattended));
-    const stopRenewing = renewingBurstHold(chatId, questionId, burst.dueAt, burst.holder ?? copyId);
+    // Запись пачки может называть другое сообщение (`recordedId`): продлевается и снимается именно она.
+    const recordedId = burst.recordedId ?? questionId;
+    const stopRenewing = renewingBurstHold(chatId, recordedId, burst.dueAt, burst.holder ?? copyId);
     const answering = burstWaits.holding(chatId, () => answeringBurst(ownerId, chatId, questionId, page, unattended)).finally(stopRenewing);
     void answering
       .then(
@@ -3041,7 +3050,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
       .then((decided) => {
         if (decided)
           return storage
-            .removePendingBurst!(chatId, questionId)
+            .removePendingBurst!(chatId, recordedId)
             .catch((error: unknown) => logError(`Запись пачки чата ${chatId} не снялась: ${error instanceof Error ? error.message : String(error)}`, error));
       });
     return answering;
@@ -3075,10 +3084,22 @@ export function createChatService(input: ChatServiceOptions): ChatService {
    */
   async function receivingAbandonedBurst(burst: StoredPendingBurst): Promise<void> {
     if (burstWaits.has(burst.chatId)) return;
-    await answeringRecordedBurst(burst.ownerId, burst.chatId, burst.messageId, burst.page, { kept: true, dueAt: Date.parse(burst.dueAt), unattended: true, holder: burst.holder }).then(
+    const questionId = await abandonedBurstQuestion(burst).catch(() => burst.messageId);
+    const kept = { kept: true as const, dueAt: Date.parse(burst.dueAt), unattended: true, holder: burst.holder, recordedId: burst.messageId };
+    await answeringRecordedBurst(burst.ownerId, burst.chatId, questionId, burst.page, kept).then(
       () => {},
       (error: unknown) => reportingAbandonedBurst(burst.chatId, error),
     );
+  }
+
+  /**
+   * На какое сообщение отвечать по брошенной записи пачки. Запись пишется до сообщения: сбой между ними оставляет запись
+   * сообщения, которого нет, — тогда ответ ждёт последнее сообщение пачки на ветке (более раннее сообщение пачки).
+   */
+  async function abandonedBurstQuestion(burst: StoredPendingBurst): Promise<string> {
+    if (await storage.getMessage(burst.messageId)) return burst.messageId;
+    const last = (await currentBranch(burst.chatId)).findLast(isHumanMessage);
+    return last && isBurstMessage(last) ? last.id : burst.messageId;
   }
 
   /**
@@ -3163,7 +3184,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
           modelId: choice.modelId,
           providerId: choice.providerId,
         });
-        await storage.insertMessage(stoppedAnswer);
+        await turnStorage(chatId).insertMessage(stoppedAnswer);
         chatEvents.emit({ type: "message-added", ownerId: userId, chatId, messageId: stoppedAnswer.id });
         return true;
       });
@@ -3189,8 +3210,9 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     page: TurnRequestContext | undefined,
   ): Promise<StoredMessage | null> {
     try {
-      return await writingCountedMessage(userId, chatId, async () => {
+      return await writingCountedMessage(userId, chatId, message.id, async () => {
         const queued = await steering.accept(chatId, async (parentId) => {
+          const writes = turnStorage(chatId);
           const fileParts = await acceptFiles(userId, chatId, files);
           // Поправка — часть идущего хода: группа хода остаётся и у неё, и у продолжения после неё.
           const groupPart = inheritedGroupPart(turnChannelOf(await currentBranch(chatId)));
@@ -3207,7 +3229,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
             ],
           });
           await confirmFiles(fileParts);
-          await storage.insertMessage(correction);
+          await writes.insertMessage(correction);
           filesStored(userId, chatId, correction.id, fileParts);
           return correction;
         }, page);
@@ -3432,7 +3454,8 @@ export function createChatService(input: ChatServiceOptions): ChatService {
                 parts: noticeMessageParts(request),
               });
             if (!unanswered) {
-              await storage.insertMessage(notice);
+              // После проверок приложения (`beforeTurn`) — под тем поколением аренды, что взято на доставку.
+              await turnStorage(chatId).insertMessage(notice);
               await closeUnansweredHumanInput(branch);
             }
             if (!wake) {
@@ -3583,6 +3606,8 @@ export function createChatService(input: ChatServiceOptions): ChatService {
         // Файлы — первыми: не удалились — чат цел, и удаление можно повторить; остаться файлам без чата нельзя.
         await options.attachments?.removeChatFiles?.(chatId);
         await storage.deleteChat(chatId);
+        // Ещё раз после: поздний файл (готовая картинка из фона) мог лечь между уборкой и удалением чата.
+        await options.attachments?.removeChatFiles?.(chatId).catch((error: unknown) => logError(`Вложения: не удалось убрать поздние файлы удалённого чата ${chatId}: ${String(error)}`, error));
       }, { lease: "required" }).finally(() => deleting.delete(chatId));
       // Задачи фона удалённого чата отменяются; сбой фона удаление не отменяет — чата уже нет.
       await options.background?.chatDeleted(userId, chatId).catch((error: unknown) => logError(`Фон: не удалось убрать задачи удалённого чата ${chatId}: ${String(error)}`, error));
@@ -3658,7 +3683,10 @@ export function createChatService(input: ChatServiceOptions): ChatService {
         });
         return foldAppState(branch);
       });
-      if (before) await branchChanged(chat.ownerId, chatId, "selectBranch", before);
+      if (before) {
+        await branchChanged(chat.ownerId, chatId, "selectBranch", before);
+        chatEvents.emit({ type: "branch-selected", ownerId: chat.ownerId, chatId, messageId });
+      }
       return historyOf(userId, chatId, { write: true, scope });
     },
 
@@ -3764,13 +3792,14 @@ export function createChatService(input: ChatServiceOptions): ChatService {
       const abandoned = await abandonedForHooks(chatId, (branch) => abandonedAnswersOf(branch, "edit", editedMessageId));
       return viewerStream(userId, chat, scope, () => startingTurn({ userId, chat, action: "edit", text, messageId: message.id, ...abandoned }, async (pass) => {
         if (pass.kind !== "hold") takeTurnSlot(userId, chatId);
-        const { branch, index, edited, question } = await writingCountedMessage(userId, chatId, async () => {
+        const writes = turnStorage(chatId);
+        const { branch, index, edited, question } = await writingCountedMessage(userId, chatId, message.id, async () => {
           // Файлы правленого сообщения приходят вместе с текстом и проходят ту же проверку, что и при отправке.
           const fileParts = await acceptFiles(userId, chatId, files);
           const { messages, selections, branch } = await loadTree(chatId);
           const index = branch.findIndex((candidate) => candidate.id === editedMessageId);
           const edited = branch[index];
-          if (!edited || edited.role !== "user" || isStateMessage(edited)) throw new InvalidMessageError("Править можно вопрос собеседника на текущей ветке");
+          if (!edited || !isHumanMessage(edited)) throw new InvalidMessageError("Править можно вопрос собеседника на текущей ветке");
           const question = newStoredMessage({
             id: message.id,
             chatId,
@@ -3797,7 +3826,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
             createdAt: nextSiblingTime(messages, selections, edited.parentId),
           });
           await confirmFiles(fileParts);
-          await storage.insertMessage(question);
+          await writes.insertMessage(question);
           return { branch, index, edited, question };
         });
         // Правка — тоже сообщение вместо ответа: ждущий ответ ветки закрывается, как при отправке (FR-006).
@@ -3830,6 +3859,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
       let before: AppStateValues = {};
       const data = checkedAnswerEditData(edit.data);
       let editEvent!: AnswerEditedInput;
+      // Аренда хода: ход на другой копии сервера — тоже answer_busy, иначе его ответ уйдёт в боковую ветку.
       const replaced = await holdingChat(chatId, async () => {
         await carryLegacyClosure(chatId);
         const { messages, selections, branch } = await loadTree(chatId);
@@ -3852,10 +3882,13 @@ export function createChatService(input: ChatServiceOptions): ChatService {
           providerId: answer.providerId,
           createdAt,
         });
-        await storage.insertMessage(replacement);
-        await storage.insertBranchSelection({ id: crypto.randomUUID(), chatId, messageId: replacement.id, selectedAt: createdAt });
+        // Время соседа позже всех касаний развилки: новый ответ и так текущий, отдельная запись выбора не нужна.
+        await turnStorage(chatId).insertMessage(replacement);
         editEvent = { ownerId: chat.ownerId, chatId, sourceMessageId: answer.id, messageId: replacement.id, editedAt: createdAt, sourceText: answerText(answer.parts), text: edit.text, ...(data !== undefined && { data }) };
         return replacement;
+      }, { lease: "required" }).catch((error: unknown) => {
+        if (error instanceof ChatBusyError) throw new AnswerEditError("answer_busy");
+        throw error;
       });
       answerEdited.notify(editEvent);
       chatEvents.emit({ type: "answer-edited", ownerId: chat.ownerId, chatId, sourceMessageId: messageId, messageId: replaced.id });
@@ -4202,6 +4235,29 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     // Журнал читается до конечной записи: живой ход, узнав о прерывании, сразу допишет свою долю сверх снимка, и
     // вычесть её отсюда значило бы недосчитать.
     const journaled = message?.usage ? await storage.sumUsage({ chatId: message.chatId, messageId, source: "answer" }) : [];
+    // Расход, записанный в ответ по ходу, в журнал ещё не попал: пишется сейчас (FR-052). В ответе после «Разрешить»
+    // лежит и расход до паузы — он уже в журнале, поэтому пишется только разница: сбой в любой миг продолжения
+    // не задваивает расход.
+    const unjournaled = message?.usage && message.modelId && message.providerId ? usageMinusJournaled(message.usage, journaled) : null;
+    const chat = unjournaled ? await storage.getChat(message!.chatId) : null;
+    const spentRecords = chat && unjournaled
+      ? // Шаги хода с провайдерами совпали с незаписанным: каждому провайдеру своя запись со ступенями по шагам.
+        // Не совпали (часть хода уже в журнале) — одной записью на провайдера ответа, как раньше.
+        (stepsByProvider(pendingSteps, unjournaled) ?? [{ providerId: message!.providerId!, spent: unjournaled }]).flatMap((group) => {
+          const record = usageRecordOf({
+            catalog: options.catalog,
+            startedAt: message!.createdAt,
+            ownerId: chat.ownerId,
+            chatId: message!.chatId,
+            messageId,
+            source: "answer",
+            modelId: message!.modelId!,
+            ...group,
+          });
+          return record ? [record] : [];
+        })
+      : [];
+    const spentWithAnswer = storage.finishesWithUsage === true && spentRecords.length > 0;
     try {
       await storage.finishMessage(messageId, {
         status: "interrupted",
@@ -4209,35 +4265,17 @@ export function createChatService(input: ChatServiceOptions): ChatService {
         ...(afterTurn && { afterTurn: "pending" as const }),
         // Расход в закрытом ответе — ровно тот снимок, что пойдёт в журнал: ход, если он жив, допишет только сверх него.
         ...(message?.usage && { usage: finishedUsage as TokenUsage }),
+        ...(spentWithAnswer && { usageRecords: spentRecords }),
       });
     } catch (failure) {
       if (failure instanceof MessageAlreadyFinishedError) return false;
       throw failure;
     }
-    // Расход, записанный в ответ по ходу, в журнал ещё не попал: пишется сейчас (FR-052). В ответе после «Разрешить»
-    // лежит и расход до паузы — он уже в журнале, поэтому пишется только разница: сбой в любой миг продолжения
-    // не задваивает расход.
-    if (message?.usage && message.modelId && message.providerId) {
-      const chat = await storage.getChat(message.chatId);
-      const unjournaled = usageMinusJournaled(message.usage, journaled);
-      if (chat && unjournaled) {
-        // Шаги хода с провайдерами совпали с незаписанным: каждому провайдеру своя запись со ступенями по шагам.
-        // Не совпали (часть хода уже в журнале) — одной записью на провайдера ответа, как раньше.
-        const groups = stepsByProvider(pendingSteps, unjournaled) ?? [{ providerId: message.providerId, spent: unjournaled }];
-        for (const group of groups) {
-          await recordSpentTokens({
-            storage,
-            catalog: options.catalog,
-            startedAt: message.createdAt,
-            ownerId: chat.ownerId,
-            chatId: message.chatId,
-            messageId,
-            source: "answer",
-            modelId: message.modelId,
-            ...group,
-            logError,
-          });
-        }
+    if (!spentWithAnswer) {
+      for (const record of spentRecords) {
+        await storage.insertUsageRecord(record).catch((failure: unknown) => {
+          logError(`Не удалось записать расход (${record.source}, чат ${record.chatId}): ${failure instanceof Error ? failure.message : "неизвестная ошибка"}`, failure);
+        });
       }
     }
     // Хук итога прерванного ответа — в фоне: проверка брошенных ответов его не ждёт.

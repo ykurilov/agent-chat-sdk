@@ -20,6 +20,7 @@ function setup(resolved?: ResolvedUser, hooks: { onLinked?: MessengersOptions["o
   const linking = createAccountLinking({
     store,
     bots: [telegram.bot(), vk.bot({ botId: "club1" })],
+    linkConfirmation: false,
     ...hooks,
     resolveUser: async (request) => {
       if (resolved) return resolved;
@@ -181,7 +182,7 @@ describe("привязка аккаунта", () => {
         },
       };
       const onLinked = vi.fn();
-      const linking = createAccountLinking({ store, bots: [createFakeAdapter().bot()], onLinked, resolveUser: async () => null });
+      const linking = createAccountLinking({ store, bots: [createFakeAdapter().bot()], linkConfirmation: false, onLinked, resolveUser: async () => null });
       const anna = await linking.issueCode("anna", "telegram");
       const boris = await linking.issueCode("boris", "telegram");
       const outcomes = await Promise.all([anna, boris].map((offer) => linking.redeem(offer.code, account())));

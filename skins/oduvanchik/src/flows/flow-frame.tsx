@@ -69,7 +69,7 @@ function FlowName({ name, onRename, readOnly }: Pick<FlowHeaderProps, "name" | "
       onChange={(event) => setDraft(event.target.value)}
       onBlur={commit}
       onKeyDown={(event) => {
-        if (event.key === "Enter") event.currentTarget.blur();
+        if (event.key === "Enter" && !event.nativeEvent.isComposing && event.keyCode !== 229) event.currentTarget.blur();
       }}
       className="min-w-0 flex-1 truncate rounded-[var(--yk-radius-sm)] bg-transparent px-1.5 py-1 text-base font-semibold text-[var(--yk-text)] outline-none hover:bg-[var(--yk-surface-2)] focus-visible:ring-2 focus-visible:ring-[var(--yk-accent)]"
     />

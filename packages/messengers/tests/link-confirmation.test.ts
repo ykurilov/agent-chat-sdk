@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAccountLinking } from "../src/account-linking";
+import { messengerTexts } from "../src/messenger-texts";
 import { createMemoryMessengerStore } from "../src/store/memory-store";
 import { account, createFakeAdapter, update } from "./support/fake-adapter";
 import type { InboundUpdate, MessengerName } from "../src/messenger-adapter";
@@ -92,11 +93,42 @@ describe.each(["telegram", "vk"] as const)("подтверждение прив�
     label.mockRejectedValueOnce(new Error("label unavailable"));
     await expect(open()).rejects.toThrow("label unavailable");
     const { buttonId } = await open();
-    const { linkConfirmation: _confirmation, ...withoutConfirmation } = deps;
-    const disabled = createAccountLinking(withoutConfirmation);
+    const disabled = createAccountLinking({ ...deps, linkConfirmation: false });
     expect((await disabled.handleUpdate(press(buttonId)))?.reply).toContain("не подошёл");
     expect(await store.findLink(messenger, "bot1", "100")).toBeNull();
     expect(await linking.handleUpdate(press("unrelated"))).toBeNull();
+  });
+});
+
+describe("подтверждение привязки по умолчанию (аудит claude#2)", () => {
+  function plain(linkConfirmation?: false) {
+    const store = createMemoryMessengerStore();
+    const onLinked = vi.fn();
+    const linking = createAccountLinking({ store, bots: [createFakeAdapter().bot()], resolveUser: async () => ({ id: "anna" }), onLinked, ...(linkConfirmation === false && { linkConfirmation }) });
+    return { store, linking, onLinked };
+  }
+
+  it("без настройки чужая ссылка не привязывает сразу: вопрос без подписи и кнопка «Да»", async () => {
+    const { store, linking, onLinked } = plain();
+    const { code } = await linking.issueCode("mallory", "telegram");
+    const result = await linking.handleUpdate(update({ kind: "start", startPayload: code }));
+    expect(result?.reply).toBe(messengerTexts.linkConfirmationQuestionUnlabeled);
+    expect(result?.buttons?.[0]?.[0]?.text).toBe(messengerTexts.linkConfirm);
+    expect(await store.findLink("telegram", "bot1", "100")).toBeNull();
+    expect(onLinked).not.toHaveBeenCalled();
+    expect(await linking.redeem((await linking.issueCode("mallory", "telegram")).code, account())).toBe("failed");
+
+    const pressed = await linking.handleUpdate(update({ kind: "button", buttonId: result?.buttons?.[0]?.[0]?.id as string, callbackId: "callback" }));
+    expect(pressed?.reply).toBe(messengerTexts.linked);
+    expect((await store.findLink("telegram", "bot1", "100"))?.userId).toBe("mallory");
+  });
+
+  it("linkConfirmation: false — привязка сразу по коду, как раньше", async () => {
+    const { store, linking, onLinked } = plain(false);
+    const { code } = await linking.issueCode("anna", "telegram");
+    expect((await linking.handleUpdate(update({ kind: "start", startPayload: code })))?.reply).toBe(messengerTexts.linked);
+    expect((await store.findLink("telegram", "bot1", "100"))?.userId).toBe("anna");
+    expect(onLinked).toHaveBeenCalledTimes(1);
   });
 });
 

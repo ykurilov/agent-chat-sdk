@@ -100,9 +100,31 @@ describe("watchChat: поток событий чата", () => {
     await settle(5000);
     expect(server.calls).toHaveLength(4);
     expect(watch.onOpen).toHaveBeenCalledTimes(2);
+    // Удачное — то, что прожило хотя бы 10 с: после него паузы снова с первой.
+    await settle(10_000);
     server.streams[1]!.end();
     await settle(1000);
     expect(server.calls).toHaveLength(5);
+    watch.controller.abort();
+  });
+
+  it("поток открывается и сразу закрывается (прокси): это неудача, паузы растут, а не повтор без паузы", async () => {
+    const server = fakeWatchServer();
+    const watch = start(server);
+    await settle();
+    server.streams[0]!.end();
+    await settle(1000);
+    expect(server.calls).toHaveLength(2);
+    server.streams[1]!.end();
+    await settle(1999);
+    expect(server.calls).toHaveLength(2);
+    await settle(1);
+    expect(server.calls).toHaveLength(3);
+    server.streams[2]!.end();
+    await settle(4999);
+    expect(server.calls).toHaveLength(3);
+    await settle(1);
+    expect(server.calls).toHaveLength(4);
     watch.controller.abort();
   });
 

@@ -31,6 +31,7 @@ async function setup(conversation: Partial<MessengerConversation> = {}) {
   });
   const chatId = chats.addChat("anna", "Разговор", "telegram");
   const at = new Date().toISOString();
+  await store.saveLink({ messenger: "telegram", botId: "bot1", externalUserId: "100", userId: "anna", name: "Анна", linkedAt: at });
   await store.saveConversation({ ...key, type: "private", userId: "anna", currentChatId: chatId, blocked: false, active: true, createdAt: at, updatedAt: at, ...conversation });
   const changed = (ownerId = "anna"): ChatEvent => ({ type: "tasks-changed", ownerId, chatId });
   return { store, chats, fake, errors, cards, chatId, changed };

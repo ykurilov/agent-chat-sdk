@@ -344,6 +344,23 @@ describe("AgentChat: конец экрана и смена чата", () => {
     await waitFor(() => expect(micState()).toBe("idle"));
   });
 
+  it("право на голос отозвано во время диктовки: запись брошена, кнопки нет", async () => {
+    const voice = fakeVoice();
+    const server = fakeChatServer();
+    server.state.watch = true;
+    renderAgentChat(server, { voice: voice.voice });
+    await screen.findByLabelText("поле");
+    await waitFor(() => expect(server.watches).toHaveLength(1));
+    pressMic();
+    await voice.connect();
+
+    server.state.capabilities = { voice: false };
+    act(() => server.emit({ type: "message-added", messageId: "x1" }));
+
+    await waitFor(() => expect(voice.current().cancelled).toBe(true));
+    expect(micButton()).toBeNull();
+  });
+
   it("без диктовки ничего не отменяется при закрытии экрана", async () => {
     const start = vi.fn();
     const view = renderAgentChat(fakeChatServer(), { voice: { start } });

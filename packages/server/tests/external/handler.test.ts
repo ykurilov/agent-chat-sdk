@@ -20,3 +20,12 @@ it("native HTTP busy exposes stable code without changing legacy kind",async()=>
  const response=await handler.fetch(request("/main/stop",{commandId:"stop"}));
  expect(response.status).toBe(409);expect(await response.json()).toEqual({error:{kind:"busy",code:"external_conversation_busy"}});
 });
+
+it("100 000 знаков русского текста проходят: предел тела считается под UTF-8, а не 128 000 байт",async()=>{
+ const {handler,service}=await fixture();const text="ж".repeat(100_000);
+ const response=await handler.fetch(request("/main/messages",{clientMessageId:"long",text}));
+ expect(response.status).toBe(202);
+ expect((await service.snapshot("owner","main")).messages.at(-1)?.text).toBe(text);
+ const tooLarge=await handler.fetch(request("/main/messages",{clientMessageId:"huge",text:"x".repeat(2_000_000)}));
+ expect(tooLarge.status).toBe(413);
+});

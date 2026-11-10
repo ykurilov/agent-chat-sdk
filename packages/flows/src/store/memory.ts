@@ -1,5 +1,5 @@
 import { FLOW_DELIVERY_EXIT, type ChatsInState, type ClientCardEntry, type FlowChatRecord, type FlowStore, type SavedFlowVersion, type SideTaskRecord } from "./flow-store";
-import { appliedInTime, byVersionAndState, compareText, mappedState, migratePending, normalizedDelivery, normalizeTime, pendingAdded, sameDelivery } from "./flow-store-shared";
+import { byVersionAndState, compareText, firstMessagesKeptFrom, mappedState, migratePending, normalizedDelivery, normalizeTime, pendingAdded, pendingNotLanded, pendingTaken, sameDelivery } from "./flow-store-shared";
 
 interface ChatRow extends FlowChatRecord {
   leaseUntil: string | null;
@@ -20,6 +20,8 @@ export function memoryFlowStore(): FlowStore {
   /** Человек → поле → запись. */
   const cards = new Map<string, Map<string, ClientCardEntry>>();
   const firstMessages = new Map<string, number>();
+  /** Занятые места в потолке дня: чат → день и срок. */
+  const firstMessageHolds = new Map<string, { ownerId: string; chatId: string; day: string; until: number }>();
   const timeZones = new Map<string, string>();
   /** Человек → [задача, чат] → попытки. */
   const sideTasks = new Map<string, Map<string, SideTaskRecord>>();
@@ -92,12 +94,16 @@ export function memoryFlowStore(): FlowStore {
       const next = row && pendingAdded(row.pending, copy(change));
       if (next) row.pending = next;
     },
-    async takePending(chatId) {
+    async takePending(chatId, turn) {
       const row = chats.get(chatId);
       if (!row) return [];
-      const taken = row.pending;
-      row.pending = taken.filter(appliedInTime).map(copy);
-      return taken;
+      const { taken, kept } = pendingTaken(row.pending, turn);
+      row.pending = kept.map(copy);
+      return taken.map(copy);
+    },
+    async dropTakenPending(chatId, turnId) {
+      const row = chats.get(chatId);
+      if (row) row.pending = pendingNotLanded(row.pending, turnId);
     },
 
     async setDue(chatId, due, options) {
@@ -262,11 +268,27 @@ export function memoryFlowStore(): FlowStore {
     async countFirstMessages(ownerId, day) {
       return firstMessages.get(dayKey(ownerId, day)) ?? 0;
     },
-    async addFirstMessage(ownerId, day) {
+    async addFirstMessage(ownerId, day, chatId) {
       const key = dayKey(ownerId, day);
       const count = (firstMessages.get(key) ?? 0) + 1;
       firstMessages.set(key, count);
+      if (chatId !== undefined) firstMessageHolds.delete(dayKey(ownerId, chatId));
+      const keptFrom = firstMessagesKeptFrom(day);
+      for (const stored of firstMessages.keys()) {
+        const [owner, storedDay] = JSON.parse(stored) as [string, string];
+        if (owner === ownerId && storedDay < keptFrom) firstMessages.delete(stored);
+      }
       return count;
+    },
+    async holdFirstMessage({ ownerId, chatId, day, max, now, until }) {
+      const nowMs = Date.parse(now);
+      const others = [...firstMessageHolds.values()].filter((hold) => hold.ownerId === ownerId && hold.chatId !== chatId && hold.day === day && hold.until > nowMs);
+      if ((firstMessages.get(dayKey(ownerId, day)) ?? 0) >= max) return { held: false, freeAt: null };
+      if ((firstMessages.get(dayKey(ownerId, day)) ?? 0) + others.length >= max) {
+        return { held: false, freeAt: new Date(Math.min(...others.map((hold) => hold.until))).toISOString() };
+      }
+      firstMessageHolds.set(dayKey(ownerId, chatId), { ownerId, chatId, day, until: Date.parse(until) });
+      return { held: true };
     },
   };
 }

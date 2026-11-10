@@ -6,6 +6,7 @@ import {
   chatDataOfInput,
   DuplicateChatSubjectError,
   DuplicateMessageError,
+  assertWellFormedMemoryNote,
   isOptimizationBlocked,
   mergeChatData,
   ChatTurnLeaseLostError,
@@ -68,14 +69,15 @@ export function createDrizzleChatStorage(db: ChatDatabase): ChatStorage {
   async function updateStreaming(
     messageId: string,
     { alive, expectedTurnHolder, ...values }: Partial<typeof messages.$inferInsert> & { alive?: AnswerAliveMark; expectedTurnHolder?: string },
+    exec: Executor = db,
   ): Promise<void> {
-    const updated = await db
+    const updated = await exec
       .update(messages)
       .set({ ...values, ...aliveAtColumn(alive) })
       .where(and(eq(messages.id, messageId), eq(messages.status, "streaming"), turnLeaseCondition(expectedTurnHolder)))
       .returning({ id: messages.id });
     if (updated.length > 0) return;
-    const [existing] = await db.select({ id: messages.id, status: messages.status }).from(messages).where(eq(messages.id, messageId));
+    const [existing] = await exec.select({ id: messages.id, status: messages.status }).from(messages).where(eq(messages.id, messageId));
     if (!existing) throw new Error(`Сообщения ${messageId} нет`);
     if (expectedTurnHolder !== undefined && existing.status === "streaming") throw new ChatTurnLeaseLostError(messageId);
     throw new MessageAlreadyFinishedError(messageId);
@@ -108,7 +110,7 @@ export function createDrizzleChatStorage(db: ChatDatabase): ChatStorage {
   }
 
   async function insertNotes(exec: Executor, ownerId: string, inputs: MemoryNoteInput[]): Promise<MemoryNote[]> {
-    inputs.forEach(assertWellFormedNote);
+    inputs.forEach(assertWellFormedMemoryNote);
     if (inputs.length === 0) return [];
     const now = new Date();
     // Одна вставка: пакет ложится целиком или не ложится вовсе.
@@ -130,10 +132,11 @@ export function createDrizzleChatStorage(db: ChatDatabase): ChatStorage {
   }
 
   async function updateNote(exec: Executor, ownerId: string, id: string, expectedVersion: number, input: MemoryNoteInput): Promise<MemoryNote | "not_found" | "stale_version"> {
-    assertWellFormedNote(input);
+    assertWellFormedMemoryNote(input);
     const updated = await exec
       .update(memoryNotes)
-      .set({ categories: [...input.categories], content: input.content, version: sql`${memoryNotes.version} + 1`, updatedAt: new Date() })
+      // Часы копии могут отставать от прежней правки: время правки не убывает.
+      .set({ categories: [...input.categories], content: input.content, version: sql`${memoryNotes.version} + 1`, updatedAt: sql`greatest(${memoryNotes.updatedAt}, ${new Date().toISOString()}::timestamptz)` })
       .where(and(eq(memoryNotes.ownerId, ownerId), eq(memoryNotes.id, id), eq(memoryNotes.version, expectedVersion), isNull(memoryNotes.mergedInto)))
       .returning();
     if (updated[0]) return toMemoryNote(updated[0]);
@@ -150,6 +153,7 @@ export function createDrizzleChatStorage(db: ChatDatabase): ChatStorage {
 
   return {
     guardedTurnWrites: true,
+    finishesWithUsage: true,
     async createChat({ createdAt, ...input }) {
       const at = createdAt ?? new Date().toISOString();
       const row = chatRow({ ...input, createdAt: at, updatedAt: at });
@@ -424,7 +428,15 @@ export function createDrizzleChatStorage(db: ChatDatabase): ChatStorage {
 
     markAnswerAlive: (messageId, guard) => updateStreaming(messageId, { alive: "now", ...guard }),
 
-    finishMessage: (messageId, final) => updateStreaming(messageId, { ...final, ...(final.afterTurn === "pending" && { alive: "now" as const }) }),
+    finishMessage: async (messageId, { usageRecords: spent, ...final }) => {
+      const finish = (exec: Executor) => updateStreaming(messageId, { ...final, ...(final.afterTurn === "pending" && { alive: "now" as const }) }, exec);
+      if (!spent?.length) return finish(db);
+      // Ответ и его расход — одна транзакция: падение между ними не теряет расход законченного ответа.
+      await db.transaction(async (tx) => {
+        await finish(tx);
+        await tx.insert(usageRecords).values([...spent]);
+      });
+    },
 
     async updateAwaitingMessage(messageId, patch) {
       // Строка заперта до конца транзакции: другая копия сервера не запишет между сравнением частей и записью.
@@ -706,7 +718,7 @@ export function createDrizzleChatStorage(db: ChatDatabase): ChatStorage {
       if (merges.length === 0) throw new TypeError("Слияние без склеек");
       const seen = new Set<string>();
       for (const { result, originals } of merges) {
-        assertWellFormedNote(result);
+        assertWellFormedMemoryNote(result);
         if (originals.length === 0) throw new TypeError("Склейка без оригиналов");
         for (const { id } of originals) {
           if (seen.has(id)) throw new TypeError(`Запись ${id} названа в двух склейках`);
@@ -901,10 +913,3 @@ function toOptimizationRun(row: typeof memoryOptimizationRuns.$inferSelect): Mem
   };
 }
 
-/** Как база с NOT NULL: разделы — список строк, текст — строка. Иначе jsonb принял бы любое значение. */
-function assertWellFormedNote(note: MemoryNoteInput): void {
-  if (!Array.isArray(note?.categories) || !note.categories.every((category) => typeof category === "string")) {
-    throw new TypeError("Разделы записи памяти — список строк");
-  }
-  if (typeof note.content !== "string") throw new TypeError("Текст записи памяти — строка");
-}

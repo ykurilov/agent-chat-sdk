@@ -2,10 +2,10 @@ import Database from "better-sqlite3";
 import { and, asc, eq, isNotNull, isNull, lt, ne, or } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { applyImageJobPatch, findErrorCause, ImageJobKeyTakenError, imageJobBody, isOpenImageJob } from "./image-job-store";
 import type { ImageJobFilter, ImageJobRecord, ImageJobStore } from "./image-job-store";
 import { IMAGE_JOBS_MIGRATIONS_TABLE } from "./migration-settings";
+import { migrateUnderWriteLock } from "./sqlite-migrate";
 import { imageJobs } from "./sqlite-schema";
 
 type Row = typeof imageJobs.$inferSelect;
@@ -76,10 +76,11 @@ function filterOf(filter: ImageJobFilter): SQL | undefined {
  */
 export function createSqliteImageJobStore(filePath: string, migrationsFolder: string): ImageJobStore {
   const sqlite = new Database(filePath);
-  sqlite.pragma("journal_mode = WAL");
+  // Ожидание замка — до первой записи: переход файла в WAL при старте двух копий тоже ждёт замок.
   sqlite.pragma("busy_timeout = 5000");
+  sqlite.pragma("journal_mode = WAL");
   const db = drizzle(sqlite);
-  migrate(db, { migrationsFolder, migrationsTable: IMAGE_JOBS_MIGRATIONS_TABLE });
+  migrateUnderWriteLock(sqlite, migrationsFolder, IMAGE_JOBS_MIGRATIONS_TABLE);
 
   const read = (id: string) => {
     const row = db.select().from(imageJobs).where(eq(imageJobs.id, id)).get();

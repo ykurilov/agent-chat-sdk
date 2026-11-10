@@ -7,6 +7,9 @@ import type { FlowChatRecord, FlowStore } from "../store/flow-store";
 import type { FirstMessageRules, FlowPeople } from "./flow-types";
 import { FIRST_MESSAGE_MIN_RETRY_MS, FIRST_MESSAGE_RETRY_MS } from "./first-message-retry";
 
+/** Сколько держится место в потолке дня, которое чат занял проверкой: на ход агента и доставку. */
+export const FIRST_MESSAGE_HOLD_MS = 10 * 60_000;
+
 /** Что в записи чата запрещает писать первым. */
 export type FlowChatWriteState = Pick<FlowChatRecord, "dayClosedOn" | "pausedUntil" | "windowClosed">;
 
@@ -45,17 +48,23 @@ export function createFirstMessageRules(setting: FirstMessagesSetting | undefine
     async check({ ownerId, chatId, at, timeZone, schedule, programDay, chat }) {
       const blocked = chat ? chatWriteBlock(chat, at, timeZone, schedule) : null;
       if (blocked) return { allowed: false, retryAt: blocked.retryAt };
-      const sentToday = await store.countFirstMessages(ownerId, localDay(at, timeZone));
-      const slot = firstMessageSlot(scenarioRules(rules, schedule, programDay), { at, timeZone, sentToday });
+      const day = localDay(at, timeZone);
+      const sentToday = await store.countFirstMessages(ownerId, day);
+      const effective = scenarioRules(rules, schedule, programDay);
+      const slot = firstMessageSlot(effective, { at, timeZone, sentToday });
       if (!slot.allowed) return slot;
       // Приложение спрашивается только тогда, когда остальные правила уже разрешили.
       const answer = rules.canWriteNow ? await rules.canWriteNow({ ownerId, chatId, at: new Date(at) }) : true;
-      if (answer === true) return { allowed: true };
-      // Конец разговора от ответа не зависит: повтор только у касаний.
-      return { allowed: false, retryAt: retryAtOf(answer, at) };
+      if (answer !== true) return { allowed: false, retryAt: retryAtOf(answer, at) };
+      // Место в потолке занимается до доставки: параллельные чаты человека не пишут сверх потолка.
+      if (!store.holdFirstMessage || !Number.isFinite(effective.maxPerDay)) return { allowed: true };
+      const hold = await store.holdFirstMessage({ ownerId, chatId, day, max: effective.maxPerDay, now: new Date(at).toISOString(), until: new Date(at + FIRST_MESSAGE_HOLD_MS).toISOString() });
+      if (hold.held) return { allowed: true };
+      if (hold.freeAt !== null) return { allowed: false, retryAt: Math.max(Date.parse(hold.freeAt), at + FIRST_MESSAGE_MIN_RETRY_MS) };
+      return firstMessageSlot(effective, { at, timeZone, sentToday: effective.maxPerDay });
     },
-    async record({ ownerId, at, timeZone }) {
-      await store.addFirstMessage(ownerId, localDay(at, timeZone));
+    async record({ ownerId, chatId, at, timeZone }) {
+      await store.addFirstMessage(ownerId, localDay(at, timeZone), chatId);
     },
   };
 }

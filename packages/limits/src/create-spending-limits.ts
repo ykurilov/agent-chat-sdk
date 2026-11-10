@@ -13,12 +13,12 @@ import type {
   UsageFilter,
 } from "@ykurilov/agent-chat-core";
 import { limitStateStore } from "./limit-state";
-import { giveBackMessageSlots, readMessageWindow, takeMessageSlots } from "./message-windows";
+import { confirmMessageSlots, giveBackMessageSlots, readMessageWindow, takeMessageSlots } from "./message-windows";
 import type { MessageThresholdCrossing, MessageWindowReading } from "./message-windows";
 import { calendarBounds } from "./spending-period";
 import { normalizeWindows, validLimit } from "./spending-windows";
 import type { SpendingSubject, SpendingWindow, SpendingWindowConfig } from "./spending-windows";
-import { readWindow, windowStateKey } from "./window-reading";
+import { legacyWindowStateKey, readWindow, windowStateKey } from "./window-reading";
 import type { WindowReading, WindowState } from "./window-reading";
 
 export type { CalendarWindowConfig, RollingWindowConfig, SpendingWindowConfig, TotalWindowConfig, WindowLimit } from "./spending-windows";
@@ -534,11 +534,17 @@ export function createSpendingLimits(options: SpendingLimitsOptions): SpendingLi
     },
 
     async chatDeleted({ userId, chatId }) {
-      const keys = allWindows.filter((window) => window.scope === "chat").map((window) => windowStateKey(window, { userId, chatId })!);
+      const keys = allWindows
+        .filter((window) => window.scope === "chat")
+        .flatMap((window) => {
+          const key = windowStateKey(window, { userId, chatId })!;
+          const legacyKey = legacyWindowStateKey(key);
+          return legacyKey === null ? [key] : [key, legacyKey];
+        });
       await storage.deleteSpendingLimitStates?.(keys);
     },
 
-    async takeMessage({ userId, chatId }) {
+    async takeMessage({ userId, chatId, messageId }) {
       if (messageWindows.length === 0) return undefined;
       const subject = { userId, chatId };
       const limits = await limitsFor(subject, await personOf(userId));
@@ -553,6 +559,7 @@ export function createSpendingLimits(options: SpendingLimitsOptions): SpendingLi
         now: now(),
         store: store!,
         thresholds: options.onMessageThreshold ? thresholds : [],
+        ...(messageId !== undefined && { messageId, messageWritten: async (id: string) => (await storage.getMessage(id)) !== null }),
       });
       if (refused.length > 0) {
         // Как у денег: называем окно, которое освободится позже.
@@ -570,7 +577,8 @@ export function createSpendingLimits(options: SpendingLimitsOptions): SpendingLi
         });
       }
       for (const crossing of crossed) notifyMessageThreshold(crossing, subject);
-      return taken.length > 0 ? () => giveBackMessageSlots(store!, taken) : undefined;
+      if (taken.length === 0) return undefined;
+      return Object.assign(() => giveBackMessageSlots(store!, taken), { confirm: () => confirmMessageSlots(store!, taken) });
     },
 
     async turnRules({ userId, chatId }): Promise<TurnSpendingRules | undefined> {

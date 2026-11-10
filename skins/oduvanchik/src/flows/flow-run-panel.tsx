@@ -17,7 +17,7 @@ function KnownInput({ value, label, placeholder, onChange }: { value: string | n
       onChange={(event) => setDraft(event.target.value)}
       onBlur={() => draft !== (value ?? "") && onChange(draft)}
       onKeyDown={(event) => {
-        if (event.key === "Enter") event.currentTarget.blur();
+        if (event.key === "Enter" && !event.nativeEvent.isComposing && event.keyCode !== 229) event.currentTarget.blur();
       }}
       className="h-9"
     />

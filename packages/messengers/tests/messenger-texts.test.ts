@@ -32,6 +32,7 @@ function setup(overrides: Partial<MessengersOptions> & { bot?: Partial<Messenger
   const messengers = createMessengers({
     service: chats.service,
     store,
+    linkConfirmation: false,
     resolveUser: async (request) => (request.headers.get("x-user") ? { id: request.headers.get("x-user") as string } : null),
     bots: [fake.bot(botOverrides)],
     basePath: BASE,

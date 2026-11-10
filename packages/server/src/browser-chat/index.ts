@@ -3,7 +3,7 @@ import { ActionForbiddenError, ChatBusyError, ChatNotFoundError, DuplicateMessag
 import type { ToolSet, UIMessageChunk } from "ai";
 import { createBrowserChatCodec } from "./codec";
 import { identifier, readBrowserRequest } from "./input";
-import type { BrowserChatHandler, BrowserChatHandlerOptions, BrowserChatOperation } from "./types";
+import type { BrowserChatHandler, BrowserChatHandlerOptions, BrowserChatOperation, BrowserChatUsage } from "./types";
 export type * from "./types";
 
 const headers = { "cache-control": "no-store", "x-content-type-options": "nosniff" };
@@ -14,6 +14,13 @@ const abortable = <T>(value: Promise<T>, signal: AbortSignal): Promise<T> => new
   signal.addEventListener("abort", abort, { once: true });
   value.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort)).catch(() => {});
 });
+/**
+ * Сколько байт снимка в секунду поток может себе позволить: следующий снимок ждёт, пока прошлый «уйдёт» на такой скорости.
+ * Короткий чат получает снимок каждые `checkpointIntervalMs`, длинный — реже: 1 МБ снимка — раз в 2 с.
+ */
+const SNAPSHOT_BYTES_PER_SECOND = 512 * 1024;
+/** Пауза перед новой попыткой снимка, пока браузер не дочитал прежние записи. */
+const DRAIN_WAIT_MS = 50;
 const bounded = (value: number | undefined, fallback: number, min: number, max: number): number => {
   const result = value ?? fallback;
   if (!Number.isInteger(result) || result < min || result > max) throw new TypeError("Invalid browser chat resource limit");
@@ -74,19 +81,27 @@ export function createBrowserChatHandler(options: BrowserChatHandlerOptions): Br
         const payload = input.snapshot === null ? null : codec.decode(input.snapshot, ownerId, input.chatId);
         const storage = createTransientChatStorage(payload?.storage);
         const insertUsage = storage.insertUsageRecord.bind(storage);
-        let liveUsage = false;
-        storage.insertUsageRecord = async record => {
-          if (await storage.hasUsageRecord?.(record.id)) return;
-          // Recovery reconstructs historical journal entries, not newly consumed provider calls.
-          if (!liveUsage) { await insertUsage(record); return; }
-          const { chatId: _chat, messageId: _message, ...usage } = record;
+        /** Расход, который `onUsage` ещё не принял: уходит в снимок и повторяется следующим запросом. */
+        const unbilled: BrowserChatUsage[] = [...(payload?.unbilled ?? [])];
+        const bill = async (usage: BrowserChatUsage) => {
+          if (!settings.onUsage) return;
           // Billing contains numbers only and must include Stop, even after the HTTP signal was cancelled.
           const billing = new AbortController();
           const deadline = setTimeout(() => billing.abort(), 5000);
-          try { await abortable(settings.onUsage?.(usage, billing.signal) ?? Promise.resolve(), billing.signal); }
-          catch (error) { report("usage"); throw error; }
+          try { await abortable(settings.onUsage(usage, billing.signal), billing.signal); }
           finally { clearTimeout(deadline); }
+        };
+        let liveUsage = false;
+        storage.insertUsageRecord = async record => {
+          if (await storage.hasUsageRecord?.(record.id)) return;
+          // Recovery reconstructs historical journal entries, not newly consumed provider calls: «Стоп» уже учёл их,
+          // а снимок в браузере мог остаться прежним.
+          if (!liveUsage) { await insertUsage(record); return; }
+          const { chatId: _chat, messageId: _message, ...usage } = record;
+          // Сначала запись, потом учёт: отказ `onUsage` не теряет расход — он уходит в снимок и повторяется следующим запросом.
           await insertUsage(record);
+          try { await bill(usage); }
+          catch { report("usage"); unbilled.push(usage); }
         };
         // Delayed provider usage reconciliation retains storage for minutes in ordinary chats.
         // This endpoint must release conversation memory at the end of the request.
@@ -103,14 +118,23 @@ export function createBrowserChatHandler(options: BrowserChatHandlerOptions): Br
           return Response.json({ type: "models", data: menu }, { headers });
         }
         const internalId = payload?.internalChatId ?? (await current.createChat(ownerId)).id;
+        // Прошлые сбои учёта: повтор по порядку, до первого нового отказа.
+        while (unbilled.length) {
+          try { await bill(unbilled[0]!); unbilled.shift(); }
+          catch { report("usage"); break; }
+        }
         await current.recoverInterruptedAnswers({ soleServer: true });
         liveUsage = true;
         if (control.signal.aborted) throw new DOMException("Aborted", "AbortError");
+        /** Размер последнего снимка в байтах: по нему поток решает, когда слать следующий. */
+        let snapshotBytes = 0;
         const snapshot = async (): Promise<{ snapshot: BrowserChatSnapshot; acknowledged: string[] }> => {
           const history = await getTransientChatHistory(current, ownerId!, internalId);
           const state = storage.exportSnapshot();
-          const value = codec.encode(ownerId!, input.chatId, { version: 1, internalChatId: internalId, storage: state }, history);
-          if (JSON.stringify(value).length > maxRequest - 1024) throw new RangeError("browser chat snapshot request limit");
+          const value = codec.encode(ownerId!, input.chatId, { version: 1, internalChatId: internalId, storage: state, ...(unbilled.length && { unbilled: [...unbilled] }) }, history);
+          snapshotBytes = JSON.stringify(value).length;
+          // Снимок браузер пришлёт обратно следующим запросом: больше предела запроса — следующий запрос не примут.
+          if (snapshotBytes > maxRequest - 1024) throw new RangeError("browser chat snapshot request limit");
           const pendingIds = new Set(input.snapshot?.pending?.map(row => row.id) ?? []);
           return { snapshot: value, acknowledged: state.messages.filter(row => row.role === "user" && pendingIds.has(row.id)).map(row => row.id) };
         };
@@ -129,27 +153,36 @@ export function createBrowserChatHandler(options: BrowserChatHandlerOptions): Br
         if (!stream) return Response.json({ type: "result", ...await snapshot() }, { headers });
         reader = stream.getReader(); handedOff = true;
         const encoder = new TextEncoder();
+        const queueLimit = maxRequest * 2;
         const body = new ReadableStream<Uint8Array>({
           async start(out) {
             const emit = (value: unknown) => {
               if (control.signal.aborted) return;
-              if ((out.desiredSize ?? 0) <= 0) throw new RangeError("Browser chat consumer is too slow");
               out.enqueue(encoder.encode(JSON.stringify(value) + "\n"));
             };
+            /** Браузер дочитал всё отправленное: только тогда идёт промежуточный снимок или пинг. */
+            const drained = () => (out.desiredSize ?? 0) >= queueLimit;
             let pending: Promise<ReadableStreamReadResult<UIMessageChunk>> | undefined;
             try {
               emit({ type: "ready", ...await snapshot() });
-              let chunks: UIMessageChunk[] = [], ended = false, batchAt = Date.now();
+              // Части показываются только вместе со снимком, где они уже есть. Медленная связь или длинный чат — снимки
+              // реже: части копятся и уходят следующим снимком, ход не обрывается.
+              let chunks: UIMessageChunk[] = [], ended = false, checkpointAt = Date.now();
+              let gap = Math.max(interval, snapshotBytes * 1000 / SNAPSHOT_BYTES_PER_SECOND);
               while (!ended && !control.signal.aborted) {
                 pending ??= reader!.read();
                 let tick!: ReturnType<typeof setTimeout>;
-                const next = await Promise.race([pending, new Promise<null>(resolve => { tick = setTimeout(() => resolve(null), chunks.length ? Math.max(1, batchAt + interval - Date.now()) : 1000); })]);
+                const wait = chunks.length ? Math.max(drained() ? 1 : DRAIN_WAIT_MS, checkpointAt + gap - Date.now()) : 1000;
+                const next = await Promise.race([pending, new Promise<null>(resolve => { tick = setTimeout(() => resolve(null), wait); })]);
                 clearTimeout(tick);
                 if (next !== null) { pending = undefined; if (next.done) ended = true; else chunks.push(next.value); }
-                if (chunks.length && (ended || next === null || Date.now() - batchAt >= interval || chunks.length >= 256)) {
-                  emit({ type: "data", chunks, ...await snapshot() }); chunks = []; batchAt = Date.now();
-                } else if (next === null) emit({ type: "ping" });
+                if (ended) break;
+                if (chunks.length && Date.now() - checkpointAt >= gap && drained()) {
+                  emit({ type: "data", chunks, ...await snapshot() }); chunks = []; checkpointAt = Date.now();
+                  gap = Math.max(interval, snapshotBytes * 1000 / SNAPSHOT_BYTES_PER_SECOND);
+                } else if (next === null && !chunks.length && drained()) emit({ type: "ping" });
               }
+              if (chunks.length && !control.signal.aborted) emit({ type: "data", chunks, ...await snapshot() });
               if (control.signal.aborted) throw new DOMException("Aborted", "AbortError");
               await current.flush({ waitForAnswersMs: 5000 });
               emit({ type: "end", ...await snapshot() }); await dispose(); out.close();
@@ -157,7 +190,7 @@ export function createBrowserChatHandler(options: BrowserChatHandlerOptions): Br
             finally { pending?.catch(() => {}); await dispose(); }
           },
           async cancel() { await dispose(); },
-        }, { highWaterMark: maxRequest * 2, size: chunk => chunk.byteLength });
+        }, { highWaterMark: queueLimit, size: chunk => chunk.byteLength });
         return new Response(body, { headers: { ...headers, "content-type": "application/x-ndjson", "x-accel-buffering": "no" } });
       } catch (error) {
         report(stage);
@@ -165,7 +198,7 @@ export function createBrowserChatHandler(options: BrowserChatHandlerOptions): Br
         if (error instanceof ChatNotFoundError) return errorResponse(404, "not_found");
         if (error instanceof ChatBusyError) return errorResponse(409, "busy");
         if (error instanceof DuplicateMessageError || error instanceof NothingToRetryError) return errorResponse(409, "invalid");
-        if (error instanceof InvalidMessageError || error instanceof InvalidModelChoiceError) return errorResponse(400, "invalid");
+        if (error instanceof InvalidMessageError || error instanceof InvalidModelChoiceError || error instanceof SyntaxError) return errorResponse(400, "invalid");
         return errorResponse(error instanceof RangeError ? 413 : stage === "snapshot" || error instanceof TypeError ? 400 : 500, error instanceof RangeError ? "too_large" : "other");
       } finally { if (!handedOff) await dispose(); }
     },

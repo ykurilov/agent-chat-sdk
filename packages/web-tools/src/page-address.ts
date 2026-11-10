@@ -120,6 +120,8 @@ function isPrivateIpv4([first = 0, second = 0, third = 0]: number[]): boolean {
     (first === 169 && second === 254) ||
     (first === 172 && second >= 16 && second <= 31) ||
     (first === 192 && second === 0 && (third === 0 || third === 2)) ||
+    // 192.88.99.0/24 — бывшие ретрансляторы 6to4 (RFC 7526): за ними чужая сеть, публичным сайтом это не бывает.
+    (first === 192 && second === 88 && third === 99) ||
     (first === 192 && second === 168) ||
     (first === 198 && (second === 18 || second === 19)) ||
     (first === 198 && second === 51 && third === 100) ||

@@ -123,6 +123,8 @@ export interface AgentChatProps extends AgentChatExtensions {
   appBridge?: AgentAppBridge;
   /** Текст в поле ввода при открытии чата. */
   initialDraft?: string;
+  /** Текст в поле ввода изменился (набор, отправка, возврат не принятого сервером): например, чтобы хранить черновик чата. */
+  onDraftChange?: (text: string) => void;
   /** Правка ответов агента (песочница): кнопка правки у законченных ответов, отметки «изменено», редактор страницы. Нет — ответы не правятся. */
   answerEditing?: AnswerEditing;
   /** Built-in ordinary text editor; server also opts in with answerEditing: true. Custom answerEditing takes precedence. */
@@ -203,7 +205,7 @@ function SubjectAgentChat(props: AgentChatProps & { subject: string }) {
   return <SubjectChatLoading skin={props.skin} />;
 }
 
-function AgentChatBody({ history, header, completion, composerOptions, api, chatId, skin, fetch: customFetch, transport: chatTransport, liveness, voice, voiceDialog, attachments: attachmentsPlugin, spendingLimits, onBusyChange, appBridge, initialDraft, answerEditing, answerEditor, onFeedChange, messageActions, onTurnFinished, onTurnRefused, composerActions, onAppEvent, onChatAccessChange, onStateChange, onModelChosen, onChatUnavailable, reloadKey, steering, widgets, diagrams, liveDemos, images, videos, appEvents, workView, stepPhrases, noticeLines, answerDetails }: AgentChatProps & { chatId: string }) {
+function AgentChatBody({ history, header, completion, composerOptions, api, chatId, skin, fetch: customFetch, transport: chatTransport, liveness, voice, voiceDialog, attachments: attachmentsPlugin, spendingLimits, onBusyChange, appBridge, initialDraft, onDraftChange, answerEditing, answerEditor, onFeedChange, messageActions, onTurnFinished, onTurnRefused, composerActions, onAppEvent, onChatAccessChange, onStateChange, onModelChosen, onChatUnavailable, reloadKey, steering, widgets, diagrams, liveDemos, images, videos, appEvents, workView, stepPhrases, noticeLines, answerDetails }: AgentChatProps & { chatId: string }) {
   const fetchImpl = chatTransport?.fetch ?? customFetch;
   const spendingNoticeId = useId();
   const closedNoticeId = useId();
@@ -242,8 +244,10 @@ function AgentChatBody({ history, header, completion, composerOptions, api, chat
   const modelChoice = useModelChoice({ api, chatId, fetch: fetchImpl, savedChoice: chat.savedModelChoice, savedChoicePending, menuWanted, onModelChosen });
   // Меню не нужно — и прежнее в памяти не в счёт: выбор мог смениться без него. Видит ли модель картинки — по истории.
   const chatModelSeesImages = menuWanted ? (modelSeesImages(modelChoice) ?? chat.modelAcceptsImages) : chat.modelAcceptsImages;
-  const dictation = useVoiceDictation({ voice, value: chat.value, setValue: chat.setValue, chatId });
-  const dialog = useVoiceDialog({ engine: voiceDialog, chatId, chat, ...(videos && { videos }) });
+  // Голос — только по подтверждённому праву: до загрузки истории запуска нет, отзыв права выключает микрофон и диалог.
+  const voiceAllowed = chat.loaded && chat.capabilities.voice;
+  const dictation = useVoiceDictation({ voice: voiceAllowed ? voice : undefined, value: chat.value, setValue: chat.setValue, chatId });
+  const dialog = useVoiceDialog({ engine: voiceAllowed ? voiceDialog : undefined, chatId, chat, ...(videos && { videos }) });
   const attachments = attachmentsPlugin?.useController({ api, chatId, modelSeesImages: chatModelSeesImages, fetch: fetchImpl });
   const describeFiles = attachments?.describe;
   const imageClients = useSameList(imageClientsOf(images));
@@ -326,6 +330,14 @@ function AgentChatBody({ history, header, completion, composerOptions, api, chat
   useEffect(() => {
     reportBusy.current?.(busy);
   }, [busy, chatId]);
+  const reportDraft = useRef(onDraftChange);
+  reportDraft.current = onDraftChange;
+  const draftShown = useRef(initialDraft ?? "");
+  useEffect(() => {
+    if (draftShown.current === chat.value) return;
+    draftShown.current = chat.value;
+    reportDraft.current?.(chat.value);
+  }, [chat.value]);
   const lastIndex = chat.messages.length - 1;
   // Поправки, которые агент ещё не взял, идут в ленте после сообщений, с пометкой.
   const { corrections } = chat;
@@ -1088,6 +1100,11 @@ const AgentAnswer = memo(function AgentAnswer({
       else if (file?.kind === "file") show(<skin.AgentText key={key} markdown={file.markdown} streaming={false} />);
       return;
     }
+    // Сжатая история приходит без входа и выхода инструментов: картинки и видео агента догружаются сразу, а не по раскрытию.
+    if (isToolUIPart(part) && message.metadata?.historyDetails?.[index] && isMediaTool(getToolName(part), extensions)) {
+      show(<StrippedMediaPart key={key} partId={partKey(message.id, index)} />);
+      return;
+    }
     const imagesView = isToolUIPart(part) ? describeImages?.(part) : undefined;
     const videoView = isToolUIPart(part) && extensions.videos && getToolName(part) === extensions.videos.toolName ? extensions.videos.describe(part) : undefined;
     if (part.type === "reasoning") {
@@ -1355,6 +1372,19 @@ function fallbackTitleOf(input: unknown, labels: ResolvedChatLabels): string {
   const record = typeof input === "object" && input !== null ? (input as { question?: unknown; title?: unknown }) : {};
   const question = typeof record.question === "string" ? record.question : typeof record.title === "string" ? record.title : "";
   return question.trim().length > 0 ? `${question} \u2014 ${labels.widgets.fallback}` : labels.widgets.fallback;
+}
+
+/** Инструмент, который экран рисует карточкой картинок или видео. */
+function isMediaTool(toolName: string, extensions: FeedExtensions): boolean {
+  return extensions.videos?.toolName === toolName || imageClientsOf(extensions.images).some(client => client.toolName === toolName);
+}
+
+/** Картинки или видео агента из сжатой истории: часть догружается при показе, до этого — «загружается» или «повторить». */
+function StrippedMediaPart({ partId }: { partId: string }) {
+  const details = useContext(HistoryDetailsContext), labels = useChatLabels();
+  const load = details?.load;
+  useEffect(() => { if (load) void load(partId); }, [partId, load]);
+  return <div role="status">{details?.states[partId] === "error" ? <button type="button" onClick={() => void load?.(partId)}>{labels.history?.failed} · {labels.retry}</button> : labels.history?.loading}</div>;
 }
 
 /** Раскрытие берётся из хранилища чата: переживает уход сообщения за край экрана. */

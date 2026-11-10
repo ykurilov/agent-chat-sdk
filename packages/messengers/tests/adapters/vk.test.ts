@@ -115,6 +115,36 @@ describe("VK: особенности", () => {
       expect(updates).toEqual([]);
     });
 
+    it("секрет и строка подтверждения с пробелом или переводом строки по краям — работают (аудит muse#7)", async () => {
+      const bot = makeBot({ baseUrl: fake.url }, { callback: { secret: ` ${VK_SECRET}\n`, confirmation: `${VK_CONFIRMATION}\n` } });
+      const read = (body: unknown) => bot.adapter.readWebhook(new Request("http://app/vk", { method: "POST", body: JSON.stringify(body) }));
+      const confirmed = await read({ type: "confirmation", group_id: VK_GROUP_ID, secret: VK_SECRET });
+      expect(await confirmed.response.text()).toBe(VK_CONFIRMATION);
+      const { response, updates } = await read(fake.callbackBody({ type: "text", chat: privateChat(), from: rig.anna, text: "привет" }));
+      expect(response.status).toBe(200);
+      expect(updates).toHaveLength(1);
+    });
+
+    it("событие без номера сообщества — отказ: VK его всегда присылает", async () => {
+      const { group_id: _omitted, ...body } = fake.callbackBody({ type: "text", chat: privateChat(), from: rig.anna, text: "привет" }) as Record<string, unknown>;
+      const { response, updates } = await callback(body);
+      expect(response.status).toBe(403);
+      expect(updates).toEqual([]);
+    });
+
+    it("без event_id разные события — разные ключи, повтор того же — тот же ключ", async () => {
+      const withoutId = (text: string) => {
+        const { event_id: _omitted, ...body } = fake.callbackBody({ type: "text", chat: privateChat(), from: rig.anna, text }) as Record<string, unknown>;
+        return body;
+      };
+      const first = withoutId("раз");
+      const keys = [];
+      for (const body of [first, withoutId("два"), first]) keys.push((await callback(body)).updates[0]?.key);
+      expect(keys[0]).toMatch(new RegExp(`^vk:${VK_GROUP_ID}:.+`));
+      expect(keys[1]).not.toBe(keys[0]);
+      expect(keys[2]).toBe(keys[0]);
+    });
+
     it("ключ повтора — event_id", async () => {
       const body = fake.callbackBody({ type: "text", chat: privateChat(), from: rig.anna, text: "привет" });
       const { updates } = await callback(body);

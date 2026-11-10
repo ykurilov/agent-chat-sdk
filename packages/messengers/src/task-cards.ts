@@ -1,6 +1,7 @@
 import type { ChatEvent } from "@ykurilov/agent-chat-core";
 import type { ButtonActions, CardButton } from "./button-actions";
 import type { MessengerChatService, MessengerTaskView } from "./chat-port";
+import { createLiveConnection, type LiveConnection } from "./live-connection";
 import type { ExternalChat } from "./messenger-adapter";
 import { defaultTextsOf, type MessengerTexts, type MessengerTextsOf } from "./messenger-texts";
 import { chatKeyOf, type OutboundQueue } from "./outbound-queue";
@@ -21,9 +22,11 @@ export function createTaskCards(options: {
   queueFor(bot: MessengerBot): OutboundQueue;
   buttons: Pick<ButtonActions, "prepare">;
   textsOf?: MessengerTextsOf;
+  isLive?: LiveConnection;
   logError?(error: unknown): void;
 }) {
   const { store, service, buttons } = options;
+  const isLive = options.isLive ?? createLiveConnection({ store });
   const textsOf = options.textsOf ?? defaultTextsOf;
   const logError = (error: unknown) => options.logError?.(error);
 
@@ -31,9 +34,10 @@ export function createTaskCards(options: {
     const list = service.tasks?.list;
     if (event.type !== "tasks-changed" || !list) return;
     try {
-      const conversations = (await store.listConversationsOfChat(event.chatId)).filter(
-        (conversation) => conversation.active && !conversation.blocked && conversation.userId === event.ownerId,
-      );
+      const conversations: MessengerConversation[] = [];
+      for (const conversation of await store.listConversationsOfChat(event.chatId)) {
+        if (!conversation.blocked && conversation.userId === event.ownerId && (await isLive(conversation))) conversations.push(conversation);
+      }
       if (conversations.length === 0) return;
       for (const task of await list(event.ownerId, event.chatId)) {
         for (const conversation of conversations) {

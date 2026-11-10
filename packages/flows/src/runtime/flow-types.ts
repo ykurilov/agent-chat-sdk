@@ -295,8 +295,8 @@ export interface FirstMessageRules {
     /** Запись чата: окно канала, пауза сотрудника, закрытый день — запрет до правил приложения. */
     chat?: Pick<FlowChatRecord, "dayClosedOn" | "pausedUntil" | "windowClosed">;
   }): Promise<{ allowed: true } | { allowed: false; retryAt: number | null }>;
-  /** Записать, что агент написал первым. */
-  record(input: { ownerId: string; at: number; timeZone: string }): Promise<void>;
+  /** Записать, что агент написал первым; `chatId` освобождает место, которое чат занял проверкой. */
+  record(input: { ownerId: string; chatId?: string; at: number; timeZone: string }): Promise<void>;
 }
 
 // ---------- Карточка клиента ----------

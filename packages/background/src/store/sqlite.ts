@@ -1,9 +1,9 @@
 import Database from "better-sqlite3";
 import { and, asc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import type { TaskCondition, TaskPatch, TaskRecord, TaskStore } from "../types";
 import { BACKGROUND_MIGRATIONS_TABLE } from "./migration-settings";
+import { migrateUnderWriteLock } from "./sqlite-migrate";
 import { backgroundTasks } from "./sqlite-schema";
 import { meetsCondition, NOTICE_STATUSES, patchEntries, RUNNING_STATUSES, withoutEmptyFields } from "./task-store";
 
@@ -39,10 +39,11 @@ function toColumns(patch: TaskPatch | TaskRecord): Record<string, unknown> {
  */
 export function createSqliteTaskStore(filePath: string, migrationsFolder: string): TaskStore {
   const sqlite = new Database(filePath);
-  sqlite.pragma("journal_mode = WAL");
+  // Ожидание замка — до первой записи: переход файла в WAL при старте двух копий тоже ждёт замок.
   sqlite.pragma("busy_timeout = 5000");
+  sqlite.pragma("journal_mode = WAL");
   const db = drizzle(sqlite);
-  migrate(db, { migrationsFolder, migrationsTable: BACKGROUND_MIGRATIONS_TABLE });
+  migrateUnderWriteLock(sqlite, migrationsFolder, BACKGROUND_MIGRATIONS_TABLE);
   const owned = (ownerId: string, taskId: string) => and(eq(backgroundTasks.id, taskId), eq(backgroundTasks.ownerId, ownerId));
   const isRunning = inArray(backgroundTasks.status, [...RUNNING_STATUSES]);
   /** Условие записи — в том же `update … where`: проверка и запись одним действием базы. */

@@ -8,6 +8,7 @@ import {
   chatDataOfInput,
   DuplicateChatSubjectError,
   DuplicateMessageError,
+  assertWellFormedMemoryNote,
   isOptimizationBlocked,
   mergeChatData,
   ChatTurnLeaseLostError,
@@ -156,6 +157,8 @@ export function createSqliteChatStorage(options: { filePath: string }): SqliteCh
   }
 
   function insertNotes(tx: Transaction, ownerId: string, inputs: MemoryNoteInput[]): MemoryNote[] {
+    // Иначе текстовая колонка JSON приняла бы любое значение.
+    inputs.forEach(assertWellFormedMemoryNote);
     const now = Date.now();
     const rows = inputs.map(({ categories, content }): typeof memoryNotes.$inferInsert => ({
       id: crypto.randomUUID(),
@@ -171,6 +174,7 @@ export function createSqliteChatStorage(options: { filePath: string }): SqliteCh
   }
 
   function updateNote(tx: Transaction, ownerId: string, id: string, expectedVersion: number, input: MemoryNoteInput): MemoryNote | "not_found" | "stale_version" {
+    assertWellFormedMemoryNote(input);
     const row = tx.select().from(memoryNotes).where(ownerNote(ownerId, id)).get();
     if (!row) return "not_found";
     if (row.version !== expectedVersion) return "stale_version";
@@ -221,6 +225,7 @@ export function createSqliteChatStorage(options: { filePath: string }): SqliteCh
 
   return {
     guardedTurnWrites: true,
+    finishesWithUsage: true,
     async createChat({ createdAt, ...input }) {
       const at = createdAt ?? new Date().toISOString();
       const row = chatRow({ ...input, createdAt: at, updatedAt: at });
@@ -497,7 +502,15 @@ export function createSqliteChatStorage(options: { filePath: string }): SqliteCh
 
     markAnswerAlive: async (messageId, guard) => updateStreaming(messageId, { alive: "now", ...guard }),
 
-    finishMessage: async (messageId, final) => updateStreaming(messageId, { ...final, ...(final.afterTurn === "pending" && { alive: "now" as const }) }),
+    finishMessage: async (messageId, { usageRecords: spent, ...final }) => {
+      const finish = () => updateStreaming(messageId, { ...final, ...(final.afterTurn === "pending" && { alive: "now" as const }) });
+      if (!spent?.length) return finish();
+      // Ответ и его расход — одна транзакция: падение между ними не теряет расход законченного ответа.
+      db.transaction(() => {
+        finish();
+        db.insert(usageRecords).values([...spent]).run();
+      }, { behavior: "immediate" });
+    },
 
     async updateAwaitingMessage(messageId, patch) {
       // Чтение, сравнение частей и запись — одна транзакция с блокировкой записи: другая копия не вклинится между ними.
@@ -770,7 +783,8 @@ export function createSqliteChatStorage(options: { filePath: string }): SqliteCh
       const { merges } = merge;
       if (merges.length === 0) throw new TypeError("Слияние без склеек");
       const seen = new Set<string>();
-      for (const { originals } of merges) {
+      for (const { result, originals } of merges) {
+        assertWellFormedMemoryNote(result);
         if (originals.length === 0) throw new TypeError("Склейка без оригиналов");
         for (const { id } of originals) {
           if (seen.has(id)) throw new TypeError(`Запись ${id} названа в двух склейках`);

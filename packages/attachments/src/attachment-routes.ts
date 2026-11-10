@@ -66,7 +66,8 @@ function failure(kind: string, status = errorStatus[kind] ?? 400): Response {
 /** Имя для показа: без пути, без управляющих символов, не длиннее 200 знаков. */
 function cleanName(raw: string): string {
   const base = raw.split(/[\\/]/).pop() ?? "";
-  const cleaned = base.replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, MAX_NAME_LENGTH);
+  // Знаки смены направления письма тоже убираются: иначе «.exe» в имени можно показать как «.pdf».
+  const cleaned = base.replace(/[\u0000-\u001f\u007f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, "").trim().slice(0, MAX_NAME_LENGTH);
   return cleaned.length > 0 ? cleaned : "файл";
 }
 
@@ -274,7 +275,14 @@ export function createAttachmentRoutes(options: {
     return record && record.chatId === chatId && record.ownerId === userId ? record : undefined;
   }
 
-  async function download(record: StoredAttachment): Promise<Response> {
+  /**
+   * Файл под id не меняется, поэтому ETag — сам id. `no-cache`: браузер хранит копию, но каждый показ спрашивает сервер,
+   * и доступ (вход, право на чат) проверяется заново; совпавший ETag — 304 без тела.
+   */
+  async function download(record: StoredAttachment, request: Request): Promise<Response> {
+    const etag = `"${record.id}"`;
+    const cached = request.headers.get("if-none-match")?.split(",").some((tag) => tag.trim().replace(/^W\//, "") === etag);
+    if (cached) return new Response(null, { status: 304, headers: { etag, "cache-control": "private, no-cache" } });
     const bytes = await storage.readBytes(record.id);
     if (!bytes) return failure("not_found");
     const contentType = record.kind === "text" ? "text/plain; charset=utf-8" : record.mediaType;
@@ -286,7 +294,8 @@ export function createAttachmentRoutes(options: {
         "content-disposition": `${disposition}; filename*=UTF-8''${encodeURIComponent(record.name).replace(/['()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`)}`,
         "x-content-type-options": "nosniff",
         "content-security-policy": "sandbox",
-        "cache-control": "private, max-age=86400",
+        "cache-control": "private, no-cache",
+        etag,
       },
     });
   }
@@ -328,7 +337,7 @@ export function createAttachmentRoutes(options: {
       if (method !== "GET" && method !== "DELETE") return failure("bad_request", 405);
       const record = await ownRecord(decodeURIComponentSafe(segments[0]!), userId, chatId);
       if (!record) return failure("not_found");
-      if (method === "GET") return download(record);
+      if (method === "GET") return download(record, request);
       if (record.attached) return failure("attached");
       // Сообщение могло отметить файл после чтения записи: тогда условное удаление его не тронет.
       const removed = await storage.removeUnattached(record.id);

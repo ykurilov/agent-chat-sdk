@@ -124,6 +124,23 @@ describe("правила разговора: чат для разговора", 
     expect(fake.notices).toEqual([]);
   });
 
+  it("две копии сервера на одном хранилище одновременно получили первое сообщение — один чат на обеих (аудит kimi#5)", async () => {
+    const store = createMemoryMessengerStore();
+    const fake = createFakeChatService();
+    let created = 0;
+    const slowFirstChat = async () => {
+      created += 1;
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      return { chatId: (await fake.service.createChat("anna", { origin: "telegram" })).id };
+    };
+    const copies = [1, 2].map(() => createConversationPolicy({ store, service: fake.service, chatForConversation: slowFirstChat }));
+    const ctx = { key, account: account(), userId: "anna" };
+    const [first, second] = await Promise.all(copies.map((policy) => policy.currentChat(ctx)));
+    expect(second?.chatId).toBe(first?.chatId);
+    expect(created).toBe(1);
+    expect((await store.getConversation(key))?.currentChatId).toBe(first?.chatId);
+  });
+
   it("правило приложения получает причину и текущий чат; agentStarts → conversation_started, агент пишет первым", async () => {
     const requests: ChatRequest[] = [];
     const { policy, ctx, fake } = setup({

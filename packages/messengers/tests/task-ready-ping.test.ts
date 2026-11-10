@@ -89,6 +89,21 @@ describe("«Задача готова» при закрытой вкладке",
     expect(fake.sent.map((item) => item.chat)).toEqual([{ id: "9100", type: "private" }]);
   });
 
+  it("аккаунт отвязан — в его разговор ничего; выключенный разговор пропускается, привязан другой аккаунт — ему", async () => {
+    const { ping, fake, link, finished, store } = setup();
+    await link();
+    const now = new Date().toISOString();
+    await store.saveConversation({ messenger: "telegram", botId: "bot1", externalChatId: "9100", type: "private", userId: "anna", blocked: false, active: true, createdAt: now, updatedAt: now });
+    await store.removeLinks("anna", "telegram");
+    await ping.handle(finished());
+    expect(fake.sent).toEqual([]);
+
+    await store.setActive({ messenger: "telegram", botId: "bot1", externalChatId: "9100" }, false, now);
+    await link();
+    await ping.handle(finished({ messageId: "msg-2" }));
+    expect(fake.sent.map((item) => item.chat)).toEqual([{ id: "100", type: "private" }]);
+  });
+
   it("ход не по задаче (агент пишет первым) и чат, который ведёт сам мессенджер, — ничего", async () => {
     const { ping, fake, link, finished, service, store } = setup();
     await link();

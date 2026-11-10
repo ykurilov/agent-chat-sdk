@@ -1,6 +1,7 @@
 import type { ChatStorage } from "@ykurilov/agent-chat-core";
 import { cleanExternalText } from "./snapshot/tool-snapshot";
 import type { McpCallResult, ServerConnection } from "./connection/server-connection";
+import { errorText } from "./connection/secret-scrub";
 import { McpError } from "./mcp-error";
 import type { McpToolsModel } from "./mcp-servers";
 import { modelToolName } from "./model-tools";
@@ -149,12 +150,13 @@ export function createToolCaller(deps: ToolCallerDeps) {
       await spend(server, call, result);
       if (result.isError === true) {
         // Текст ошибки пишет чужой сервер: чистим, как описания, коротко и без секретов (сервер мог повторить ключ из адреса).
-        const message = connection.scrub(`Внешний сервис «${server.name}» вернул ошибку: ${cleanExternalText(resultBody(result), 500) || "без текста"}`);
+        const message = errorText(connection.scrub(`Внешний сервис «${server.name}» вернул ошибку: ${cleanExternalText(resultBody(result), 500) || "без текста"}`));
         await journal(server, call, startedAt, message);
         throw new McpError("tool_error", message);
       }
       await journal(server, call, startedAt, undefined);
-      return resultForModel(server.name, result, resultMaxChars);
+      // Удачный ответ тоже пишет чужой сервер: он мог повторить ключ из адреса или заголовка.
+      return resultForModel(server.name, result, resultMaxChars, connection.scrub);
     },
   };
 }

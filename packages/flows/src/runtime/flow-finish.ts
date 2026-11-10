@@ -161,7 +161,7 @@ export function createFlowFinish(input: { runtime: FlowRuntime; onFinish?: (even
       });
       if (result.status !== "delivered" || !result.turnStarted) return;
       if (delivery) await delivery.afterFirstTurn({ ownerId, chatId, answer: result.answer, reasons: [{ kind: "farewell" }], at, timeZone, endedAt: record?.endedAt ?? null });
-      else await firstMessages?.record({ ownerId, at, timeZone });
+      else await firstMessages?.record({ ownerId, chatId, at, timeZone });
     },
 
     async end({ ownerId, chatId, pinned, run, reason, outcome, at }) {

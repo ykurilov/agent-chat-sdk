@@ -6,7 +6,12 @@ import type { StateMap } from "../engine/migrate-run";
 // Времена — строки ISO 8601, как у хранилища чатов и фона.
 
 /** Что случилось с чатом вне хода; применит `prepareTurn` следующего хода. Повтор с тем же `key` ничего не добавляет. */
-export type PendingFlowChange =
+export type PendingFlowChange = PendingFlowChangeBody & {
+  /** Ход, который забрал изменение (`takePending` с ходом); его место ещё не записано. */
+  takenBy?: string;
+};
+
+type PendingFlowChangeBody =
   | {
       kind: "transition";
       key: string;
@@ -249,6 +254,23 @@ export interface NoteSideTaskInput {
   at: string;
 }
 
+export interface TakePendingTurn {
+  /** Ход, который забирает: id его ответа. */
+  turnId: string;
+  /** Ход, чьё место в состоянии чата — основа этого хода (`answerId` места); `null` — ходов не было. */
+  landedTurnId: string | null;
+}
+
+export interface HoldFirstMessageInput {
+  ownerId: string;
+  chatId: string;
+  /** «ГГГГ-ММ-ДД» в поясе человека. */
+  day: string;
+  max: number;
+  now: string;
+  until: string;
+}
+
 export interface FlowStore {
   /**
    * Хранилище исполняет условия ограды (с 0.81): `setDue(…, { leaseOwner })` пишет, только пока аренда у этой копии;
@@ -264,8 +286,14 @@ export interface FlowStore {
 
   /** Новый ключ — в конец; тот же ключ — не дублируется, но `appliedAt` дописывается к ожидающему без него. */
   addPending(chatId: string, change: PendingFlowChange): Promise<void>;
-  /** Забрать всё ожидающее, в порядке добавления, и очистить; переходы, применённые в срок (`appliedAt`), остаются. */
-  takePending(chatId: string): Promise<PendingFlowChange[]>;
+  /**
+   * Забрать всё ожидающее, в порядке добавления, и очистить; переходы, применённые в срок (`appliedAt`), остаются.
+   * С ходом (с 0.106) забранное не стирается, а помечается `takenBy: turnId`: упади процесс до записи места, следующий
+   * ход получит его снова. Помеченное ходом `landedTurnId` — его место уже записано — стирается. Без хода — как раньше.
+   */
+  takePending(chatId: string, turn?: TakePendingTurn): Promise<PendingFlowChange[]>;
+  /** Место хода `turnId` записано: стереть забранное им. Нет метода — сотрёт `takePending` следующего хода. */
+  dropTakenPending?(chatId: string, turnId: string): Promise<void>;
 
   /** `null` — таймеров нет. Снимает аренду. */
   setDue(chatId: string, due: FlowDueInput | null, options?: SetDueOptions): Promise<void>;
@@ -293,8 +321,17 @@ export interface FlowStore {
 
   /** Сколько сообщений агент написал первым за сутки человека (`day` — «ГГГГ-ММ-ДД» в его поясе). */
   countFirstMessages(ownerId: string, day: string): Promise<number>;
-  /** Записать ещё одно; вернуть новый счёт. */
-  addFirstMessage(ownerId: string, day: string): Promise<number>;
+  /**
+   * Записать ещё одно; вернуть новый счёт. `chatId` — чат снимает своё занятие места (`holdFirstMessage`). Счётчики
+   * человека старше недели до `day` убираются.
+   */
+  addFirstMessage(ownerId: string, day: string, chatId?: string): Promise<number>;
+  /**
+   * Занять место в потолке дня для чата до `until`: место есть, если записанных за `day` и живых к `now` занятий других
+   * чатов человека меньше `max`. Своё занятие чата переписывается. Нет места — `freeAt`: когда кончится ближайшее чужое
+   * занятие (`null` — потолок выбран записанными). Атомарно между копиями. Нет метода — потолок не занимается заранее.
+   */
+  holdFirstMessage?(input: HoldFirstMessageInput): Promise<{ held: true } | { held: false; freeAt: string | null }>;
 
   /**
    * Разговор закончен: ставит время и причину, снимает таймер и аренду. Ждёт доставка — её срок и аренда остаются: идущую

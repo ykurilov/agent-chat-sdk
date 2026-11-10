@@ -1,5 +1,5 @@
 import { isEmptyTokenUsage } from "../conversation/token-usage";
-import type { TokenUsage, UsageSource, UsageSum } from "../conversation/types";
+import type { TokenUsage, UsageRecord, UsageSource, UsageSum } from "../conversation/types";
 import type { ModelCatalog } from "../models/model-catalog";
 import type { ChatStorage } from "../storage/chat-storage";
 import { costOfSteps, costOfUsage } from "./usage-cost";
@@ -27,32 +27,38 @@ export interface SpentTokens {
  * Нулевой расход не пишется (`null`), сбой записи не бросается: он уходит в журнал сервера (`null`).
  */
 export async function recordSpentTokens(input: SpentTokens): Promise<string | null> {
-  const { spent } = input;
-  if (isEmptyTokenUsage(spent)) return null;
+  const record = usageRecordOf(input);
+  if (!record) return null;
   try {
-    const id = crypto.randomUUID();
-    await input.storage.insertUsageRecord({
-      id,
-      ownerId: input.ownerId,
-      chatId: input.chatId,
-      messageId: input.messageId,
-      source: input.source,
-      modelId: input.modelId,
-      providerId: input.providerId,
-      inputTokens: spent.inputTokens,
-      cachedInputTokens: spent.cachedInputTokens,
-      cacheWriteTokens: spent.cacheWriteTokens ?? 0,
-      outputTokens: spent.outputTokens,
-      reasoningTokens: spent.reasoningTokens,
-      costUsd: costOfSpent(input),
-      createdAt: input.startedAt,
-      ...(spent.estimated && { estimated: true }),
-    });
-    return id;
+    await input.storage.insertUsageRecord(record);
+    return record.id;
   } catch (failure) {
     input.logError(`Не удалось записать расход (${input.source}, чат ${input.chatId}): ${failure instanceof Error ? failure.message : "неизвестная ошибка"}`, failure);
     return null;
   }
+}
+
+/** Запись расхода со стоимостью, как её пишет `recordSpentTokens`; нулевой расход — `null`. */
+export function usageRecordOf(input: Omit<SpentTokens, "storage" | "logError">): UsageRecord | null {
+  const { spent } = input;
+  if (isEmptyTokenUsage(spent)) return null;
+  return {
+    id: crypto.randomUUID(),
+    ownerId: input.ownerId,
+    chatId: input.chatId,
+    messageId: input.messageId,
+    source: input.source,
+    modelId: input.modelId,
+    providerId: input.providerId,
+    inputTokens: spent.inputTokens,
+    cachedInputTokens: spent.cachedInputTokens,
+    cacheWriteTokens: spent.cacheWriteTokens ?? 0,
+    outputTokens: spent.outputTokens,
+    reasoningTokens: spent.reasoningTokens,
+    costUsd: costOfSpent(input),
+    createdAt: input.startedAt,
+    ...(spent.estimated && { estimated: true }),
+  };
 }
 
 /** Цена по шагам (час пик — по времени шага, без него — по началу хода) или всего расхода как одного запроса. */

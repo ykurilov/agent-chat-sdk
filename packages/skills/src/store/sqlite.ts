@@ -1,10 +1,10 @@
 import Database from "better-sqlite3";
 import { and, count, desc, eq, getTableColumns } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { SkillExistsError, SkillNotFoundError, SkillVersionConflictError } from "../types";
 import type { Skill, SkillBrief, SkillLoad, SkillStore, SkillVersion } from "../types";
 import { SKILLS_MIGRATIONS_TABLE } from "./migration-settings";
+import { migrateUnderWriteLock } from "./sqlite-migrate";
 import { skillLoads, skills, skillVersions } from "./sqlite-schema";
 import { byName, sameText, storedText } from "./skill-store";
 
@@ -35,10 +35,11 @@ function toLoad({ id: _id, ...row }: typeof skillLoads.$inferSelect): SkillLoad 
  */
 export function createSqliteSkillStore(filePath: string, migrationsFolder: string): SkillStore {
   const sqlite = new Database(filePath);
-  sqlite.pragma("journal_mode = WAL");
+  // Ожидание замка — до первой записи: переход файла в WAL при старте двух копий тоже ждёт замок.
   sqlite.pragma("busy_timeout = 5000");
+  sqlite.pragma("journal_mode = WAL");
   const db = drizzle(sqlite);
-  migrate(db, { migrationsFolder, migrationsTable: SKILLS_MIGRATIONS_TABLE });
+  migrateUnderWriteLock(sqlite, migrationsFolder, SKILLS_MIGRATIONS_TABLE);
 
   const read = (name: string) => db.select().from(skills).where(eq(skills.name, name)).get();
   const existing = (name: string) => {

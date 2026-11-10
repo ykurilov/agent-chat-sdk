@@ -4,9 +4,9 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import type { StateMap } from "../engine/migrate-run";
 import { FLOW_DELIVERY_EXIT, type FlowChatRecord, type FlowPendingDelivery, type FlowStore, type PendingFlowChange, type SideTaskRecord } from "./flow-store";
-import { appliedInTime, byVersionAndState, compareText, migratePending, normalizedDelivery, pendingAdded } from "./flow-store-shared";
+import { byVersionAndState, compareText, firstMessagesKeptFrom, migratePending, normalizedDelivery, pendingAdded, pendingNotLanded, pendingTaken } from "./flow-store-shared";
 import { FLOWS_MIGRATIONS_TABLE } from "./migration-settings";
-import { flowChats, flowClientCards, flowFirstMessages, flowPeople, flowSideTasks, flowVersions } from "./sqlite-schema";
+import { flowChats, flowClientCards, flowFirstMessageHolds, flowFirstMessages, flowPeople, flowSideTasks, flowVersions } from "./sqlite-schema";
 
 /** Хранилище в файле SQLite: `close` обязателен — файл закрывает приложение при остановке. */
 export type SqliteFlowStore = FlowStore & Required<Pick<FlowStore, "close">>;
@@ -148,15 +148,24 @@ export function createSqliteFlowStore(filePath: string, migrationsFolder: string
       });
       add.immediate();
     },
-    async takePending(chatId) {
-      // Прочитать и очистить под захватом записи: вторая копия ждёт и видит уже пустой список (кроме применённых в срок).
+    async takePending(chatId, turn) {
+      // Прочитать и переписать под захватом записи: вторая копия ждёт и видит уже записанное.
       const take = sqlite.transaction(() => {
         const row = db.select({ pending: flowChats.pending }).from(flowChats).where(eq(flowChats.chatId, chatId)).get();
         if (!row || row.pending.length === 0) return [];
-        db.update(flowChats).set({ pending: row.pending.filter(appliedInTime) }).where(eq(flowChats.chatId, chatId)).run();
-        return row.pending;
+        const { taken, kept } = pendingTaken(row.pending, turn);
+        db.update(flowChats).set({ pending: kept }).where(eq(flowChats.chatId, chatId)).run();
+        return taken;
       });
       return take.immediate();
+    },
+    async dropTakenPending(chatId, turnId) {
+      const drop = sqlite.transaction(() => {
+        const row = db.select({ pending: flowChats.pending }).from(flowChats).where(eq(flowChats.chatId, chatId)).get();
+        const left = row && pendingNotLanded(row.pending, turnId);
+        if (left && left.length < row.pending.length) db.update(flowChats).set({ pending: left }).where(eq(flowChats.chatId, chatId)).run();
+      });
+      drop.immediate();
     },
 
     async setDue(chatId, due, options) {
@@ -417,14 +426,42 @@ export function createSqliteFlowStore(filePath: string, migrationsFolder: string
         .get();
       return row?.count ?? 0;
     },
-    async addFirstMessage(ownerId, day) {
-      const row = db
-        .insert(flowFirstMessages)
-        .values({ ownerId, day, count: 1 })
-        .onConflictDoUpdate({ target: [flowFirstMessages.ownerId, flowFirstMessages.day], set: { count: sql`${flowFirstMessages.count} + 1` } })
-        .returning({ count: flowFirstMessages.count })
-        .get();
-      return row!.count;
+    async addFirstMessage(ownerId, day, chatId) {
+      const add = sqlite.transaction(() => {
+        const row = db
+          .insert(flowFirstMessages)
+          .values({ ownerId, day, count: 1 })
+          .onConflictDoUpdate({ target: [flowFirstMessages.ownerId, flowFirstMessages.day], set: { count: sql`${flowFirstMessages.count} + 1` } })
+          .returning({ count: flowFirstMessages.count })
+          .get();
+        if (chatId !== undefined) db.delete(flowFirstMessageHolds).where(and(eq(flowFirstMessageHolds.ownerId, ownerId), eq(flowFirstMessageHolds.chatId, chatId))).run();
+        db.delete(flowFirstMessages).where(and(eq(flowFirstMessages.ownerId, ownerId), lt(flowFirstMessages.day, firstMessagesKeptFrom(day)))).run();
+        return row!.count;
+      });
+      return add.immediate();
+    },
+    async holdFirstMessage({ ownerId, chatId, day, max, now, until }) {
+      const hold = sqlite.transaction((): { held: true } | { held: false; freeAt: string | null } => {
+        db.delete(flowFirstMessageHolds).where(and(eq(flowFirstMessageHolds.ownerId, ownerId), lte(flowFirstMessageHolds.until, toMs(now)))).run();
+        const sent = db
+          .select({ count: flowFirstMessages.count })
+          .from(flowFirstMessages)
+          .where(and(eq(flowFirstMessages.ownerId, ownerId), eq(flowFirstMessages.day, day)))
+          .get()?.count ?? 0;
+        if (sent >= max) return { held: false, freeAt: null };
+        const others = db
+          .select({ until: flowFirstMessageHolds.until })
+          .from(flowFirstMessageHolds)
+          .where(and(eq(flowFirstMessageHolds.ownerId, ownerId), eq(flowFirstMessageHolds.day, day), ne(flowFirstMessageHolds.chatId, chatId)))
+          .all();
+        if (sent + others.length >= max) return { held: false, freeAt: new Date(Math.min(...others.map((row) => row.until))).toISOString() };
+        db.insert(flowFirstMessageHolds)
+          .values({ ownerId, chatId, day, until: toMs(until) })
+          .onConflictDoUpdate({ target: [flowFirstMessageHolds.ownerId, flowFirstMessageHolds.chatId], set: { day, until: toMs(until) } })
+          .run();
+        return { held: true };
+      });
+      return hold.immediate();
     },
 
     async close() {

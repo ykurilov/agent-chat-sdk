@@ -1,5 +1,5 @@
 import type { StateMap } from "../engine/migrate-run";
-import type { ChatsInState, FlowPendingDelivery, MigrateBatchInput, PendingFlowChange } from "./flow-store";
+import type { ChatsInState, FlowPendingDelivery, MigrateBatchInput, PendingFlowChange, TakePendingTurn } from "./flow-store";
 
 // Общее у трёх хранилищ сценариев: одинаковые ключи, порядок и правила, чтобы договор держался везде.
 
@@ -10,6 +10,22 @@ export function migratePending(input: MigrateBatchInput): PendingFlowChange {
 
 /** Переход, применённый в срок без хода: «забрать» его не снимает — «Переделать» на той же ветке применит его снова. */
 export const appliedInTime = (change: PendingFlowChange): boolean => change.kind === "transition" && change.appliedAt !== undefined;
+
+/**
+ * `takePending`: что отдать ходу и что оставить в записи. Без хода — отдать всё, оставить применённые в срок. С ходом —
+ * стереть забранное ходом, чьё место записано, остальное отдать и оставить с пометкой этого хода.
+ */
+export function pendingTaken(pending: readonly PendingFlowChange[], turn?: TakePendingTurn): { taken: PendingFlowChange[]; kept: PendingFlowChange[] } {
+  if (!turn) return { taken: [...pending], kept: pending.filter(appliedInTime) };
+  const taken = pendingNotLanded(pending, turn.landedTurnId).map(withoutTaker);
+  return { taken, kept: taken.map((change) => (appliedInTime(change) ? change : { ...change, takenBy: turn.turnId })) };
+}
+
+const withoutTaker = ({ takenBy: _takenBy, ...change }: PendingFlowChange) => change as PendingFlowChange;
+
+/** Ожидающее, которое место чата ещё не учло: без забранного ходом `landedTurnId`, чьё место записано. */
+export const pendingNotLanded = (pending: readonly PendingFlowChange[], landedTurnId: string | null): PendingFlowChange[] =>
+  pending.filter((change) => appliedInTime(change) || change.takenBy === undefined || change.takenBy !== landedTurnId);
 
 /**
  * Ожидающее после `addPending`: новый ключ — в конец; тот же ключ — прежний остаётся, но `appliedAt` нового дописывается,
@@ -58,3 +74,9 @@ export function sameDelivery(stored: FlowPendingDelivery | null, expected: FlowP
   if (stored === null || expected === null) return stored === expected;
   return stored.messageId === expected.messageId && stored.attempt === expected.attempt && (stored.token ?? null) === (expected.token ?? null);
 }
+
+/** Сколько дней счётчика «писал первым» хранится до текущего дня человека. */
+const FIRST_MESSAGE_DAYS_KEPT = 7;
+
+/** День, раньше которого счётчики человека убираются: `day` — «ГГГГ-ММ-ДД». */
+export const firstMessagesKeptFrom = (day: string): string => new Date(Date.parse(`${day}T00:00:00Z`) - FIRST_MESSAGE_DAYS_KEPT * 86_400_000).toISOString().slice(0, 10);

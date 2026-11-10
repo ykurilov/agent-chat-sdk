@@ -14,7 +14,7 @@ import { createImageGeneration } from "@ykurilov/agent-chat-images";
 const images = createImageGeneration({
   attachments,                 // тот же объект createAttachments
   env: process.env,            // ключ RUNWARE_API_KEY — только отсюда
-  spending: { storage, limits }, // расход картинок в лимиты; без него не учитывается
+  spending: { storage, limits }, // расход картинок в лимиты; без него не учитывается. По getChat хранилища поздняя картинка не ложится в удалённый чат
 });
 
 createChatHandler({

@@ -19,7 +19,7 @@ import { recordSpentTokens } from "../usage/record-usage";
 import { answerStepsTask } from "./answer-steps";
 import { applyCompaction } from "./compacted-history";
 import { activeCompaction, contextSizeOf, isCompactionDue, planCompaction, planOverflowCompaction } from "./compaction-plan";
-import { isContextNearLimit } from "./compaction-settings";
+import { isContextNearLimit, settingsForWindow } from "./compaction-settings";
 import type { ResolvedCompactionSettings } from "./compaction-settings";
 import { CompactionFailedError, runCompaction } from "./run-compaction";
 import { isCorrection } from "../steering/turn-steering";
@@ -143,9 +143,20 @@ function branchThroughAnswer(branch: StoredMessage[], answerId: string | undefin
   return index < 0 ? branch : branch.slice(0, index + 1);
 }
 
+/**
+ * Аренда сжатия чата между копиями сервера — в таблице аренды хода, под ключом `<чат>#compaction`: пока одна копия
+ * сжимает историю, другая ждёт и потом решает заново по записанной сводке, а не платит за ту же сводку второй раз.
+ */
+const COMPACTION_LEASE_SUFFIX = "#compaction";
+const COMPACTION_LEASE_MS = 60_000;
+const COMPACTION_LEASE_RENEW_MS = 20_000;
+/** Как часто ждущая копия пробует взять аренду сжатия. */
+const COMPACTION_LEASE_RETRY_MS = 2_000;
+
 export function createCompactionService(options: CompactionServiceOptions): CompactionService {
   const { storage, catalog, settings, logError } = options;
   const now = options.now ?? Date.now;
+  const leaseHolder = crypto.randomUUID();
   const running = new Map<string, { done: Promise<CompactionOutcome>; cancel: () => void }>();
   /** Чаты, где после ответа решается, нужно ли сжатие (на этот срок чат считается сжимающимся). */
   const deciding = new Map<string, number>();
@@ -197,16 +208,19 @@ export function createCompactionService(options: CompactionServiceOptions): Comp
     if (!settings) return "nothing-to-compact";
     const startedAt = new Date().toISOString();
     let model = { modelId: choice.modelId, providerId: choice.providerId };
+    let releaseLease = async () => {};
     try {
+      const fitted = windowSettings(settings, choice);
+      releaseLease = await compactionLease(chatId, signal);
       const branch = overflow?.branch ?? branchThroughAnswer(await loadCurrentBranch(storage, chatId), answerId);
       const compactions = await storage.listCompactions(chatId);
-      const plan = (overflow ? planOverflowCompaction : planCompaction)({ branch, compactions, tailTokens: settings.tailTokens });
+      const plan = (overflow ? planOverflowCompaction : planCompaction)({ branch, compactions, tailTokens: fitted.tailTokens });
       if (!plan) {
         if (!overflow) pausedAt.set(chatId, now());
         return "nothing-to-compact";
       }
       overflow?.onStart();
-      model = settings.model ?? model;
+      model = fitted.model ?? model;
       const active = activeCompaction(branch, compactions);
       const history = applyCompaction(branch.slice(0, plan.throughIndex + 1), active);
       const chat = await storage.getChat(chatId);
@@ -224,7 +238,7 @@ export function createCompactionService(options: CompactionServiceOptions): Comp
         contextHistory: applyCompaction(branch, active),
         ...(options.attachments && { attachments: options.attachments }),
         ...(options.serviceBlocks && { serviceBlocks: options.serviceBlocks }),
-        settings,
+        settings: fitted,
         logError,
         abortSignal: signal,
         fetch: options.fetch,
@@ -252,7 +266,44 @@ export function createCompactionService(options: CompactionServiceOptions): Comp
       pausedAt.set(chatId, now());
       logError(compactionFailureLine(chatId, model, error), error);
       return "failed";
+    } finally {
+      await releaseLease();
     }
+  }
+
+  /** Хвост и сводка по окну модели чата. */
+  function windowSettings(settings: ResolvedCompactionSettings, choice: CompactionChoice): ResolvedCompactionSettings {
+    return settingsForWindow(settings, findModel(catalog, choice.modelId, choice.providerId).profile.contextWindowTokens);
+  }
+
+  /**
+   * Взять аренду сжатия чата (ждать, пока её держит другая копия) и продлевать её до конца сжатия. Возвращает снятие.
+   * Хранилище без аренды или с отказом записи — сжатие идёт без неё, как одна копия.
+   */
+  async function compactionLease(chatId: string, signal: AbortSignal): Promise<() => Promise<void>> {
+    const claim = storage.claimChatTurn?.bind(storage);
+    const release = storage.releaseChatTurn?.bind(storage);
+    const unheld = async () => {};
+    if (!claim || !release) return unheld;
+    const key = `${chatId}${COMPACTION_LEASE_SUFFIX}`;
+    for (;;) {
+      let claimed: boolean;
+      try {
+        claimed = await claim(key, leaseHolder, COMPACTION_LEASE_MS);
+      } catch {
+        return unheld;
+      }
+      if (claimed) break;
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(resolve, COMPACTION_LEASE_RETRY_MS);
+        signal.addEventListener("abort", () => (clearTimeout(timer), reject(signal.reason)), { once: true });
+      });
+    }
+    const renewal = setInterval(() => void claim(key, leaseHolder, COMPACTION_LEASE_MS).catch(() => {}), COMPACTION_LEASE_RENEW_MS);
+    return async () => {
+      clearInterval(renewal);
+      await release(key, leaseHolder).catch(() => {});
+    };
   }
 
   /** Сбой провайдера — строка `[сбой провайдера]`, как у хода (FR-008); остальное (сводка оборвана, пуста) — прежняя строка. */
@@ -400,8 +451,8 @@ export function createCompactionService(options: CompactionServiceOptions): Comp
           transient: true,
           ...(options.attachments && { attachments: options.attachments }),
         ...(options.serviceBlocks && { serviceBlocks: options.serviceBlocks }),
-          settings,
-          task: answerStepsTask(settings.summaryCeilingTokens),
+          settings: windowSettings(settings, choice),
+          task: answerStepsTask(windowSettings(settings, choice).summaryCeilingTokens),
           logError,
           ...(abortSignal && { abortSignal }),
           fetch: options.fetch,

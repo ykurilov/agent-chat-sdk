@@ -39,16 +39,18 @@ function failingOnce(failure: Error): MessageAttachments {
 /** Счёт сообщений: сколько мест взято и не отдано назад. */
 function countedMessages() {
   let taken = 0;
+  const confirmed: string[] = [];
   const limits = {
     assertWithinLimit: async () => {},
-    takeMessage: async () => {
+    takeMessage: async ({ messageId }: { messageId: string }) => {
       taken += 1;
-      return async () => {
+      const giveBack = async () => {
         taken -= 1;
       };
+      return Object.assign(giveBack, { confirm: async () => void confirmed.push(messageId) });
     },
   } as unknown as SpendingLimits;
-  return { limits, taken: () => taken };
+  return { limits, taken: () => taken, confirmed };
 }
 
 /** Инструмент `build`, который идёт, пока тест его не отпустит. */
@@ -82,14 +84,16 @@ const idsOf = async (storage: { listMessages(chatId: string): Promise<Array<{ id
 
 describe.each(failures)("отметка вложений не удалась (%s): сообщение не записано, повтор проходит", (_name, failure) => {
   it("отправка: ошибка доходит вызывающему, сообщения нет, место в счёте отдано, хода нет; повтор — сообщение и ход", async () => {
-    const { model, service, storage, taken } = setup(failure);
+    const { model, service, storage, taken, confirmed } = setup(failure);
     const chat = await service.createChat("anna");
     await expect(service.sendMessage("anna", chat.id, withFile("u1", "смотри"))).rejects.toBe(failure);
     expect(await idsOf(storage, chat.id)).toEqual([]);
     expect(taken()).toBe(0);
+    expect(confirmed).toEqual([]);
     expect(model.doStreamCalls).toHaveLength(0);
 
     await readAll(await service.sendMessage("anna", chat.id, withFile("u1", "смотри")));
+    expect(confirmed).toEqual(["u1"]);
     const saved = (await storage.listMessages(chat.id)).find((message) => message.id === "u1");
     expect(saved?.parts).toContainEqual(fileRef);
     expect(taken()).toBe(1);

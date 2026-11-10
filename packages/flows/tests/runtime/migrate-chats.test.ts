@@ -121,6 +121,21 @@ describe("T091 flow.migrateChats", () => {
     expect((await chat.store.getChat(ids.parked))?.versionId).toBe("v2");
   });
 
+  it("чат ушёл в удалённое состояние уже после отбора — следующий ход не застревает: место — последнее из пути, что есть в новой версии (аудит deepseek#1)", async () => {
+    const { chat, ids } = await threeChats();
+    // Запись отстала от чата: отбор видит «Работу», а чат уже в «Отложено», которого в v2 нет и для которого цели нет.
+    // Перевод переименовывает и путь (как в SC-007): запись «Отложено» становится выбранной целью.
+    await chat.store.updateChat(ids.parked, { stateId: "work" }, new Date().toISOString());
+    await expect(chat.flow.migrateChats({ flowId: "mini", toVersionId: "v2", map: {}, flow: miniV2() })).resolves.toEqual({ moved: 3 });
+
+    await say(chat.service, ids.parked, "что там?");
+    await chat.flow.settled();
+    const run = await runOf(chat.service, ids.parked);
+    expect(run?.path.map((entry) => `${entry.state}:${entry.decidedBy}`)).toEqual(["intro:start", "work:event", "work:event", "work:migrate", "waiting:event"]);
+    expect((await chat.store.getChat(ids.parked))?.pending).toEqual([]);
+    expect(chat.logError).toHaveBeenCalledWith(expect.stringContaining("«parked»"));
+  });
+
   it("карта для состояния, которое в новой версии есть, не меняет место чата", async () => {
     const { chat, ids } = await threeChats();
     await chat.flow.migrateChats({ flowId: "mini", toVersionId: "v2", map: { parked: "waiting", work: "done" }, flow: miniV2() });

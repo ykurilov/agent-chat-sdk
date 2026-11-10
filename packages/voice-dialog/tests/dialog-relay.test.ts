@@ -434,6 +434,40 @@ describe("ретранслятор диалога: сквозной путь и 
     expect(FakeSocket.instances[1]!.closed).toBe(true);
   });
 
+  it("recognition.pricePerHour: секунды звука от первого куска до закрытия пишутся расходом voice_input на чат", async () => {
+    const { ready, storage } = await relayWith({ recognition: { apiKey: SONIOX_KEY, connectUpstream: connectFake, pricePerHour: 0.12 } });
+    const records: Array<Record<string, unknown>> = [];
+    const insert = storage.insertUsageRecord.bind(storage);
+    storage.insertUsageRecord = async (record) => {
+      records.push(record as unknown as Record<string, unknown>);
+      return insert(record);
+    };
+    const { connection } = await ready();
+    connection.receive(new Uint8Array(3200));
+    await vi.advanceTimersByTimeAsync(90_000);
+    connection.receive(new Uint8Array(3200));
+    connection.closed();
+    await flush();
+    expect(records).toEqual([
+      expect.objectContaining({ ownerId: "anna", chatId: "chat-1", source: "voice_input", providerId: "soniox", modelId: "stt-rt-v5", inputTokens: 90, costUsd: (90 * 0.12) / 3600 }),
+    ]);
+  });
+
+  it("без recognition.pricePerHour расход распознавания не пишется (как раньше); неверная цена — ошибка при настройке", async () => {
+    const build = (pricePerHour: unknown) => () =>
+      createDialogRelay({ storage: createInMemoryChatStorage(), resolveUser: async () => null, recognition: { pricePerHour } as never, logError: () => {} });
+    expect(build(-1)).toThrow(/pricePerHour/);
+    expect(build(Number.NaN)).toThrow(/pricePerHour/);
+    expect(build(0.12)).not.toThrow();
+    const { ready, storage } = await relayWith();
+    const insert = vi.spyOn(storage, "insertUsageRecord");
+    const { connection } = await ready();
+    connection.receive(new Uint8Array(3200));
+    connection.closed();
+    await flush();
+    expect(insert).not.toHaveBeenCalled();
+  });
+
   it("настройки времени доходят до сессии", async () => {
     const { ready } = await relayWith({ idleSeconds: 90, maxSessionSeconds: 300 });
     expect((await ready()).client.messages[0]).toMatchObject({ idleSeconds: 90, maxSessionSeconds: 300 });

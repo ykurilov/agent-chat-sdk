@@ -174,3 +174,29 @@ describe("AgentChat: несколько источников картинок в
     expect(toolRows()).toEqual(["generate_images", "search"]);
   });
 });
+
+describe("AgentChat: картинки агента в сжатой истории", () => {
+  it("после перезагрузки сжатая часть generate_images догружается сама, без раскрытия строки", async () => {
+    const server = fakeChatServer({ history: feed });
+    const requests: string[] = [];
+    const view = { mode: "compact", branch: "B", olderCursor: null, headMessageId: "m2", totals: { messages: 4, assistantAnswers: 2 }, stateBefore: {} };
+    const stripped = { type: "tool-generate_images", toolCallId: "g1", state: "output-available" };
+    const compactFeed = feed.map((message) => message.id === "m1"
+      ? { ...message, parts: [stripped, ...message.parts.slice(1)], metadata: { status: "complete", historyRevision: "MR", historyDetails: { 0: { type: "tool-generate_images", revision: "R" } } } }
+      : message);
+    const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input instanceof Request ? input.url : input), "http://test.local");
+      requests.push(url.pathname + url.search);
+      if (url.pathname === "/api/chat/c1" && url.searchParams.get("history") === "compact" && (init?.method ?? "GET") === "GET") {
+        const base = await (await server.fetch("/api/chat/c1")).json() as Record<string, unknown>;
+        return Response.json({ ...base, messages: compactFeed, historyView: view });
+      }
+      if (url.pathname.endsWith("/history-part")) return Response.json({ branch: "B", messageId: "m1", partIndex: 0, revision: "R", part: imagesCall("g1", ["x", "y"]) });
+      return server.fetch(input, init);
+    }) as typeof fetch;
+    renderAgentChat({ ...server, fetch: fetcher }, { skin: fullSkin, images, history: "compact" });
+    await screen.findByText("ответ m2");
+    await waitFor(() => expect(document.querySelector('[data-image="x"]')).not.toBeNull());
+    expect(requests.some((request) => request.includes("/history-part") && request.includes("messageId=m1") && request.includes("partIndex=0"))).toBe(true);
+  });
+});

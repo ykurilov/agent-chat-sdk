@@ -61,8 +61,9 @@ export function useVoiceDictation({ voice, value, setValue, chatId }: UseVoiceDi
     setError(undefined);
   }, [value]);
 
-  // Уход с экрана и смена чата обрывают диктовку.
-  useEffect(() => drop, [chatId, drop]);
+  // Уход с экрана, смена чата и отзыв права на голос обрывают диктовку.
+  const voiceOn = voice !== undefined;
+  useEffect(() => drop, [chatId, voiceOn, drop]);
 
   const start = useCallback(() => {
     if (!voice) return;

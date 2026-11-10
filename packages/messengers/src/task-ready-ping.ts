@@ -2,11 +2,12 @@ import type { ChatEvent } from "@ykurilov/agent-chat-core";
 import type { ButtonActions } from "./button-actions";
 import type { MessengerChatService } from "./chat-port";
 import { isTaskNotice, noticesOfLastTurn } from "./chat-notices";
+import { createLiveConnection, type LiveConnection } from "./live-connection";
 import type { ExternalChat } from "./messenger-adapter";
 import { defaultTextsOf, type MessengerTextsOf } from "./messenger-texts";
 import { chatKeyOf, type OutboundQueue } from "./outbound-queue";
 import { durableDelivery } from "./pending-deliveries";
-import type { ConversationKey, MessengerBot, MessengersChatOptions, MessengerStore } from "./types";
+import type { ConversationKey, MessengerBot, MessengerConversation, MessengersChatOptions, MessengerStore } from "./types";
 
 /** Сколько последних ходов помнить, чтобы повтор события не дал второе сообщение. */
 const SEEN_TURNS = 1000;
@@ -26,9 +27,11 @@ export function createTaskReadyPing(options: {
   taskReadyPing?: MessengersChatOptions["taskReadyPing"];
   webChatUrl?: MessengersChatOptions["webChatUrl"];
   textsOf?: MessengerTextsOf;
+  isLive?: LiveConnection;
   logError?(error: unknown): void;
 }) {
   const { store, service, queue, buttons } = options;
+  const isLive = options.isLive ?? createLiveConnection({ store });
   const textsOf = options.textsOf ?? defaultTextsOf;
   const enabled = options.taskReadyPing ?? true;
   const logError = (error: unknown) => options.logError?.(error);
@@ -40,9 +43,12 @@ export function createTaskReadyPing(options: {
    */
   async function privateChatOf(ownerId: string): Promise<{ bot: MessengerBot; chat: ExternalChat; key: ConversationKey } | null> {
     const botOf = (item: { messenger: string; botId: string }) => options.bots.find((bot) => bot.messenger === item.messenger && bot.botId === item.botId);
-    const conversations = (await store.listConversationsOfUser(ownerId))
-      .filter((conversation) => conversation.type === "private" && botOf(conversation))
-      .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+    const conversations: MessengerConversation[] = [];
+    for (const conversation of await store.listConversationsOfUser(ownerId)) {
+      // Разговор, выключенный отвязкой, — уже не этого человека: «Задача готова» туда не идёт.
+      if (conversation.type === "private" && botOf(conversation) && (await isLive(conversation))) conversations.push(conversation);
+    }
+    conversations.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
     const conversation = conversations[0];
     if (conversation) {
       if (conversation.blocked) return null;
@@ -66,7 +72,7 @@ export function createTaskReadyPing(options: {
       if (await service.hasWatchers(event.ownerId, event.chatId)) return;
       // Чат ведёт разговор в мессенджере: ответ туда уже напечатан.
       const followers = await store.listConversationsOfChat(event.chatId);
-      if (followers.some((conversation) => conversation.active && conversation.userId === event.ownerId)) return;
+      for (const conversation of followers) if (conversation.userId === event.ownerId && (await isLive(conversation))) return;
       const tasks = noticesOfLastTurn((await service.getHistory(event.ownerId, event.chatId)).messages).filter(isTaskNotice);
       if (tasks.length === 0) return;
       const target = await privateChatOf(event.ownerId);

@@ -1,6 +1,6 @@
 import type { AgentNotice, PrepareTurn, TurnAction } from "@ykurilov/agent-chat-core";
 import { FLOW_STATE_KEY, type FlowTouch, type Transition } from "../engine/flow-run";
-import { migrateRun } from "../engine/migrate-run";
+import { mapWithLostTarget, migrateRun } from "../engine/migrate-run";
 import { noteAgentAnswer, noteHumanMessage, withNudgeStep, withoutUndeliveredTouch } from "../engine/run-updates";
 import { advance, chainLimitMessage, currentRun, pendingEvent, transitionNotice, withReopen, type ChatFlowRun, type FlowRuntime } from "./flow-events";
 import type { PendingFlowChange } from "../store/flow-store";
@@ -74,7 +74,8 @@ export function flowPrepareTurn(runtime: FlowRuntime, appTimeZone: () => string 
       ...(ctx.resumed && previousClaimAdvice?.forTurnId === ctx.messageId && { claimAdvice: previousClaimAdvice }),
       ...(ctx.resumed && previousAdvice?.forTurnId === ctx.messageId && { transitionAdvice: previousAdvice }),
     };
-    const pending: PendingFlowChange[] = await runtime.store.takePending(ctx.chatId);
+    // Забранное помечено этим ходом и стирается следующим, когда место записано: упади процесс раньше — оно вернётся.
+    const pending: PendingFlowChange[] = await runtime.store.takePending(ctx.chatId, { turnId: ctx.messageId, landedTurnId: previousAnswer ?? null });
     const appliedInTime = new Set(
       pending.flatMap((change) => (change.kind === "transition" && change.appliedAt !== undefined && change.branchHead === previousAnswer ? [transitionKey(change.transition)] : [])),
     );
@@ -121,7 +122,9 @@ export function flowPrepareTurn(runtime: FlowRuntime, appTimeZone: () => string 
           // Версия в записи чата уже новая (`migrateBatch`): переводится только место в сценарии.
           const next = await runtime.chatFlow(ctx.ownerId, ctx.chatId);
           if (next) {
-            run = { ...migrateRun(run, next.flow, change.map, now), answerId: previousAnswer } as ChatFlowRun;
+            const { map, lost } = mapWithLostTarget(run, next.flow, change.map);
+            if (lost) runtime.logError(`[сценарий] чат=${ctx.chatId} состояния «${lost}» нет в версии ${next.versionId}, а цели для него не выбрано: чат переведён в «${map[lost]}»`);
+            run = { ...migrateRun(run, next.flow, map, now), answerId: previousAnswer } as ChatFlowRun;
             pinned = next;
           }
         } else if (change.kind === "transition") {

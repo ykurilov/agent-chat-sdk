@@ -1,3 +1,4 @@
+import { createHash, randomUUID } from "node:crypto";
 import { parseCommand } from "../bot-commands";
 import type { ExternalAccount, ExternalChat, InboundFile, InboundUpdate } from "../messenger-adapter";
 import { mediaTypeOfExtension } from "../messenger-files";
@@ -121,11 +122,24 @@ function safeParse(text: string): unknown {
   }
 }
 
+/**
+ * Ключ повтора — `event_id`. Без него повтор узнаётся по самому событию: иначе все такие события получили бы один ключ
+ * и после первого считались бы повторами. Разрешение и запрет писать узнать нечем — они без защиты от повтора.
+ */
+function updateKeyOf(event: VkEvent, groupId: number): string {
+  if (typeof event.event_id === "string" && event.event_id !== "") return `vk:${groupId}:${event.event_id}`;
+  const object = event.object ?? {};
+  const pressId = (object as { event_id?: unknown }).event_id;
+  if (event.type === "message_event" && typeof pressId === "string" && pressId !== "") return `vk:${groupId}:press:${pressId}`;
+  if (event.type === "message_new") return `vk:${groupId}:message:${createHash("sha256").update(JSON.stringify(object.message ?? null)).digest("hex").slice(0, 32)}`;
+  return `vk:${groupId}:once:${randomUUID()}`;
+}
+
 /** Событие VK (Callback API или Long Poll) → обновления общего вида. */
 export async function toInboundUpdates(event: VkEvent, bot: VkBotIdentity): Promise<InboundUpdate[]> {
   if (event.group_id !== undefined && event.group_id !== bot.groupId) return [];
   const object = event.object ?? {};
-  const key = `vk:${bot.groupId}:${event.event_id ?? ""}`;
+  const key = updateKeyOf(event, bot.groupId);
   const account = async (userId: number): Promise<ExternalAccount> => ({ messenger: "vk", botId: String(bot.groupId), externalUserId: String(userId), name: await bot.nameOf(userId) });
 
   switch (event.type) {

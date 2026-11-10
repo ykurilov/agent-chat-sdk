@@ -206,6 +206,45 @@ export function describeFlowStoreContract(open: () => Promise<SharedFlowStores>)
           expect(await first.takePending(input.chatId)).toEqual([applied]);
         }));
 
+      it("с ходом забранное остаётся с его пометкой: место хода не записано — следующий ход получает его снова, записано — стирается", () =>
+        withStores(async ({ first, second }) => {
+          const input = chatInput();
+          await first.pinChat(input);
+          const applied = { ...judged("timer:x1:e1"), appliedAt: at(2) };
+          await first.addPending(input.chatId, judged("judge:x1:m1"));
+          await first.addPending(input.chatId, applied);
+          expect(await first.takePending(input.chatId, { turnId: "a1", landedTurnId: null })).toEqual([judged("judge:x1:m1"), applied]);
+          expect((await second.getChat(input.chatId))?.pending).toEqual([{ ...judged("judge:x1:m1"), takenBy: "a1" }, applied]);
+          // Возврат после сбоя хода не дублирует.
+          await second.addPending(input.chatId, judged("judge:x1:m1"));
+          await second.addPending(input.chatId, { kind: "event", key: "event:paid:1", name: "paid", at: at(3) });
+
+          // Ход a1 упал до записи места: основа следующего — прежнее место.
+          const again = await second.takePending(input.chatId, { turnId: "a2", landedTurnId: "a0" });
+          expect(again.map((change) => change.key)).toEqual(["judge:x1:m1", "timer:x1:e1", "event:paid:1"]);
+          expect(again.some((change) => change.takenBy !== undefined)).toBe(false);
+          expect((await first.getChat(input.chatId))?.pending.map((change) => change.takenBy)).toEqual(["a2", undefined, "a2"]);
+
+          // Место a2 записано: его забранное стирается, применённое в срок остаётся.
+          expect(await first.takePending(input.chatId, { turnId: "a3", landedTurnId: "a2" })).toEqual([applied]);
+          expect((await second.getChat(input.chatId))?.pending).toEqual([applied]);
+        }));
+
+      it("место хода записано — `dropTakenPending` стирает только забранное этим ходом", () =>
+        withStores(async ({ first, second }) => {
+          const input = chatInput();
+          await first.pinChat(input);
+          const applied = { ...judged("timer:x1:e1"), appliedAt: at(2) };
+          await first.addPending(input.chatId, judged("judge:x1:m1"));
+          await first.addPending(input.chatId, applied);
+          await first.takePending(input.chatId, { turnId: "a1", landedTurnId: null });
+          const late = { kind: "event", key: "event:paid:1", name: "paid", at: at(3) } as const;
+          await second.addPending(input.chatId, late);
+          await second.dropTakenPending?.(input.chatId, "a1");
+          expect((await first.getChat(input.chatId))?.pending).toEqual([applied, late]);
+          await first.dropTakenPending?.("нет-такого", "a1");
+        }));
+
       it("забрать ожидающее может только одна копия", () =>
         withStores(async ({ first, second }) => {
           const input = chatInput();
@@ -844,6 +883,38 @@ export function describeFlowStoreContract(open: () => Promise<SharedFlowStores>)
           expect(counts.sort()).toEqual([3, 4, 5, 6]);
           expect(await second.countFirstMessages("anna", "2026-10-13")).toBe(6);
           expect(await second.countFirstMessages("anna", "2026-10-14")).toBe(1);
+        }));
+
+      it("место в потолке дня занимает чат до срока; одновременно из двух копий последнее место получает один (аудит deepseek#6)", () =>
+        withStores(async ({ first, second }) => {
+          const hold = (store: typeof first, chatId: string, minute: number, max = 2) =>
+            store.holdFirstMessage!({ ownerId: "anna", chatId, day: "2026-10-13", max, now: at(minute), until: at(minute + 10) });
+          await first.addFirstMessage("anna", "2026-10-13");
+          const raced = await Promise.all(["c1", "c2", "c3", "c4"].map((chatId, index) => hold(index % 2 ? first : second, chatId, 0)));
+          expect(raced.filter((result) => result.held)).toHaveLength(1);
+          expect(raced.find((result) => !result.held)).toEqual({ held: false, freeAt: at(10) });
+          const winner = ["c1", "c2", "c3", "c4"][raced.findIndex((result) => result.held)]!;
+          // Свой чат занимает снова (повтор того же касания), чужой ждёт; после срока место свободно.
+          expect(await hold(second, winner, 5)).toEqual({ held: true });
+          expect(await hold(first, "c9", 11)).toEqual({ held: false, freeAt: at(15) });
+          expect(await hold(first, "c9", 16)).toEqual({ held: true });
+          // Записанное сообщение снимает занятие своего чата и засчитывается.
+          expect(await first.addFirstMessage("anna", "2026-10-13", "c9")).toBe(2);
+          expect(await hold(second, "c5", 17)).toEqual({ held: false, freeAt: null });
+          expect(await hold(second, "c5", 17, 3)).toEqual({ held: true });
+          // Другой человек и другой день — свой потолок.
+          expect(await second.holdFirstMessage!({ ownerId: "boris", chatId: "c1", day: "2026-10-13", max: 1, now: at(17), until: at(27) })).toEqual({ held: true });
+        }));
+
+      it("счётчики старше недели убираются, когда человек пишет снова (аудит deepseek#11)", () =>
+        withStores(async ({ first, second }) => {
+          await first.addFirstMessage("anna", "2026-10-01");
+          await first.addFirstMessage("anna", "2026-10-07");
+          await first.addFirstMessage("boris", "2026-10-01");
+          await second.addFirstMessage("anna", "2026-10-14");
+          expect(await first.countFirstMessages("anna", "2026-10-01")).toBe(0);
+          expect(await first.countFirstMessages("anna", "2026-10-07")).toBe(1);
+          expect(await first.countFirstMessages("boris", "2026-10-01")).toBe(1);
         }));
     });
   });

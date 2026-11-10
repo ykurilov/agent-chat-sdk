@@ -240,7 +240,7 @@ describe("вложения в службе чата", () => {
 });
 
 describe("удаление чата и вложения", () => {
-  it("файлы чата удаляются вместе с чатом, до записей в базе", async () => {
+  it("файлы чата удаляются вместе с чатом, до записей в базе, и ещё раз после: поздний файл (картинка из фона) не остаётся без чата", async () => {
     const order: string[] = [];
     const attachments = fakeAttachments({
       removeChatFiles: vi.fn(async () => {
@@ -256,7 +256,20 @@ describe("удаление чата и вложения", () => {
     const chat = await service.createChat("anna");
     await service.deleteChat("anna", chat.id);
     expect(attachments.removeChatFiles).toHaveBeenCalledWith(chat.id);
-    expect(order).toEqual(["files", "chat"]);
+    expect(order).toEqual(["files", "chat", "files"]);
+  });
+
+  it("вторая уборка файлов не удалась — чат всё равно удалён, сбой в журнале", async () => {
+    let calls = 0;
+    const attachments = fakeAttachments({
+      removeChatFiles: vi.fn(async () => {
+        if (++calls === 2) throw new Error("диск недоступен");
+      }),
+    });
+    const { service, storage } = setup(attachments);
+    const chat = await service.createChat("anna");
+    await service.deleteChat("anna", chat.id);
+    expect(await storage.getChat(chat.id)).toBeNull();
   });
 
   it("чужой чат: файлы не трогаются", async () => {

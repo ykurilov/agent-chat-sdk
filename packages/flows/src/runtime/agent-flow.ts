@@ -24,8 +24,9 @@ import { parseFlow } from "../format/parse-flow";
 import { checkFlow } from "../check/check-flow";
 import { FLOW_STATE_KEY, type FlowRun, type Transition } from "../engine/flow-run";
 import { isFinal, stateById } from "../engine/flow-graph";
-import { migrateRun, type StateMap } from "../engine/migrate-run";
+import { mapWithLostTarget, migrateRun, type StateMap } from "../engine/migrate-run";
 import type { FlowChatRecord, SaveFlowVersionResult } from "../store/flow-store";
+import { pendingNotLanded } from "../store/flow-store-shared";
 import { dayInProgress, deadlineAt, flowDay, withDayAnchor } from "../engine/flow-days";
 import { localDay } from "../engine/zoned-time";
 import { nextTransition } from "../engine/next-transition";
@@ -629,7 +630,7 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
       // Перенесённый чат до первого хода — с места из записи переноса; новый чат — сроков ещё нет.
       const run = storedRun(values[FLOW_STATE_KEY]) ?? (record.placement ? await runOutsideTurn(runtime, record, flow, values, now(), record) : null);
       if (!run) return;
-      await reschedule(record.ownerId, record.chatId, migrateRun(run, flow, map, chatTime(run, now())), run.answerId ?? null);
+      await reschedule(record.ownerId, record.chatId, migrateRun(run, flow, mapWithLostTarget(run, flow, map).map, chatTime(run, now())), run.answerId ?? null);
     } catch (error) {
       logError(`[сценарий] чат=${record.chatId} таймер не пересчитан: ${errorText(error)}`);
     }
@@ -665,6 +666,7 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
     // Ветку уже сменили или ход не записал место — судить нечего.
     if (!run || run.answerId !== messageId) return;
     await clearPlacement(chatId);
+    await dropTaken(chatId, messageId);
     await reschedule(ownerId, chatId, run, messageId);
     // После конца разговора переходов нет: судить нечего.
     if (pinned.ended || run.endedAt !== undefined) return;
@@ -929,6 +931,14 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
   }
 
   /** Место чата записано ходом: запись переноса больше не нужна, правда — в состоянии чата. */
+  async function dropTaken(chatId: string, turnId: string): Promise<void> {
+    try {
+      await store.dropTakenPending?.(chatId, turnId);
+    } catch (error) {
+      logError(`[сценарий] чат=${chatId} забранное ходом не стёрто, сотрёт следующий ход: ${errorText(error)}`);
+    }
+  }
+
   async function clearPlacement(chatId: string): Promise<void> {
     if (!placedNow.delete(chatId)) return;
     try {
@@ -953,12 +963,13 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
     const timeZone = await timeZones.of(ownerId, chatId);
     const transitions: Transition[] = [];
     const input = { now: at, card: await runtime.cardValues(ownerId), out: transitions, onChainLimit: () => {}, timeZone };
+    const landedTurnId = run.answerId ?? null;
     const decision = run.checkedTransition;
     if (decision && decision.versionId === pinned.versionId && decision.answerId === run.answerId && decision.transition.from === run.state && confirmations.allows({ ownerId, chatId, flowId: pinned.flowId }, run, decision.transition.exitId)) {
       const { checkedTransition, ...withoutDecision } = run;
       run = advance(pinned.flow, withoutDecision, pendingEvent(decision.transition, timeZone), input);
     }
-    const pending = (record?.pending ?? []).filter((change) => change.kind !== "transition" || !confirmations.guardFor(pinned.flowId, change.transition.from, change.transition.exitId));
+    const pending = pendingNotLanded(record?.pending ?? [], landedTurnId).filter((change) => change.kind !== "transition" || !confirmations.guardFor(pinned.flowId, change.transition.from, change.transition.exitId));
     run = withPending(pinned.flow, run, pending, input);
     const schedule = pinned.flow.schedule;
     if (record?.endedAt) run = endedRun(pinned.flow, run, { endedAt: Date.parse(record.endedAt), endReason: record.endReason ?? "final" });

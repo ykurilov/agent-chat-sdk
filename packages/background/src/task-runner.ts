@@ -110,7 +110,14 @@ export function createTaskRunner(deps: {
   /** Итог задачи, которую ведёт эта копия: запись, событие, доставка. Задачу забрали или отменили — итог не наш. */
   async function writeOutcome(record: TaskRecord, outcome: TaskOutcome): Promise<void> {
     const at = now();
-    const patch: TaskPatch = { ...outcome, ...(isFinishedStatus(outcome.status) && { finishedAt: at }), leaseUntil: leaseUntil(at) };
+    // Новый итог — новая доставка: ключ прежнего состояния (если запоздалая запись его оставила) с ним не делится.
+    const patch: TaskPatch = {
+      ...outcome,
+      ...(isFinishedStatus(outcome.status) && { finishedAt: at }),
+      deliveredAt: undefined,
+      deliveryKey: undefined,
+      leaseUntil: leaseUntil(at),
+    };
     if (!(await store.update(record.ownerId, record.id, patch, stillMine))) {
       leases.delete(record.id);
       return;

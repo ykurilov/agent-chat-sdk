@@ -80,6 +80,18 @@ export const flowFirstMessages = agentChatSchema.table(
   (table) => [primaryKey({ columns: [table.ownerId, table.day] })],
 );
 
+/** Места в потолке «писал первым», занятые чатами до доставки. */
+export const flowFirstMessageHolds = agentChatSchema.table(
+  "flow_first_message_holds",
+  {
+    ownerId: text("owner_id").notNull(),
+    chatId: text("chat_id").notNull(),
+    day: text("day").notNull(),
+    until: moment("until").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.ownerId, table.chatId] })],
+);
+
 /** Пояс человека: общий для всех его чатов. */
 export const flowPeople = agentChatSchema.table("flow_people", {
   ownerId: text("owner_id").primaryKey(),

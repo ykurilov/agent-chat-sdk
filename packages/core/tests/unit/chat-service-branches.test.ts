@@ -233,6 +233,16 @@ describe("служба чата: переключение веток", () => {
     expect(await branchTexts(service, chat.id)).toEqual(["привет", "ответ 1", "как дела", "ответ 2", "и ещё", "ответ 4"]);
   });
 
+  it("выбор ветки сообщает событием «branch-selected», чтобы другая вкладка перечитала ленту; выбор текущей — молчит", async () => {
+    const { service, chat } = await chatWithTwoTurns();
+    await readAll(await service.editMessage("anna", chat.id, "u1", user("u1-v2", "здравствуй")));
+    const events: unknown[] = [];
+    service.subscribeEvents((event) => events.push(event));
+    await service.selectBranch("anna", chat.id, "u1");
+    await service.selectBranch("anna", chat.id, "u1");
+    expect(events).toEqual([{ type: "branch-selected", ownerId: "anna", chatId: chat.id, messageId: "u1" }]);
+  });
+
   it("выбор уже текущего сообщения ничего не пишет", async () => {
     const { service, storage, chat } = await chatWithTwoTurns();
     await service.selectBranch("anna", chat.id, "u1");

@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { commandOf } from "./bot-commands";
 import type { BotCommand, ExternalAccount, InboundUpdate, MessengerAdapter } from "./messenger-adapter";
+import { createLiveConnection } from "./live-connection";
 import { defaultTextsOf, type MessengerTextsOf } from "./messenger-texts";
+import { chatKeyOf } from "./outbound-queue";
+import { withStoreLock } from "./store-lock";
 import type { ConversationKey, MessengerConversation, MessengersChatOptions, MessengerStore } from "./types";
 
 /** Обращений участника в час по умолчанию. */
@@ -9,6 +12,8 @@ export const DEFAULT_PER_MEMBER_HOURLY = 20;
 const HOUR_MS = 60 * 60_000;
 /** Отметка «участник уже предупреждён о пределе» лежит рядом с его обращениями под этим суффиксом. */
 const LIMIT_WARNED_SUFFIX = ":limit-warned";
+/** Сколько копия сервера держит замок подсчёта обращений участника; упала — замок истекает сам. */
+const MEMBER_LIMIT_LEASE_MS = 10_000;
 
 /** Что делать с обновлением из группы. `turn` — сообщение агенту от имени плательщика. */
 export type GroupDecision =
@@ -34,6 +39,7 @@ export function createGroupChats(options: { store: MessengerStore; groups?: Mess
   const allowedTools = groups?.allowedTools ?? [];
   const answerTo = groups?.answerTo ?? "mentions";
   const perMemberHourly = groups?.perMemberHourly ?? DEFAULT_PER_MEMBER_HOURLY;
+  const isLive = createLiveConnection({ store });
 
   function groupCommands(): BotCommand[] {
     if (!enabled) return [];
@@ -54,7 +60,7 @@ export function createGroupChats(options: { store: MessengerStore; groups?: Mess
     const key = keyOf(update);
     if (!enabled) return answerOnceInPrivate(key);
     const conversation = await store.getConversation(key);
-    const connected = conversation?.active === true && conversation.type === "group" ? conversation : null;
+    const connected = await connectedGroup(key, conversation);
 
     if (update.kind === "bot_added") return { type: "reply", text: textsOf(key).connectHint };
     if (update.kind === "bot_removed") {
@@ -75,16 +81,31 @@ export function createGroupChats(options: { store: MessengerStore; groups?: Mess
   /** Кнопка-подсказка в группе стала сообщением агенту: те же предел участника и границы группы, что у сообщения. */
   async function handlePressedText(update: InboundUpdate): Promise<GroupDecision> {
     const key = keyOf(update);
-    const conversation = await store.getConversation(key);
-    if (conversation?.active !== true || conversation.type !== "group") return { type: "reply", text: textsOf(key).connectHint };
-    return admitTurn(key, update.account, conversation);
+    const connected = await connectedGroup(key, await store.getConversation(key));
+    if (!connected) return { type: "reply", text: textsOf(key).connectHint };
+    return admitTurn(key, update.account, connected);
+  }
+
+  /**
+   * Подключённая группа: включена, а подключивший ещё не отвязал мессенджер. Отвязал — группа выключается, как после
+   * `/disconnect`: её снова подключают `/connect`.
+   */
+  async function connectedGroup(key: ConversationKey, conversation: MessengerConversation | null): Promise<MessengerConversation | null> {
+    if (conversation?.active !== true || conversation.type !== "group") return null;
+    if (await isLive(conversation)) return conversation;
+    await store.setActive(key, false, new Date().toISOString());
+    return null;
   }
 
   /** Ход в подключённой группе: обращение засчитано в предел участника, ход — с разрешёнными инструментами группы. */
   async function admitTurn(key: ConversationKey, account: ExternalAccount, connected: MessengerConversation): Promise<GroupDecision> {
-    if (!(await withinMemberLimit(key, account.externalUserId))) {
-      return (await warnOnce(key, account.externalUserId)) ? { type: "reply", text: textsOf(key).memberLimit } : { type: "ignore" };
-    }
+    // Подсчёт и отметка — под замком: иначе сообщения участника, пришедшие в разные копии сервера, обходят предел.
+    const admitted = await withStoreLock(store, `member-limit:${chatKeyOf(key)}:${account.externalUserId}`, MEMBER_LIMIT_LEASE_MS, async () => {
+      if (await withinMemberLimit(key, account.externalUserId)) return "turn";
+      return (await warnOnce(key, account.externalUserId)) ? "warn" : "ignore";
+    });
+    if (admitted === "warn") return { type: "reply", text: textsOf(key).memberLimit };
+    if (admitted === "ignore") return { type: "ignore" };
     return { type: "turn", userId: connected.userId, group: { allowedTools, author: authorNameOf(account) } };
   }
 
@@ -146,8 +167,8 @@ export function createGroupChats(options: { store: MessengerStore; groups?: Mess
 
   /** Кнопки в группе (подтверждения, виджеты) нажимает только плательщик. */
   async function checkPress(key: ConversationKey, account: ExternalAccount): Promise<{ ok: true } | { ok: false; text: string }> {
-    const conversation = await store.getConversation(key);
-    if (!conversation?.active) return { ok: false, text: textsOf(key).connectHint };
+    const conversation = await connectedGroup(key, await store.getConversation(key));
+    if (!conversation) return { ok: false, text: textsOf(key).connectHint };
     if ((await linkedUserOf(account)) === conversation.userId) return { ok: true };
     const payerLink = (await store.listLinks(conversation.userId)).find((link) => link.messenger === key.messenger && link.botId === key.botId);
     return { ok: false, text: textsOf(key).onlyPayer(payerLink?.name ?? textsOf(key).payerFallback) };

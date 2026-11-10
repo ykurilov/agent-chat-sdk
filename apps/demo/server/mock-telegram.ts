@@ -6,6 +6,7 @@ import { Hono } from "hono";
  * Что умеет: опрос `getUpdates`, отправку и правку сообщений, кнопки, меню команд, «печатает». Файлы и голос не принимает.
  * Управляющие адреса для тестов (человек пишет боту, тест читает ответы бота):
  *   POST /control/say       {personId, name, username?, text} — человек пишет боту; `/start <код>` приходит командой;
+ *   POST /control/press     {personId, name, username?, data} — человек нажал кнопку под сообщением бота;
  *   GET  /control/messages  ?chatId=<personId> — сообщения бота этому человеку в порядке отправки (после правок).
  * Человек — число `personId`: у каждого теста свой, поэтому тесты не видят чужих сообщений.
  */
@@ -105,6 +106,20 @@ export function createMockTelegram(options: { token?: string; username?: string 
         from,
         text: body.text,
         ...(command && { entities: [{ type: "bot_command", offset: 0, length: command[0].length }] }),
+      },
+    });
+    return c.json({ ok: true });
+  });
+  app.post("/control/press", async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as { personId?: unknown; name?: unknown; username?: unknown; data?: unknown };
+    if (typeof body.personId !== "number" || typeof body.data !== "string" || typeof body.name !== "string") return c.json({ error: "personId, name and data are required" }, 400);
+    updates.push({
+      update_id: nextUpdateId++,
+      callback_query: {
+        id: `press-${nextUpdateId}`,
+        from: { id: body.personId, is_bot: false, first_name: body.name, ...(typeof body.username === "string" && { username: body.username }) },
+        data: body.data,
+        message: { chat: { id: body.personId, type: "private" } },
       },
     });
     return c.json({ ok: true });

@@ -90,7 +90,7 @@ describe("обработчик чата: лимит расходов", () => {
       error: { kind: "spending_limit_reached", scope: "user", period: "day", resetsAt, reason: "limit", windowId: "day", unit: "messages" },
     });
     expect(await storage.listMessages(chatId)).toEqual([]);
-    expect(takeMessage).toHaveBeenCalledWith({ userId: expect.any(String), chatId });
+    expect(takeMessage).toHaveBeenCalledWith({ userId: expect.any(String), chatId, messageId: expect.any(String) });
   });
 
   it("не исчерпан — ход идёт как обычно", async () => {

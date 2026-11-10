@@ -2,7 +2,8 @@ import { cutAtCharBoundary } from "@ykurilov/agent-chat-core";
 import { z } from "zod";
 import { isHttpAddress } from "../page-address";
 import type { PageContent, PageReaderService, PageScreenshotService, SearchHit, WebSearchService } from "../services";
-import { serviceFailure } from "../web-tool-error";
+import { readLimitedText } from "../read-limited-text";
+import { serviceFailure, WebToolError } from "../web-tool-error";
 import type { WebToolErrorKind } from "../web-tool-error";
 
 export interface FirecrawlOptions {
@@ -81,9 +82,10 @@ export function createFirecrawlServices(options: FirecrawlOptions): FirecrawlSer
         aborted,
       ]);
       status = response.status;
-      text = await Promise.race([response.text(), aborted]);
+      text = await Promise.race([readLimitedText(response), aborted]);
     } catch (error) {
       if (signal?.aborted) throw signal.reason ?? error;
+      if (error instanceof WebToolError) throw error;
       throw serviceFailure(timedOut ? "timeout" : "unavailable");
     } finally {
       clearTimeout(timer);

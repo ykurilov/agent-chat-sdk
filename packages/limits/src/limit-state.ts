@@ -1,4 +1,5 @@
 import type { ChatStorage } from "@ykurilov/agent-chat-core";
+import { legacyWindowStateKey } from "./window-reading";
 
 /**
  * Сколько раз переписывать запись, которую успел изменить другой сервер. Внутри одного процесса правки одного ключа
@@ -42,17 +43,22 @@ export function limitStateStore(storage: ChatStorage): LimitStateStore | null {
     });
     return result;
   }
+  // Записи ещё нет — счёт мог остаться под ключом до экранирования имён: он продолжается под новым ключом.
+  const valueOf = async <T>(key: string, record: { value: string } | null): Promise<T | null> => {
+    const legacyKey = record ? null : legacyWindowStateKey(key);
+    const found = record ?? (legacyKey !== null ? await get(legacyKey) : null);
+    return found ? (JSON.parse(found.value) as T) : null;
+  };
   return {
     async read<T>(key: string) {
-      const record = await get(key);
-      return record ? (JSON.parse(record.value) as T) : null;
+      return valueOf<T>(key, await get(key));
     },
     update<T>(key: string, change: (current: T | null) => T | null) {
       return inTurn(key, async () => {
         for (let attempt = 0; attempt < UPDATE_ATTEMPTS; attempt++) {
           if (attempt > 0) await retryPause(attempt);
           const record = await get(key);
-          const current = record ? (JSON.parse(record.value) as T) : null;
+          const current = await valueOf<T>(key, record);
           const next = change(current);
           if (next === null) return { value: current, written: false };
           if (await save(key, JSON.stringify(next), record?.version ?? null)) return { value: next, written: true };

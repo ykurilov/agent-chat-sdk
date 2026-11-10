@@ -127,6 +127,7 @@ createLongTermMemory({ storage, optimizer: false });                 // выкл
 SQLite и PostgreSQL получают таблицы сами при открытии базы: записи памяти — SQLite `0009`, PostgreSQL `0008`; склейка повторов — SQLite `0010`, PostgreSQL `0009`.
 Хранилище в памяти тоже умеет. Своему хранилищу нужны пять необязательных методов `ChatStorage` и общие тесты `describeChatStorageContract`:
 `listMemoryNotes`, `insertMemoryNotes`, `updateMemoryNote`, `deleteMemoryNote`, `clearMemoryNotes`. Удаление чата память не трогает.
+Кривую запись (разделы не список строк, текст не строка) хранилище не пишет: проверка `assertWellFormedMemoryNote` из ядра, её ждут общие тесты. Время правки записи не убывает, даже если часы сервера отстали.
 
 Для склейки нужны ещё шесть: `claimMemoryOptimizationRun`, `finishMemoryOptimizationRun`, `applyMemoryMerge`, `revertMemoryMerge`, `listMemoryOptimizationRuns`, `listMergedMemoryNotes`.
 Без них склейка тихо выключена (или ошибка, если задана опция `optimizer`).

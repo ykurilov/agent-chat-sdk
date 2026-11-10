@@ -217,6 +217,44 @@ describe("onStateChanged: сбои и остановка", () => {
   });
 });
 
+describe("onStateChanged: две копии сервера", () => {
+  it("повтор хука на одной копии не кладёт старое состояние поверх нового с другой", async () => {
+    const storage = createInMemoryChatStorage();
+    const delivered: StateChangedInput[] = [];
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => (release = resolve));
+    let firstFailed!: () => void;
+    const failed = new Promise<void>((resolve) => (firstFailed = resolve));
+    let attempts = 0;
+    const first = noticeService(scriptedModel([write("email", "a@x.ru"), saying("Записал")]), {
+      storage,
+      agent: { tools: writeTool },
+      onStateChanged: async (input) => {
+        if (attempts++ === 0) {
+          firstFailed();
+          await released;
+          throw new Error("приложение недоступно");
+        }
+        delivered.push(input);
+      },
+    });
+    const second = noticeService(scriptedModel([write("email", "b@x.ru"), saying("Записал")]), {
+      storage,
+      agent: { tools: writeTool },
+      onStateChanged: (input) => void delivered.push(input),
+    });
+    const chat = await first.service.createChat("anna");
+    await send(first.service, chat.id, "u1");
+    await failed;
+    await send(second.service, chat.id, "u2");
+    await vi.waitFor(() => expect(delivered.map((input) => input.state)).toEqual([{ fields: { email: "b@x.ru" } }]));
+    release();
+    await first.service.flush();
+    await second.service.flush();
+    expect(delivered.map((input) => input.state)).toEqual([{ fields: { email: "b@x.ru" } }]);
+  });
+});
+
 describe("состояние ветки читается без текстов сообщений", () => {
   it("getChatState и проверка закрытия при отправке не зовут listMessages, если есть listMessagePartsOfTypes", async () => {
     const storage = createInMemoryChatStorage();

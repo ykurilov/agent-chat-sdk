@@ -41,3 +41,16 @@ export function migrateRun(run: FlowRun, next: AgentFlow, map: StateMap, now: nu
     lastRejected: null,
   };
 }
+
+/**
+ * Чат в состоянии, которого нет в новой версии и для которого цели нет: перевод отобрал его по отставшей записи, а чат
+ * уже ушёл туда. Застревать нельзя — цель берётся сама: последнее состояние пути, что есть в новой версии, иначе начало.
+ * `lost` — состояние, для которого цель выбрана так.
+ */
+export function mapWithLostTarget(run: FlowRun, next: AgentFlow, map: StateMap): { map: StateMap; lost?: string } {
+  if (stateById(next, run.state) || (map[run.state] !== undefined && stateById(next, map[run.state]!))) return { map };
+  const renamed = (id: string) => (!stateById(next, id) && map[id] !== undefined ? map[id]! : id);
+  const known = [...run.path].reverse().map((entry) => renamed(entry.state)).find((id) => stateById(next, id));
+  const target = known ?? next.start ?? next.states[0]?.id;
+  return target === undefined ? { map } : { map: { ...map, [run.state]: target }, lost: run.state };
+}

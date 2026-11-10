@@ -8,6 +8,7 @@ import type { AnswerChunk, MessengerChatService, MessengerUserMessage } from "./
 import type { ConversationContext, ConversationPolicy, OpenedChat, PolicyReply } from "./conversation-policy";
 import type { GroupChats } from "./group-chats";
 import type { InboundMedia } from "./inbound-media";
+import { createLiveConnection, type LiveConnection } from "./live-connection";
 import type { Button, ExternalChat, InboundUpdate } from "./messenger-adapter";
 import { defaultTextsOf, type MessengerTexts, type MessengerTextsOf } from "./messenger-texts";
 import { chatKeyOf, type OutboundQueue } from "./outbound-queue";
@@ -123,6 +124,8 @@ export function createMessengerGateway(deps: {
   onAnswerDelivery?(report: AnswerDeliveryReport): Promise<void> | void;
   /** Склейка пачки в личке (`MessengersOptions.messageBursts`); по умолчанию включена. */
   messageBursts?: false | { quietMs?: number };
+  /** Жива ли связь разговора для хода сервера; по умолчанию — разговор включён и аккаунт привязан. */
+  isLive?: LiveConnection;
   logError?(error: unknown): void;
 }) {
   const { store, service, policy, groups, buttons } = deps;
@@ -130,6 +133,7 @@ export function createMessengerGateway(deps: {
   const logError = (error: unknown) => deps.logError?.(error);
   const chatEnabled = deps.chatEnabled ?? true;
   const bursts = deps.messageBursts === false ? undefined : (deps.messageBursts ?? {});
+  const isLive = deps.isLive ?? createLiveConnection({ store });
   /** Хвост очереди каждого разговора. */
   const lanes = new Map<string, Promise<void>>();
   const running = new Map<string, RunningTurn>();
@@ -658,7 +662,7 @@ export function createMessengerGateway(deps: {
     const conversations = await store.listConversationsOfChat(event.chatId);
     const holdText = service.checksReplies === true && event.channel === "web";
     for (const conversation of conversations) {
-      if (!conversation.active || conversation.userId !== event.ownerId) continue;
+      if (conversation.userId !== event.ownerId || !(await isLive(conversation))) continue;
       if (conversation.blocked) {
         reportAnswer({ ownerId: event.ownerId, chatId: event.chatId, messageId: event.messageId, trigger: "notice", outcome: { status: "blocked" } });
         continue;

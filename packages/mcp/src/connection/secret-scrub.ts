@@ -3,9 +3,14 @@ const MIN_SECRET_LENGTH = 4;
 /** Предел текста ошибки сервера: длинное тело ответа в журнал и модели не нужно. */
 export const ERROR_MAX_CHARS = 300;
 
+/** Текст ошибки сервера не длиннее `ERROR_MAX_CHARS`: секреты вычищаются до обрезки, иначе обрезка может разрезать ключ. */
+export function errorText(scrubbed: string): string {
+  return scrubbed.length > ERROR_MAX_CHARS ? `${scrubbed.slice(0, ERROR_MAX_CHARS - 1)}…` : scrubbed;
+}
+
 /**
- * Вычистка секретов из текста ошибки: адрес целиком меняется на адрес без параметров, значения параметров адреса и
- * заголовков (и их вид в адресной строке) — на «***». Длинное обрезается.
+ * Вычистка секретов из текста сервера: адрес целиком меняется на адрес без параметров, значения параметров адреса и
+ * заголовков (и их вид в адресной строке) — на «***». Длину не меняет: обрезает тот, кто показывает (`errorText`).
  */
 export function secretScrubber(input: { url: URL; displayUrl: string; headerValues: readonly string[] }): (text: string) => string {
   const { url } = input;
@@ -19,6 +24,6 @@ export function secretScrubber(input: { url: URL; displayUrl: string; headerValu
     let clean = text;
     for (const href of fullAddresses) clean = clean.split(href).join(input.displayUrl);
     for (const secret of secrets) clean = clean.split(secret).join("***");
-    return clean.length > ERROR_MAX_CHARS ? `${clean.slice(0, ERROR_MAX_CHARS - 1)}…` : clean;
+    return clean;
   };
 }

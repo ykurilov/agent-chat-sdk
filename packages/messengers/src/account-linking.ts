@@ -3,6 +3,7 @@ import type { ResolvedUser } from "@ykurilov/agent-chat-core";
 import { createHash, randomBytes } from "node:crypto";
 import { commandOf } from "./bot-commands";
 import { readJsonBody } from "./bounded-body";
+import { deactivateConversationsOf } from "./live-connection";
 import type { Button, ExternalAccount, InboundUpdate, MessengerName } from "./messenger-adapter";
 import { defaultTextsOf, type MessengerTextsOf } from "./messenger-texts";
 import type { MessengerBot, MessengerLink, MessengerStore, MessengersBaseOptions } from "./types";
@@ -48,6 +49,8 @@ export function createAccountLinking(deps: {
     );
   }
   const textsOf = deps.textsOf ?? defaultTextsOf;
+  // Подтверждение кнопкой — по умолчанию: иначе чужая ссылка с кодом привязывает аккаунт того, кто её открыл.
+  const confirmation = deps.linkConfirmation === false ? undefined : (deps.linkConfirmation ?? {});
   const messengers = [...new Set(bots.map((bot) => bot.messenger))];
   const allowsOrigin = createRequestOriginCheck({
     allowedOrigins: deps.allowedOrigins,
@@ -71,7 +74,7 @@ export function createAccountLinking(deps: {
    */
   async function redeem(code: string, account: ExternalAccount): Promise<"linked" | "failed" | "taken"> {
     // В защищённом режиме только кнопка может завершить привязку, в том числе при прямом вызове.
-    if (deps.linkConfirmation || !isLinkCode(code)) return "failed";
+    if (confirmation || !isLinkCode(code)) return "failed";
     const now = new Date().toISOString();
     const claimed = await store.consumeLinkCode(hashLinkCode(code), account.messenger, now);
     if (!claimed) return "failed";
@@ -110,8 +113,13 @@ export function createAccountLinking(deps: {
     const link = await store.findLink(update.account.messenger, update.account.botId, update.account.externalUserId);
     if (!link) return;
     const key = { messenger: update.account.messenger, botId: update.account.botId, externalChatId: update.chat.id };
-    if ((await store.getConversation(key))?.userId === link.userId) return;
+    const existing = await store.getConversation(key);
     const now = new Date().toISOString();
+    // Тот же человек привязал аккаунт снова после отвязки: прежний разговор продолжается.
+    if (existing?.userId === link.userId) {
+      if (!existing.active) await store.setActive(key, true, now);
+      return;
+    }
     await store.saveConversation({ ...key, type: "private", userId: link.userId, blocked: false, active: true, createdAt: now, updatedAt: now });
   }
 
@@ -133,7 +141,7 @@ export function createAccountLinking(deps: {
       reply: outcome === "linked" ? texts.linked : outcome === "taken" ? texts.linkTaken : texts.linkFailed,
     });
     if (update.kind === "button" && update.buttonId?.startsWith("link_")) {
-      if (!deps.linkConfirmation || update.chat.type !== "private") return { ...outcomeReply("failed"), acknowledge: true };
+      if (!confirmation || update.chat.type !== "private") return { ...outcomeReply("failed"), acknowledge: true };
       const now = new Date().toISOString();
       const pending = await store.takeButton(confirmationKey(update), confirmationId(update, update.buttonId), now);
       if (pending?.type !== "account_link" || typeof pending.userId !== "string" || typeof pending.expiresAt !== "string" || pending.expiresAt <= now) {
@@ -147,21 +155,25 @@ export function createAccountLinking(deps: {
     if (!command) return null;
     const isStartCode = command.name === "start" && isLinkCode(command.args);
     if (!isStartCode && command.name !== "link") return null;
-    if (deps.linkConfirmation) {
+    if (confirmation) {
       if (update.chat.type !== "private" || !isLinkCode(command.args)) return outcomeReply("failed");
       const now = new Date().toISOString();
       const claimed = await store.consumeLinkCode(hashLinkCode(command.args), update.account.messenger, now);
       if (!claimed) return outcomeReply("failed");
-      const label = await deps.linkConfirmation.label(claimed.userId, update.account);
-      if (typeof label !== "string" || !label.trim()) throw new TypeError("messengers: linkConfirmation.label must return a non-empty label");
+      const label = confirmation.label ? await confirmation.label(claimed.userId, update.account) : undefined;
+      if (confirmation.label && (typeof label !== "string" || !label.trim())) throw new TypeError("messengers: linkConfirmation.label must return a non-empty label");
       const id = `link_${randomBytes(16).toString("base64url")}`;
       await store.saveButton({
         ...confirmationKey(update), id: confirmationId(update, id), createdAt: now,
         action: { type: "account_link", userId: claimed.userId, expiresAt: new Date(Date.now() + LINK_CODE_TTL_MS).toISOString() },
       });
       // Пустые пользовательские фразы не могут скрыть цель привязки или убрать доступную кнопку.
+      const question =
+        label === undefined
+          ? texts.linkConfirmationQuestionUnlabeled || defaultTextsOf(update.account).linkConfirmationQuestionUnlabeled
+          : texts.linkConfirmationQuestion(label) || defaultTextsOf(update.account).linkConfirmationQuestion(label);
       return {
-        reply: texts.linkConfirmationQuestion(label) || defaultTextsOf(update.account).linkConfirmationQuestion(label),
+        reply: question,
         buttons: [[{ id, text: texts.linkConfirm || defaultTextsOf(update.account).linkConfirm }]],
       };
     }
@@ -206,6 +218,7 @@ export function createAccountLinking(deps: {
       if (messenger === null || !messengers.includes(messenger as MessengerName)) return json({ error: "Такой мессенджер не подключён" }, 400);
       const removed = (await store.listLinks(user.id)).filter((link) => link.messenger === messenger);
       await store.removeLinks(user.id, messenger as MessengerName);
+      await deactivateConversationsOf(store, user.id, messenger as MessengerName);
       for (const link of removed) await signal(deps.onUnlinked, link);
       return new Response(null, { status: 204 });
     }

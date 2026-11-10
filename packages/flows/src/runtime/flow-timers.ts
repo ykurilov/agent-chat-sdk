@@ -395,7 +395,7 @@ export function createFlowTimers(input: {
     await setDue(following ? dueInput(following, result.messageId ?? null, offset) : null, { unlessDelivery: true });
     fired(chatId, { kind: reasons[0]!.kind, stateId: next.state, ...(moved && { exitId: due.exitId! }), reasons });
     if (!delivery) {
-      await firstMessages?.record({ ownerId, at, timeZone });
+      await firstMessages?.record({ ownerId, chatId, at, timeZone });
       return;
     }
     // Итог доставки сам пересчитает сроки: дошло — от ответа, не дошло — от отказа.

@@ -601,13 +601,43 @@ describe("ревью С4: ожидающие переходы не теряют�
       abortSignal: controller.signal,
       now: new Date(),
     });
-    await vi.waitFor(async () => expect((await chat.store.getChat(id))?.pending).toEqual([]));
+    await vi.waitFor(async () => expect((await chat.store.getChat(id))?.pending).toEqual([expect.objectContaining({ takenBy: "a-next" })]));
     controller.abort(new Error("срок"));
     await vi.waitFor(async () => expect((await chat.store.getChat(id))?.pending).toHaveLength(1));
     hold = false;
     release();
     await preparing;
     expect((await chat.store.getChat(id))?.pending).toEqual([expect.objectContaining({ kind: "event", name: "paid" })]);
+  });
+});
+
+describe("аудит deepseek#7: процесс упал между взятием ожидающего и записью места", () => {
+  it("ход взял событие, а место не записалось — следующий ход применяет его; записанное место снимает его насовсем", async () => {
+    const chat = flowChat({
+      edit: (json) => stateOf(json, "intro").exits.push({ id: "intro_paid", when: { type: "event", event: "app", name: "paid" }, to: "booked" }),
+    });
+    const target = await newChat(chat.service);
+    const { id } = target;
+    await say(chat.service, id, "привет");
+    await chat.flow.settled();
+    await chat.flow.signal({ ownerId: OWNER, chatId: id, name: "paid" });
+
+    // Подготовка прошла и вернула место, но ответ с ним не записан: процесс убит.
+    const { values } = await chat.service.getChatState(OWNER, id);
+    const prepared = await chat.options.agent.prepareTurn!({
+      ownerId: OWNER, chatId: id, messageId: "a-lost", chat: target, state: values, action: "send", notices: [],
+      timeZone: "Europe/Moscow", audience: "private", resumed: false, abortSignal: new AbortController().signal, now: new Date(),
+    });
+    expect(prepared?.set?.flow).toMatchObject({ state: "booked" });
+    expect((await runOf(chat.service, id))?.state).toBe("intro");
+
+    await say(chat.service, id, "оплатил");
+    await chat.flow.settled();
+    expect(await runOf(chat.service, id)).toMatchObject({ state: "booked", path: [{}, { exitId: "intro_paid" }] });
+    await say(chat.service, id, "ну что?");
+    await chat.flow.settled();
+    expect((await chat.store.getChat(id))?.pending).toEqual([]);
+    expect((await runOf(chat.service, id))?.path).toHaveLength(2);
   });
 });
 

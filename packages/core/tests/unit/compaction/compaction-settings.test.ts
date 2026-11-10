@@ -3,6 +3,7 @@ import {
   effectiveThreshold,
   isContextNearLimit,
   resolveCompactionSettings,
+  settingsForWindow,
 } from "../../../src/compaction/compaction-settings";
 
 describe("настройки сжатия", () => {
@@ -59,5 +60,23 @@ describe("настройки сжатия", () => {
   it("контекст у предела — от 90% окна", () => {
     expect(isContextNearLimit(89_999, 100_000)).toBe(false);
     expect(isContextNearLimit(90_000, 100_000)).toBe(true);
+  });
+});
+
+describe("хвост и сводка по окну модели чата", () => {
+  it("окно 32 тыс.: хвост и потолок сводки ужаты пропорционально, вместе со сводкой хвост помещается", () => {
+    const fitted = settingsForWindow(resolveCompactionSettings(undefined)!, 32_000);
+    expect(fitted).toMatchObject({ tailTokens: 9_600, summaryCeilingTokens: 9_600, thresholdTokens: 250_000 });
+    expect(fitted.tailTokens + fitted.summaryCeilingTokens).toBeLessThan(32_000 * 0.8);
+  });
+
+  it("хвост и сводка уже помещаются в окно — явные настройки как есть", () => {
+    const settings = resolveCompactionSettings({ tailTokens: 350, summaryCeilingTokens: 100 })!;
+    expect(settingsForWindow(settings, 1_000)).toBe(settings);
+  });
+
+  it("большое окно — настройки как есть", () => {
+    const settings = resolveCompactionSettings(undefined)!;
+    expect(settingsForWindow(settings, 200_000)).toBe(settings);
   });
 });

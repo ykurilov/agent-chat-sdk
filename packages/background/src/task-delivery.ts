@@ -1,6 +1,6 @@
 import type { AgentNotice, BackgroundPort } from "@ykurilov/agent-chat-core";
 import { NOTICE_STATUSES } from "./store/task-store";
-import type { TaskRecord, TaskStore } from "./types";
+import type { TaskCondition, TaskRecord, TaskStore } from "./types";
 
 /** Предел итога в служебном сообщении: как предел результата инструмента в ядре. */
 const NOTICE_RESULT_MAX_LENGTH = 50_000;
@@ -78,14 +78,20 @@ export function createTaskDelivery(deps: { store: TaskStore; leaseOwner: string;
       if (group.length === 0) continue;
       const key = group.map(deliveryKeyOf).join("+");
       const kept: TaskRecord[] = [];
-      // Задачу, которую тем временем забрала другая копия, эта не доставляет.
-      for (const task of group) if (await store.update(ownerId, task.id, { deliveryKey: key }, { leaseOwner })) kept.push(task);
+      // Задачу, которую тем временем забрала другая копия или продолжил человек, эта не доставляет: ключ состояния,
+      // которого уже нет, иначе лёг бы на следующий итог, и ядро сочло бы его доставленным.
+      for (const task of group) if (await store.update(ownerId, task.id, { deliveryKey: key }, sameStateAs(task))) kept.push(task);
       if (kept.length > 0) batches.set(key, kept);
     }
     const quietFirst = (group: TaskRecord[]) => (group.every(isQuiet) ? 0 : 1);
     return [...batches]
       .map(([key, group]) => ({ key, tasks: group }))
       .sort((a, b) => quietFirst(a.tasks) - quietFirst(b.tasks));
+  }
+
+  function sameStateAs(task: TaskRecord): TaskCondition {
+    const approvalId = task.progress?.pendingApproval?.approvalId;
+    return { leaseOwner, statuses: [task.status], ...(task.status === "awaiting_approval" && approvalId && { pendingApprovalId: approvalId }) };
   }
 
   function drain(ownerId: string, chatId: string): Promise<void> {

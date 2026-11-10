@@ -170,7 +170,7 @@ export function createFlowDelivery(input: {
     switch (outcome.status) {
       case "delivered":
         if (!(await swap(null))) return;
-        await input.firstMessages?.()?.record({ ownerId, ...job.counted });
+        await input.firstMessages?.()?.record({ ownerId, chatId, ...job.counted });
         await recount({ ownerId, chatId });
         return;
       case "retry": {
@@ -291,7 +291,7 @@ export function createFlowDelivery(input: {
 
     async afterFirstTurn({ ownerId, chatId, answer, reasons, at, timeZone, endedAt }) {
       if (!input.deliver()) {
-        await input.firstMessages?.()?.record({ ownerId, at, timeZone });
+        await input.firstMessages?.()?.record({ ownerId, chatId, at, timeZone });
         return;
       }
       // Ход прервался или не дал ни текста, ни карточек — отдавать нечего.

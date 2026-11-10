@@ -2,7 +2,8 @@ import type { BrowserChatSnapshot, BrowserChatHistory as ChatHistory } from "./t
 import type { ChatModelChoice as ModelChoice } from "../chat-types";
 export type { BrowserChatSnapshot } from "./types";
 import type { AgentChatProps } from "../agent-chat";
-import { browserChatView } from "./view";
+import { browserChatView, MAX_ENVELOPE_CHARS } from "./view";
+import { anySignal } from "../liveness/any-signal";
 
 export interface BrowserChatTransportOptions {
   endpoint: string;
@@ -40,7 +41,7 @@ export function createBrowserChatTransport(options: BrowserChatTransportOptions)
   const validate = (value: unknown): BrowserChatSnapshot => {
     const snapshot = value as BrowserChatSnapshot;
     if (!snapshot || snapshot.version !== 1 || snapshot.ownerId !== options.ownerId || snapshot.chatId !== options.chatId
-      || typeof snapshot.sealed !== "string" || typeof snapshot.view !== "string" || snapshot.sealed.length + snapshot.view.length > 16 * 1024 * 1024
+      || typeof snapshot.sealed !== "string" || typeof snapshot.view !== "string" || snapshot.sealed.length + snapshot.view.length > MAX_ENVELOPE_CHARS
       || (snapshot.pending !== undefined && (!Array.isArray(snapshot.pending) || snapshot.pending.length > 50 || snapshot.pending.some(row => !row || typeof row.id !== "string" || typeof row.text !== "string" || row.text.length > 100_000)))) {
       report("snapshot"); throw new Error("BROWSER_CHAT_SNAPSHOT_INVALID");
     }
@@ -164,7 +165,7 @@ export function createBrowserChatTransport(options: BrowserChatTransportOptions)
       if (action === "stop" && request.method === "POST") { preparation?.abort(); const running = active; running?.controller.abort(); await running?.done; return new Response(null, { status: 204 }); }
       if (active || preparation) return failure(409, "busy");
       const preparing = new AbortController(); preparation = preparing;
-      const mutationSignal = AbortSignal.any([request.signal, preparing.signal]);
+      const mutationSignal = anySignal([request.signal, preparing.signal]);
       try {
       const data = request.body ? await request.json() as Record<string, unknown> : {};
       if (action === "model" && request.method === "PUT") {
@@ -220,7 +221,8 @@ function recordReader(stream: ReadableStream<Uint8Array>) {
         const next = await reader.read();
         if (next.done) { ended = true; buffer += decoder.decode(); }
         else buffer += decoder.decode(next.value, { stream: true });
-        if (buffer.length > 32 * 1024 * 1024) { await reader.cancel(); throw new Error("BROWSER_CHAT_RECORD_LIMIT"); }
+        // Запись — снимок (до предела запроса) и пачка частей при нём.
+        if (buffer.length > MAX_ENVELOPE_CHARS + 16 * 1024 * 1024) { await reader.cancel(); throw new Error("BROWSER_CHAT_RECORD_LIMIT"); }
       }
     },
     cancel(): Promise<void> { return cancellation ??= (async () => { try { await reader.cancel(); } catch {} finally { try { reader.releaseLock(); } catch {} } })(); },

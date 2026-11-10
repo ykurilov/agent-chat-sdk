@@ -7,7 +7,7 @@ import type { ConversationChange, ConversationDefinition, ConversationFeedEvent,
 interface Active {
   ownerId:string; executor:ExternalExecutor; holder:string; tail:Promise<unknown>; off:()=>void;
   modelWork?:Promise<void>;
-  timer?:ReturnType<typeof setInterval>; drain?:Promise<void>; reconcile?:Promise<void>; replay?:Promise<void>; decisions:Map<string,Promise<void>>; ready:boolean; nextReconcileAt:number; reconcileFailures:number; lost:boolean;
+  timer?:ReturnType<typeof setInterval>; drain?:Promise<void>; reconcile?:Promise<void>; replay?:Promise<void>; decisions:Map<string,Promise<void>>; sentDecisions:Set<string>; ready:boolean; nextReconcileAt:number; reconcileFailures:number; lost:boolean;
 }
 export interface ExternalConversationOptions {
   store:ConversationStore;
@@ -154,7 +154,7 @@ export function createExternalConversationService(options:ExternalConversationOp
       if(state.definition.execution.kind!=="external")throw Error("executor_not_supported");
       const executor=await bounded(Promise.resolve(options.resolveExecutor(state.definition)));
       if(closed)throw Error("service_closed");
-      const a:Active={ownerId,executor,holder:randomUUID(),tail:Promise.resolve(),off:()=>{},lost:false,decisions:new Map(),ready:false,nextReconcileAt:0,reconcileFailures:0};
+      const a:Active={ownerId,executor,holder:randomUUID(),tail:Promise.resolve(),off:()=>{},lost:false,decisions:new Map(),sentDecisions:new Set(),ready:false,nextReconcileAt:0,reconcileFailures:0};
       await store.transaction(ownerId,id,s=>{
         if(s.lease&&s.lease.expiresAt>now())throw new ExternalConversationBusyError();
         s.lease={holder:a.holder,expiresAt:now()+leaseMs};
@@ -174,9 +174,9 @@ export function createExternalConversationService(options:ExternalConversationOp
         let renewing=false;
         a.timer=setInterval(()=>{
           if(renewing||a.lost)return;renewing=true;
-          void guarded(id,a,s=>{s.lease!.expiresAt=now()+leaseMs;}).then(()=>{
+          void guarded(id,a,s=>{s.lease!.expiresAt=now()+leaseMs;return pendingDecisions(s);}).then(pending=>{
             if(!a.ready&&a.executor.status()!=="offline"&&now()>=a.nextReconcileAt)void reconcile(ownerId,id).catch(log);
-            else if(a.ready)scheduleDrain(id,a);
+            else if(a.ready){scheduleDrain(id,a);dispatchAcceptedElsewhere(id,a,pending);}
           },error=>{a.lost=true;a.off();clearInterval(a.timer);if(active.get(id)===a)active.delete(id);log(error);}).finally(()=>{renewing=false;});
         },Math.min(options.pollMs??1000,Math.floor(leaseMs/3)));
         a.timer.unref?.();
@@ -221,14 +221,19 @@ export function createExternalConversationService(options:ExternalConversationOp
       a.ready=current!=="offline";a.reconcileFailures=0;a.nextReconcileAt=0;
       // Source replay confirms accepted client ids; ambiguous missing sends stay unknown.
       await drain(id,a);
-      const pending=(await store.read(ownerId,id)).permissions.filter(p=>p.status==="responding"&&p.decision);
-      for(const p of pending)await dispatchDecision(id,a,p.id,p.decision!);
+      for(const p of pendingDecisions(await store.read(ownerId,id)))await dispatchDecision(id,a,p.id,p.decision!);
     })();
     a.reconcile=work;try{await work;}catch(error){
       a.ready=false;a.nextReconcileAt=now()+Math.min(30_000,1000*2**Math.min(a.reconcileFailures++,5));
       await guarded(id,a,s=>{if(a.executor.status()==="offline"&&s.connection!=="offline"){s.connection="offline";statusChanged(s);}});
       throw error;
     }finally{if(a.reconcile===work)a.reconcile=undefined;}
+  }
+  function pendingDecisions(s:ConversationState) { return s.permissions.filter(p=>p.status==="responding"&&p.decision); }
+  // An answer accepted by another server copy reaches the executor through the lease holder, once per holder.
+  function dispatchAcceptedElsewhere(id:string,a:Active,pending:ConversationPermission[]) {
+    const ids=new Set(pending.map(p=>p.id));for(const sent of a.sentDecisions)if(!ids.has(sent))a.sentDecisions.delete(sent);
+    for(const p of pending)if(!a.sentDecisions.has(p.id))void dispatchDecision(id,a,p.id,p.decision!).catch(log);
   }
   async function dispatchDecision(id:string,a:Active,requestId:string,decision:PermissionDecision) {
     const pending=a.decisions.get(requestId);if(pending)return pending;
@@ -241,7 +246,7 @@ export function createExternalConversationService(options:ExternalConversationOp
       const p=s.permissions.find(p=>p.id===requestId);if(!p||p.status!=="responding")return null;
       return permissionResponse(p,decision);
     });
-    if(response)try{assertActive(a);await bounded(a.executor.respondToPermission(requestId,response));}catch(error){log(error);}
+    if(response)try{assertActive(a);a.sentDecisions.add(requestId);await bounded(a.executor.respondToPermission(requestId,response));}catch(error){log(error);}
   }
   function permissionResponse(p:ConversationPermission,d:PermissionDecision):ExternalPermissionResponse {
     if(!d||typeof d!=="object"||Array.isArray(d))throw Error("invalid_permission_answer");

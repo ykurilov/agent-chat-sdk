@@ -1,7 +1,7 @@
 import { expect, test } from "./support/own-server";
 import { signIn } from "./support/chat";
 
-/** Подключение Telegram: код в панели, `/start <код>` в боте, «Подключено», разговор из бота виден в веб-списке чатов (US5). */
+/** Подключение Telegram: код в панели, `/start <код>` и «Да» в боте, «Подключено», разговор из бота виден в веб-списке чатов (US5). */
 
 test("подключить Telegram: код, привязка, сообщение из бота — чат в списке с пометкой", async ({ page, ownServer }) => {
   const person = { personId: 770001, name: "Анна Тест", username: "anna_test" };
@@ -15,6 +15,10 @@ test("подключить Telegram: код, привязка, сообщени�
   expect(code, "в панели виден код привязки").toBeTruthy();
 
   await ownServer.telegramSay(person, `/start ${code}`);
+  // По умолчанию бот сначала спрашивает подтверждение кнопкой «Да».
+  const confirmButton = async () => (await ownServer.telegramMessages(person.personId)).flatMap((message) => message.buttons.flat()).find((button) => button.text === "Да")?.data;
+  await expect.poll(confirmButton).toBeTruthy();
+  await ownServer.telegramPress(person, (await confirmButton()) as string);
   await expect(telegram.getByText("Подключено")).toBeVisible();
   await expect(telegram).toContainText("@anna_test");
 

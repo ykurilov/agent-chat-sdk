@@ -113,9 +113,11 @@ export function createExternalChatHandler(options:ExternalChatHandlerOptions) {
     },
   };
 }
+/** Потолок тела внешнего API: 1 МиБ, как у остальных маршрутов; длинное сообщение кириллицей укладывается. */
+const MAX_BODY_BYTES=1_048_576;
 async function readBody(request:Request):Promise<string> {
   if(!request.body)return "{}";
   const reader=request.body.getReader();let size=0;const chunks:Uint8Array[]=[];
-  try{while(true){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>128_000){await reader.cancel();throw Error("body_too_large");}chunks.push(value);}}finally{reader.releaseLock();}
+  try{while(true){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>MAX_BODY_BYTES){await reader.cancel();throw Error("body_too_large");}chunks.push(value);}}finally{reader.releaseLock();}
   const result=new Uint8Array(size);let offset=0;for(const c of chunks){result.set(c,offset);offset+=c.length;}return new TextDecoder().decode(result);
 }

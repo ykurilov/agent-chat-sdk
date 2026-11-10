@@ -25,6 +25,21 @@ const twoChats = () =>
   ]);
 
 describe("ChatWorkspace", () => {
+  it("набранный текст остаётся у своего чата: ушёл в другой и вернулся — черновик на месте, в другом чате поле пустое", async () => {
+    const server = twoChats();
+    renderWorkspace(server);
+    await waitFor(() => expect(rows()).toHaveLength(2));
+    const field = () => screen.getByLabelText("поле") as HTMLTextAreaElement;
+    await waitFor(() => expect(field()).toBeTruthy());
+    fireEvent.change(field(), { target: { value: "Длинное письмо для второго" } });
+    fireEvent.click(within(row("c1")).getByText("Первый"));
+    await waitFor(() => expect(row("c1").getAttribute("aria-current")).toBe("true"));
+    await waitFor(() => expect(field().value).toBe(""));
+    fireEvent.click(within(row("c2")).getByText("Второй"));
+    await waitFor(() => expect(row("c2").getAttribute("aria-current")).toBe("true"));
+    await waitFor(() => expect(field().value).toBe("Длинное письмо для второго"));
+  });
+
   it("рисует список и открывает самый недавний чат: его история грузится", async () => {
     const server = twoChats();
     renderWorkspace(server);

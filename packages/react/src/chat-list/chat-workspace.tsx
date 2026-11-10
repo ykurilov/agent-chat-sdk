@@ -41,6 +41,18 @@ export function ChatWorkspace({ skin, initialChatId, onChatChange, onChatAccessC
   const [listOpen, setListOpen] = useState(false);
   const [activeBusy, setActiveBusy] = useState(false);
   const { activeChatId } = list;
+  /** Черновики чатов: ушёл в другой чат и вернулся — набранный текст на месте. Живут, пока открыт экран. */
+  const drafts = useRef(new Map<string, string>());
+  const reportDraft = useRef(chatProps.onDraftChange);
+  reportDraft.current = chatProps.onDraftChange;
+  const onActiveDraftChange = useCallback((text: string) => {
+    if (activeChatId !== null) {
+      if (text.length > 0) drafts.current.set(activeChatId, text);
+      else drafts.current.delete(activeChatId);
+    }
+    reportDraft.current?.(text);
+  }, [activeChatId]);
+  const activeDraft = activeChatId === null ? undefined : drafts.current.get(activeChatId);
   /**
    * Список показан только когда известно, что он разрешён: права приходят с первой историей открытого чата, и список,
    * который тут же спрятали бы (`chatList: false`), не должен мигать. Выбор другого чата список не прячет: права нового
@@ -69,7 +81,7 @@ export function ChatWorkspace({ skin, initialChatId, onChatChange, onChatAccessC
   const listView = useChatListView(list, closeList);
 
   const children = activeChatId !== null && (
-    <AgentChat key={activeChatId} {...chatProps} chatId={activeChatId} skin={skin} onBusyChange={setActiveBusy} onChatAccessChange={onActiveAccessChange} onChatUnavailable={onActiveChatUnavailable} />
+    <AgentChat key={activeChatId} {...chatProps} chatId={activeChatId} skin={skin} onBusyChange={setActiveBusy} onChatAccessChange={onActiveAccessChange} onChatUnavailable={onActiveChatUnavailable} onDraftChange={onActiveDraftChange} {...(activeDraft !== undefined && { initialDraft: activeDraft })} />
   );
   if (renderWorkspace) return renderWorkspace({ activeTitle: activeChatTitle(list, labels), ...(listShown && { list: listView }), children });
 

@@ -1,5 +1,25 @@
 # @ykurilov/agent-chat-server
 
+## 0.106.0
+
+### Patch Changes
+
+- 44c83ff: - История в браузере: снимок во время ответа идёт реже для тяжёлого чата, медленный читатель больше не обрывает ход. Расход, который не принял `onUsage`, не теряется: он остаётся в снимке и повторяется следующим запросом. Битый JSON — 400.
+  - Наблюдение за чатом сверяется с базой и без фоновых задач: ход и новые сообщения другой копии сервера видны. Нечитающий клиент не копит события без конца.
+  - Внешний API принимает тело до 1 МиБ, как остальные маршруты.
+  - Полная история сериализуется один раз на запрос.
+- Updated dependencies [4d9f052]
+- Updated dependencies [8a2dd8b]
+- Updated dependencies [6868584]
+- Updated dependencies [78c4f81]
+- Updated dependencies [dd25986]
+- Updated dependencies [2bdba0e]
+- Updated dependencies [4d9f052]
+- Updated dependencies [7a51a46]
+- Updated dependencies [87b7077]
+- Updated dependencies [44c83ff]
+  - @ykurilov/agent-chat-core@0.106.0
+
 ## 0.105.1
 
 ### Patch Changes

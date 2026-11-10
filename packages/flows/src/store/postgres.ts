@@ -5,9 +5,9 @@ import { migratePostgresSchema } from "@ykurilov/agent-chat-core";
 import type { Pool } from "pg";
 import type { StateMap } from "../engine/migrate-run";
 import { FLOW_DELIVERY_EXIT, type FlowChatRecord, type FlowPendingDelivery, type FlowStore, type PendingFlowChange, type SideTaskRecord } from "./flow-store";
-import { byVersionAndState, compareText, migratePending, normalizedDelivery, withoutNul } from "./flow-store-shared";
+import { byVersionAndState, compareText, firstMessagesKeptFrom, migratePending, normalizedDelivery, pendingNotLanded, pendingTaken, withoutNul } from "./flow-store-shared";
 import { FLOWS_MIGRATION_LOCK_KEY, FLOWS_MIGRATIONS_TABLE } from "./migration-settings";
-import { flowChats, flowClientCards, flowFirstMessages, flowPeople, flowSideTasks, flowVersions } from "./postgres-schema";
+import { flowChats, flowClientCards, flowFirstMessageHolds, flowFirstMessages, flowPeople, flowSideTasks, flowVersions } from "./postgres-schema";
 
 /** Хранилище, у которого можно дождаться миграции перед закрытием пула приложения. */
 export type PostgresFlowStore = FlowStore & Required<Pick<FlowStore, "close">>;
@@ -179,20 +179,25 @@ export function createPostgresFlowStore(pool: Pool, migrationsFolder: string): P
       await ready;
       await db.update(flowChats).set({ pending: pendingWith(withoutNul(change)) }).where(eq(flowChats.chatId, chatId));
     },
-    async takePending(chatId) {
+    async takePending(chatId, turn) {
       await ready;
-      // Старое значение — из строки, захваченной `for update`: вторая копия ждёт её и получает уже пустой список
-      // (кроме переходов, применённых в срок: они остаются).
-      const result = await db.execute<{ pending: PendingFlowChange[] }>(sql`
-        with taken as (select chat_id, pending from ${flowChats} where chat_id = ${chatId} for update)
-        update ${flowChats} set pending = (
-          select coalesce(jsonb_agg(item order by place), '[]'::jsonb)
-          from jsonb_array_elements(taken.pending) with ordinality as list(item, place)
-          where item->>'kind' = 'transition' and item->'appliedAt' is not null
-        ) from taken
-        where ${flowChats.chatId} = taken.chat_id
-        returning taken.pending`);
-      return result.rows[0]?.pending ?? [];
+      // Строка чата захвачена `for update`: вторая копия ждёт её и видит уже записанное.
+      return db.transaction(async (tx) => {
+        const [row] = await tx.select({ pending: flowChats.pending }).from(flowChats).where(eq(flowChats.chatId, chatId)).for("update");
+        if (!row || row.pending.length === 0) return [];
+        const { taken, kept } = pendingTaken(row.pending, turn && withoutNul(turn));
+        await tx.update(flowChats).set({ pending: kept }).where(eq(flowChats.chatId, chatId));
+        return taken;
+      });
+    },
+
+    async dropTakenPending(chatId, turnId) {
+      await ready;
+      await db.transaction(async (tx) => {
+        const [row] = await tx.select({ pending: flowChats.pending }).from(flowChats).where(eq(flowChats.chatId, chatId)).for("update");
+        const left = row && pendingNotLanded(row.pending, withoutNul(turnId));
+        if (left && left.length < row.pending.length) await tx.update(flowChats).set({ pending: left }).where(eq(flowChats.chatId, chatId));
+      });
     },
 
     async setDue(chatId, due, options) {
@@ -499,14 +504,48 @@ export function createPostgresFlowStore(pool: Pool, migrationsFolder: string): P
         .where(and(eq(flowFirstMessages.ownerId, ownerId), eq(flowFirstMessages.day, day)));
       return row?.count ?? 0;
     },
-    async addFirstMessage(ownerId, day) {
+    async addFirstMessage(rawOwnerId, day, chatId) {
       await ready;
-      const [row] = await db
-        .insert(flowFirstMessages)
-        .values({ ownerId: withoutNul(ownerId), day, count: 1 })
-        .onConflictDoUpdate({ target: [flowFirstMessages.ownerId, flowFirstMessages.day], set: { count: sql`${flowFirstMessages.count} + 1` } })
-        .returning({ count: flowFirstMessages.count });
-      return row!.count;
+      const ownerId = withoutNul(rawOwnerId);
+      return db.transaction(async (tx) => {
+        const [row] = await tx
+          .insert(flowFirstMessages)
+          .values({ ownerId, day, count: 1 })
+          .onConflictDoUpdate({ target: [flowFirstMessages.ownerId, flowFirstMessages.day], set: { count: sql`${flowFirstMessages.count} + 1` } })
+          .returning({ count: flowFirstMessages.count });
+        if (chatId !== undefined) await tx.delete(flowFirstMessageHolds).where(and(eq(flowFirstMessageHolds.ownerId, ownerId), eq(flowFirstMessageHolds.chatId, withoutNul(chatId))));
+        await tx.delete(flowFirstMessages).where(and(eq(flowFirstMessages.ownerId, ownerId), lt(flowFirstMessages.day, firstMessagesKeptFrom(day))));
+        return row!.count;
+      });
+    },
+    async holdFirstMessage(input) {
+      await ready;
+      const ownerId = withoutNul(input.ownerId);
+      const chatId = withoutNul(input.chatId);
+      const { day, max } = input;
+      return db.transaction(async (tx): Promise<{ held: true } | { held: false; freeAt: string | null }> => {
+        // Строка счётчика дня — замок на человека: копии, занимающие места одного дня, идут по одной.
+        await tx.insert(flowFirstMessages).values({ ownerId, day, count: 0 }).onConflictDoNothing();
+        const [counter] = await tx
+          .select({ count: flowFirstMessages.count })
+          .from(flowFirstMessages)
+          .where(and(eq(flowFirstMessages.ownerId, ownerId), eq(flowFirstMessages.day, day)))
+          .for("update");
+        await tx.delete(flowFirstMessageHolds).where(and(eq(flowFirstMessageHolds.ownerId, ownerId), lte(flowFirstMessageHolds.until, new Date(input.now))));
+        const sent = counter?.count ?? 0;
+        if (sent >= max) return { held: false, freeAt: null };
+        const others = await tx
+          .select({ until: flowFirstMessageHolds.until })
+          .from(flowFirstMessageHolds)
+          .where(and(eq(flowFirstMessageHolds.ownerId, ownerId), eq(flowFirstMessageHolds.day, day), ne(flowFirstMessageHolds.chatId, chatId)));
+        if (sent + others.length >= max) return { held: false, freeAt: new Date(Math.min(...others.map((row) => row.until.getTime()))).toISOString() };
+        const until = new Date(input.until);
+        await tx
+          .insert(flowFirstMessageHolds)
+          .values({ ownerId, chatId, day, until })
+          .onConflictDoUpdate({ target: [flowFirstMessageHolds.ownerId, flowFirstMessageHolds.chatId], set: { day, until } });
+        return { held: true };
+      });
     },
 
     async close() {
