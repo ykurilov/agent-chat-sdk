@@ -11,7 +11,8 @@ const captured=vi.hoisted(()=>({nodes:[] as {id:string}[],edges:[] as {source:st
 vi.mock("@xyflow/react",async()=>({...(await vi.importActual<object>("@xyflow/react")),
  ReactFlow:({nodes,edges,children}:{nodes:typeof captured.nodes;edges:typeof captured.edges;children:ReactNode})=>{captured.nodes=nodes;captured.edges=edges;return <div>{children}</div>;},
  ReactFlowProvider:({children}:{children:ReactNode})=>children,
- useReactFlow:()=>({screenToFlowPosition:vi.fn(),zoomIn:vi.fn(),zoomOut:vi.fn(),fitView:vi.fn()}),
+ useReactFlow:()=>({screenToFlowPosition:vi.fn(),zoomIn:vi.fn(),zoomOut:vi.fn(),fitView:vi.fn(),getNodes:()=>[],setViewport:vi.fn()}),
+ useNodesInitialized:()=>false,
  useStore:(select:(state:{transform:number[]})=>unknown)=>select({transform:[0,0,1]}),
  Panel:({children}:{children:ReactNode})=><div>{children}</div>,MiniMap:()=>null,Background:()=>null,
 }));

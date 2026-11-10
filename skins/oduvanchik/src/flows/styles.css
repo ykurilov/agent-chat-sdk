@@ -18,7 +18,20 @@
 .oduvanchik-flow-condition-type { align-self: flex-start; max-width: 100%; }
 /* The headless editor's fullscreen stacking context is 2000. Only our own DS portal goes above it. */
 .yk-overlay:has(.oduvanchik-flow-dialog) { z-index: 2100; }
-@media (max-width: 860px) { .oduvanchik-flow .oduvanchik-flow-wide { display: none; } }
+/* Шапка сворачивается по своей ширине, а не по ширине окна: редактор во вкладке узкой страницы — как на телефоне. */
+.oduvanchik-flow-header { container: oduvanchik-flow-header / inline-size; }
+.oduvanchik-flow-header .oduvanchik-flow-more { display: none; }
+@container oduvanchik-flow-header (max-width: 1100px) {
+  .oduvanchik-flow-compact > .label { display: none; }
+}
+@container oduvanchik-flow-header (max-width: 860px) {
+  .oduvanchik-flow-header-row { flex-wrap: wrap; gap: 6px; padding-block: 8px; }
+  .oduvanchik-flow-header-actions { width: 100%; gap: 4px; }
+  .oduvanchik-flow-header .oduvanchik-flow-wide { display: none; }
+  .oduvanchik-flow-header .oduvanchik-flow-more { display: block; }
+  /* Узко: подписи прячутся у всех кнопок, иначе «Сохранить» уезжает за край. */
+  .oduvanchik-flow-phone > .label { display: none; }
+}
 .oduvanchik-flow-scroll { scrollbar-gutter: stable; padding-inline-end: var(--yk-studio-scrollbar-gap); }
 .oduvanchik-flow-dialog { display: flex; flex-direction: column; gap: var(--yk-space-4); min-width: 0; }
 .oduvanchik-flow-dialog textarea { min-height: 240px; }

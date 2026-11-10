@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FlowEditorMode } from "../flow-editor-skin";
+import type { FlowInitialZoom } from "./initial-view";
 import type { FlowSelection } from "./use-flow-editor";
 
 // Место на экране: что на доске свёрнуто, открыта ли правая панель, развёрнут ли весь редактор. Состояние «свёрнуто»
@@ -19,6 +20,11 @@ export interface FlowBoardSpaceProps {
   legend?: FlowLegendMode;
   minimap?: FlowMinimapMode;
   inspector?: FlowInspectorMode;
+  /**
+   * Масштаб доски при открытии. По умолчанию `"readable"`: вся схема, если она помещается не мельче 75 %, иначе 75 % и
+   * на виду начало схемы. `"fit"` — вся схема как угодно мелко, число — этот масштаб (`1` — натуральный).
+   */
+  initialZoom?: FlowInitialZoom;
   /** Кнопка «На весь экран» в шапке. По умолчанию есть. */
   fullscreen?: boolean;
   /** Ключ в localStorage для запомненного. По умолчанию общий `agent-chat-flow-board`; `null` — не запоминать. */
@@ -66,6 +72,7 @@ const selectionKey = (selection: FlowSelection) => {
 
 export interface BoardSpace {
   header: FlowHeaderMode;
+  initialZoom: FlowInitialZoom;
   legendHidden: boolean;
   legendOpen: boolean;
   toggleLegend(): void;
@@ -86,7 +93,7 @@ export function useBoardSpace(
   props: FlowBoardSpaceProps,
   editor: { selection: FlowSelection; mode: FlowEditorMode },
 ): BoardSpace {
-  const { header = "full", legend = "collapsed", minimap = "open", inspector = "open", fullscreen: fullscreenAllowed = true } = props;
+  const { header = "full", initialZoom = "readable", legend = "collapsed", minimap = "open", inspector = "open", fullscreen: fullscreenAllowed = true } = props;
   const storageKey = props.storageKey === undefined ? DEFAULT_SPACE_STORAGE_KEY : props.storageKey;
 
   const [remembered, setRemembered] = useState<Remembered>({});
@@ -129,6 +136,7 @@ export function useBoardSpace(
   return useMemo(
     () => ({
       header,
+      initialZoom,
       legendHidden: legend === "hidden",
       legendOpen,
       toggleLegend: () => remember("legend", !legendOpen),
@@ -150,7 +158,7 @@ export function useBoardSpace(
       fullscreen: fullscreenAllowed && fullscreen,
       setFullscreen,
     }),
-    [header, legend, legendOpen, minimap, minimapOpen, inspector, inspectorOpen, needed, fullscreenAllowed, fullscreen, remember],
+    [header, initialZoom, legend, legendOpen, minimap, minimapOpen, inspector, inspectorOpen, needed, fullscreenAllowed, fullscreen, remember],
   );
 }
 

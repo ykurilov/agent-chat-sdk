@@ -41,7 +41,7 @@ async function point(page: Page) {
   return { x: rect.x + rect.width * 0.4, y: rect.y + 65, originX: rect.x, originY: rect.y };
 }
 async function json(page: Page) {
-  await page.getByRole("button", { name: "JSON", exact: true }).click();
+  await page.getByRole("button", { name: "Код сценария (JSON)", exact: true }).click();
   const value = JSON.parse(await page.getByRole("dialog").getByRole("textbox").inputValue());
   await page.keyboard.press("Escape"); await settled(page); return value;
 }
@@ -128,7 +128,7 @@ for (const skin of ["oduvanchik", "tandem"] as const) {
       await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2); await page.mouse.wheel(0, 180);
       await expect.poll(() => handle.evaluate(el => el.scrollTop)).toBeGreaterThan(0);
       expect(await viewport(page)).toEqual(boardBefore);
-      await page.getByRole("button", { name: "JSON", exact: true }).click();
+      await page.getByRole("button", { name: "Код сценария (JSON)", exact: true }).click();
       const field = page.getByRole("dialog").getByRole("textbox");
       expect(await field.evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true);
       await field.hover(); await page.mouse.wheel(0, 140);

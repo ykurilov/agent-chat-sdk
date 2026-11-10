@@ -9,7 +9,7 @@ export function cn(...parts: Array<string | false | null | undefined>) { return 
 
 type ButtonCommon = Omit<ButtonAsButtonProps, "variant" | "children" | "icon" | "aria-label">;
 /** Кнопка с текстом: всегда с фоном или рамкой. */
-export function Button({ variant, children, ...props }: ButtonCommon & { children: ReactNode; variant?: TextButtonVariant | "warm" }) {
+export function Button({ variant, children, ...props }: ButtonCommon & { children: ReactNode; variant?: TextButtonVariant | "warm"; "aria-label"?: string }) {
   return <DsButton {...props} variant={variant === "warm" ? "secondary" : variant}>{children}</DsButton>;
 }
 /** Кнопка-значок без текста: единственная, которая остаётся невидимой. Значок — элементом, имя обязательно. */

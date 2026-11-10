@@ -108,3 +108,10 @@ describe("снимок страницы", () => {
     expect(screen.getByText(/"total": 42/)).toBeTruthy();
   });
 });
+
+describe("название строки", () => {
+  it("с названием от приложения показывает его, а не служебное имя", () => {
+    renderRow({ toolName: "edit_lead_magnet", title: "Правка лид-магнита", open: false });
+    expect(screen.getByRole("button", { name: "Правка лид-магнита: готово" })).toBeTruthy();
+  });
+});

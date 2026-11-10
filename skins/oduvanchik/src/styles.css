@@ -252,6 +252,20 @@
 .oduvanchik-agent:hover .oduvanchik-answer-action,
 .oduvanchik-answer-actions:focus-within .oduvanchik-answer-action { opacity: 1; }
 @media (hover: none) { .oduvanchik-answer-action { opacity: 1; } }
+/* Телефон: цели касания не меньше 44px, ряд действий под ответом — значками (подпись остаётся для читалки и в подсказке). */
+@media (pointer: coarse) {
+  .oduvanchik-user-meta { height: auto; min-height: 24px; }
+  .oduvanchik-user-edit { width: 44px; height: 44px; margin-inline-end: -10px; }
+  .oduvanchik-answer-action { height: 44px; min-width: 44px; }
+  .oduvanchik-answer-action[aria-label] { width: 44px; }
+  .oduvanchik-answer-actions { gap: 0; }
+}
+@media (max-width: 640px) {
+  .oduvanchik-answer-action-text { position: relative; width: 44px; min-width: 44px; padding-inline: 0; justify-content: center; }
+  .oduvanchik-answer-action-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
+/* Активная стрелка отправки — в полную силу: ни прозрачности, ни серой подсветки касания. */
+.oduvanchik-field-send:not(:disabled) { opacity: 1; background: var(--yk-ink); color: var(--yk-on-ink); -webkit-tap-highlight-color: transparent; }
 
 /* Tandem's shared primitive CSS animates inherited text colors. Progress state
    must switch label and fill together, including the first frame after max. */

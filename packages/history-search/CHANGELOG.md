@@ -1,5 +1,11 @@
 # @ykurilov/agent-chat-history-search
 
+## 0.107.0
+
+### Patch Changes
+
+- @ykurilov/agent-chat-core@0.107.0
+
 ## 0.106.0
 
 ### Patch Changes

@@ -26,7 +26,7 @@ export function OduvanchikUserMessage({ text, attachments, branchSwitcher, onEdi
           </div>
         )}
       </div>
-      <div className="flex h-6 items-center">
+      <div className="oduvanchik-user-meta flex h-6 items-center">
         {pending && (
           <span data-steering-pending="" className="text-xs text-[var(--foreground-subtle)]">
             {labels.steeringPending}
@@ -40,7 +40,7 @@ export function OduvanchikUserMessage({ text, attachments, branchSwitcher, onEdi
               size="icon"
               aria-label={labels.editMessage}
               onClick={onEdit}
-              className="size-6 rounded-[var(--radius-small)] text-[var(--foreground-subtle)] [&_svg]:size-3.5"
+              className="oduvanchik-user-edit size-6 rounded-[var(--radius-small)] text-[var(--foreground-subtle)] [&_svg]:size-3.5"
             >
               <Pencil />
             </Button>

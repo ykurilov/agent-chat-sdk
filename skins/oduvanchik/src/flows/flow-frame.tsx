@@ -1,10 +1,10 @@
 import { Badge, Button, GhostIconButton, Input, cn } from "./controls";
 import type { FlowEditorFrameProps, FlowHeaderProps } from "@ykurilov/agent-chat-flows/react";
 import { useFlowLabels } from "@ykurilov/agent-chat-flows/react";
-import { BracketsCurlyIcon as Braces, EyeIcon as Eye, IdentificationCardIcon as IdCard, ArrowsOutIcon as Maximize2, ChatsIcon as MessagesSquare, ArrowsInIcon as Minimize2, PlayIcon as Play, PlusIcon as Plus, FloppyDiskIcon as Save, SlidersHorizontalIcon as Settings2, ShieldCheckIcon as ShieldCheck, ShuffleIcon as Shuffle } from "@phosphor-icons/react";
+import { BracketsCurlyIcon as Braces, CheckCircleIcon as CheckCircle, EyeIcon as Eye, IdentificationCardIcon as IdCard, ArrowsOutIcon as Maximize2, ChatsIcon as MessagesSquare, ArrowsInIcon as Minimize2, PlayIcon as Play, PlusIcon as Plus, FloppyDiskIcon as Save, SlidersHorizontalIcon as Settings2, ShieldCheckIcon as ShieldCheck, ShuffleIcon as Shuffle } from "@phosphor-icons/react";
 import { Sphere } from "@ykurilov/ds-react";
 import type { CSSProperties } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FlowHeaderMenu, type FlowHeaderMenuItem } from "./flow-header-menu";
 
 /** Цвета доски для стилей `@xyflow/react` слоя поведения: из токенов Одуванчика, светлая и тёмная тема сами. */
@@ -32,7 +32,8 @@ export function OduvanchikFlowEditorFrame({ header, board, panel, dialog, classN
       className={cn(
         "oduvanchik-flow grid h-full min-h-[max(420px,60vh)] w-full bg-[var(--yk-bg)] text-[var(--yk-text)] max-[860px]:min-h-[max(640px,100svh)] max-[860px]:grid-cols-1",
         withPanel ? "grid-cols-[minmax(0,1fr)_400px]" : "grid-cols-[minmax(0,1fr)]",
-        compact ? "grid-rows-[48px_minmax(0,1fr)]" : "grid-rows-[64px_minmax(0,1fr)]",
+        // Шапка не ниже 48/64px, но растёт, если узкая шапка переносит кнопки на вторую строку.
+        compact ? "grid-rows-[minmax(48px,auto)_minmax(0,1fr)]" : "grid-rows-[minmax(64px,auto)_minmax(0,1fr)]",
         withPanel ? "max-[860px]:grid-rows-[auto_minmax(0,1fr)_46vh]" : "max-[860px]:grid-rows-[auto_minmax(0,1fr)]",
         className,
       )}
@@ -76,14 +77,71 @@ function FlowName({ name, onRename, readOnly }: Pick<FlowHeaderProps, "name" | "
   );
 }
 
+/** Кнопка шапки: подпись прячется по ширине шапки, имя и подсказка остаются всегда. */
+function headerButtonName(label: string, extra?: string) {
+  return { "aria-label": extra ? `${label}, ${extra}` : label, title: label };
+}
+
+/**
+ * Состояние сохранения. Есть несохранённое или сохранение упало — кнопка; всё сохранено — тихая отметка-статус, а не
+ * выключенная кнопка. Фокус с нажатой кнопки переходит на отметку, чтобы не потеряться.
+ */
+function SaveControl({ onSave, dirty, saving, saveFailed }: Pick<FlowHeaderProps, "dirty" | "saving" | "saveFailed"> & { onSave(): void }) {
+  const labels = useFlowLabels().editor.header;
+  const focused = useRef(false);
+  const status = useRef<HTMLSpanElement>(null);
+  const settled = !dirty && !saving && !saveFailed;
+  useEffect(() => {
+    if (settled && focused.current) status.current?.focus();
+    if (settled) focused.current = false;
+  }, [settled]);
+  if (settled) {
+    return (
+      <span
+        ref={status}
+        role="status"
+        tabIndex={-1}
+        title={labels.saved}
+        aria-label={labels.saved}
+        data-flow-save-status="saved"
+        className="oduvanchik-flow-saved oduvanchik-flow-phone inline-flex h-8 shrink-0 items-center gap-1.5 px-2 text-sm text-[var(--yk-muted)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--yk-accent)]"
+      >
+        <CheckCircle aria-hidden="true" weight="fill" className="size-4 text-[var(--yk-success)]" />
+        <span className="label">{labels.saved}</span>
+      </span>
+    );
+  }
+  const label = saveFailed ? labels.saveFailed : labels.save;
+  return (
+    <Button
+      variant={saveFailed ? "secondary" : "primary"}
+      size="sm"
+      className={cn("oduvanchik-flow-phone", saveFailed && "border-[var(--yk-danger)] text-[var(--yk-danger)]")}
+      loading={saving}
+      disabled={saving}
+      onClick={onSave}
+      onFocus={() => (focused.current = true)}
+      onBlur={() => (focused.current = false)}
+      aria-label={label}
+      title={saveFailed ? labels.saveFailedHint : labels.unsaved}
+      data-save-failed={saveFailed ? "" : undefined}
+    >
+      <Save aria-hidden="true" className="size-4" />
+      <span className="label">{label}</span>
+    </Button>
+  );
+}
+
+/**
+ * Шапка редактора. Подписи и лишние кнопки сворачиваются по ширине самой шапки (container queries), а не окна: редактор
+ * во вкладке узкой страницы ведёт себя так же, как на телефоне. Что не поместилось, уходит в меню «Ещё действия».
+ */
 export function OduvanchikFlowHeader(props: FlowHeaderProps) {
   const { editor: labels, testChat: testChatLabels } = useFlowLabels();
   const { mode, onModeChange, issues, compact: narrow } = props;
   const toggle = (target: "check" | "run") => onModeChange(mode === target ? "edit" : target);
-  const compact = "max-[1100px]:[&>span.label]:hidden";
-  // На телефоне подписи прячутся у всех кнопок, иначе «Сохранить» уезжает за край.
-  const phone = "max-[860px]:[&>span.label]:hidden";
-  // На узком экране второстепенные кнопки уходят в меню «⋯»; Проверить, Прогон и состояние сохранения остаются на виду.
+  // Шапка уже 1100px — подписи прячутся у этих кнопок; уже 860px — у всех, второстепенные уходят в меню.
+  const compact = "oduvanchik-flow-compact";
   const wide = "oduvanchik-flow-wide";
   const fullscreenLabel = props.fullscreen?.active ? labels.board.space.exitFullscreen : labels.board.space.enterFullscreen;
   const menuItems: FlowHeaderMenuItem[] = [
@@ -98,97 +156,88 @@ export function OduvanchikFlowHeader(props: FlowHeaderProps) {
       : []),
   ];
   return (
-    <div className="flex h-full min-w-0 items-center gap-2 px-4 max-[860px]:flex-wrap max-[860px]:gap-1.5 max-[860px]:py-2">
-      {!narrow && <Sphere size={24} />}
-      {!narrow && <FlowName name={props.name} onRename={props.onRename} readOnly={props.readOnly} />}
-      {props.readOnly && (
-        <Badge variant="warm" className="shrink-0" title={labels.header.readOnlyHint} data-flow-read-only-badge="">
-          <Eye aria-hidden="true" className="mr-1 size-3.5" />
-          {labels.header.readOnly}
-        </Badge>
-      )}
-      <div className="relative flex shrink-0 items-center gap-1.5 max-[860px]:w-full max-[860px]:gap-1">
-        <Button variant="secondary" size="sm" className={cn(compact, wide)} onClick={props.onAddState} disabled={mode === "run" || props.readOnly} title={labels.header.state}>
-          <Plus aria-hidden="true" className="size-4" />
-          <span className="label">{labels.header.state}</span>
-        </Button>
-        <Button variant="secondary" size="sm" className={cn(compact, wide)} onClick={props.onOpenCard} disabled={mode === "run"} title={labels.header.card}>
-          <IdCard aria-hidden="true" className="size-4" />
-          <span className="label">{labels.header.card}</span>
-        </Button>
-        {props.onOpenAnyState && <Button variant="secondary" size="sm" className={cn(compact, wide)} onClick={props.onOpenAnyState} disabled={mode === "run"} title={labels.anyStatePanel.title}>
-          <Settings2 aria-hidden="true" className="size-4" /><span className="label">{labels.anyStatePanel.title}</span>
-        </Button>}
-        <Button
-          variant="secondary"
-          size="sm"
-          className={compact}
-          aria-pressed={mode === "check"}
-          onClick={() => toggle("check")}
-          title={labels.header.check}
-        >
-          <ShieldCheck aria-hidden="true" className="size-4" />
-          <span className="label">{labels.header.check}</span>
-          {issues.errors > 0 && (
-            <Badge variant="warm" className="ml-0.5 px-1.5 py-0 text-[11px]" aria-label={labels.board.errors(issues.errors)}>
-              {issues.errors}
-            </Badge>
+    <div className="oduvanchik-flow-header h-full min-w-0" data-flow-header="">
+      <div className="oduvanchik-flow-header-row flex h-full min-w-0 items-center gap-2 px-4">
+        {!narrow && <Sphere size={24} />}
+        {!narrow && <FlowName name={props.name} onRename={props.onRename} readOnly={props.readOnly} />}
+        {props.readOnly && (
+          <Badge variant="warm" className="shrink-0" title={labels.header.readOnlyHint} data-flow-read-only-badge="">
+            <Eye aria-hidden="true" className="mr-1 size-3.5" />
+            {labels.header.readOnly}
+          </Badge>
+        )}
+        <div className="oduvanchik-flow-header-actions relative flex shrink-0 items-center gap-1.5">
+          <Button variant="secondary" size="sm" className={cn(compact, wide)} onClick={props.onAddState} disabled={mode === "run" || props.readOnly} {...headerButtonName(labels.header.state)}>
+            <Plus aria-hidden="true" className="size-4" />
+            <span className="label">{labels.header.state}</span>
+          </Button>
+          <Button variant="secondary" size="sm" className={cn(compact, wide)} onClick={props.onOpenCard} disabled={mode === "run"} {...headerButtonName(labels.header.card)}>
+            <IdCard aria-hidden="true" className="size-4" />
+            <span className="label">{labels.header.card}</span>
+          </Button>
+          {props.onOpenAnyState && (
+            <Button variant="secondary" size="sm" className={cn(compact, wide)} onClick={props.onOpenAnyState} disabled={mode === "run"} {...headerButtonName(labels.anyStatePanel.title)}>
+              <Settings2 aria-hidden="true" className="size-4" />
+              <span className="label">{labels.anyStatePanel.title}</span>
+            </Button>
           )}
-        </Button>
-        <Button
-          variant="secondary"
-          size="sm"
-          className={cn(compact, mode === "run" && "ring-2 ring-[var(--yk-accent)]")}
-          aria-pressed={mode === "run"}
-          onClick={() => toggle("run")}
-          title={labels.header.run}
-        >
-          <Play aria-hidden="true" className="size-4" />
-          <span className="label">{labels.header.run}</span>
-        </Button>
-        <GhostIconButton size="sm" className={wide} onClick={props.onOpenJson} title={labels.header.json} aria-label={labels.header.json}>
-          <Braces aria-hidden="true" className="size-4" />
-        </GhostIconButton>
-        {props.onOpenMigrate && (
-          <GhostIconButton size="sm" className={wide} onClick={props.onOpenMigrate} title={labels.header.migrate} aria-label={labels.header.migrate}>
-            <Shuffle aria-hidden="true" className="size-4" />
-          </GhostIconButton>
-        )}
-        {props.fullscreen && (
-          <GhostIconButton
-            size="sm"
-            className={wide}
-            data-flow-fullscreen-toggle=""
-            aria-pressed={props.fullscreen.active}
-            onClick={props.fullscreen.onToggle}
-            title={props.fullscreen.active ? labels.board.space.exitFullscreen : labels.board.space.enterFullscreen}
-            aria-label={props.fullscreen.active ? labels.board.space.exitFullscreen : labels.board.space.enterFullscreen}
-          >
-            {props.fullscreen.active ? <Minimize2 aria-hidden="true" className="size-4" /> : <Maximize2 aria-hidden="true" className="size-4" />}
-          </GhostIconButton>
-        )}
-        {props.onOpenTestChat && (
-          <Button variant="secondary" size="sm" className={wide} onClick={props.onOpenTestChat} title={testChatLabels.title}>
-            <MessagesSquare aria-hidden="true" className="size-4" />
-            <span className="label">{testChatLabels.title}</span>
-          </Button>
-        )}
-        <FlowHeaderMenu label={labels.header.more} items={menuItems} className="hidden max-[860px]:block" />
-        {props.onSave && (
           <Button
-            variant={props.saveFailed ? "secondary" : props.dirty ? "primary" : "secondary"}
+            variant="secondary"
             size="sm"
-            className={cn(phone, props.saveFailed && "border-[var(--yk-danger)] text-[var(--yk-danger)]")}
-            loading={props.saving}
-            disabled={props.saving || !props.dirty}
-            onClick={props.onSave}
-            title={props.saveFailed ? labels.header.saveFailedHint : props.dirty ? labels.header.unsaved : labels.header.saved}
-            data-save-failed={props.saveFailed ? "" : undefined}
+            className={compact}
+            aria-pressed={mode === "check"}
+            onClick={() => toggle("check")}
+            {...headerButtonName(labels.header.check, issues.errors > 0 ? labels.board.errors(issues.errors) : undefined)}
           >
-            <Save aria-hidden="true" className="size-4" />
-            <span className="label">{props.saveFailed ? labels.header.saveFailed : props.dirty ? labels.header.save : labels.header.saved}</span>
+            <ShieldCheck aria-hidden="true" className="size-4" />
+            <span className="label">{labels.header.check}</span>
+            {issues.errors > 0 && (
+              <Badge variant="warm" className="ml-0.5 px-1.5 py-0 text-[11px]" aria-hidden="true">
+                {issues.errors}
+              </Badge>
+            )}
           </Button>
-        )}
+          <Button
+            variant="secondary"
+            size="sm"
+            className={cn(compact, mode === "run" && "ring-2 ring-[var(--yk-accent)]")}
+            aria-pressed={mode === "run"}
+            onClick={() => toggle("run")}
+            {...headerButtonName(labels.header.run)}
+          >
+            <Play aria-hidden="true" className="size-4" />
+            <span className="label">{labels.header.run}</span>
+          </Button>
+          <GhostIconButton size="sm" className={wide} onClick={props.onOpenJson} title={labels.header.json} aria-label={labels.header.json}>
+            <Braces aria-hidden="true" className="size-4" />
+          </GhostIconButton>
+          {props.onOpenMigrate && (
+            <GhostIconButton size="sm" className={wide} onClick={props.onOpenMigrate} title={labels.header.migrate} aria-label={labels.header.migrate}>
+              <Shuffle aria-hidden="true" className="size-4" />
+            </GhostIconButton>
+          )}
+          {props.fullscreen && (
+            <GhostIconButton
+              size="sm"
+              className={wide}
+              data-flow-fullscreen-toggle=""
+              aria-pressed={props.fullscreen.active}
+              onClick={props.fullscreen.onToggle}
+              title={fullscreenLabel}
+              aria-label={fullscreenLabel}
+            >
+              {props.fullscreen.active ? <Minimize2 aria-hidden="true" className="size-4" /> : <Maximize2 aria-hidden="true" className="size-4" />}
+            </GhostIconButton>
+          )}
+          {props.onOpenTestChat && (
+            <Button variant="secondary" size="sm" className={cn(compact, wide)} onClick={props.onOpenTestChat} {...headerButtonName(testChatLabels.title)}>
+              <MessagesSquare aria-hidden="true" className="size-4" />
+              <span className="label">{testChatLabels.title}</span>
+            </Button>
+          )}
+          <FlowHeaderMenu label={labels.header.more} items={menuItems} className="oduvanchik-flow-more" />
+          {props.onSave && <SaveControl onSave={props.onSave} dirty={props.dirty} saving={props.saving} saveFailed={props.saveFailed} />}
+        </div>
       </div>
     </div>
   );

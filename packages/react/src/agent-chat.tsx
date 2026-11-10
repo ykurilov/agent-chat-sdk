@@ -1,3 +1,4 @@
+import { useRememberedDraft } from "./chat-drafts/remembered-draft";
 import { HistoryDetailsContext } from "./history-view";
 import type { FeedChange } from "./history-view";
 import type { ComposerOptions } from "./composer-options";
@@ -125,6 +126,12 @@ export interface AgentChatProps extends AgentChatExtensions {
   initialDraft?: string;
   /** Текст в поле ввода изменился (набор, отправка, возврат не принятого сервером): например, чтобы хранить черновик чата. */
   onDraftChange?: (text: string) => void;
+  /**
+   * Помнить черновик в браузере (`localStorage`, свой у каждого чата): набранный текст переживает перезагрузку страницы,
+   * отправка или пустое поле его стирают, нетронутый 30 дней удаляется. По умолчанию включено; `false` — не помнить
+   * (общий компьютер, чувствительные данные). Свой `initialDraft` приложения важнее запомненного.
+   */
+  rememberDraft?: boolean;
   /** Правка ответов агента (песочница): кнопка правки у законченных ответов, отметки «изменено», редактор страницы. Нет — ответы не правятся. */
   answerEditing?: AnswerEditing;
   /** Built-in ordinary text editor; server also opts in with answerEditing: true. Custom answerEditing takes precedence. */
@@ -205,7 +212,7 @@ function SubjectAgentChat(props: AgentChatProps & { subject: string }) {
   return <SubjectChatLoading skin={props.skin} />;
 }
 
-function AgentChatBody({ history, header, completion, composerOptions, api, chatId, skin, fetch: customFetch, transport: chatTransport, liveness, voice, voiceDialog, attachments: attachmentsPlugin, spendingLimits, onBusyChange, appBridge, initialDraft, onDraftChange, answerEditing, answerEditor, onFeedChange, messageActions, onTurnFinished, onTurnRefused, composerActions, onAppEvent, onChatAccessChange, onStateChange, onModelChosen, onChatUnavailable, reloadKey, steering, widgets, diagrams, liveDemos, images, videos, appEvents, workView, stepPhrases, noticeLines, answerDetails }: AgentChatProps & { chatId: string }) {
+function AgentChatBody({ history, header, completion, composerOptions, api, chatId, skin, fetch: customFetch, transport: chatTransport, liveness, voice, voiceDialog, attachments: attachmentsPlugin, spendingLimits, onBusyChange, appBridge, initialDraft, onDraftChange, rememberDraft = true, answerEditing, answerEditor, onFeedChange, messageActions, onTurnFinished, onTurnRefused, composerActions, onAppEvent, onChatAccessChange, onStateChange, onModelChosen, onChatUnavailable, reloadKey, steering, widgets, diagrams, liveDemos, images, videos, appEvents, workView, stepPhrases, noticeLines, answerDetails }: AgentChatProps & { chatId: string }) {
   const fetchImpl = chatTransport?.fetch ?? customFetch;
   const spendingNoticeId = useId();
   const closedNoticeId = useId();
@@ -330,6 +337,7 @@ function AgentChatBody({ history, header, completion, composerOptions, api, chat
   useEffect(() => {
     reportBusy.current?.(busy);
   }, [busy, chatId]);
+  useRememberedDraft({ enabled: rememberDraft, api, chatId, value: chat.value, setValue: chat.setValue, hasInitialDraft: initialDraft !== undefined });
   const reportDraft = useRef(onDraftChange);
   reportDraft.current = onDraftChange;
   const draftShown = useRef(initialDraft ?? "");

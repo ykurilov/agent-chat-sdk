@@ -239,3 +239,25 @@ test("phone 390: header actions menu opens fully inside the screen", async ({ pa
  }
  await page.screenshot({ path: `${screenshots}/phone-header-menu.png`, animations: "disabled" });
 });
+test("desktop window, narrow editor: header folds by its own width; board opens readable", async ({ page }) => {
+ await page.setViewportSize({ width: 1440, height: 900 });
+ await page.goto(route());
+ const scenario = page.getByRole("tab", { name: "Сценарий" });
+ if (await scenario.count()) await scenario.click();
+ await expect(page.locator(".react-flow__node").first()).toBeVisible();
+ const zoom = async () => page.locator(".react-flow__viewport").evaluate(el => new DOMMatrix(getComputedStyle(el).transform).a);
+ await expect.poll(zoom).toBeGreaterThanOrEqual(0.75);
+ const more = page.getByRole("button", { name: "Ещё действия" });
+ await expect(more).toBeHidden();
+ // Окно широкое, а редактору дали узкую колонку — как вкладка страницы приложения.
+ await page.locator("[data-flow-header]").evaluate(el => { (el.closest(".oduvanchik-flow") as HTMLElement).style.width = "700px"; });
+ await expect(more).toBeVisible();
+ const header = page.locator("[data-flow-header]");
+ for (const button of await header.getByRole("button").all()) {
+  if (!(await button.isVisible())) continue;
+  expect(await button.getAttribute("aria-label")).toBeTruthy();
+  expect(await button.getAttribute("title")).toBeTruthy();
+ }
+ await expect(header.getByRole("status", { name: "Сохранено" })).toBeVisible();
+ await page.screenshot({ path: `${screenshots}/narrow-editor-header.png`, animations: "disabled" });
+});

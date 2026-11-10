@@ -1,5 +1,20 @@
 # @ykurilov/agent-chat-skin-tandem
 
+## 0.107.0
+
+### Patch Changes
+
+- 811f761: - Строка инструмента показывает название действия от приложения (`title` инструмента): «Правка лид-магнита: готово» вместо «edit_lead_magnet: готово». Без `title` — служебное имя, как раньше. Одуванчик и Тандем.
+  - Одуванчик на телефоне: карандаш правки сообщения и кнопки под ответом — цели касания 44 px; на узком экране «Повторить», «Переделать ответ» и «Изменить ответ» — значками с подсказкой, ряд не расползается на несколько строк. Активная стрелка отправки — жирная и в полную силу.
+- Updated dependencies [9bd0d2b]
+- Updated dependencies [5acc0c0]
+  - @ykurilov/agent-chat-flows@0.107.0
+  - @ykurilov/agent-chat-react@0.107.0
+  - @ykurilov/agent-chat-messengers@0.107.0
+  - @ykurilov/agent-chat-sandbox@0.107.0
+  - @ykurilov/agent-chat-mcp@0.107.0
+  - @ykurilov/agent-chat-skills@0.107.0
+
 ## 0.106.0
 
 ### Patch Changes

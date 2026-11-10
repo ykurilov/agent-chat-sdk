@@ -22,7 +22,14 @@ export function setupChatDom() {
     cleanup();
     vi.unstubAllGlobals();
     layout.uninstall();
+    forgetDrafts();
   });
+}
+
+/** Запомненные черновики чатов (`rememberDraft`) одного теста не должны открываться в следующем с тем же чатом. */
+export function forgetDrafts() {
+  if (typeof localStorage === "undefined") return;
+  for (const key of Object.keys(localStorage)) if (key.startsWith("agent-chat:draft:")) localStorage.removeItem(key);
 }
 
 /** Подменяет `fetch` сервером и рисует чат со скином-заглушкой; `labels` — свой словарь надписей. */

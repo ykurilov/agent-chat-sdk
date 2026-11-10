@@ -25,4 +25,5 @@ export {
 } from "./flow-simulation";
 export { capsByDayText, commonNudges, DEFAULT_NUDGES, DEFAULT_SCHEDULE, nudgesSummary, parseCapsByDay, updateCommonNudges } from "./schedule-model";
 export type { FlowBoardSpaceProps, FlowHeaderMode, FlowInspectorMode, FlowLegendMode, FlowMinimapMode } from "./board-space";
+export type { FlowInitialZoom } from "./initial-view";
 export { sameFlow } from "./editor-model";

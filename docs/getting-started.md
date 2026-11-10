@@ -758,9 +758,10 @@ export function ChatPage() {
 import type { ChatSkin } from "@ykurilov/agent-chat-react";
 import { useChatLabels } from "@ykurilov/agent-chat-react";
 
-const MyToolCallRow: ChatSkin["ToolCallRow"] = ({ toolName, state, output, errorText, open, onOpenChange }) => {
+const MyToolCallRow: ChatSkin["ToolCallRow"] = ({ toolName, title: humanTitle, state, output, errorText, open, onOpenChange }) => {
   const labels = useChatLabels();
-  const title = state === "running" ? labels.toolRunning(toolName) : state === "done" ? labels.toolDone(toolName) : labels.toolError(toolName);
+  const name = humanTitle?.trim() || toolName; // название от приложения (`title` инструмента), иначе служебное имя
+  const title = state === "running" ? labels.toolRunning(name) : state === "done" ? labels.toolDone(name) : labels.toolError(name);
   return (
     <div className="my-2 font-mono text-xs">
       {/* Раскрыта ли строка, помнит чат, а не компонент: раскрытое не пропадает, когда сообщение уходит за край экрана. */}
@@ -1224,7 +1225,7 @@ import { tool } from "ai";
 import { z } from "zod";
 
 const clearNotes = tool({
-  title: "Очистить заметки", // так действие называется в карточке; без названия покажется имя инструмента
+  title: "Очистить заметки", // так действие называется в карточке и в строке вызова; без названия покажется имя инструмента
   description: "Безвозвратно очищает заметки в папке.",
   inputSchema: z.object({ folder: z.string() }),
   needsApproval: true, // или функция от входных данных: ({ folder }) => folder !== "черновики"
@@ -1275,7 +1276,8 @@ import { ChatWorkspace } from "@ykurilov/agent-chat-skin-oduvanchik/chat";
 
 - Что открыть первым: чат из `initialChatId` (например, из адреса страницы), иначе тот, что был открыт в прошлый раз, иначе самый недавний, иначе новый.
   `onChatChange(chatId)` сообщает, какой чат открыт: например, чтобы записать его в адрес.
-- Набранный текст каждого чата хранится, пока открыта страница: ушли в другой чат и вернулись — черновик на месте. Свой `onDraftChange` в `chatProps` тоже получает каждое изменение.
+- Набранный текст каждого чата хранится: ушли в другой чат и вернулись — черновик на месте. С 0.107 он переживает и перезагрузку страницы (см. `rememberDraft` ниже). Свой `onDraftChange` в `chatProps` тоже получает каждое изменение.
+- `rememberDraft` (с 0.107, у `AgentChat` и `ChatWorkspace`, по умолчанию включено): неотправленный текст хранится в `localStorage` браузера, у каждого чата свой, и возвращается после перезагрузки. Отправка или пустое поле стирают его, нетронутый 30 дней удаляется. `rememberDraft={false}` — не запоминать (общий компьютер, чувствительные данные). Свой `initialDraft` важнее запомненного.
 - Три новых адреса под `basePath`: `GET` (список), `PATCH /:id` с `{ title }`, `DELETE /:id`. Чужой чат — 404, как и везде.
 - Удаление настоящее и с подтверждением: сообщения, записи сжатия и файлы вложений исчезают навсегда. Идущий ответ и сжатие останавливаются.
 - Название: первое сообщение (до 60 знаков), вручную можно до 100. Заданное вручную первое сообщение не перезаписывает.

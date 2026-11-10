@@ -257,13 +257,25 @@ test.describe("телефон 390: доска вписана в экран, кн
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 
   for (const [theme, flow] of [["light", "shop-support"], ["dark", "sales-review"]] as const) {
-    test(`${theme}, ${flow}: схема видна целиком при открытии, у значков есть имена`, async ({ page }) => {
+    test(`${theme}, ${flow}: доска открывается читаемой, «Весь граф» вписывает схему, у значков есть имена`, async ({ page }) => {
       await open(page, theme, flow);
       await boardSettled(page);
       const board = (await page.locator("[data-flow-board]").boundingBox())!;
       const nodes = page.locator(".react-flow__node");
       const count = await nodes.count();
       expect(count).toBeGreaterThan(1);
+      const inside = async (index: number) => {
+        const box = (await nodes.nth(index).boundingBox())!;
+        return box.x >= board.x - 1 && box.x + box.width <= board.x + board.width + 1 && box.y >= board.y - 1 && box.y + box.height <= board.y + board.height + 1;
+      };
+      // Большая схема на телефоне не сжимается до нечитаемой: масштаб не мельче 75 %, начало схемы на виду.
+      const zoom = await page.locator(".react-flow__viewport").evaluate((el) => new DOMMatrix(getComputedStyle(el).transform).a);
+      expect(zoom).toBeGreaterThanOrEqual(0.74);
+      const visible = [];
+      for (let index = 0; index < count; index += 1) visible.push(await inside(index));
+      expect(visible.some(Boolean), "хотя бы одна нода целиком на экране").toBe(true);
+      await page.getByRole("button", { name: "Весь граф", exact: true }).tap();
+      await boardSettled(page);
       for (let index = 0; index < count; index += 1) {
         const box = (await nodes.nth(index).boundingBox())!;
         expect(box.x, `узел ${index} слева`).toBeGreaterThanOrEqual(board.x - 1);

@@ -29,8 +29,10 @@ export function TandemToolCallRow({
 }: ToolCallRowProps) {
   const labels = useChatLabels();
   const detailsId = useId();
+  // Название действия от приложения (`title` инструмента) важнее служебного имени: человек видит «Правка лид-магнита: готово».
+  const shownName = humanTitle?.trim() || toolName;
   const title =
-    state === "running" ? labels.toolRunning(toolName) : state === "done" ? labels.toolDone(toolName) : labels.toolError(toolName);
+    state === "running" ? labels.toolRunning(shownName) : state === "done" ? labels.toolDone(shownName) : labels.toolError(shownName);
   const summary = summarize(input);
   const rowRef = useRef<HTMLDivElement>(null);
   const wasRequested = useRef(false);

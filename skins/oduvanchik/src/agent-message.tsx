@@ -75,10 +75,11 @@ export function OduvanchikAgentMessage({
                   variant="ghost"
                   size="sm"
                   onClick={onRetry}
-                  className="oduvanchik-answer-action h-7 gap-1.5 rounded-[var(--radius-small)] px-2 [&_svg]:size-3.5"
+                  title={labels.retry}
+                  className="oduvanchik-answer-action oduvanchik-answer-action-text h-7 gap-1.5 rounded-[var(--radius-small)] px-2 [&_svg]:size-3.5"
                 >
                   <RotateCcw aria-hidden="true" />
-                  {labels.retry}
+                  <span className="oduvanchik-answer-action-label">{labels.retry}</span>
                 </Button>
               )}
               {onRegenerate && (
@@ -86,10 +87,11 @@ export function OduvanchikAgentMessage({
                   variant="ghost"
                   size="sm"
                   onClick={onRegenerate}
-                  className="oduvanchik-answer-action h-7 gap-1.5 rounded-[var(--radius-small)] px-2 [&_svg]:size-3.5"
+                  title={labels.regenerate}
+                  className="oduvanchik-answer-action oduvanchik-answer-action-text h-7 gap-1.5 rounded-[var(--radius-small)] px-2 [&_svg]:size-3.5"
                 >
                   <RefreshCw aria-hidden="true" />
-                  {labels.regenerate}
+                  <span className="oduvanchik-answer-action-label">{labels.regenerate}</span>
                 </Button>
               )}
               {onEdit && (
@@ -97,10 +99,11 @@ export function OduvanchikAgentMessage({
                   variant="ghost"
                   size="sm"
                   onClick={onEdit}
-                  className="oduvanchik-answer-action h-7 gap-1.5 rounded-[var(--radius-small)] px-2 [&_svg]:size-3.5"
+                  title={labels.editAnswer}
+                  className="oduvanchik-answer-action oduvanchik-answer-action-text h-7 gap-1.5 rounded-[var(--radius-small)] px-2 [&_svg]:size-3.5"
                 >
                   <Pencil aria-hidden="true" />
-                  {labels.editAnswer}
+                  <span className="oduvanchik-answer-action-label">{labels.editAnswer}</span>
                 </Button>
               )}
               {!empty && (

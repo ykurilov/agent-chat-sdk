@@ -9,6 +9,8 @@ import {
   ReactFlow,
   ReactFlowProvider,
   applyNodeChanges,
+  getNodesBounds,
+  useNodesInitialized,
   useReactFlow,
   useStore,
   type Connection,
@@ -34,6 +36,7 @@ import type {
   FlowBoardToggleProps,
 } from "../flow-editor-skin";
 import type { BoardSpace } from "./board-space";
+import { initialViewport, MAX_BOARD_ZOOM, MIN_BOARD_ZOOM, type FlowInitialZoom } from "./initial-view";
 import { FLOW_BOARD_CSS } from "./board-styles";
 import { addExit, connectExit, placeNode, type ExitOwner } from "./editor-model";
 import { conditionText, edgeKind, stateGoal, targetTitle } from "./exit-text";
@@ -245,8 +248,35 @@ function clientPoint(event: MouseEvent | TouchEvent): { x: number; y: number } |
   return { x: event.clientX, y: event.clientY };
 }
 
-/** Схема при открытии вписывается в доску: на телефоне масштаб уходит ниже, но не крупнее натурального. */
-const FIT_VIEW_OPTIONS = { padding: 0.1, minZoom: 0.1, maxZoom: 1 };
+/** «Весь граф»: схема вписывается в доску, как бы мелко ни вышло, но не крупнее натурального. */
+const FIT_VIEW_OPTIONS = { padding: 0.1, minZoom: MIN_BOARD_ZOOM, maxZoom: 1 };
+
+/**
+ * Масштаб и место при открытии: один раз, как только узлы измерены и у доски есть размер. Другой сценарий — доска
+ * заново (`key` у провайдера), и расчёт повторяется.
+ */
+function useInitialView(initialZoom: FlowInitialZoom, startId: string | null) {
+  const { getNodes, setViewport } = useReactFlow<BoardNode, BoardEdge>();
+  const measured = useNodesInitialized();
+  const width = useStore((store) => store.width);
+  const height = useStore((store) => store.height);
+  const [done, setDone] = useState(false);
+  useEffect(() => {
+    if (done || !measured || width <= 0 || height <= 0) return;
+    const nodes = getNodes();
+    if (nodes.length === 0) return;
+    const start = nodes.find((node) => node.id === startId);
+    const view = initialViewport({
+      bounds: getNodesBounds(nodes),
+      start: start ? getNodesBounds([start]) : null,
+      width,
+      height,
+      initialZoom,
+    });
+    void setViewport(view);
+    setDone(true);
+  }, [done, measured, width, height, getNodes, setViewport, initialZoom, startId]);
+}
 
 const ignoreNodeClick = () => {};
 
@@ -256,6 +286,7 @@ function Board({ editor, space }: { editor: FlowEditorController; space: BoardSp
   const model = useBoardModel(editor);
   const { screenToFlowPosition } = useReactFlow();
   const [nodes, setNodes] = useState<BoardNode[]>(model.nodes);
+  useInitialView(space.initialZoom, editor.flow.start);
 
   // Узлы из сценария, но размеры (их меряет доска) и место во время перетаскивания — свои.
   useEffect(() => {
@@ -335,10 +366,8 @@ function Board({ editor, space }: { editor: FlowEditorController; space: BoardSp
       panOnScroll
       zoomOnScroll={false}
       zoomOnPinch
-      fitView
-      fitViewOptions={FIT_VIEW_OPTIONS}
-      minZoom={0.1}
-      maxZoom={2}
+      minZoom={MIN_BOARD_ZOOM}
+      maxZoom={MAX_BOARD_ZOOM}
       proOptions={{ hideAttribution: true }}
     >
       <Background variant={BackgroundVariant.Dots} gap={22} size={1.2} />

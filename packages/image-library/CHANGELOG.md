@@ -1,5 +1,12 @@
 # @ykurilov/agent-chat-image-library
 
+## 0.107.0
+
+### Patch Changes
+
+- Updated dependencies [5acc0c0]
+  - @ykurilov/agent-chat-react@0.107.0
+
 ## 0.106.0
 
 ### Patch Changes

@@ -64,7 +64,7 @@ export function ComposerField(props: Props) {
   const stop = <button type="button" className="oduvanchik-field-send oduvanchik-field-stop" aria-label={labels.stop}
     disabled={disabled} onClick={props.onStop}><SquareIcon size={15} weight="fill" aria-hidden /></button>;
   const send = <>{steering && stop}{stoppingOnly ? stop : <button type="button" className="oduvanchik-field-send" aria-label={labels.send}
-    disabled={!canSend} onClick={submit}><ArrowUpIcon size={19} aria-hidden /></button>}</>;
+    disabled={!canSend} onClick={submit}><ArrowUpIcon size={19} weight="bold" aria-hidden /></button>}</>;
   return <div data-composer-variant={variant} data-dropping={dropping || undefined} className={`oduvanchik-field oduvanchik-field-${variant}${variant === "standard" && !attachments && !hasAddMenu && !options.context && !props.actions && !props.dialogButton ? " oduvanchik-field-inline" : ""}`} onKeyDown={(event) => { if (event.key === "Escape") setAddMenu(false); }}
     onDragOver={(event) => { if (acceptsFiles(event)) { event.preventDefault(); setDropping(true); } }}
     onDragLeave={(event) => { if (!pointerStaysIn(event)) setDropping(false); }}

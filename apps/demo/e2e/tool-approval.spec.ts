@@ -24,7 +24,7 @@ test("«Разрешить»: карточка с названием и данн
   await expect(answer).toContainText("Заметки очищены.");
   await expect(answer).toHaveAttribute("data-status", "complete");
   await expect(page.locator("[data-status]")).toHaveCount(1);
-  await expect(answer.getByRole("button", { name: "clear_notes: готово" })).toBeVisible();
+  await expect(answer.getByRole("button", { name: "Очистить заметки: готово" })).toBeVisible();
   await expect(mark(answer, "Разрешено")).toBeVisible();
   await expect(page.getByRole("button", { name: "Разрешить", exact: true })).toHaveCount(0);
 
