@@ -111,11 +111,11 @@ importers:
         specifier: workspace:*
         version: link:../../packages/web-tools
       '@ykurilov/ds-react':
-        specifier: ^0.6.2
-        version: 0.6.2(@phosphor-icons/react@2.1.10(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(@ykurilov/ds-tokens@0.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        specifier: ^0.6.3
+        version: 0.6.3(@phosphor-icons/react@2.1.10(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(@ykurilov/ds-tokens@0.2.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@ykurilov/ds-tokens':
-        specifier: ^0.2.0
-        version: 0.2.0
+        specifier: ^0.2.1
+        version: 0.2.1
       ai:
         specifier: 7.0.122
         version: 7.0.122(zod@4.6.5)
@@ -974,11 +974,11 @@ importers:
         specifier: workspace:*
         version: link:../../packages/react
       '@ykurilov/ds-react':
-        specifier: ^0.6.2
-        version: 0.6.2(@phosphor-icons/react@2.1.10(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(@ykurilov/ds-tokens@0.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        specifier: ^0.6.3
+        version: 0.6.3(@phosphor-icons/react@2.1.10(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(@ykurilov/ds-tokens@0.2.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@ykurilov/ds-tokens':
-        specifier: ^0.2.0
-        version: 0.2.0
+        specifier: ^0.2.1
+        version: 0.2.1
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -3304,16 +3304,16 @@ packages:
   '@xyflow/system@0.0.83':
     resolution: {integrity: sha512-a//eDjez3WZF47aaPTfVUDD0OINOq+WVwBZCRTqG+m0a5euX8EwlJ4jMY1Wxz0Ocj4xOeekJ70V22Pq0ll8RJw==}
 
-  '@ykurilov/ds-react@0.6.2':
-    resolution: {integrity: sha512-W+obAXT3iDev7G+j3fh4lAGN4U+QvBGNebqDd/X2GKz3S4NCwJWkoNKlaNaHpU4fhQYmhaV1fUGX6BlMY1lLlw==}
+  '@ykurilov/ds-react@0.6.3':
+    resolution: {integrity: sha512-vTtSQLUqFERDRC7LN+vBZTbZ3eMDcCipcbBxnCxfPNmBnH5UfMfMqICLvwI2Mfw1Xg4IOVsNXJ221yuwEK4Zcw==}
     peerDependencies:
       '@phosphor-icons/react': ^2.1.0
       '@ykurilov/ds-tokens': ^0.2.0
       react: ^18.2.0 || ^19.0.0
       react-dom: ^18.2.0 || ^19.0.0
 
-  '@ykurilov/ds-tokens@0.2.0':
-    resolution: {integrity: sha512-r4YcY6tUFjVcuZfRnZt3BmK/YzJC1KoXvCxqpAny+1qCUIIzz7UNDl0O92p65DqIsBS6ouumCjjHuZcNF/0zSQ==}
+  '@ykurilov/ds-tokens@0.2.1':
+    resolution: {integrity: sha512-2WAvbrBfQZjk1a/cmALgpFwNiH0I2ITlZhX1VZMzPHJBSynMgKXI8SmtTyR85lmlPirMXvREW9+040V9nSIYPg==}
 
   '@ykurilov/tandem-ui@0.7.0':
     resolution: {integrity: sha512-lxNq9BIxvL64F4Oz5qmIlra9+zhcwpGYVQeG2nEZvnaY+NZvoJ1iCv9Pseh+angi4pTPYTI6i3mTEOXNYdeDtw==}
@@ -6740,14 +6740,14 @@ snapshots:
       d3-selection: 3.0.0
       d3-zoom: 3.0.0
 
-  '@ykurilov/ds-react@0.6.2(@phosphor-icons/react@2.1.10(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(@ykurilov/ds-tokens@0.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
+  '@ykurilov/ds-react@0.6.3(@phosphor-icons/react@2.1.10(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(@ykurilov/ds-tokens@0.2.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
     dependencies:
       '@phosphor-icons/react': 2.1.10(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
-      '@ykurilov/ds-tokens': 0.2.0
+      '@ykurilov/ds-tokens': 0.2.1
       react: 19.3.0
       react-dom: 19.3.0(react@19.3.0)
 
-  '@ykurilov/ds-tokens@0.2.0': {}
+  '@ykurilov/ds-tokens@0.2.1': {}
 
   '@ykurilov/tandem-ui@0.7.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
     dependencies:

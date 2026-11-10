@@ -45,7 +45,7 @@ function Workspace() {
 
 ## Тема и аккаунт
 
-Тема по умолчанию системная. `onSettings`/пункт аккаунта открывает настройки приложения с `ThemeSettings` из ds-react. Отдельной кнопки темы в панели, шапке или аккаунте не добавляется. `themeScript()` в head применяет сохранённый выбор до первого кадра. Блок `account` по умолчанию показывает почту, `show: "plan"` — тариф, `show: "name"` — только имя. Канон исходной дизайн-системы — `YKDesignSystem/NAVIGATION.md`.
+Тема по умолчанию системная. `onSettings`/пункт аккаунта открывает настройки приложения с `ThemeSettings` из ds-react. Отдельной кнопки темы в панели, шапке или аккаунте не добавляется. `themeScript()` в head применяет сохранённый выбор до первого кадра. Блок `account` по умолчанию показывает почту, `show: "plan"` — тариф, `show: "name"` — только имя. Канон исходной дизайн-системы — [NAVIGATION.md](https://github.com/ykurilov/YKDesignSystem/blob/main/NAVIGATION.md) в [репозитории YKDesignSystem](https://github.com/ykurilov/YKDesignSystem).
 
 ## Как обновить приложение
 

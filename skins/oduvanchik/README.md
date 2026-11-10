@@ -10,7 +10,10 @@
 pnpm add @ykurilov/agent-chat-react @ykurilov/agent-chat-skin-oduvanchik "@tandem/ui@npm:@ykurilov/tandem-ui@^0.7.0"
 ```
 
-«Одуванчик» использует `@ykurilov/ds-react` и `@ykurilov/ds-tokens`, которые устанавливаются зависимостями скина. Алиас `@tandem/ui` в команде нужен внутренним базовым компонентам и прямому сканированию Tailwind при строгом pnpm; он не включает скин или палитру Тандема. Для встроенной панели без Tailwind используйте [готовый `embedded.css`](#встроенная-панель-без-глобальных-стилей-0878).
+«Одуванчик» использует `@ykurilov/ds-react` и `@ykurilov/ds-tokens`, которые устанавливаются зависимостями скина.
+
+**Дизайн-система Одуванчика:** репозиторий — [https://github.com/ykurilov/YKDesignSystem](https://github.com/ykurilov/YKDesignSystem); стандарт навигации и левой панели приложения — [NAVIGATION.md](https://github.com/ykurilov/YKDesignSystem/blob/main/NAVIGATION.md); принятые решения (облик, цвета, шрифты) — [DECISIONS.md](https://github.com/ykurilov/YKDesignSystem/blob/main/DECISIONS.md); тема — только в настройках через `ThemeSettings`, по умолчанию системная. Пакеты: [`@ykurilov/ds-react`](https://www.npmjs.com/package/@ykurilov/ds-react), [`@ykurilov/ds-tokens`](https://www.npmjs.com/package/@ykurilov/ds-tokens); на страницах npm те же ссылки. Агенту, который ставит Одуванчик, сначала прочитать NAVIGATION.md и README репозитория.
+ Алиас `@tandem/ui` в команде нужен внутренним базовым компонентам и прямому сканированию Tailwind при строгом pnpm; он не включает скин или палитру Тандема. Для встроенной панели без Tailwind используйте [готовый `embedded.css`](#встроенная-панель-без-глобальных-стилей-0878).
 
 В главном CSS приложения с Tailwind CSS 4:
 

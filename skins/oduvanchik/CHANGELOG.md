@@ -6,6 +6,15 @@
 - Обновление приложения: обновить пакеты SDK одной версией после выпуска, пересобрать и убрать временные подмены значков. API и CSS-импорты прежние, миграций нет.
 
 
+## 0.102.2
+
+### Patch Changes
+
+- 127e8bd: Документы SDK теперь ссылаются на открытый репозиторий дизайн-системы «Одуванчик» (https://github.com/ykurilov/YKDesignSystem): стандарт навигации NAVIGATION.md и решения DECISIONS.md. Скин требует `@ykurilov/ds-react@^0.6.3` и `@ykurilov/ds-tokens@^0.2.1` (в них добавлены ссылки на репозиторий и README). Обновление: все пакеты SDK одной версией; если у приложения прямые зависимости `@ykurilov/ds-react` и `@ykurilov/ds-tokens`, поднять их до `^0.6.3` и `^0.2.1`. Код не менялся.
+- @ykurilov/agent-chat-flows@0.102.2
+  - @ykurilov/agent-chat-react@0.102.2
+  - @ykurilov/agent-chat-sandbox@0.102.2
+
 ## 0.102.1
 
 ### Patch Changes

@@ -1,5 +1,14 @@
 # @ykurilov/agent-chat-images
 
+## 0.102.2
+
+### Patch Changes
+
+- @ykurilov/agent-chat-attachments@0.102.2
+  - @ykurilov/agent-chat-core@0.102.2
+  - @ykurilov/agent-chat-react@0.102.2
+  - @ykurilov/agent-chat-web-tools@0.102.2
+
 ## 0.102.1
 
 ### Patch Changes

@@ -666,7 +666,10 @@ export const runtime = "nodejs"; // хранилища работают толь
 pnpm add @ykurilov/agent-chat-skin-oduvanchik "@tandem/ui@npm:@ykurilov/tandem-ui@^0.7.0"
 ```
 
-`@ykurilov/ds-react`, `@ykurilov/ds-tokens` и Phosphor устанавливаются зависимостями скина. Если приложение импортирует DS-компоненты напрямую, добавьте DS-пакеты также в его прямые зависимости. Наличие `@tandem/ui` не включает оформление Тандема; палитру задаёт CSS Одуванчика. Алиас Тандема нужен для нейтральных базовых компонентов и прямого сканирования Tailwind при строгом pnpm. В главном CSS один импорт оформления (пути `@source` даны от `src/styles.css`):
+`@ykurilov/ds-react`, `@ykurilov/ds-tokens` и Phosphor устанавливаются зависимостями скина. Если приложение импортирует DS-компоненты напрямую, добавьте DS-пакеты также в его прямые зависимости.
+
+**Дизайн-система Одуванчика:** репозиторий — [https://github.com/ykurilov/YKDesignSystem](https://github.com/ykurilov/YKDesignSystem); стандарт навигации и левой панели приложения — [NAVIGATION.md](https://github.com/ykurilov/YKDesignSystem/blob/main/NAVIGATION.md); принятые решения (облик, цвета, шрифты) — [DECISIONS.md](https://github.com/ykurilov/YKDesignSystem/blob/main/DECISIONS.md); тема — только в настройках через `ThemeSettings`, по умолчанию системная. Пакеты: [`@ykurilov/ds-react`](https://www.npmjs.com/package/@ykurilov/ds-react), [`@ykurilov/ds-tokens`](https://www.npmjs.com/package/@ykurilov/ds-tokens); на страницах npm те же ссылки. Агенту, который ставит Одуванчик, сначала прочитать NAVIGATION.md и README репозитория.
+ Наличие `@tandem/ui` не включает оформление Тандема; палитру задаёт CSS Одуванчика. Алиас Тандема нужен для нейтральных базовых компонентов и прямого сканирования Tailwind при строгом pnpm. В главном CSS один импорт оформления (пути `@source` даны от `src/styles.css`):
 
 ```css
 @import "tailwindcss";

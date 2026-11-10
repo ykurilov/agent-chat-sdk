@@ -1,6 +1,6 @@
 {
   "name": "@ykurilov/agent-chat-skin-oduvanchik",
-  "version": "0.102.1",
+  "version": "0.102.2",
   "license": "MIT",
   "type": "module",
   "sideEffects": [
@@ -77,8 +77,8 @@
     "@radix-ui/react-dropdown-menu": "^2.1.24",
     "@tandem/ui": "npm:@ykurilov/tandem-ui@^0.7.0",
     "@ykurilov/agent-chat-react": "workspace:*",
-    "@ykurilov/ds-react": "^0.6.2",
-    "@ykurilov/ds-tokens": "^0.2.0",
+    "@ykurilov/ds-react": "^0.6.3",
+    "@ykurilov/ds-tokens": "^0.2.1",
     "class-variance-authority": "^0.7.1",
     "mdast-util-from-markdown": "^2.0.3",
     "mdast-util-gfm": "^3.1.0",

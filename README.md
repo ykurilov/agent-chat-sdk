@@ -27,7 +27,7 @@
 - Одуванчик: контрастное выделение текста в сообщениях и поле ввода в обеих темах; готовый `/embedded.css` ограничивает стили элементами скина.
 - Внешний вид отделён от поведения. Стандартный вид - Одуванчик через `/chat`; явный Тандем или свой скин сохраняют приоритет.
 
-Версия 0.102.1.
+Версия 0.102.2.
 
 ## Установка
 
@@ -39,6 +39,8 @@
 `@ykurilov/agent-chat-skin-oduvanchik/chat`, свойство `skin` не требуется.
 Он использует `@ykurilov/ds-react` и `@ykurilov/ds-tokens`; оба пакета устанавливаются вместе со скином.
 Если приложение использует DS-компоненты напрямую, установите их также прямыми зависимостями приложения.
+
+**Дизайн-система Одуванчика:** репозиторий — [https://github.com/ykurilov/YKDesignSystem](https://github.com/ykurilov/YKDesignSystem); стандарт навигации и левой панели приложения — [NAVIGATION.md](https://github.com/ykurilov/YKDesignSystem/blob/main/NAVIGATION.md); принятые решения (облик, цвета, шрифты) — [DECISIONS.md](https://github.com/ykurilov/YKDesignSystem/blob/main/DECISIONS.md); тема — только в настройках через `ThemeSettings`, по умолчанию системная. Пакеты: [`@ykurilov/ds-react`](https://www.npmjs.com/package/@ykurilov/ds-react), [`@ykurilov/ds-tokens`](https://www.npmjs.com/package/@ykurilov/ds-tokens); на страницах npm те же ссылки. Агенту, который ставит Одуванчик, сначала прочитать NAVIGATION.md и README репозитория.
 
 **«Тандем» - отдельный вариант**, который включается явно. Наличие зависимости `@tandem/ui` само по себе
 не выбирает оформление: часть внутренних компонентов «Одуванчика» пока использует его базовые примитивы.

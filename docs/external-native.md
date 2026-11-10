@@ -65,7 +65,7 @@ Reconcile должен находить принятый клиентский ID
 
 ## Swift: локальный SPM
 
-В корне SDK находится `Package.swift` с продуктами **AgentChatClient** и **AgentChatOduvanchik**. Минимум iOS 17 / macOS 14, Swift 6. Подключение первого среза - локальный SPM package из checkout SDK. Канонический YKDesign берётся из соседней папки `../YKDesignSystem/swift/YKDesign` или из абсолютного `AGENT_CHAT_YKDESIGN_PATH` в окружении процесса Xcode. Пакет дизайна не копируется внутрь SDK. Публичного SPM URL дизайна пока нет; установка SDK только по Git URL на произвольной машине этим срезом не обещается.
+В корне SDK находится `Package.swift` с продуктами **AgentChatClient** и **AgentChatOduvanchik**. Минимум iOS 17 / macOS 14, Swift 6. Подключение первого среза - локальный SPM package из checkout SDK. Канонический YKDesign ([репозиторий](https://github.com/ykurilov/YKDesignSystem)) берётся из соседней папки `../YKDesignSystem/swift/YKDesign` или из абсолютного `AGENT_CHAT_YKDESIGN_PATH` в окружении процесса Xcode. Пакет дизайна не копируется внутрь SDK. Публичного SPM URL дизайна пока нет; установка SDK только по Git URL на произвольной машине этим срезом не обещается.
 
 Создайте `AgentChatClient(endpoint:accountID:cacheURL:credential:)` на аутентифицированную учётную запись. Endpoint - полный basePath сервера. Credential - async closure, возвращающий действующий bearer; SDK его не сохраняет. Cache URL выбирает приложение в своём Application Support. При выходе остановите клиент и примените свою политику удаления кеша. Кеш другого accountID/endpoint не принимается. Защита файлов ОС и их резервного копирования остаётся приложению.
 

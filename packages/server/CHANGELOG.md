@@ -1,5 +1,11 @@
 # @ykurilov/agent-chat-server
 
+## 0.102.2
+
+### Patch Changes
+
+- @ykurilov/agent-chat-core@0.102.2
+
 ## 0.102.1
 
 ### Patch Changes
