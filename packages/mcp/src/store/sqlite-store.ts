@@ -1,3 +1,4 @@
+import type { EmbeddedMigration } from "@ykurilov/agent-chat-core";
 import Database from "better-sqlite3";
 import { desc, eq, lt, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
@@ -43,13 +44,13 @@ function toRow(server: StoredMcpServer): ServerRow {
 }
 
 /** Хранилище в файле SQLite (может быть общим с хранилищем чатов). Таблицы приводятся к последней миграции при открытии. */
-export function createSqliteStore(filePath: string, migrationsFolder: string): McpStore & { close(): void } {
+export function createSqliteStore(filePath: string, migrations: readonly EmbeddedMigration[]): McpStore & { close(): void } {
   const sqlite = new Database(filePath);
   // Ожидание замка — до первой записи: переход файла в WAL при старте двух копий тоже ждёт замок.
   sqlite.pragma("busy_timeout = 5000");
   sqlite.pragma("journal_mode = WAL");
   const db = drizzle(sqlite);
-  migrateUnderWriteLock(sqlite, migrationsFolder, MCP_MIGRATIONS_TABLE);
+  migrateUnderWriteLock(sqlite, migrations, MCP_MIGRATIONS_TABLE);
 
   /** Новая отметка версии — в той же записи, что и правка сервера. */
   const bumpRevision = (tx: Pick<typeof db, "insert">) =>

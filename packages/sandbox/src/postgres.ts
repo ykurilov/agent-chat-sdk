@@ -1,9 +1,9 @@
-import { fileURLToPath } from "node:url";
 import pg from "pg";
 import type { JournalOptions } from "./journal/journal";
 import { createSandboxJournal } from "./journal/journal";
 import { createPostgresJournalStore, migrateJournalToLatest } from "./journal/postgres-journal";
 import type { SandboxJournal } from "./types";
+import { migrations } from "./drizzle-migrations-postgres.generated";
 
 export type { LogError, SandboxJournal } from "./types";
 
@@ -15,7 +15,6 @@ export type PostgresSandboxJournalOptions = JournalOptions & {
 };
 
 const DEFAULT_POOL_SIZE = 5;
-const migrationsFolder = fileURLToPath(new URL("../drizzle/postgres", import.meta.url));
 
 /**
  * Журнал песочницы в PostgreSQL. Таблицы лежат в схеме `agent_chat`; схема приводится
@@ -27,7 +26,7 @@ export async function createPostgresSandboxJournal(options: PostgresSandboxJourn
   // Без обработчика оборвавшееся соединение простаивающего пула роняет процесс.
   pool.on("error", (error) => logError(`журнал песочницы: соединение с PostgreSQL оборвалось: ${error.message}`));
   try {
-    await migrateJournalToLatest(pool, migrationsFolder);
+    await migrateJournalToLatest(pool, migrations);
   } catch (error) {
     await pool.end().catch(() => {});
     throw failure(error, options.connectionString);

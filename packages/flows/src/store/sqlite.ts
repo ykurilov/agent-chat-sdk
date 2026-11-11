@@ -1,7 +1,7 @@
+import { applyEmbeddedMigrations, type EmbeddedMigration } from "@ykurilov/agent-chat-core";
 import Database from "better-sqlite3";
 import { and, asc, eq, inArray, isNull, lt, lte, ne, or, sql, type AnyColumn, type SQL } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import type { StateMap } from "../engine/migrate-run";
 import { FLOW_DELIVERY_EXIT, type FlowChatRecord, type FlowPendingDelivery, type FlowStore, type PendingFlowChange, type SideTaskRecord } from "./flow-store";
 import { byVersionAndState, compareText, firstMessagesKeptFrom, migratePending, normalizedDelivery, pendingAdded, pendingNotLanded, pendingTaken } from "./flow-store-shared";
@@ -93,12 +93,12 @@ const unlessDeliveryWaits = (column: AnyColumn) => sql`case when ${flowChats.del
  * чатов. Несколько копий сервера на одном файле делят таймеры арендой: каждое изменение — одно условное `update`
  * или короткая транзакция с захватом записи (`immediate`).
  */
-export function createSqliteFlowStore(filePath: string, migrationsFolder: string): SqliteFlowStore {
+export function createSqliteFlowStore(filePath: string, migrations: readonly EmbeddedMigration[]): SqliteFlowStore {
   const sqlite = new Database(filePath);
   sqlite.pragma("journal_mode = WAL");
   sqlite.pragma("busy_timeout = 5000");
   const db = drizzle(sqlite);
-  migrate(db, { migrationsFolder, migrationsTable: FLOWS_MIGRATIONS_TABLE });
+  applyEmbeddedMigrations(db, migrations, { migrationsTable: FLOWS_MIGRATIONS_TABLE });
 
   const getChat = (chatId: string) => db.select().from(flowChats).where(eq(flowChats.chatId, chatId)).get();
 

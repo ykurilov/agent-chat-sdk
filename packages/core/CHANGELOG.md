@@ -1,5 +1,11 @@
 # @ykurilov/agent-chat-core
 
+## 0.107.2
+
+### Patch Changes
+
+- 4430082: Хранилища SQLite и PostgreSQL собираются бандлером Next.js (Turbopack и webpack, `next dev`, `next build`, `output: "standalone"`) без `serverExternalPackages` и без настройки трассировки. Раньше сборка падала с «Module not found: Can't resolve '../drizzle'» (путь к папке миграций бандлер принимал за импорт), а standalone-сервер — с «Can't find meta/_journal.json» (папку миграций Next не копировал). Теперь миграции вшиты в код пакетов (`applyEmbeddedMigrations` и тип `EmbeddedMigration` в ядре), журнал и хеши миграций прежние: существующие базы ничего не применяют заново.
+
 ## 0.107.1
 
 No changes in this release.

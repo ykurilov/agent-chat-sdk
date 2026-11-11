@@ -1,3 +1,4 @@
+import type { EmbeddedMigration } from "@ykurilov/agent-chat-core";
 import Database from "better-sqlite3";
 import { and, asc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
@@ -37,13 +38,13 @@ function toColumns(patch: TaskPatch | TaskRecord): Record<string, unknown> {
  * Хранилище задач в файле SQLite. Схема приводится к последней миграции при открытии; файл может быть общим
  * с хранилищем чатов. Две копии сервера на одном файле делят задачи через аренду.
  */
-export function createSqliteTaskStore(filePath: string, migrationsFolder: string): TaskStore {
+export function createSqliteTaskStore(filePath: string, migrations: readonly EmbeddedMigration[]): TaskStore {
   const sqlite = new Database(filePath);
   // Ожидание замка — до первой записи: переход файла в WAL при старте двух копий тоже ждёт замок.
   sqlite.pragma("busy_timeout = 5000");
   sqlite.pragma("journal_mode = WAL");
   const db = drizzle(sqlite);
-  migrateUnderWriteLock(sqlite, migrationsFolder, BACKGROUND_MIGRATIONS_TABLE);
+  migrateUnderWriteLock(sqlite, migrations, BACKGROUND_MIGRATIONS_TABLE);
   const owned = (ownerId: string, taskId: string) => and(eq(backgroundTasks.id, taskId), eq(backgroundTasks.ownerId, ownerId));
   const isRunning = inArray(backgroundTasks.status, [...RUNNING_STATUSES]);
   /** Условие записи — в том же `update … where`: проверка и запись одним действием базы. */

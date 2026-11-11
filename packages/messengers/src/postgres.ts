@@ -1,14 +1,13 @@
-import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { createPostgresMessengerStore as openPostgresMessengerStore, migrateMessengersToLatest } from "./store/postgres-store";
 import type { ClosableMessengerStore } from "./types";
+import { migrations } from "./drizzle-migrations-postgres.generated";
 
 export { MESSENGERS_MIGRATIONS_TABLE, MESSENGERS_MIGRATION_LOCK_KEY } from "./store/migration-settings";
 export * from "./store/postgres-schema";
 export type { ClosableMessengerStore, MessengerStore } from "./types";
 
 const DEFAULT_POOL_SIZE = 5;
-const migrationsFolder = fileURLToPath(new URL("../drizzle/postgres", import.meta.url));
 
 export interface PostgresMessengerStoreOptions {
   /** Например `postgres://user:password@host:5432/database`; та же база, что у `createPostgresChatStorage`. */
@@ -29,7 +28,7 @@ export async function createPostgresMessengerStore(options: PostgresMessengerSto
   // Без обработчика оборвавшееся соединение простаивающего пула роняет процесс.
   pool.on("error", (error) => logError(`мессенджеры: соединение с PostgreSQL оборвалось: ${error.message}`));
   try {
-    await migrateMessengersToLatest(pool, migrationsFolder);
+    await migrateMessengersToLatest(pool, migrations);
   } catch (error) {
     await pool.end().catch(() => {});
     const reason = error instanceof Error ? error.message : String(error);

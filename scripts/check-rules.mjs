@@ -16,6 +16,9 @@
 //    без базы, сервера, ядра и `node:`.
 // 8. В пакетах, скинах и приложениях нет локальных путей машины автора (папка картинок чата в /tmp, внешний диск, домашняя папка):
 //    снимки и временные файлы — в `screenshotFolder()` из `apps/demo/e2e/support/screen.ts`.
+// 9. Код пакетов не читает свои файлы с диска: `new URL("…", import.meta.url)` бандлеры Next.js разбирают как импорт
+//    («Module not found: Can't resolve '../drizzle'»), а `output: "standalone"` файлы пакета не копирует. Миграции вшиты в код
+//    (`scripts/embed-migrations.mjs`, `applyEmbeddedMigrations` ядра) — мигратор drizzle с папкой в коде пакетов не нужен.
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
@@ -272,6 +275,19 @@ for (const folder of packageFolders) {
     .forEach((line, lineIndex) => {
       if (/\]\(\.{1,2}\//.test(line)) problems.push(`${folder}/CHANGELOG.md:${lineIndex + 1}: относительная ссылка не работает у читателя из node_modules, дайте полную (GitHub)`);
     });
+}
+
+const packageFileOnDisk = [
+  { pattern: /new\s+URL\s*\(\s*(["'`])[^"'`]*\1\s*,\s*import\.meta\.url/g, why: "new URL(\"…\", import.meta.url) бандлер Next.js принимает за импорт, а standalone файл не копирует — вшейте данные в код" },
+  { pattern: /["']drizzle-orm\/(?:[\w-]+\/)?migrator["']/g, why: "мигратор drizzle читает папку с диска — миграции вшиты в код: applyEmbeddedMigrations ядра и scripts/embed-migrations.mjs" },
+];
+for (const folder of packageFolders) {
+  for (const file of sourceFiles(`${folder}/src`)) {
+    const code = codeOf(file);
+    for (const { pattern, why } of packageFileOnDisk) {
+      for (const match of code.matchAll(pattern)) problems.push(`${file}:${lineOf(code, match.index)}: ${why}`);
+    }
+  }
 }
 
 // Локальные пути машины автора (папка картинок для чата, внешний диск, домашняя папка) в коде и текстах пакетов.

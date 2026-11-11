@@ -20,11 +20,25 @@
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "@ykurilov/agent-chat-attachments": "workspace:*",
-    "@ykurilov/agent-chat-skin-oduvanchik": "workspace:*"
+    "@ykurilov/agent-chat-skin-oduvanchik": "workspace:*",
+    "@ykurilov/agent-chat-background": "workspace:*",
+    "@ykurilov/agent-chat-flows": "workspace:*",
+    "@ykurilov/agent-chat-images": "workspace:*",
+    "@ykurilov/agent-chat-mcp": "workspace:*",
+    "@ykurilov/agent-chat-messengers": "workspace:*",
+    "@ykurilov/agent-chat-sandbox": "workspace:*",
+    "@ykurilov/agent-chat-skills": "workspace:*",
+    "@ykurilov/agent-chat-storage-postgres": "workspace:*",
+    "@ykurilov/agent-chat-storage-sqlite": "workspace:*",
+    "better-sqlite3": "^13.0.3",
+    "pg": "^8.23.0"
   },
   "devDependencies": {
     "@types/node": "22.20.4",
     "@types/react": "^19.3.0",
-    "@types/react-dom": "^19.3.0"
+    "@types/react-dom": "^19.3.0",
+    "@electric-sql/pglite": "0.5.8",
+    "@electric-sql/pglite-socket": "0.2.11",
+    "@types/pg": "^8.23.1"
   }
 }

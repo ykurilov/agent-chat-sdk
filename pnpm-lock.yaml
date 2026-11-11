@@ -174,24 +174,57 @@ importers:
       '@ykurilov/agent-chat-attachments':
         specifier: workspace:*
         version: link:../../packages/attachments
+      '@ykurilov/agent-chat-background':
+        specifier: workspace:*
+        version: link:../../packages/background
       '@ykurilov/agent-chat-core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@ykurilov/agent-chat-flows':
+        specifier: workspace:*
+        version: link:../../packages/flows
+      '@ykurilov/agent-chat-images':
+        specifier: workspace:*
+        version: link:../../packages/images
+      '@ykurilov/agent-chat-mcp':
+        specifier: workspace:*
+        version: link:../../packages/mcp
+      '@ykurilov/agent-chat-messengers':
+        specifier: workspace:*
+        version: link:../../packages/messengers
       '@ykurilov/agent-chat-react':
         specifier: workspace:*
         version: link:../../packages/react
+      '@ykurilov/agent-chat-sandbox':
+        specifier: workspace:*
+        version: link:../../packages/sandbox
       '@ykurilov/agent-chat-server':
         specifier: workspace:*
         version: link:../../packages/server
+      '@ykurilov/agent-chat-skills':
+        specifier: workspace:*
+        version: link:../../packages/skills
       '@ykurilov/agent-chat-skin-oduvanchik':
         specifier: workspace:*
         version: link:../../skins/oduvanchik
+      '@ykurilov/agent-chat-storage-postgres':
+        specifier: workspace:*
+        version: link:../../packages/storage-postgres
+      '@ykurilov/agent-chat-storage-sqlite':
+        specifier: workspace:*
+        version: link:../../packages/storage-sqlite
       ai:
         specifier: 7.0.122
         version: 7.0.122(zod@4.6.5)
+      better-sqlite3:
+        specifier: ^13.0.3
+        version: 13.0.3
       next:
         specifier: 16.3.7
         version: 16.3.7(@playwright/test@1.63.0)(@types/node@22.20.4)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      pg:
+        specifier: ^8.23.0
+        version: 8.23.0
       react:
         specifier: 19.3.0
         version: 19.3.0
@@ -199,9 +232,18 @@ importers:
         specifier: 19.3.0
         version: 19.3.0(react@19.3.0)
     devDependencies:
+      '@electric-sql/pglite':
+        specifier: 0.5.8
+        version: 0.5.8
+      '@electric-sql/pglite-socket':
+        specifier: 0.2.11
+        version: 0.2.11(@electric-sql/pglite-age@0.0.9(@electric-sql/pglite@0.5.8))(@electric-sql/pglite-pg_hashids@0.0.9(@electric-sql/pglite@0.5.8))(@electric-sql/pglite-pg_ivm@0.0.9(@electric-sql/pglite@0.5.8))(@electric-sql/pglite-pg_textsearch@0.0.10(@electric-sql/pglite@0.5.8))(@electric-sql/pglite-pg_uuidv7@0.0.9(@electric-sql/pglite@0.5.8))(@electric-sql/pglite-pgtap@0.0.9(@electric-sql/pglite@0.5.8))(@electric-sql/pglite-pgvector@0.0.9(@electric-sql/pglite@0.5.8))(@electric-sql/pglite@0.5.8)
       '@types/node':
         specifier: 22.20.4
         version: 22.20.4
+      '@types/pg':
+        specifier: ^8.23.1
+        version: 8.23.1
       '@types/react':
         specifier: ^19.3.0
         version: 19.3.0

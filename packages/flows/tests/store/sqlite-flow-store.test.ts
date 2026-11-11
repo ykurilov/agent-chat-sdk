@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { sqliteFlowStore } from "../../src/sqlite";
 import { createSqliteFlowStore, type SqliteFlowStore } from "../../src/store/sqlite";
 import { at, chatInput, describeFlowStoreContract, exampleFlow } from "./flow-store-contract";
+import { readMigrationFiles } from "drizzle-orm/migrator";
 
 const folders: string[] = [];
 const opened: SqliteFlowStore[] = [];
@@ -18,7 +19,7 @@ function freshFile(): string {
   return join(folder, "flows.sqlite");
 }
 function open(filePath: string): SqliteFlowStore {
-  const store = createSqliteFlowStore(filePath, MIGRATIONS);
+  const store = createSqliteFlowStore(filePath, readMigrationFiles({ migrationsFolder: MIGRATIONS }));
   opened.push(store);
   return store;
 }
@@ -115,7 +116,7 @@ it("обновление базы до transitionMode оставляет ста�
   folders.push(oldFolder); cpSync(MIGRATIONS, oldFolder, { recursive: true });
   const journalPath = join(oldFolder, "meta/_journal.json");
   const journal = JSON.parse(readFileSync(journalPath, "utf8")); journal.entries = journal.entries.slice(0, 4); writeFileSync(journalPath, JSON.stringify(journal));
-  const old = createSqliteFlowStore(file, oldFolder); await old.close();
+  const old = createSqliteFlowStore(file, readMigrationFiles({ migrationsFolder: oldFolder })); await old.close();
   const raw = new Database(file);
   expect((raw.pragma("table_info(flow_chats)") as Array<{ name: string }>).some(column => column.name === "transition_mode")).toBe(false);
   raw.prepare("insert into flow_chats (chat_id,owner_id,flow_id,version_id,state_id,pending,time_zone,updated_at) values (?,?,?,?,?,?,?,?)").run("old", "anna", "flow", "v1", "intro", "[]", "UTC", 0); raw.close();

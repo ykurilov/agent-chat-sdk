@@ -1,6 +1,6 @@
 {
   "name": "@ykurilov/agent-chat-mcp",
-  "version": "0.107.1",
+  "version": "0.107.2",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,
@@ -47,7 +47,7 @@
   "scripts": {
     "build": "node ../../scripts/build-package.mjs",
     "typecheck": "tsc -p tsconfig.json",
-    "db:generate": "drizzle-kit generate --config drizzle.config.sqlite.ts && drizzle-kit generate --config drizzle.config.postgres.ts"
+    "db:generate": "drizzle-kit generate --config drizzle.config.sqlite.ts && drizzle-kit generate --config drizzle.config.postgres.ts && node ../../scripts/embed-migrations.mjs"
   },
   "dependencies": {
     "@ai-sdk/mcp": "2.0.62",

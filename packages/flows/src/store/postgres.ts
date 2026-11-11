@@ -1,7 +1,6 @@
 import { and, eq, inArray, isNull, lt, lte, ne, or, sql, type AnyColumn, type SQL } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { migratePostgresSchema } from "@ykurilov/agent-chat-core";
+import { migratePostgresSchema, applyEmbeddedMigrations, type EmbeddedMigration } from "@ykurilov/agent-chat-core";
 import type { Pool } from "pg";
 import type { StateMap } from "../engine/migrate-run";
 import { FLOW_DELIVERY_EXIT, type FlowChatRecord, type FlowPendingDelivery, type FlowStore, type PendingFlowChange, type SideTaskRecord } from "./flow-store";
@@ -109,11 +108,11 @@ const inCodeOrder = (column: typeof flowChats.chatId) => sql`${column} collate "
  * Приводит таблицы сценариев к последней миграции. Схема `agent_chat` создаётся под общей блокировкой всех пакетов, миграции — под своей:
  * копии пакета ждут друг друга, а разные пакеты стартуют разом на пустой базе без гонки за схему.
  */
-export async function migrateFlowsToLatest(pool: Pool, migrationsFolder: string): Promise<void> {
+export async function migrateFlowsToLatest(pool: Pool, migrations: readonly EmbeddedMigration[]): Promise<void> {
   await migratePostgresSchema({
     connect: () => pool.connect(),
     lockKey: FLOWS_MIGRATION_LOCK_KEY,
-    migrate: (client) => migrate(drizzle(client), { migrationsFolder, migrationsSchema: "agent_chat", migrationsTable: FLOWS_MIGRATIONS_TABLE }),
+    migrate: async (client) => await applyEmbeddedMigrations(drizzle(client), migrations, { migrationsSchema: "agent_chat", migrationsTable: FLOWS_MIGRATIONS_TABLE }),
   });
 }
 
@@ -122,9 +121,9 @@ export async function migrateFlowsToLatest(pool: Pool, migrationsFolder: string)
  * её дожидается. Копии сервера делят таймеры и перевод чатов через `for update skip locked`: строку, которую уже
  * берёт другая копия, эта пропускает. Закрытие пул не закрывает: он принадлежит приложению.
  */
-export function createPostgresFlowStore(pool: Pool, migrationsFolder: string): PostgresFlowStore {
+export function createPostgresFlowStore(pool: Pool, migrations: readonly EmbeddedMigration[]): PostgresFlowStore {
   const db = drizzle(pool);
-  const ready = migrateFlowsToLatest(pool, migrationsFolder);
+  const ready = migrateFlowsToLatest(pool, migrations);
   // Ошибка миграции придёт в каждую операцию; без этого она всплыла бы ещё и как необработанная.
   ready.catch(() => {});
 

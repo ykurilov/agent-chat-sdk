@@ -1,10 +1,8 @@
-import { fileURLToPath } from "node:url";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { migratePostgresSchema } from "@ykurilov/agent-chat-core";
+import { migratePostgresSchema, applyEmbeddedMigrations } from "@ykurilov/agent-chat-core";
 import type { Pool } from "pg";
+import { migrations } from "./drizzle-migrations.generated";
 
-const migrationsFolder = fileURLToPath(new URL("../drizzle", import.meta.url));
 
 /** Постоянное число для блокировки базы: одинаково у всех серверов и всех версий SDK. */
 const MIGRATION_LOCK_KEY = 7_311_900_442;
@@ -17,6 +15,6 @@ export async function migrateToLatest(pool: Pool): Promise<void> {
   await migratePostgresSchema({
     connect: () => pool.connect(),
     lockKey: MIGRATION_LOCK_KEY,
-    migrate: (client) => migrate(drizzle(client), { migrationsFolder, migrationsSchema: "agent_chat" }),
+    migrate: async (client) => await applyEmbeddedMigrations(drizzle(client), migrations, { migrationsSchema: "agent_chat" }),
   });
 }

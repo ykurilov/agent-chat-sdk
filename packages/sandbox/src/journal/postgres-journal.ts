@@ -1,7 +1,6 @@
 import { and, asc, eq, inArray, lt, notExists, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { migratePostgresSchema } from "@ykurilov/agent-chat-core";
+import { migratePostgresSchema, applyEmbeddedMigrations, type EmbeddedMigration } from "@ykurilov/agent-chat-core";
 import type { Pool } from "pg";
 import type { BlobRow, JournalStore, ModelCallRow, ToolCallRow } from "./journal-store";
 import { sandboxAnswerEdits, sandboxBlobRefs, sandboxBlobs, sandboxModelCalls, sandboxSettings, sandboxToolCalls } from "./postgres-schema";
@@ -16,11 +15,11 @@ const MIGRATIONS_TABLE = "__sandbox_migrations";
  * Приводит таблицы журнала к последней миграции. Схема `agent_chat` создаётся под общей блокировкой всех пакетов, миграции — под своей:
  * копии пакета ждут друг друга, а разные пакеты стартуют разом на пустой базе без гонки за схему.
  */
-export async function migrateJournalToLatest(pool: Pool, migrationsFolder: string): Promise<void> {
+export async function migrateJournalToLatest(pool: Pool, migrations: readonly EmbeddedMigration[]): Promise<void> {
   await migratePostgresSchema({
     connect: () => pool.connect(),
     lockKey: MIGRATION_LOCK_KEY,
-    migrate: (client) => migrate(drizzle(client), { migrationsFolder, migrationsSchema: "agent_chat", migrationsTable: MIGRATIONS_TABLE }),
+    migrate: async (client) => await applyEmbeddedMigrations(drizzle(client), migrations, { migrationsSchema: "agent_chat", migrationsTable: MIGRATIONS_TABLE }),
   });
 }
 

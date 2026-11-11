@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { Worker } from "node:worker_threads";
 import { afterEach, describe, expect, it } from "vitest";
 import { createSqliteSkillStore } from "../src/store/sqlite";
+import { readMigrationFiles } from "drizzle-orm/migrator";
 
 /** Поток с TypeScript: загрузчик tsx — из зависимостей репозитория. */
 const TSX_LOADER = pathToFileURL(createRequire(import.meta.url).resolve("tsx")).href;
@@ -37,7 +38,7 @@ async function openAtOnce(filePath: string, migrations: string): Promise<Array<{
   const start = new SharedArrayBuffer(4);
   const workers = Array.from({ length: COPIES }, () => new Worker(new URL("./support/open-sqlite-store.worker.ts", import.meta.url), {
     execArgv: ["--conditions=@ykurilov/agent-chat-source", "--import", TSX_LOADER],
-    workerData: { modulePath: STORE_MODULE, exportName: "createSqliteSkillStore", args: [filePath, migrations], start },
+    workerData: { modulePath: STORE_MODULE, exportName: "createSqliteSkillStore", args: [filePath, readMigrationFiles({ migrationsFolder: migrations })], start },
   }));
   const ready = workers.map((worker) => new Promise<void>((resolve) => worker.once("message", () => resolve())));
   const results = workers.map((worker) => new Promise<{ ok: boolean; error?: string }>((resolve, reject) => {
@@ -59,7 +60,7 @@ describe("Скиллы в SQLite: копии сервера на одном фа
     const folder = mkdtempSync(join(tmpdir(), "sqlite-copies-"));
     folders.push(folder);
     const filePath = join(folder, "chat.sqlite");
-    await ((createSqliteSkillStore(filePath, MIGRATIONS) as { close?: () => unknown }).close?.());
+    await ((createSqliteSkillStore(filePath, readMigrationFiles({ migrationsFolder: MIGRATIONS })) as { close?: () => unknown }).close?.());
     expect(await openAtOnce(filePath, withNewSlowMigration(folder))).toEqual(Array.from({ length: COPIES }, () => ({ ok: true })));
   }, 60_000);
 });

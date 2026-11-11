@@ -1,7 +1,6 @@
 import { and, asc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { migratePostgresSchema } from "@ykurilov/agent-chat-core";
+import { migratePostgresSchema, applyEmbeddedMigrations, type EmbeddedMigration } from "@ykurilov/agent-chat-core";
 import type { Pool } from "pg";
 import type { TaskCondition, TaskPatch, TaskRecord, TaskStore } from "../types";
 import { BACKGROUND_MIGRATION_LOCK_KEY, BACKGROUND_MIGRATIONS_TABLE } from "./migration-settings";
@@ -38,11 +37,11 @@ function toColumns(patch: TaskPatch | TaskRecord): Record<string, unknown> {
  * Приводит таблицу задач к последней миграции. Схема `agent_chat` создаётся под общей блокировкой всех пакетов, миграции — под своей:
  * копии пакета ждут друг друга, а разные пакеты стартуют разом на пустой базе без гонки за схему.
  */
-export async function migrateBackgroundTasksToLatest(pool: Pool, migrationsFolder: string): Promise<void> {
+export async function migrateBackgroundTasksToLatest(pool: Pool, migrations: readonly EmbeddedMigration[]): Promise<void> {
   await migratePostgresSchema({
     connect: () => pool.connect(),
     lockKey: BACKGROUND_MIGRATION_LOCK_KEY,
-    migrate: (client) => migrate(drizzle(client), { migrationsFolder, migrationsSchema: "agent_chat", migrationsTable: BACKGROUND_MIGRATIONS_TABLE }),
+    migrate: async (client) => await applyEmbeddedMigrations(drizzle(client), migrations, { migrationsSchema: "agent_chat", migrationsTable: BACKGROUND_MIGRATIONS_TABLE }),
   });
 }
 
@@ -50,9 +49,9 @@ export async function migrateBackgroundTasksToLatest(pool: Pool, migrationsFolde
  * Хранилище задач в PostgreSQL (схема `agent_chat`) на пуле приложения. Миграция идёт при первом обращении,
  * каждая операция её дожидается. Закрытие пул не закрывает: он принадлежит приложению.
  */
-export function createPostgresTaskStore(pool: Pool, migrationsFolder: string): TaskStore {
+export function createPostgresTaskStore(pool: Pool, migrations: readonly EmbeddedMigration[]): TaskStore {
   const db = drizzle(pool);
-  const ready = migrateBackgroundTasksToLatest(pool, migrationsFolder);
+  const ready = migrateBackgroundTasksToLatest(pool, migrations);
   // Ошибка миграции придёт в каждую операцию; без этого она всплыла бы ещё и как необработанная.
   ready.catch(() => {});
   const owned = (ownerId: string, taskId: string) => and(eq(backgroundTasks.id, taskId), eq(backgroundTasks.ownerId, ownerId));

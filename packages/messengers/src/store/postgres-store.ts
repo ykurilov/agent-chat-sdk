@@ -1,7 +1,6 @@
 import { and, asc, count, eq, gt, gte, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { migratePostgresSchema } from "@ykurilov/agent-chat-core";
+import { migratePostgresSchema, applyEmbeddedMigrations, type EmbeddedMigration } from "@ykurilov/agent-chat-core";
 import type { Pool } from "pg";
 import type { ButtonAction, ClosableMessengerStore, ConversationKey, MessengerConversation, MessengerLink, PendingDelivery } from "../types";
 import { MESSENGERS_MIGRATION_LOCK_KEY, MESSENGERS_MIGRATIONS_TABLE } from "./migration-settings";
@@ -26,11 +25,11 @@ function withoutNul<T>(value: T): T {
  * Приводит таблицы мессенджеров к последней миграции. Схема `agent_chat` создаётся под общей блокировкой всех пакетов, миграции — под своей:
  * копии пакета ждут друг друга, а разные пакеты стартуют разом на пустой базе без гонки за схему.
  */
-export async function migrateMessengersToLatest(pool: Pool, migrationsFolder: string): Promise<void> {
+export async function migrateMessengersToLatest(pool: Pool, migrations: readonly EmbeddedMigration[]): Promise<void> {
   await migratePostgresSchema({
     connect: () => pool.connect(),
     lockKey: MESSENGERS_MIGRATION_LOCK_KEY,
-    migrate: (client) => migrate(drizzle(client), { migrationsFolder, migrationsSchema: "agent_chat", migrationsTable: MESSENGERS_MIGRATIONS_TABLE }),
+    migrate: async (client) => await applyEmbeddedMigrations(drizzle(client), migrations, { migrationsSchema: "agent_chat", migrationsTable: MESSENGERS_MIGRATIONS_TABLE }),
   });
 }
 

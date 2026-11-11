@@ -1,3 +1,4 @@
+import type { EmbeddedMigration } from "@ykurilov/agent-chat-core";
 import Database from "better-sqlite3";
 import { and, asc, eq, isNotNull, isNull, lt, ne, or } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
@@ -74,13 +75,13 @@ function filterOf(filter: ImageJobFilter): SQL | undefined {
  * Задачи картинок в файле SQLite; файл может быть общим с хранилищем чатов. Схема приводится к последней миграции при
  * открытии. Правка — чтение и условная запись по версии в одной транзакции с блокировкой записи (`immediate`).
  */
-export function createSqliteImageJobStore(filePath: string, migrationsFolder: string): ImageJobStore {
+export function createSqliteImageJobStore(filePath: string, migrations: readonly EmbeddedMigration[]): ImageJobStore {
   const sqlite = new Database(filePath);
   // Ожидание замка — до первой записи: переход файла в WAL при старте двух копий тоже ждёт замок.
   sqlite.pragma("busy_timeout = 5000");
   sqlite.pragma("journal_mode = WAL");
   const db = drizzle(sqlite);
-  migrateUnderWriteLock(sqlite, migrationsFolder, IMAGE_JOBS_MIGRATIONS_TABLE);
+  migrateUnderWriteLock(sqlite, migrations, IMAGE_JOBS_MIGRATIONS_TABLE);
 
   const read = (id: string) => {
     const row = db.select().from(imageJobs).where(eq(imageJobs.id, id)).get();

@@ -1,6 +1,6 @@
 {
   "name": "@ykurilov/agent-chat-storage-postgres",
-  "version": "0.107.1",
+  "version": "0.107.2",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,
@@ -32,7 +32,7 @@
   "scripts": {
     "build": "node ../../scripts/build-package.mjs",
     "typecheck": "tsc -p tsconfig.json",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "drizzle-kit generate && node ../../scripts/embed-migrations.mjs"
   },
   "dependencies": {
     "@ykurilov/agent-chat-core": "workspace:*",

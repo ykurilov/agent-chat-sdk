@@ -1,7 +1,7 @@
+import { applyEmbeddedMigrations, type EmbeddedMigration } from "@ykurilov/agent-chat-core";
 import type Database from "better-sqlite3";
 import { and, asc, count, eq, gt, gte, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import type { ButtonAction, ClosableMessengerStore, ConversationKey, MessengerConversation, MessengerLink, PendingDelivery } from "../types";
 import { MESSENGERS_MIGRATIONS_TABLE } from "./migration-settings";
 import { messengerButtons, messengerConversations, messengerDeliveries, messengerLeases, messengerLinkCodes, messengerLinks, messengerMemberHits, messengerUpdates } from "./sqlite-schema";
@@ -10,9 +10,9 @@ const ms = (iso: string) => Date.parse(iso);
 const iso = (time: number) => new Date(time).toISOString();
 
 /** Хранилище мессенджеров в SQLite. Одноразовое (код, кнопка, обновление, аренда) берётся одним условным запросом. */
-export function createSqliteMessengerStore(sqlite: Database.Database, migrationsFolder: string): ClosableMessengerStore {
+export function createSqliteMessengerStore(sqlite: Database.Database, migrations: readonly EmbeddedMigration[]): ClosableMessengerStore {
   const db = drizzle(sqlite);
-  migrate(db, { migrationsFolder, migrationsTable: MESSENGERS_MIGRATIONS_TABLE });
+  applyEmbeddedMigrations(db, migrations, { migrationsTable: MESSENGERS_MIGRATIONS_TABLE });
 
   const conversationIs = (key: ConversationKey) =>
     and(eq(messengerConversations.messenger, key.messenger), eq(messengerConversations.botId, key.botId), eq(messengerConversations.externalChatId, key.externalChatId));

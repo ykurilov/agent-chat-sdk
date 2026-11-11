@@ -135,6 +135,8 @@ export {
 export { assertChatData, assertChatDataFilter, CHAT_DATA_MAX_BYTES, ChatDataTooLargeError, chatDataFields, chatDataMatches, chatDataOfInput, mergeChatData } from "./storage/chat-data";
 export type { ChatDataFilter, ChatDataFilterValue } from "./storage/chat-data";
 export { migratePostgresSchema } from "./storage/postgres-migrations";
+export { applyEmbeddedMigrations } from "./storage/embedded-migrations";
+export type { EmbeddedMigration, EmbeddedMigrationConfig } from "./storage/embedded-migrations";
 export type { PostgresMigrationConnection, PostgresMigrationOptions } from "./storage/postgres-migrations";
 export type {
   ChatTurnWriteGuard,

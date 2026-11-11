@@ -1,7 +1,6 @@
 import { and, count, desc, eq, getTableColumns } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { migratePostgresSchema } from "@ykurilov/agent-chat-core";
+import { migratePostgresSchema, applyEmbeddedMigrations, type EmbeddedMigration } from "@ykurilov/agent-chat-core";
 import type { Pool } from "pg";
 import { SkillExistsError, SkillNotFoundError, SkillVersionConflictError } from "../types";
 import type { Skill, SkillBrief, SkillLoad, SkillStore, SkillVersion } from "../types";
@@ -31,11 +30,11 @@ function toLoad({ id: _id, ...row }: typeof skillLoads.$inferSelect): SkillLoad 
  * Приводит таблицы навыков к последней миграции. Схема `agent_chat` создаётся под общей блокировкой всех пакетов, миграции — под своей:
  * копии пакета ждут друг друга, а разные пакеты стартуют разом на пустой базе без гонки за схему.
  */
-export async function migrateSkillsToLatest(pool: Pool, migrationsFolder: string): Promise<void> {
+export async function migrateSkillsToLatest(pool: Pool, migrations: readonly EmbeddedMigration[]): Promise<void> {
   await migratePostgresSchema({
     connect: () => pool.connect(),
     lockKey: SKILLS_MIGRATION_LOCK_KEY,
-    migrate: (client) => migrate(drizzle(client), { migrationsFolder, migrationsSchema: "agent_chat", migrationsTable: SKILLS_MIGRATIONS_TABLE }),
+    migrate: async (client) => await applyEmbeddedMigrations(drizzle(client), migrations, { migrationsSchema: "agent_chat", migrationsTable: SKILLS_MIGRATIONS_TABLE }),
   });
 }
 
@@ -43,9 +42,9 @@ export async function migrateSkillsToLatest(pool: Pool, migrationsFolder: string
  * Навыки в PostgreSQL (схема `agent_chat`) на пуле приложения. Миграция идёт при первом обращении, каждая операция
  * её дожидается. Правка и её версия — в одной транзакции с условием на номер версии. Пул закрывает приложение.
  */
-export function createPostgresSkillStore(pool: Pool, migrationsFolder: string): SkillStore {
+export function createPostgresSkillStore(pool: Pool, migrations: readonly EmbeddedMigration[]): SkillStore {
   const db = drizzle(pool);
-  const ready = migrateSkillsToLatest(pool, migrationsFolder);
+  const ready = migrateSkillsToLatest(pool, migrations);
   // Ошибка миграции придёт в каждую операцию; без этого она всплыла бы ещё и как необработанная.
   ready.catch(() => {});
 

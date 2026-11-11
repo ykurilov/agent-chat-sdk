@@ -1,3 +1,4 @@
+import type { EmbeddedMigration } from "@ykurilov/agent-chat-core";
 import Database from "better-sqlite3";
 import { and, count, desc, eq, getTableColumns } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
@@ -33,13 +34,13 @@ function toLoad({ id: _id, ...row }: typeof skillLoads.$inferSelect): SkillLoad 
  * Навыки в файле SQLite. Схема приводится к последней миграции при открытии; файл может быть общим с хранилищем
  * чатов. Правка и её версия — в одной транзакции.
  */
-export function createSqliteSkillStore(filePath: string, migrationsFolder: string): SkillStore {
+export function createSqliteSkillStore(filePath: string, migrations: readonly EmbeddedMigration[]): SkillStore {
   const sqlite = new Database(filePath);
   // Ожидание замка — до первой записи: переход файла в WAL при старте двух копий тоже ждёт замок.
   sqlite.pragma("busy_timeout = 5000");
   sqlite.pragma("journal_mode = WAL");
   const db = drizzle(sqlite);
-  migrateUnderWriteLock(sqlite, migrationsFolder, SKILLS_MIGRATIONS_TABLE);
+  migrateUnderWriteLock(sqlite, migrations, SKILLS_MIGRATIONS_TABLE);
 
   const read = (name: string) => db.select().from(skills).where(eq(skills.name, name)).get();
   const existing = (name: string) => {

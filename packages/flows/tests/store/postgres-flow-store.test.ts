@@ -11,6 +11,7 @@ import { assertSafeToWipe } from "../../../storage-postgres/tests/support/wipe-g
 import { postgresFlowStore } from "../../src/postgres";
 import { createPostgresFlowStore, type PostgresFlowStore } from "../../src/store/postgres";
 import { at, chatInput, describeFlowStoreContract, exampleFlow } from "./flow-store-contract";
+import { readMigrationFiles } from "drizzle-orm/migrator";
 
 const MIGRATIONS = fileURLToPath(new URL("../../drizzle/postgres", import.meta.url));
 
@@ -43,7 +44,7 @@ async function query(connectionString: string, text: string): Promise<Record<str
   }
 }
 
-const open = (connectionString: string, max = 2): PostgresFlowStore => createPostgresFlowStore(pool(connectionString, max), MIGRATIONS);
+const open = (connectionString: string, max = 2): PostgresFlowStore => createPostgresFlowStore(pool(connectionString, max), readMigrationFiles({ migrationsFolder: MIGRATIONS }));
 
 describe("сценарии в PostgreSQL (встроенная база pglite за обычным протоколом)", () => {
   describeFlowStoreContract(async () => {
@@ -61,7 +62,7 @@ describe("сценарии в PostgreSQL (встроенная база pglite �
     await entry.pinChat(chatInput({ chatId: "через-вход" }));
     // `close` виден через вход без приведения типов.
     await entry.close();
-    const store = createPostgresFlowStore(appPool, MIGRATIONS);
+    const store = createPostgresFlowStore(appPool, readMigrationFiles({ migrationsFolder: MIGRATIONS }));
     expect(await store.getChat("через-вход")).toMatchObject({ chatId: "через-вход" });
     await store.close();
     expect((await appPool.query("select 1 as one")).rows[0]).toEqual({ one: 1 });
@@ -189,7 +190,7 @@ it("обновление PostgreSQL до transitionMode оставляет ст�
   cpSync(MIGRATIONS, oldFolder, { recursive: true });
   const journalPath = join(oldFolder, "meta/_journal.json");
   const journal = JSON.parse(readFileSync(journalPath, "utf8")); journal.entries = journal.entries.slice(0, 4); writeFileSync(journalPath, JSON.stringify(journal));
-  const old = createPostgresFlowStore(pool(database.connectionString), oldFolder); await old.close();
+  const old = createPostgresFlowStore(pool(database.connectionString), readMigrationFiles({ migrationsFolder: oldFolder })); await old.close();
   await query(database.connectionString, `insert into agent_chat.flow_chats (chat_id,owner_id,flow_id,version_id,state_id,pending,time_zone,updated_at) values ('old','anna','flow','v1','intro','[]','UTC',now())`);
   const upgraded = open(database.connectionString);
   expect(await upgraded.getChat("old")).toMatchObject({ transitionMode: "rails", stateId: "intro" });

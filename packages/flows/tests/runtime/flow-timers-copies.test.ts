@@ -12,6 +12,7 @@ import { createPostgresFlowStore } from "../../src/store/postgres";
 import { createSqliteFlowStore, type SqliteFlowStore } from "../../src/store/sqlite";
 import { HOUR } from "../flow-fixtures";
 import { agentTexts, appNotices, clockAt, human, OWNER, stateOfChat, T0, timerChat, type TimerChat } from "./timer-chat";
+import { readMigrationFiles } from "drizzle-orm/migrator";
 
 // T070: таймеры в общей базе — две копии сервера шлют одно сообщение; после перезапуска наступивший срабатывает один раз.
 
@@ -40,9 +41,9 @@ const databases: Array<{ name: string; open: () => Promise<[FlowStore, FlowStore
     open: async () => {
       const folder = mkdtempSync(join(tmpdir(), "agent-flow-timers-"));
       const file = join(folder, "flows.sqlite");
-      const stores: SqliteFlowStore[] = [createSqliteFlowStore(file, SQLITE_MIGRATIONS)];
+      const stores: SqliteFlowStore[] = [createSqliteFlowStore(file, readMigrationFiles({ migrationsFolder: SQLITE_MIGRATIONS }))];
       await stores[0]!.getChat("nobody");
-      stores.push(createSqliteFlowStore(file, SQLITE_MIGRATIONS));
+      stores.push(createSqliteFlowStore(file, readMigrationFiles({ migrationsFolder: SQLITE_MIGRATIONS })));
       cleanups.push(async () => {
         for (const store of stores) await store.close();
         rmSync(folder, { recursive: true, force: true });
@@ -59,9 +60,9 @@ const databases: Array<{ name: string; open: () => Promise<[FlowStore, FlowStore
         for (const pool of pools) await pool.end();
         await database.stop();
       });
-      const first = createPostgresFlowStore(pools[0]!, POSTGRES_MIGRATIONS);
+      const first = createPostgresFlowStore(pools[0]!, readMigrationFiles({ migrationsFolder: POSTGRES_MIGRATIONS }));
       await first.getChat("nobody");
-      return [first, createPostgresFlowStore(pools[1]!, POSTGRES_MIGRATIONS)];
+      return [first, createPostgresFlowStore(pools[1]!, readMigrationFiles({ migrationsFolder: POSTGRES_MIGRATIONS }))];
     },
   },
 ];

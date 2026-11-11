@@ -171,5 +171,5 @@ TANDEM_REPO=<папка Тандема> scripts/publish-tandem.sh 0.3.0      # �
 `pnpm release` сам гоняет юнит-тесты, типы и сборку (если их не проверил `pnpm verify` на этом же коде). Дополнительно, когда меняются условия экспорта,
 сборка или состав пакетов: `pnpm --filter @ykurilov/agent-chat-core pack` (в архиве должны быть `dist`,
 README, CHANGELOG и не должно быть `src` и тестов) и `pnpm test:e2e:quick`. У `storage-postgres` в архиве
-ещё папка `drizzle` (миграции). Если менялось подключение Next.js или сервер — `pnpm test:next`; если менялись
+ещё папка `drizzle` (миграции; в работе пакеты берут их из кода — `src/drizzle-migrations*.generated.ts`, их пишет `pnpm db:generate` пакета, а `pnpm test` сверяет с папкой). Если менялось подключение Next.js или сервер — `pnpm test:next`; если менялись
 запросы или миграции PostgreSQL — прогон набора на настоящей базе: `AGENT_CHAT_TEST_POSTGRES_URL=… pnpm vitest run --project unit packages/storage-postgres`.

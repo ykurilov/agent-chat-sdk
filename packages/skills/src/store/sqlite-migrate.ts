@@ -1,13 +1,12 @@
+import type { EmbeddedMigration } from "@ykurilov/agent-chat-core";
 import type Database from "better-sqlite3";
-import { readMigrationFiles } from "drizzle-orm/migrator";
 
 /**
  * Миграции drizzle, но журнал читается под замком записи, в одной транзакции с миграциями. drizzle читает журнал до своей
  * транзакции: вторая копия сервера на том же файле применила бы новую миграцию повторно и упала при запуске.
  * Порядок тот же, что у drizzle: применяются миграции новее последней записи журнала.
  */
-export function migrateUnderWriteLock(sqlite: Database.Database, migrationsFolder: string, migrationsTable: string): void {
-  const migrations = readMigrationFiles({ migrationsFolder, migrationsTable });
+export function migrateUnderWriteLock(sqlite: Database.Database, migrations: readonly EmbeddedMigration[], migrationsTable: string): void {
   sqlite
     .transaction(() => {
       sqlite.exec(`create table if not exists "${migrationsTable}" (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at numeric)`);

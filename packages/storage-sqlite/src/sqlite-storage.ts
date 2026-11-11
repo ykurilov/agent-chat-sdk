@@ -1,4 +1,3 @@
-import { fileURLToPath } from "node:url";
 import {
   aliveAtByLocalClock,
   assertChatDataFilter,
@@ -22,15 +21,14 @@ import type { AnswerAliveMark, Chat, ChatDataFilter, ChatListOptions, ChatStorag
 import Database from "better-sqlite3";
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, ne, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
-import { readMigrationFiles } from "drizzle-orm/migrator";
 import { branchSelections, chats, chatTurnLeases, compactions, memoryNotes, memoryOptimizationRuns, messages, pendingBursts, spendingLimitStates, usageRecords, userModelChoices, voiceChoices } from "./schema";
+import { migrations } from "./drizzle-migrations.generated";
 
 export interface SqliteChatStorage extends ChatStorage {
   /** Закрывает файл базы. */
   close(): void;
 }
 
-const migrationsFolder = fileURLToPath(new URL("../drizzle", import.meta.url));
 /** Свой журнал миграций SDK: общий журнал drizzle в файле может вести и приложение. */
 const MIGRATIONS_TABLE = "__agent_chat_migrations";
 /** Общий журнал drizzle: в нём SDK вёл свои миграции до 0.32. */
@@ -58,7 +56,7 @@ function assertNoForeignChatTables(sqlite: Database.Database, filePath: string):
   const names = tableNames(sqlite);
   const found = ["chats", "messages"].filter((name) => names.has(name));
   if (found.length === 0) return;
-  const firstMigrationHash = readMigrationFiles({ migrationsFolder })[0]?.hash;
+  const firstMigrationHash = migrations[0]?.hash;
   const ours = [MIGRATIONS_TABLE, SHARED_MIGRATIONS_TABLE].some((table) => {
     try {
       return names.has(table) && sqlite.prepare(`select 1 from "${table}" where hash = ?`).get(firstMigrationHash) !== undefined;
@@ -91,8 +89,7 @@ function moveSharedMigrationJournal(sqlite: Database.Database): void {
         // У журнала приложения другие колонки: записей SDK в нём нет.
         return;
       }
-      const sdk = readMigrationFiles({ migrationsFolder });
-      const ours = rows.filter((row) => sdk.some((migration) => migration.hash === row.hash || migration.folderMillis === Number(row.created_at)));
+      const ours = rows.filter((row) => migrations.some((migration) => migration.hash === row.hash || migration.folderMillis === Number(row.created_at)));
       if (ours.length === 0) return;
       // Та же таблица, что создаёт drizzle для журнала.
       sqlite.exec(`create table "${MIGRATIONS_TABLE}" (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at numeric)`);
@@ -110,7 +107,6 @@ function moveSharedMigrationJournal(sqlite: Database.Database): void {
  * Журнал тот же, что у drizzle. Всё — одной транзакцией под замком записи: две копии сервера не применят миграцию дважды.
  */
 function applyMigrations(sqlite: Database.Database): void {
-  const migrations = readMigrationFiles({ migrationsFolder });
   sqlite
     .transaction(() => {
       sqlite.exec(`create table if not exists "${MIGRATIONS_TABLE}" (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at numeric)`);

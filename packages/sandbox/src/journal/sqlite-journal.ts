@@ -1,7 +1,7 @@
+import { applyEmbeddedMigrations, type EmbeddedMigration } from "@ykurilov/agent-chat-core";
 import type Database from "better-sqlite3";
 import { and, asc, eq, inArray, lt, notInArray, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import type { BlobRow, JournalStore, ModelCallRow, ToolCallRow } from "./journal-store";
 import { sandboxAnswerEdits, sandboxBlobRefs, sandboxBlobs, sandboxModelCalls, sandboxSettings, sandboxToolCalls } from "./sqlite-schema";
 
@@ -9,9 +9,9 @@ import { sandboxAnswerEdits, sandboxBlobRefs, sandboxBlobs, sandboxModelCalls, s
 const MIGRATIONS_TABLE = "__sandbox_migrations";
 
 /** Хранилище журнала в SQLite. Схема приводится к последней миграции при создании. */
-export function createSqliteJournalStore(sqlite: Database.Database, migrationsFolder: string): JournalStore {
+export function createSqliteJournalStore(sqlite: Database.Database, migrations: readonly EmbeddedMigration[]): JournalStore {
   const db = drizzle(sqlite);
-  migrate(db, { migrationsFolder, migrationsTable: MIGRATIONS_TABLE });
+  applyEmbeddedMigrations(db, migrations, { migrationsTable: MIGRATIONS_TABLE });
 
   /** Куски, на которые не осталось ссылок. */
   function dropUnreferencedBlobs(tx: Pick<typeof db, "delete" | "select">): void {

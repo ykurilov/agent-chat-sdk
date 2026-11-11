@@ -1,8 +1,7 @@
 import { and, asc, eq, isNotNull, isNull, lt, ne, or } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { migratePostgresSchema } from "@ykurilov/agent-chat-core";
+import { migratePostgresSchema, applyEmbeddedMigrations, type EmbeddedMigration } from "@ykurilov/agent-chat-core";
 import type { Pool } from "pg";
 import { applyImageJobPatch, findErrorCause, ImageJobKeyTakenError, imageJobBody, isOpenImageJob } from "./image-job-store";
 import type { ImageJobFilter, ImageJobRecord, ImageJobStore } from "./image-job-store";
@@ -83,11 +82,11 @@ function filterOf(filter: ImageJobFilter): SQL | undefined {
  * Приводит таблицу задач к последней миграции. Схема `agent_chat` создаётся под общей блокировкой всех пакетов, миграции — под своей:
  * копии пакета ждут друг друга, а разные пакеты стартуют разом на пустой базе без гонки за схему.
  */
-async function migrateImageJobsToLatest(pool: Pool, migrationsFolder: string): Promise<void> {
+async function migrateImageJobsToLatest(pool: Pool, migrations: readonly EmbeddedMigration[]): Promise<void> {
   await migratePostgresSchema({
     connect: () => pool.connect(),
     lockKey: IMAGE_JOBS_MIGRATION_LOCK_KEY,
-    migrate: (client) => migrate(drizzle(client), { migrationsFolder, migrationsSchema: "agent_chat", migrationsTable: IMAGE_JOBS_MIGRATIONS_TABLE }),
+    migrate: async (client) => await applyEmbeddedMigrations(drizzle(client), migrations, { migrationsSchema: "agent_chat", migrationsTable: IMAGE_JOBS_MIGRATIONS_TABLE }),
   });
 }
 
@@ -96,9 +95,9 @@ async function migrateImageJobsToLatest(pool: Pool, migrationsFolder: string): P
  * её дожидается. Правка — условное `update … where version = …`: из двух одновременных пройдёт одна. Пул закрывает
  * приложение.
  */
-export function createPostgresImageJobStore(pool: Pool, migrationsFolder: string): ImageJobStore {
+export function createPostgresImageJobStore(pool: Pool, migrations: readonly EmbeddedMigration[]): ImageJobStore {
   const db = drizzle(pool);
-  const ready = migrateImageJobsToLatest(pool, migrationsFolder);
+  const ready = migrateImageJobsToLatest(pool, migrations);
   // Ошибка миграции придёт в каждую операцию; без этого она всплыла бы ещё и как необработанная.
   ready.catch(() => {});
 
