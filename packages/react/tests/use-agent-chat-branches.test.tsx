@@ -74,7 +74,7 @@ describe("useAgentChat: ветки", () => {
 
     act(() => result.current.regenerate());
     await waitFor(() => expect(server.regenerations).toHaveLength(1));
-    expect(server.requestsTo("regenerate")[0]?.body).toEqual({ messageId: "a2", timeZone: expect.any(String) });
+    expect(server.requestsTo("regenerate")[0]?.body).toEqual({ messageId: "a2", timeZone: expect.any(String), turnRequestId: expect.any(String) });
     expect(server.requestsTo("retry")).toHaveLength(0);
     expect(ids(result)).toEqual(["u1"]);
 
@@ -181,7 +181,8 @@ describe("useAgentChat: ветки", () => {
     act(() => result.current.retry());
     await waitFor(() => expect(server.edits).toHaveLength(1));
     const [first, second] = server.requestsTo("edit");
-    expect(second?.body).toEqual(first?.body);
+    // Тот же запрос правки; id запроса хода у повтора свой.
+    expect(second?.body).toEqual({ ...(first?.body as object), turnRequestId: expect.any(String) });
     expect(server.requestsTo("messages")).toHaveLength(0);
     server.edits[0]!.end();
   });

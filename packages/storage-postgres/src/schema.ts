@@ -11,7 +11,7 @@ import type {
   VoiceCut,
 } from "@ykurilov/agent-chat-core";
 import { sql } from "drizzle-orm";
-import { bigint, boolean, doublePrecision, index, integer, json, jsonb, pgSchema, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { bigint, boolean, doublePrecision, index, integer, json, jsonb, pgSchema, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
 /** Своя схема базы: у приложения могут быть свои `chats` и `messages`. */
 export const agentChatSchema = pgSchema("agent_chat");
@@ -180,6 +180,25 @@ export const chatTurnLeases = agentChatSchema.table("chat_turn_leases", {
   holder: text("holder").notNull(),
   until: timestamp("until", { withTimezone: true, mode: "string" }).notNull(),
 });
+
+/**
+ * «Стоп» хода по id его запроса (`TurnRequestContext.turnRequestId`): пришёл раньше хода или на другую копию сервера.
+ * `expiresAt` — по часам службы. Внешним ключом с чатом не связана: удаление чата снимает записи само.
+ */
+export const stopRequests = agentChatSchema.table(
+  "stop_requests",
+  {
+    chatId: text("chat_id").notNull(),
+    turnRequestId: text("turn_request_id").notNull(),
+    ownerId: text("owner_id").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true, mode: "date" }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.chatId, table.turnRequestId] }),
+    index("stop_requests_expires_idx").on(table.expiresAt),
+    index("stop_requests_owner_idx").on(table.ownerId, table.expiresAt),
+  ],
+);
 
 /**
  * Ждущие пачки сообщений человека: одна запись на чат. Сроки — по часам службы. Внешним ключом с чатом не связана:

@@ -151,6 +151,7 @@ export type {
   NewChatInput,
   SpendingLimitStateRecord,
   StoredPendingBurst,
+  StoredStopRequest,
   StreamingMessagePatch,
 } from "./storage/chat-storage";
 export { SpendingLimitReachedError } from "./spending/spending-limits";
@@ -234,6 +235,7 @@ export type { OriginRefusal, RequestOriginCheck, RequestOriginCheckOptions } fro
 export { createInMemoryChatStorage } from "./storage/in-memory-storage";
 
 export { ChatBusyError, createRunningAnswerRegistry } from "./running-answers/running-answer-registry";
+export { STOP_REQUESTS_CHECK_EVERY_MS } from "./running-answers/stop-requests";
 export type { RunningAnswerRegistry } from "./running-answers/running-answer-registry";
 export {
   ChatNotFoundError,
@@ -312,7 +314,7 @@ export { CORE_SERVICE_BLOCKS, checkServiceBlockFormats, cutForgedBlocks, service
 export type { ServiceBlockFormat } from "./agent-run/forged-blocks";
 export { DEFAULT_MODEL_SILENCE } from "./provider-errors/model-silence";
 export type { ModelSilenceLimits, ModelSilenceSetting } from "./provider-errors/model-silence";
-export { APP_CHANGE_PART_TYPE, BROWSER_CALL_PART_TYPE } from "./page-context/page-context";
+export { APP_CHANGE_PART_TYPE, BROWSER_CALL_PART_TYPE, isTurnRequestId } from "./page-context/page-context";
 export type { DataChange, ScreenPlace, TurnRequestContext } from "./page-context/page-context";
 export { isScreenPlaceInput, isTabId } from "./agent-run/screen-place";
 export { BrowserCallNotPendingError } from "./agent-run/browser-tools";

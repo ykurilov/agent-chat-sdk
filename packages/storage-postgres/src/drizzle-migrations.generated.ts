@@ -101,4 +101,10 @@ export const migrations: readonly EmbeddedMigration[] = [
   { folderMillis: 1793442948920, hash: "309053a858e4d5da6ab55fb22282b4dfdc45ba9c3a35a2a665cc00231477fccd", bps: true, sql: [
     "CREATE INDEX \"usage_records_created_idx\" ON \"agent_chat\".\"usage_records\" USING btree (\"created_at\");",
   ] },
+  // 0019_stop_requests
+  { folderMillis: 1794403275223, hash: "b2b13cca84b216efcc536e2b2f51c354abebdaf28a758edbcc7918b9f9b942a4", bps: true, sql: [
+    "CREATE TABLE \"agent_chat\".\"stop_requests\" (\n\t\"chat_id\" text NOT NULL,\n\t\"turn_request_id\" text NOT NULL,\n\t\"owner_id\" text NOT NULL,\n\t\"expires_at\" timestamp with time zone NOT NULL,\n\tCONSTRAINT \"stop_requests_chat_id_turn_request_id_pk\" PRIMARY KEY(\"chat_id\",\"turn_request_id\")\n);\n",
+    "\nCREATE INDEX \"stop_requests_expires_idx\" ON \"agent_chat\".\"stop_requests\" USING btree (\"expires_at\");",
+    "\nCREATE INDEX \"stop_requests_owner_idx\" ON \"agent_chat\".\"stop_requests\" USING btree (\"owner_id\",\"expires_at\");",
+  ] },
 ];

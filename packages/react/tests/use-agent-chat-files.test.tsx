@@ -23,6 +23,7 @@ describe("useAgentChat: сообщение с файлами", () => {
     expect(server.requestsTo("messages")[0]!.body).toEqual({
       message: { id: expect.any(String), role: "user", parts: [file, { type: "text", text: "Что на картинке?" }] },
       timeZone: expect.any(String),
+      turnRequestId: expect.any(String),
     });
     expect(result.current.value).toBe("");
     server.streams[0]?.end();

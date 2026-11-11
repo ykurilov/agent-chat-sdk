@@ -147,6 +147,18 @@ describe("обработчик чата", () => {
     expect(answer?.status).toBe("stopped");
   });
 
+  it("POST stop с turnRequestId раньше отправки — 202, ход этого запроса остановлен; неверный id — 400", async () => {
+    const { call, createChat, storage } = setup();
+    const chatId = await createChat();
+    expect((await call("POST", `/${chatId}/stop`, { body: { turnRequestId: "не id" } })).status).toBe(400);
+    expect((await call("POST", `/${chatId}/stop`, { body: { turnRequestId: "turn-1" } })).status).toBe(202);
+    expect((await call("POST", `/${chatId}/messages`, { body: { ...message("u1", "Привет"), turnRequestId: "bad id" } })).status).toBe(400);
+    const response = await call("POST", `/${chatId}/messages`, { body: { ...message("u1", "Привет"), turnRequestId: "turn-1" } });
+    await readAll(response.body!.getReader());
+    const answer = (await storage.listMessages(chatId)).find((item) => item.role === "assistant");
+    expect(answer?.status).toBe("stopped");
+  });
+
   it("flush без срока дописывает идущий ответ и закрывает его как «Стоп», не дожидаясь конца хода", async () => {
     const gate = createGate();
     const { call, createChat, handler, storage } = setup({ gate: gate.wait });

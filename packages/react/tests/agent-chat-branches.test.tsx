@@ -100,7 +100,7 @@ describe("лента: «Переделать ответ»", () => {
 
     fireEvent.click(buttons[0]!);
     await waitFor(() => expect(server.regenerations).toHaveLength(1));
-    expect(server.requestsTo("regenerate")[0]?.body).toEqual({ messageId: "a2", timeZone: expect.any(String) });
+    expect(server.requestsTo("regenerate")[0]?.body).toEqual({ messageId: "a2", timeZone: expect.any(String), turnRequestId: expect.any(String) });
     server.regenerations[0]!.end();
   });
 

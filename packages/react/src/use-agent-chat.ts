@@ -369,6 +369,28 @@ function pageFields(bridge: AgentAppBridge | undefined): { tabId?: string; place
   return { tabId: bridge.tabId, ...(sendable && { place: sendable }), ...timeZone };
 }
 
+/**
+ * `POST {chat}/stop`: с id запроса хода сервер останавливает именно его ход — идущий, ещё не начатый или на другой копии.
+ * Без id — идущий ход чата. Сбой связи не мешает остановить поток на экране.
+ */
+async function postStop(request: (input: string, init?: RequestInit) => Promise<Response>, chatUrl: string, turnRequestId: string | undefined, timeoutMs: number): Promise<void> {
+  const init: RequestInit =
+    turnRequestId === undefined ? { method: "POST" } : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ turnRequestId }) };
+  await fetchWithDeadline(request, `${chatUrl}/stop`, init, { timeoutMs, wholeBody: true }).catch(() => undefined);
+}
+
+/** Новый id запроса хода — с этой минуты он id хода вкладки, его называет «Стоп». */
+function newTurnRequest(own: { current: string | null }): string {
+  const turnRequestId = crypto.randomUUID();
+  own.current = turnRequestId;
+  return turnRequestId;
+}
+
+/** Запрос `turnRequestId` хода не начал (отказ, сбой) или его ход кончился: «Стоп» его больше не называет. */
+function forgetTurnRequest(own: { current: string | null }, turnRequestId: string): void {
+  if (own.current === turnRequestId) own.current = null;
+}
+
 /** Пояс браузера, например `Europe/Moscow`; браузер не сказал — нет пояса, сервер возьмёт свой. */
 function browserTimeZone(): string | undefined {
   try {
@@ -579,6 +601,14 @@ export function useAgentChat({
   const [handingOff, setHandingOff] = useState(false);
   const handOff = useRef<ChatOwned<Promise<void>> | null>(null);
   const handOffToCorrectionsRef = useRef<() => Promise<void>>(async () => {});
+  /**
+   * id запроса хода, который начала эта вкладка (`turnRequestId`): «Стоп» называет его, и сервер останавливает именно
+   * этот ход — даже если «Стоп» обогнал запрос или попал на другую копию сервера. Ход кончился, не начался или его
+   * начала не эта вкладка — id нет, «Стоп» останавливает идущий ход чата, как раньше.
+   */
+  const ownTurnRequest = useRef<string | null>(null);
+  /** Сколько раз нажат «Стоп»: поправка, начавшая ход уже после нажатия, останавливает его сама. */
+  const stopsPressed = useRef(0);
   /** Поток ответа открыт: читается в момент вызова, `onFinish` снимает его раньше, чем придёт отрисовка. */
   const answeringRef = useRef(false);
 
@@ -677,6 +707,7 @@ export function useAgentChat({
         prepareSendMessagesRequest: ({ messages, trigger }) => {
           const last = messages.at(-1);
           sendingMessageId.current = last?.id;
+          const turn = { turnRequestId: newTurnRequest(ownTurnRequest) };
           const edit = pendingEdit.current;
           if (edit && last?.id === edit.messageId) {
             // Правка-склейка голосовых фраз: отметку голоса, как у отправки, сервер ставит сам по `voiceMode`.
@@ -685,20 +716,20 @@ export function useAgentChat({
             const outgoing = { ...last, parts: last.parts.filter((part) => part.type !== VOICE_MODE_PART_TYPE) };
             return {
               api: `${chatUrl}/edit`,
-              body: { editedMessageId: edit.editedMessageId, message: outgoing, ...(voiceMode && { voiceMode: true }), ...(voiceMode && voiceSounds.length > 0 && { voiceSounds }), ...pageFields(bridgeRef.current) },
+              body: { editedMessageId: edit.editedMessageId, message: outgoing, ...(voiceMode && { voiceMode: true }), ...(voiceMode && voiceSounds.length > 0 && { voiceSounds }), ...pageFields(bridgeRef.current), ...turn },
             };
           }
           if (trigger === "regenerate-message" && regeneratedAnswerId.current) {
-            return { api: `${chatUrl}/regenerate`, body: { messageId: regeneratedAnswerId.current, ...pageFields(bridgeRef.current) } };
+            return { api: `${chatUrl}/regenerate`, body: { messageId: regeneratedAnswerId.current, ...pageFields(bridgeRef.current), ...turn } };
           }
           if (trigger === "regenerate-message" && last?.id !== unsentMessageId.current) {
-            return { api: `${chatUrl}/retry`, body: pageFields(bridgeRef.current) };
+            return { api: `${chatUrl}/retry`, body: { ...pageFields(bridgeRef.current), ...turn } };
           }
           const voiceMode = last !== undefined && voiceMessageIds.current.has(last.id);
           const voiceSounds = (last && voiceSoundsById.current.get(last.id)) ?? [];
           // Отметку голосового хода сервер ставит сам по `voiceMode`; в запрос она не идёт.
           const outgoing = last && { ...last, parts: last.parts.filter((part) => part.type !== VOICE_MODE_PART_TYPE) };
-          return { api: `${chatUrl}/messages`, body: { message: outgoing, ...(voiceMode && { voiceMode: true }), ...(voiceMode && voiceSounds.length > 0 && { voiceSounds }), ...pageFields(bridgeRef.current) } };
+          return { api: `${chatUrl}/messages`, body: { message: outgoing, ...(voiceMode && { voiceMode: true }), ...(voiceMode && voiceSounds.length > 0 && { voiceSounds }), ...pageFields(bridgeRef.current), ...turn } };
         },
         // Идущий ответ отдаётся с начала хода; 204 — хода уже нет.
         prepareReconnectToStreamRequest: () => ({ api: `${chatUrl}/stream` }),
@@ -930,6 +961,10 @@ export function useAgentChat({
     },
   });
   const { sendMessage, regenerate, resumeStream, status, stop: stopChat } = chat;
+  // Поток хода закрылся: ход вкладки кончился (или ушёл без неё — тогда «Стоп» остановит идущий ход чата, как раньше).
+  useEffect(() => {
+    if (status === "ready" || status === "error") ownTurnRequest.current = null;
+  }, [status]);
   // Шаг, начатый заново у другого провайдера (`data-step-reset`), не виден ни в ленте, ни в решениях хука: стёртое
   // убирается при выдаче, и правки ленты получают её уже без него.
   const shownMessages = useMemo(() => withoutResetMessages(chat.messages), [chat.messages]);
@@ -1346,6 +1381,7 @@ export function useAgentChat({
     chatLifetime.current = new AbortController();
     return () => {
       chatLifetime.current.abort();
+      ownTurnRequest.current = null;
       // Пропущенное перечитывание относится к прежнему чату: новый читает свою историю сам.
       rereadWhenFree.current = false;
     };
@@ -1472,13 +1508,15 @@ export function useAgentChat({
       };
       setApprovalFailure(null);
       setApprovalPendingId(approvalId);
+      const turnRequestId = newTurnRequest(ownTurnRequest);
+      let resumedTurn = false;
       try {
         let response: Response;
         try {
           response = await fetchWithDeadline(
             request,
             `${chatUrl}/approvals/${encodeURIComponent(approvalId)}`,
-            { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ decision, ...pageFields(bridgeRef.current) }) },
+            { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ decision, ...pageFields(bridgeRef.current), turnRequestId }) },
             { timeoutMs: settingsRef.current.requestTimeoutMs, wholeBody: true },
           );
         } catch {
@@ -1519,6 +1557,7 @@ export function useAgentChat({
         if (signal.aborted) return;
         setMessages((current) => withApprovalDecision(current, approvalId, decision, resumed));
         if (!resumed) return;
+        resumedTurn = true;
         setResuming(true);
         try {
           const outcome = await resumeWithProbe(signal);
@@ -1528,6 +1567,8 @@ export function useAgentChat({
           if (!signal.aborted) setResuming(false);
         }
       } finally {
+        // Решение не продолжило ход: «Стоп» не называет его запрос.
+        if (!resumedTurn) forgetTurnRequest(ownTurnRequest, turnRequestId);
         if (approving.current === pending) approving.current = null;
         if (!signal.aborted) setApprovalPendingId(null);
       }
@@ -1540,6 +1581,8 @@ export function useAgentChat({
     request,
     requestTimeoutMs: () => settingsRef.current.requestTimeoutMs,
     pageFields: () => pageFields(bridgeRef.current),
+    newTurnRequest: () => newTurnRequest(ownTurnRequest),
+    forgetTurnRequest: (turnRequestId) => forgetTurnRequest(ownTurnRequest, turnRequestId),
     chatSignal: () => chatLifetime.current.signal,
     setMessages,
     setResuming,
@@ -1763,12 +1806,16 @@ export function useAgentChat({
         onRejected?.(kind);
       };
       const sent = (ownedBy(steerQueue.current, signal) ?? Promise.resolve()).then(async () => {
+        // Поправка может начать новый ход (идущий уже кончился): у её запроса свой id. Ход вкладки он заменит, только
+        // если ход и правда начат; поправка к идущему ходу — часть того хода, «Стоп» называет прежний id.
+        const turnRequestId = crypto.randomUUID();
+        const stopsBefore = stopsPressed.current;
         let response: Response;
         try {
           response = await fetchWithDeadline(
             request,
             `${asked}/steer`,
-            { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: outgoingCorrection(correction), ...pageFields(bridgeRef.current) }) },
+            { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: outgoingCorrection(correction), ...pageFields(bridgeRef.current), turnRequestId }) },
             { timeoutMs: settingsRef.current.requestTimeoutMs, wholeBody: true },
           );
         } catch {
@@ -1789,6 +1836,12 @@ export function useAgentChat({
           announceAppRefusal(refusedWithText);
           refused(kind);
           return;
+        }
+        const steered = (await response.json().catch(() => null)) as { status?: string } | null;
+        if (steered?.status === "started") {
+          // «Стоп» нажат, пока поправка шла, и ушёл с id прежнего хода: новый ход останавливается своим id.
+          if (stopsPressed.current !== stopsBefore) void postStop(request, asked, turnRequestId, settingsRef.current.requestTimeoutMs);
+          else if (!signal.aborted) ownTurnRequest.current = turnRequestId;
         }
         if (!answeringRef.current) void handOffToCorrectionsRef.current();
       });
@@ -1926,11 +1979,11 @@ export function useAgentChat({
       if (seriesRef.current) cancelSeries();
       browserCallsLifetime.current?.abort();
       browserCallsLifetime.current = null;
+      // id хода вкладки — в момент нажатия: ход останавливается, даже если сервер ещё не начал его.
+      const turnRequestId = ownTurnRequest.current ?? undefined;
+      stopsPressed.current += 1;
       const stopped: Promise<void> = (async () => {
-        await fetchWithDeadline(request, `${chatUrl}/stop`, { method: "POST" }, {
-          timeoutMs: settingsRef.current.requestTimeoutMs,
-          wholeBody: true,
-        }).catch(() => undefined);
+        await postStop(request, chatUrl, turnRequestId, settingsRef.current.requestTimeoutMs);
         if (lifetime.aborted) return;
         await stopChat();
         if (!lifetime.aborted) setMessages((messages) => markLastAnswerStopped(messages));

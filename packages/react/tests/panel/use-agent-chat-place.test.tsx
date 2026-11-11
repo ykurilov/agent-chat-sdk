@@ -118,7 +118,7 @@ describe("useAgentChat с мостом: место и вкладка в тела
     act(() => void result.current.submit());
     await waitFor(() => expect(server.streams).toHaveLength(1));
     const body = server.requestsTo("messages")[0]!.body as Record<string, unknown>;
-    expect(body).toEqual({ message: expect.anything(), timeZone });
+    expect(body).toEqual({ message: expect.anything(), timeZone, turnRequestId: expect.any(String) });
     act(() => server.streams[0]!.answer("Ок"));
   });
 
@@ -128,7 +128,7 @@ describe("useAgentChat с мостом: место и вкладка в тела
     const { result } = await loadedChat(server, bridge);
     act(() => result.current.retry());
     await waitFor(() => expect(server.retries).toHaveLength(1));
-    expect(server.requestsTo("retry")[0]!.body).toEqual({ tabId: "tab-1", place: cardOne, timeZone });
+    expect(server.requestsTo("retry")[0]!.body).toEqual({ tabId: "tab-1", place: cardOne, timeZone, turnRequestId: expect.any(String) });
     act(() => server.retries[0]!.answer("Теперь ок", "a2"));
   });
 
@@ -137,7 +137,7 @@ describe("useAgentChat с мостом: место и вкладка в тела
     const { result } = await loadedChat(server);
     act(() => result.current.retry());
     await waitFor(() => expect(server.retries).toHaveLength(1));
-    expect(server.requestsTo("retry")[0]!.body).toEqual({ timeZone });
+    expect(server.requestsTo("retry")[0]!.body).toEqual({ timeZone, turnRequestId: expect.any(String) });
     act(() => server.retries[0]!.answer("Теперь ок", "a2"));
   });
 
@@ -147,7 +147,7 @@ describe("useAgentChat с мостом: место и вкладка в тела
     const { result } = await loadedChat(server, bridge);
     act(() => result.current.regenerate());
     await waitFor(() => expect(server.regenerations).toHaveLength(1));
-    expect(server.requestsTo("regenerate")[0]!.body).toEqual({ messageId: "a1", tabId: "tab-1", place: cardTwo, timeZone });
+    expect(server.requestsTo("regenerate")[0]!.body).toEqual({ messageId: "a1", tabId: "tab-1", place: cardTwo, timeZone, turnRequestId: expect.any(String) });
     act(() => server.regenerations[0]!.answer("Иначе", "a2"));
   });
 
@@ -170,13 +170,13 @@ describe("useAgentChat с мостом: место и вкладка в тела
     const { bridge } = bridgeWith(cardTwo);
     const { result } = await loadedChat(server, bridge);
     await act(() => result.current.respondToApproval("ap1", "allow"));
-    expect(server.requestsTo("approval")[0]!.body).toEqual({ decision: "allow", tabId: "tab-1", place: cardTwo, timeZone });
+    expect(server.requestsTo("approval")[0]!.body).toEqual({ decision: "allow", tabId: "tab-1", place: cardTwo, timeZone, turnRequestId: expect.any(String) });
   });
 
   it("ответ на подтверждение без моста: решение и часовой пояс", async () => {
     const server = fakeChatServer({ history: waitingForApproval });
     const { result } = await loadedChat(server);
     await act(() => result.current.respondToApproval("ap1", "allow"));
-    expect(server.requestsTo("approval")[0]!.body).toEqual({ decision: "allow", timeZone });
+    expect(server.requestsTo("approval")[0]!.body).toEqual({ decision: "allow", timeZone, turnRequestId: expect.any(String) });
   });
 });

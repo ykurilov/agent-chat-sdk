@@ -46,7 +46,7 @@ describe("AgentChat: ошибки и «повторить»", () => {
 
     fireEvent.click(within(errorNotice).getByRole("button", { name: "Повторить" }));
     await waitFor(() => expect(server.requestsTo("retry")).toHaveLength(1));
-    expect(server.requestsTo("retry")[0]?.body ?? {}).toEqual({ timeZone: expect.any(String) });
+    expect(server.requestsTo("retry")[0]?.body ?? {}).toEqual({ timeZone: expect.any(String), turnRequestId: expect.any(String) });
     answerRetry(server, "Новый ответ");
 
     await waitFor(() => expect(screen.getByText("Новый ответ")).toBeTruthy());

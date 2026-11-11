@@ -1,5 +1,13 @@
 # @ykurilov/agent-chat-flows
 
+## 0.108.0
+
+### Patch Changes
+
+- Updated dependencies [b951be1]
+  - @ykurilov/agent-chat-core@0.108.0
+  - @ykurilov/agent-chat-react@0.108.0
+
 ## 0.107.2
 
 ### Patch Changes

@@ -138,6 +138,7 @@ describe("мост: отправка слов", () => {
       message: { id: expect.any(String), role: "user", parts: [{ type: "text", text: "Расскажи про погоду" }] },
       voiceMode: true,
       timeZone: expect.any(String),
+      turnRequestId: expect.any(String),
     });
     server.streams[0]?.end();
   });
@@ -150,7 +151,7 @@ describe("мост: отправка слов", () => {
 
     await waitFor(() => expect(server.streams).toHaveLength(1));
     const body = server.requestsTo("messages")[0]?.body as Record<string, unknown>;
-    expect(body).toEqual({ message: expect.objectContaining({ role: "user" }), timeZone: expect.any(String) });
+    expect(body).toEqual({ message: expect.objectContaining({ role: "user" }), timeZone: expect.any(String), turnRequestId: expect.any(String) });
     expect("voiceMode" in body).toBe(false);
     server.streams[0]?.end();
   });
@@ -249,6 +250,7 @@ describe("мост: склейка фразы (replaceLastMessage)", () => {
       message: { id: expect.any(String), role: "user", parts: [{ type: "text", text: "Так. Дай-ка подумать." }] },
       voiceMode: true,
       timeZone: expect.any(String),
+      turnRequestId: expect.any(String),
     });
     expect(server.requestsTo("messages")).toHaveLength(1);
   });

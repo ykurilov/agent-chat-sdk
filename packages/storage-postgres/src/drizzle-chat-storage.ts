@@ -33,7 +33,7 @@ import type {
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, ne, sql } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
-import { branchSelections, chats, chatTurnLeases, compactions, memoryNotes, memoryOptimizationRuns, messages, pendingBursts, spendingLimitStates, usageRecords, userModelChoices, voiceChoices } from "./schema";
+import { branchSelections, chats, chatTurnLeases, compactions, memoryNotes, memoryOptimizationRuns, messages, pendingBursts, spendingLimitStates, stopRequests, usageRecords, userModelChoices, voiceChoices } from "./schema";
 
 export const storageSchema = { chats, messages, compactions, branchSelections, usageRecords, userModelChoices, voiceChoices, spendingLimitStates, memoryNotes, memoryOptimizationRuns };
 
@@ -281,6 +281,7 @@ export function createDrizzleChatStorage(db: ChatDatabase): ChatStorage {
         await tx.delete(chats).where(eq(chats.id, chatId));
         await tx.delete(chatTurnLeases).where(eq(chatTurnLeases.chatId, chatId));
         await tx.delete(pendingBursts).where(eq(pendingBursts.chatId, chatId));
+        await tx.delete(stopRequests).where(eq(stopRequests.chatId, chatId));
       });
     },
 
@@ -306,6 +307,34 @@ export function createDrizzleChatStorage(db: ChatDatabase): ChatStorage {
 
     async clearChatTurnLeases() {
       await db.delete(chatTurnLeases);
+    },
+
+    async saveStopRequest(request, { keepPerOwner }) {
+      await db.delete(stopRequests).where(lte(stopRequests.expiresAt, new Date(request.stoppedAt)));
+      await db.transaction(async (tx) => {
+        await tx
+          .insert(stopRequests)
+          .values({ chatId: request.chatId, turnRequestId: request.turnRequestId, ownerId: request.ownerId, expiresAt: new Date(request.expiresAt) })
+          .onConflictDoNothing();
+        // Сверх предела уходят записи этого же человека с самым ранним сроком.
+        const own = await tx
+          .select({ chatId: stopRequests.chatId, turnRequestId: stopRequests.turnRequestId })
+          .from(stopRequests)
+          .where(eq(stopRequests.ownerId, request.ownerId))
+          .orderBy(desc(stopRequests.expiresAt));
+        for (const extra of own.slice(keepPerOwner)) {
+          await tx.delete(stopRequests).where(and(eq(stopRequests.chatId, extra.chatId), eq(stopRequests.turnRequestId, extra.turnRequestId)));
+        }
+      });
+    },
+
+    async hasStopRequest(chatId, turnRequestId) {
+      const rows = await db
+        .select({ chatId: stopRequests.chatId })
+        .from(stopRequests)
+        .where(and(eq(stopRequests.chatId, chatId), eq(stopRequests.turnRequestId, turnRequestId)))
+        .limit(1);
+      return rows.length > 0;
     },
 
     async savePendingBurst(burst) {

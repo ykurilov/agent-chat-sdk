@@ -11,7 +11,7 @@ import type {
   VoiceCut,
 } from "@ykurilov/agent-chat-core";
 import { sql } from "drizzle-orm";
-import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const chats = sqliteTable(
   "chats",
@@ -181,6 +181,25 @@ export const chatTurnLeases = sqliteTable("chat_turn_leases", {
   holder: text("holder").notNull(),
   until: integer("until").notNull(),
 });
+
+/**
+ * «Стоп» хода по id его запроса (`TurnRequestContext.turnRequestId`): пришёл раньше хода или на другую копию сервера.
+ * `expiresAt` — мс по часам службы. Внешним ключом с чатом не связана: удаление чата снимает записи само.
+ */
+export const stopRequests = sqliteTable(
+  "stop_requests",
+  {
+    chatId: text("chat_id").notNull(),
+    turnRequestId: text("turn_request_id").notNull(),
+    ownerId: text("owner_id").notNull(),
+    expiresAt: integer("expires_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.chatId, table.turnRequestId] }),
+    index("stop_requests_expires_idx").on(table.expiresAt),
+    index("stop_requests_owner_idx").on(table.ownerId, table.expiresAt),
+  ],
+);
 
 /**
  * Ждущие пачки сообщений человека: одна запись на чат. Сроки — мс по часам службы; `page` — JSON страницы хода.

@@ -17,7 +17,7 @@ import {
   silenceBoundaryByLocalClock,
 } from "./chat-storage";
 import { assertChatDataFilter, chatDataFields, chatDataMatches, chatDataOfInput, mergeChatData } from "./chat-data";
-import type { ChatListOptions, ChatStorage, ChatSubjectFilter, SpendingLimitStateRecord, StoredPendingBurst } from "./chat-storage";
+import type { ChatListOptions, ChatStorage, ChatSubjectFilter, SpendingLimitStateRecord, StoredPendingBurst, StoredStopRequest } from "./chat-storage";
 
 /** Хранилище в памяти процесса — для тестов. Копирует данные на входе и выходе, как база. */
 type StoredNote = MemoryNote & { mergedInto?: string };
@@ -64,6 +64,9 @@ export function createTransientChatStorage(snapshot?: InMemoryChatSnapshot): Tra
   const turnLeases = new Map<string, { holder: string; until: number }>();
   /** Ждущие пачки по чатам. */
   const pendingBursts = new Map<string, StoredPendingBurst>();
+  /** «Стоп» ходов по id их запросов: ключ — чат и id запроса. */
+  const stopRequests = new Map<string, StoredStopRequest>();
+  const stopRequestKey = (chatId: string, turnRequestId: string) => JSON.stringify([chatId, turnRequestId]);
   const compactions: StoredCompaction[] = [];
   const branchSelections: StoredBranchSelection[] = [];
   const usageRecords: UsageRecord[] = [];
@@ -305,6 +308,7 @@ export function createTransientChatStorage(snapshot?: InMemoryChatSnapshot): Tra
       if (!chats.delete(chatId)) return;
       turnLeases.delete(chatId);
       pendingBursts.delete(chatId);
+      for (const [key, request] of stopRequests) if (request.chatId === chatId) stopRequests.delete(key);
       for (const message of [...messages.values()]) {
         if (message.chatId !== chatId) continue;
         messages.delete(message.id);
@@ -431,6 +435,19 @@ export function createTransientChatStorage(snapshot?: InMemoryChatSnapshot): Tra
 
     async clearChatTurnLeases() {
       turnLeases.clear();
+    },
+
+    async saveStopRequest(request, { keepPerOwner }) {
+      for (const [key, saved] of stopRequests) if (saved.expiresAt <= request.stoppedAt) stopRequests.delete(key);
+      const key = stopRequestKey(request.chatId, request.turnRequestId);
+      if (!stopRequests.has(key)) stopRequests.set(key, { ...request });
+      // Сверх предела уходят записи этого же человека с самым ранним сроком.
+      const own = [...stopRequests].filter(([, saved]) => saved.ownerId === request.ownerId).sort(([, a], [, b]) => a.expiresAt.localeCompare(b.expiresAt));
+      for (const [ownKey] of own.slice(0, Math.max(0, own.length - keepPerOwner))) stopRequests.delete(ownKey);
+    },
+
+    async hasStopRequest(chatId, turnRequestId) {
+      return stopRequests.has(stopRequestKey(chatId, turnRequestId));
     },
 
     async savePendingBurst(burst) {

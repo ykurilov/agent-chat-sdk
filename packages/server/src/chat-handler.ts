@@ -19,6 +19,7 @@ import {
   InvalidModelChoiceError,
   isScreenPlaceInput,
   isTabId,
+  isTurnRequestId,
   isVoiceSound,
   NothingToRetryError,
   createRequestOriginCheck,
@@ -705,7 +706,9 @@ export function createChatServer(options: ChatHandlerOptions): { handler: ChatHa
     }
 
     if (action === "stop" && method === "POST") {
-      const stopped = await service.stop(userId, chatId);
+      const stop = parseStop(await readJsonBody(request));
+      if (stop === "invalid") return errorResponse(400, "invalid");
+      const stopped = await service.stop(userId, chatId, stop);
       return new Response(null, { status: stopped ? 202 : 204 });
     }
 
@@ -769,12 +772,25 @@ function parseVoiceSounds(value: unknown): VoiceSound[] | undefined | "invalid" 
  * не настоящий пояс — дата по запасному поясу, не ошибка; пояс не строкой не берётся.
  */
 function parsePage(body: unknown): TurnRequestContext | undefined | "invalid" {
-  const { place, tabId, timeZone } = (typeof body === "object" && body !== null ? body : {}) as Record<string, unknown>;
+  const { place, tabId, timeZone, turnRequestId } = (typeof body === "object" && body !== null ? body : {}) as Record<string, unknown>;
   const zone = typeof timeZone === "string" ? timeZone : undefined;
-  if (place === undefined && tabId === undefined && zone === undefined) return undefined;
+  if (place === undefined && tabId === undefined && zone === undefined && turnRequestId === undefined) return undefined;
   if (place !== undefined && !isScreenPlaceInput(place)) return "invalid";
   if (tabId !== undefined && !isTabId(tabId)) return "invalid";
-  return { ...(place !== undefined && { place }), ...(tabId !== undefined && { tabId }), ...(zone !== undefined && { timeZone: zone }) };
+  if (turnRequestId !== undefined && !isTurnRequestId(turnRequestId)) return "invalid";
+  return {
+    ...(place !== undefined && { place }),
+    ...(tabId !== undefined && { tabId }),
+    ...(zone !== undefined && { timeZone: zone }),
+    ...(turnRequestId !== undefined && { turnRequestId }),
+  };
+}
+
+/** Тело «Стопа»: `{ turnRequestId }` — остановить ход этого запроса; без тела — идущий ход чата. */
+function parseStop(body: unknown): { turnRequestId?: string } | "invalid" {
+  const { turnRequestId } = (typeof body === "object" && body !== null ? body : {}) as Record<string, unknown>;
+  if (turnRequestId === undefined) return {};
+  return isTurnRequestId(turnRequestId) ? { turnRequestId } : "invalid";
 }
 
 /** Ответ вкладки: `{ tabId, output }` или `{ tabId, error: строка }`, ровно одно из двух; иначе `null`. */

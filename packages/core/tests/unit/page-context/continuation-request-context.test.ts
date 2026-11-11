@@ -22,4 +22,9 @@ describe("запрос страницы продолжения после поп
   it("ход начат без страницы: место и вкладка — только из поправок", () => {
     expect(continuationRequestContext(undefined, [{ tabId: "t2" }])).toEqual({ tabId: "t2" });
   });
+
+  it("id запроса хода — последней поправки: продолжение — новый ответ, «Стоп» начала хода его не трогает", () => {
+    expect(continuationRequestContext({ turnRequestId: "turn-1" }, [{ turnRequestId: "turn-p1" }, { turnRequestId: "turn-p2" }])).toEqual({ turnRequestId: "turn-p2" });
+    expect(continuationRequestContext({ turnRequestId: "turn-1" }, [{ tabId: "t2" }])).toEqual({ tabId: "t2" });
+  });
 });

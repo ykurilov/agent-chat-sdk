@@ -32,6 +32,7 @@ describe("useAgentChat", () => {
     expect(post?.body).toEqual({
       message: { id: expect.any(String), role: "user", parts: [{ type: "text", text: "Новый вопрос" }] },
       timeZone: expect.any(String),
+      turnRequestId: expect.any(String),
     });
     expect(result.current.value).toBe("");
     server.streams[0]?.end();

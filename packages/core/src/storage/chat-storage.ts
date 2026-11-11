@@ -271,6 +271,18 @@ export interface ChatStorage {
   renewPendingBurst?(renew: { chatId: string; messageId: string; holder: string; heldUntil: string }): Promise<boolean>;
   /** Снять запись пачки чата, если она всё ещё о сообщении `messageId`; о другом сообщении или нет — тихо ничего. */
   removePendingBurst?(chatId: string, messageId: string): Promise<void>;
+  /**
+   * «Стоп» хода, начатого запросом `turnRequestId` (id запроса хода от клиента, `TurnRequestContext.turnRequestId`):
+   * запрос остановки пришёл раньше, чем ход начался, или на другую копию сервера. Ход этого запроса остановится, на какой
+   * бы копии ни начался. Повтор той же записи — тихо ничего. Заодно снимает истёкшие записи (`expiresAt` не позже
+   * `stoppedAt`), а у человека `ownerId` оставляет не больше `keepPerOwner` живых: сверх — уходят его же записи с самым
+   * ранним `expiresAt`. Чужие записи не трогает. Удаление чата снимает записи чата.
+   *
+   * Необязательный (вместе с `hasStopRequest`): без него такой «Стоп» действует только внутри копии, которая его приняла.
+   */
+  saveStopRequest?(request: StoredStopRequest, limits: { keepPerOwner: number }): Promise<void>;
+  /** Есть ли «Стоп» хода запроса `turnRequestId` в чате `chatId`. */
+  hasStopRequest?(chatId: string, turnRequestId: string): Promise<boolean>;
   /** Новая запись сжатия. Записи только добавляются; сообщения не меняются. Повтор id — ошибка. */
   insertCompaction(record: StoredCompaction): Promise<void>;
   /** Записи сжатия чата в порядке добавления. */
@@ -509,6 +521,18 @@ export interface StoredPendingBurst {
   heldUntil: string;
   /** Страница хода (`SendMessageOptions.page`): ход после перезапуска идёт с ней. */
   page?: TurnRequestContext;
+}
+
+/** «Стоп» хода по id его запроса (`ChatStorage.saveStopRequest`). Время — ISO 8601 по часам службы. */
+export interface StoredStopRequest {
+  /** Владелец чата: по нему предел записей одного человека. */
+  ownerId: string;
+  chatId: string;
+  turnRequestId: string;
+  /** Когда «Стоп» принят. */
+  stoppedAt: string;
+  /** До какого времени запись нужна: позже ход этого запроса уже не начнётся. */
+  expiresAt: string;
 }
 
 /** Совместимо со старыми хранилищами приложения; встроенные выполняют один LIMIT 1 без parts. Не проверяет владельца. */

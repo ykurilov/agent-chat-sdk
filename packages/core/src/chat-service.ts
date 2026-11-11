@@ -129,6 +129,7 @@ import { createTurnSteering, isCorrection, steerPart } from "./steering/turn-ste
 import type { SteeringTurn } from "./steering/turn-steering";
 import type { RunningAnswerRegistry } from "./running-answers/running-answer-registry";
 import { createLiveTurns, STOPPED_TURNS_WAIT_MS, turnStopReasonOf } from "./running-answers/live-turns";
+import { createStopRequests, STOP_REQUESTS_CHECK_EVERY_MS } from "./running-answers/stop-requests";
 import { SpendingLimitReachedError } from "./spending/spending-limits";
 import { createTurnGate, replyOf, TURN_HELD_PART_TYPE } from "./turn-hooks/turn-gate";
 import { undeliveredIdsOf, undeliveredRecord } from "./agent-run/undelivered";
@@ -215,6 +216,7 @@ const BURST_ACTIONS: ReadonlySet<TurnAction> = new Set<TurnAction>(["send", "ret
 const STATE_CHANGE_REASON: Partial<Record<TurnAction, StateChangeReason>> = { edit: "editMessage", regenerate: "regenerate", retry: "retry" };
 
 export { InvalidModelChoiceError };
+export { STOP_REQUESTS_CHECK_EVERY_MS };
 export { AttachmentRejectedError, SpendingLimitReachedError, TooManyTurnsError };
 export type { CompactionMarker, CompactionOutcome, CompactionSettings, ModelChoice, ModelMenu, SpendingLimits, SpendingStatus };
 
@@ -1132,8 +1134,14 @@ export interface ChatService {
   answerBrowserCall(userId: string, chatId: string, toolCallId: string, answer: BrowserCallAnswer): Promise<void>;
   /** Поток идущего ответа с начала; `null`, если хода нет. */
   subscribe(userId: string, chatId: string): Promise<ReadableStream<UIMessageChunk> | null>;
-  /** Останавливает идущий ответ; ход, который ещё запускается, остановится сразу после старта. `false`, если хода нет. */
-  stop(userId: string, chatId: string): Promise<boolean>;
+  /**
+   * Останавливает идущий ответ; ход, который ещё запускается, остановится сразу после старта. `false`, если хода нет.
+   * С `turnRequestId` (id запроса хода, `TurnRequestContext.turnRequestId`) — только ход этого запроса, как бы ни легли
+   * запросы: пришедший раньше хода «Стоп» запоминается (и в хранилище, для других копий сервера), и ход остановится,
+   * как только начнётся; идущий на другой копии — на её ближайшей сверке (`STOP_REQUESTS_CHECK_EVERY_MS`). Ход другого
+   * запроса он не трогает. Ответ — `true`: «Стоп» принят.
+   */
+  stop(userId: string, chatId: string, stopOptions?: { turnRequestId?: string }): Promise<boolean>;
   /**
    * Брошенные ответы — `streaming` без знака жизни дольше `ANSWER_STALE_AFTER_MS` (копия сервера упала или выключена) —
    * переводит в `interrupted`, написанное не трогает, незаписанный расход пишет в журнал. Живые ответы, в том числе
@@ -1514,6 +1522,8 @@ export function createChatService(input: ChatServiceOptions): ChatService {
   const admittingTurns = new Map<string, number>();
   /** «Стоп», пришедший, пока ход запускался: ход останавливается, как только попадёт в реестр. */
   const stopsWhileStarting = new Set<string>();
+  /** «Стоп» по id запроса хода: ранний и с другой копии сервера. */
+  const stopRequests = createStopRequests({ storage, now, logError });
   /** Чаты, которые удаляются: сжатие «сейчас» и загрузка файлов в них не пускаются. */
   const deleting = new Set<string>();
   /**
@@ -2719,6 +2729,10 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     const { finished } = started;
     steeringTurn = steering.begin(chatId, answerId);
     if (stopsWhileStarting.delete(chatId)) registry.abort(chatId);
+    // «Стоп» запроса этого хода: пришедший раньше — сразу, с другой копии — на сверке с хранилищем.
+    const turnRequestId = launch.page?.turnRequestId;
+    const endStopWatch =
+      turnRequestId === undefined ? undefined : stopRequests.watch(chatId, turnRequestId, () => registry.runningMessageId(chatId) === answerId && registry.abort(chatId));
     const turnEvent = { ownerId: chat.ownerId, chatId, messageId: answerId, trigger, channel };
     chatEvents.emit({
       type: "turn-started",
@@ -2735,6 +2749,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     const slot = startingSlots.get(chatId);
     startingSlots.delete(chatId);
     void finished.then(() => {
+      endStopWatch?.();
       steeringTurn?.close();
       liveTurn.end();
       // Очередь чата уходит, когда в ней никого: и вызовов хода, не слушающих отмену, и вызовов следующего хода.
@@ -4049,10 +4064,18 @@ export function createChatService(input: ChatServiceOptions): ChatService {
       return stream && visibility.visibleChunks(stream);
     },
 
-    async stop(userId, chatId) {
+    async stop(userId, chatId, stopOptions) {
       await ownChat(userId, chatId);
       const check = widgetChecks.get(chatId);
       check?.abort();
+      const turnRequestId = stopOptions?.turnRequestId;
+      if (turnRequestId !== undefined) {
+        // Только ход этого запроса: идёт здесь — стоп сразу. Ещё не начался (в том числе продолжение на поправки в
+        // окне перехода) или идёт на другой копии — «Стоп» ждёт его там. Ход другого запроса он не трогает.
+        if (stopRequests.stopRunning(chatId, turnRequestId)) return true;
+        await stopRequests.remember(userId, chatId, turnRequestId);
+        return true;
+      }
       if (registry.abort(chatId) || check !== undefined) return true;
       // Ответ уже кончился, ход переходит к поправкам: «Стоп» был для прежнего ответа, новый ход по поправкам идёт.
       if (handOffs.has(chatId)) return true;

@@ -103,4 +103,10 @@ export const migrations: readonly EmbeddedMigration[] = [
   { folderMillis: 1792017491455, hash: "88c4008efaa9701f32deb336f35b66693638acb510530f399f1a4fcb922358ca", bps: true, sql: [
     "CREATE TABLE `pending_bursts` (\n\t`chat_id` text PRIMARY KEY NOT NULL,\n\t`owner_id` text NOT NULL,\n\t`message_id` text NOT NULL,\n\t`due_at` integer NOT NULL,\n\t`holder` text NOT NULL,\n\t`held_until` integer NOT NULL,\n\t`page` text\n);\n",
   ] },
+  // 0019_stop_requests
+  { folderMillis: 1794403274307, hash: "7692f3fc2a232a0f2f9de347a600bc2cd35765faa737a57e7bf4bbead914d3b3", bps: true, sql: [
+    "CREATE TABLE `stop_requests` (\n\t`chat_id` text NOT NULL,\n\t`turn_request_id` text NOT NULL,\n\t`owner_id` text NOT NULL,\n\t`expires_at` integer NOT NULL,\n\tPRIMARY KEY(`chat_id`, `turn_request_id`)\n);\n",
+    "\nCREATE INDEX `stop_requests_expires_idx` ON `stop_requests` (`expires_at`);",
+    "\nCREATE INDEX `stop_requests_owner_idx` ON `stop_requests` (`owner_id`,`expires_at`);",
+  ] },
 ];

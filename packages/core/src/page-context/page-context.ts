@@ -14,12 +14,22 @@ export interface DataChange {
   details?: unknown;
 }
 
-/** С чем пришёл запрос хода: место на экране, вкладка, которая его отправила, и часовой пояс человека. */
+/** С чем пришёл запрос хода: место на экране, вкладка, которая его отправила, часовой пояс человека и id запроса. */
 export interface TurnRequestContext {
   place?: ScreenPlace | null;
   tabId?: string;
   /** Пояс браузера человека (`Intl.DateTimeFormat().resolvedOptions().timeZone`): по нему дата в запросе. Не IANA — не берётся. */
   timeZone?: string;
+  /**
+   * Id запроса хода от клиента (`isTurnRequestId`), новый на каждый запрос. «Стоп» с тем же id (`ChatService.stop`)
+   * останавливает именно этот ход — даже если пришёл раньше, чем ход начался, или на другую копию сервера.
+   */
+  turnRequestId?: string;
+}
+
+/** Годится ли строка в id запроса хода: 1–100 знаков из латиницы, цифр, `_`, `-`, `.`, `:` (UUID подходит). */
+export function isTurnRequestId(value: unknown): value is string {
+  return typeof value === "string" && /^[A-Za-z0-9_.:-]{1,100}$/.test(value);
 }
 
 /**
@@ -35,6 +45,9 @@ export function continuationRequestContext(start: TurnRequestContext | undefined
     ...(place !== undefined && { place }),
     ...(last.tabId !== undefined && { tabId: last.tabId }),
     ...(last.timeZone !== undefined && { timeZone: last.timeZone }),
+    // Продолжение — новый ответ, на последнюю поправку: id её запроса. «Стоп» прежнего ответа его не трогает (на любой
+    // копии сервера), «Стоп» с id поправки — останавливает.
+    ...(corrections.at(-1)?.turnRequestId !== undefined && { turnRequestId: corrections.at(-1)!.turnRequestId }),
   };
 }
 

@@ -24,6 +24,10 @@ export interface WidgetAnswerDeps {
   requestTimeoutMs: () => number;
   /** Поля страницы, которые несёт каждый запрос хода (вкладка, место на экране, пояс). */
   pageFields: () => Record<string, unknown>;
+  /** Новый id запроса хода (`turnRequestId`): ответ на виджет может продолжить ход, «Стоп» называет этот id. */
+  newTurnRequest: () => string;
+  /** Запрос `turnRequestId` ход не продолжил: «Стоп» его больше не называет. */
+  forgetTurnRequest: (turnRequestId: string) => void;
   /** Жизнь чата: смена чата обрывает ожидание. */
   chatSignal: () => AbortSignal;
   setMessages: Dispatch<SetStateAction<AgentChatMessage[]>>;
@@ -79,13 +83,15 @@ export function useWidgetAnswer(deps: WidgetAnswerDeps): WidgetAnswerState {
     };
     setWidgetFailure(null);
     setWidgetPendingId(toolCallId);
+    const turnRequestId = current.newTurnRequest();
+    let resumedTurn = false;
     try {
       let response: Response;
       try {
         response = await fetchWithDeadline(
           current.request,
           `${current.chatUrl}/widgets/${encodeURIComponent(toolCallId)}`,
-          { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ answer, ...current.pageFields() }) },
+          { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ answer, ...current.pageFields(), turnRequestId }) },
           { timeoutMs: current.requestTimeoutMs(), wholeBody: true },
         );
       } catch {
@@ -131,6 +137,7 @@ export function useWidgetAnswer(deps: WidgetAnswerDeps): WidgetAnswerState {
         if (!signal.aborted) await current.rereadHistory(signal);
         return true;
       }
+      resumedTurn = true;
       current.setResuming(true);
       try {
         const outcome = await current.resumeWithProbe(signal);
@@ -141,6 +148,7 @@ export function useWidgetAnswer(deps: WidgetAnswerDeps): WidgetAnswerState {
       }
       return true;
     } finally {
+      if (!resumedTurn) current.forgetTurnRequest(turnRequestId);
       if (answering.current === pending) answering.current = null;
       if (!signal.aborted) setWidgetPendingId(null);
     }

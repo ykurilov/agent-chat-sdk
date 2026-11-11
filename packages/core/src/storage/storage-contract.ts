@@ -64,6 +64,8 @@ export function describeChatStorageContract(
      * `removePendingBurst`) обязаны быть.
      */
     pendingBursts?: "required";
+    /** `stopRequests: "required"` — «Стоп» по id запроса хода (`saveStopRequest`, `hasStopRequest`) обязан быть. */
+    stopRequests?: "required";
     /** `finishedPartsReplace: "required"` — замена частей готового сообщения (`replaceFinishedMessageParts`) обязана быть. */
     finishedPartsReplace?: "required";
     /** `finishWithUsage: "required"` — `finishMessage` пишет `usageRecords` одной транзакцией с ответом (`finishesWithUsage`). */
@@ -1864,6 +1866,66 @@ export function describeChatStorageContract(
         await storage.clearChatTurnLeases!();
         expect(await storage.claimChatTurn(chatInput.id, "copy-c", minute)).toBe(true);
         expect(await storage.claimChatTurn("chat-2", "copy-c", minute)).toBe(true);
+      });
+    });
+
+    describe("«Стоп» по id запроса хода (saveStopRequest, hasStopRequest; необязательные)", () => {
+      type StopStorage = ChatStorage & Required<Pick<ChatStorage, "saveStopRequest" | "hasStopRequest">>;
+
+      async function stopStorage(context: { skip: () => never }): Promise<StopStorage> {
+        const storage = await createStorage();
+        if (!storage.saveStopRequest || !storage.hasStopRequest) {
+          if (options.stopRequests === "required") throw new Error("У хранилища нет «Стопа» по id запроса хода");
+          context.skip();
+        }
+        await storage.createChat(chatInput);
+        return storage as StopStorage;
+      }
+
+      const stopAt = (chatId: string, turnRequestId: string, stoppedAt: string, expiresAt: string, ownerId = chatInput.ownerId) => ({ ownerId, chatId, turnRequestId, stoppedAt, expiresAt });
+      const limits = { keepPerOwner: 100 };
+
+      it("записанный «Стоп» виден по чату и id запроса; другой id и другой чат — нет; повтор записи — не ошибка", async (context) => {
+        const storage = await stopStorage(context);
+        await storage.createChat({ ...chatInput, id: "chat-2" });
+        expect(await storage.hasStopRequest(chatInput.id, "turn-1")).toBe(false);
+        await storage.saveStopRequest(stopAt(chatInput.id, "turn-1", "2026-01-01T10:00:00.000Z", "2026-01-02T10:00:00.000Z"), limits);
+        await storage.saveStopRequest(stopAt(chatInput.id, "turn-1", "2026-01-01T10:00:01.000Z", "2026-01-02T10:00:01.000Z"), limits);
+        expect(await storage.hasStopRequest(chatInput.id, "turn-1")).toBe(true);
+        expect(await storage.hasStopRequest(chatInput.id, "turn-2")).toBe(false);
+        expect(await storage.hasStopRequest("chat-2", "turn-1")).toBe(false);
+      });
+
+      it("новая запись снимает истёкшие; живые остаются", async (context) => {
+        const storage = await stopStorage(context);
+        await storage.saveStopRequest(stopAt(chatInput.id, "old", "2026-01-01T10:00:00.000Z", "2026-01-01T11:00:00.000Z"), limits);
+        await storage.saveStopRequest(stopAt(chatInput.id, "alive", "2026-01-01T10:00:00.000Z", "2026-01-03T10:00:00.000Z"), limits);
+        await storage.saveStopRequest(stopAt(chatInput.id, "new", "2026-01-02T10:00:00.000Z", "2026-01-03T10:00:00.000Z"), limits);
+        expect(await storage.hasStopRequest(chatInput.id, "old")).toBe(false);
+        expect(await storage.hasStopRequest(chatInput.id, "alive")).toBe(true);
+        expect(await storage.hasStopRequest(chatInput.id, "new")).toBe(true);
+      });
+
+      it("у человека не больше `keepPerOwner` живых записей: сверх уходят его самые ранние, чужие остаются", async (context) => {
+        const storage = await stopStorage(context);
+        await storage.createChat({ ...chatInput, id: "chat-boris", ownerId: "boris" });
+        await storage.saveStopRequest(stopAt("chat-boris", "boris-1", "2026-01-01T09:00:00.000Z", "2026-01-01T10:00:00.000Z", "boris"), { keepPerOwner: 2 });
+        for (const [index, id] of ["a1", "a2", "a3"].entries()) {
+          const minute = String(index).padStart(2, "0");
+          await storage.saveStopRequest(stopAt(chatInput.id, id, `2026-01-01T09:${minute}:00.000Z`, `2026-01-01T10:${minute}:00.000Z`), { keepPerOwner: 2 });
+        }
+        expect(await storage.hasStopRequest(chatInput.id, "a1")).toBe(false);
+        expect(await storage.hasStopRequest(chatInput.id, "a2")).toBe(true);
+        expect(await storage.hasStopRequest(chatInput.id, "a3")).toBe(true);
+        expect(await storage.hasStopRequest("chat-boris", "boris-1")).toBe(true);
+      });
+
+      it("удаление чата снимает его «Стопы»", async (context) => {
+        const storage = await stopStorage(context);
+        await storage.saveStopRequest(stopAt(chatInput.id, "turn-1", "2026-01-01T10:00:00.000Z", "2026-01-02T10:00:00.000Z"), limits);
+        await storage.deleteChat(chatInput.id);
+        await storage.createChat(chatInput);
+        expect(await storage.hasStopRequest(chatInput.id, "turn-1")).toBe(false);
       });
     });
 
