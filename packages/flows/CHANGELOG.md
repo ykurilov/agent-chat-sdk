@@ -1,5 +1,14 @@
 # @ykurilov/agent-chat-flows
 
+## 0.110.0
+
+### Patch Changes
+
+- 73d5a7c: `withChat` отмечает `flow_note` и `flow_side_task` служебными (`agent.serviceTools`): заметка или задача сценария рядом с подсказками `suggest_replies` не мешает подсказкам закрыть ответ, и дописка после них человеку не показывается. Свои служебные имена приложения сохраняются.
+- Updated dependencies [d725597]
+  - @ykurilov/agent-chat-core@0.110.0
+  - @ykurilov/agent-chat-react@0.110.0
+
 ## 0.109.0
 
 ### Patch Changes

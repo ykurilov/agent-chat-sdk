@@ -323,6 +323,13 @@ export interface AgentSettings {
    */
   sequentialTools?: SequentialToolsSetting;
   /**
+   * Служебные инструменты: их результат ответу человеку не нужен (заметки, отметки сценария). Подсказки
+   * `suggest_replies`, показанные вместе с текстом, закрывают ответ — дописка после них не показывается. Вызов
+   * служебного инструмента в том же шаге этому не мешает, любой другой (поиск и т. п.) — мешает: ответ по его результату
+   * идёт как обычно. `flow.withChat` добавляет свои. Нет — служебных нет.
+   */
+  serviceTools?: readonly string[];
+  /**
    * Запасной часовой пояс для сегодняшней даты в запросе (IANA, например `Europe/Moscow`), когда пояс браузера человека
    * не пришёл или не настоящий. Не задано — пояс лимитов расходов (`createSpendingLimits({ timeZone })`), без него —
    * пояс сервера. Не IANA-пояс или другой пояс, чем у лимитов, — ошибка при создании службы.
@@ -1446,6 +1453,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     toolTimeoutMs: toolTimeoutSetting,
     repairToolInput,
     sequentialTools: sequentialToolsSetting,
+    serviceTools: serviceToolsSetting,
     timeZone: timeZoneSetting,
     modelSilenceTimeout,
     widgets: _widgets,
@@ -1470,6 +1478,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
   const toolResultLimit = resolveToolResultLimit(toolResultMaxLength);
   const toolTimeout = resolveToolTimeout(toolTimeoutSetting);
   const sequentialTools = resolveSequentialTools(sequentialToolsSetting);
+  const serviceTools: ReadonlySet<string> = new Set(serviceToolsSetting ?? []);
   // Инструменты SDK, которым нужен экран: видны при любых правах. Свои инструменты приложение помечает `showOnScreen`.
   const sdkScreenToolNames = new Set([...Object.keys(widgets.tools), ...Object.keys(browserToolDescriptions ?? {})]);
   const isScreenTool = (toolName: string) => sdkScreenToolNames.has(toolName);
@@ -2591,6 +2600,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
           toolTimeout,
           ...(repairToolInput && { repairToolInput }),
           sequentialTools,
+          serviceTools,
           toolQueue,
           stepContextTimeoutMs,
           contextBlocksTimeoutMs,

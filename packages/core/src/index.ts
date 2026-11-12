@@ -345,6 +345,7 @@ export type {
 export { WidgetAnswerCheckAbortedError, WidgetAnswerCheckTimeoutError, WidgetAnswerRefusedError } from "./widgets/widget-answer-check";
 export { defineWidget } from "./widgets/define-widget";
 export { BASIC_WIDGET_NAMES, SUGGESTIONS_SHOWN } from "./widgets/basic-widgets";
+export { SUGGESTIONS_SHOWN_AFTER_ANSWER } from "./agent-run/sealed-answer";
 export { WIDGET_ANSWER_MAX_BYTES } from "./widgets/widget-tools";
 export { ANSWERED_BY_MESSAGE, ONE_QUESTION_AT_A_TIME } from "./widgets/pending-widgets";
 export { InvalidWidgetAnswerError, WidgetNotPendingError } from "./chat-service";

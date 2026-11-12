@@ -63,6 +63,8 @@ import { sendFlowSignal } from "./flow-signals";
 import { withFlowKnownTexts } from "./flow-known-texts";
 import { flowPrepareTurn } from "./prepare-turn";
 import { withFlowTools } from "./flow-tools";
+import { FLOW_NOTE_TOOL } from "./note-tools";
+import { FLOW_SIDE_TASK_TOOL } from "./side-task-tool";
 import { withStepTail } from "./step-tail";
 import { createFlowAdmit } from "./admit";
 import { flowTurnGate } from "./turn-gate";
@@ -1010,6 +1012,8 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
           }),
           stepContext: withStepTail(agent.stepContext, runtime),
           serviceBlocks: [...(agent.serviceBlocks ?? []), ...FLOW_SERVICE_BLOCKS],
+          // Заметка и задача сценария рядом с подсказками не мешают закрыть ответ: их результат ответу не нужен
+          serviceTools: [...(agent.serviceTools ?? []), FLOW_NOTE_TOOL, FLOW_SIDE_TASK_TOOL],
           ...(agent.widgets && { widgets: withButtons(agent.widgets) }),
           prepareTurn: async (context) => {
             const own = await agent.prepareTurn?.(context);

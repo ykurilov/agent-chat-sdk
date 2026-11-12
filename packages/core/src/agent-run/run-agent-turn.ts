@@ -74,6 +74,7 @@ import { CORE_SERVICE_BLOCKS, createForgedBlockGuard, lastQuestionOf } from "./f
 import type { ServiceBlockFormat } from "./forged-blocks";
 import { checkedReplyText, createHeldReplyText, createReplyRewrite, createSeenTexts, createShownSteps, knownTextsOf, noticeGroupsOf, replacementChunks, withTextAt } from "./reply-checks";
 import type { SeenTexts, TurnReplyChecks } from "./reply-checks";
+import { createSealedAnswerGuard, sealedAnswerEndsOnTool } from "./sealed-answer";
 import { erasableStepStart, STEP_RESET_PART_TYPE, STEPS_MAY_RESET_PART_TYPE } from "./step-reset";
 import type { NextAttempt, ProviderFallbackSetting } from "./next-attempt";
 import { createRepairToolCall, describeToolInputRepair } from "./repair-tool-call";
@@ -384,6 +385,8 @@ export interface AgentTurnInput {
   repairToolInput?: RepairToolInput;
   /** Серверные инструменты, которые идут по одному (FR-049), уже проверенные. Нет — все вместе. */
   sequentialTools?: ResolvedSequentialTools;
+  /** Служебные инструменты (`agent.serviceTools`): их вызов рядом с подсказками не мешает закрыть ответ. */
+  serviceTools?: ReadonlySet<string>;
   /**
    * Очередь инструментов «по одному» чата: служба держит одну на чат, чтобы «Стоп» и сразу «Повторить» не пустили
    * второй вызов, пока первый, не слушающий отмену, ещё идёт. Нет — своя на ход.
@@ -520,6 +523,8 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
   const garbledTail = createGarbledTailGuard();
   // Поддельные служебные блоки в потоке: вырезаются до экрана, записи и проверки на кашу.
   const forgedBlocks = createForgedBlockGuard(turnInput.serviceBlocks ?? CORE_SERVICE_BLOCKS);
+  // Ответ закрыт подсказками (текст и `suggest_replies` в одном шаге): дописка после них не показывается и не пишется.
+  const sealedAnswer = createSealedAnswerGuard(turnInput.serviceTools);
   const turnBudget = createTurnBudget(input.turnRules, { catalog: input.catalog, modelId: input.modelId, turnUsage });
   // Расход сообщения: накопленный по паузам и продолжениям (`resume.usage`) и расход этого хода.
   const messageUsage = (): TokenUsage | null => {
@@ -784,6 +789,9 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
         attemptAllowed = false;
         // Просьбы `endTurn` — только у вызовов, чей результат в ответе: стёртый или упавший вызов модель сделает заново.
         if (attemptsOpened > 1) endTurns.nextAttempt(await saver.snapshot());
+        // Закрыт ли ответ — по записанным частям: «Повторить» и новая попытка продолжают закрытый ответ. Части до ответа
+        // человека на паузе (виджет, подтверждение) не в счёт: модель ему ещё ответит.
+        sealedAnswer.reset((attemptsOpened > 1 ? await saver.snapshot() : (resume?.message.parts ?? [])).slice(resume && !resume.replay ? resume.message.parts.length : 0));
         let provider: ProviderDescription | undefined;
         const classify = (error: unknown): ChatErrorKind => classifyProviderError(error, provider);
         let attempt: TurnAttempt;
@@ -810,6 +818,7 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
             turnBudget,
             garbledTail,
             forgedBlocks,
+            sealedAnswer,
             // Есть куда перейти при молчании — у того же провайдера оно не повторяется.
             repeatSilence: () => silenceTarget() === undefined,
             retryDelaysMs: () =>
@@ -1057,7 +1066,10 @@ async function runTurn(turnInput: AgentTurnInput, emitRaw: (chunk: UIMessageChun
     }
     // Ход кончен инструментом без слов: служебная отметка в записи — на следующих ходах модель видит после результата
     // постоянную пометку ответа. Клиенту не идёт. Ход ждёт человека (смешанный шаг) — не кончен, отметки нет.
-    if (endTurns.endedWithoutText() && !input.abortSignal.aborted && errors.length === 0) {
+    // Ответ закрыт подсказками и кончился вызовом (дописка не показана) — та же отметка.
+    if (sealedAnswer.droppedChars() > 0) logError(`[дописка после подсказок не показана] чат=${input.chatId} модель=${modelId} знаков=${sealedAnswer.droppedChars()}`);
+    const sealedOnTool = sealedAnswer.sealed() && sealedAnswerEndsOnTool(await saver.snapshot());
+    if ((endTurns.endedWithoutText() || sealedOnTool) && !input.abortSignal.aborted && errors.length === 0) {
       const parts = await saver.snapshot();
       if (pendingHumanInput(parts, input.waitingWidgets).length === 0) {
         if (parts.at(-1)?.type !== "step-start") saver.observe({ type: "start-step" });
@@ -1374,6 +1386,7 @@ async function runAnswerAttempt(
     turnBudget: TurnBudget;
     garbledTail: ReturnType<typeof createGarbledTailGuard>;
     forgedBlocks: ReturnType<typeof createForgedBlockGuard>;
+    sealedAnswer: ReturnType<typeof createSealedAnswerGuard>;
     /** Повторять ли молчание до первого куска у того же провайдера. */
     repeatSilence: () => boolean;
     retryDelaysMs: () => readonly number[] | undefined;
@@ -1476,6 +1489,7 @@ async function openAttempt(
     turnBudget: TurnBudget;
     garbledTail: ReturnType<typeof createGarbledTailGuard>;
     forgedBlocks: ReturnType<typeof createForgedBlockGuard>;
+    sealedAnswer: ReturnType<typeof createSealedAnswerGuard>;
     repeatSilence: () => boolean;
     retryDelaysMs: () => readonly number[] | undefined;
     backToPrimary?: () => void;
@@ -1495,7 +1509,7 @@ async function openAttempt(
   const providerId = found.provider.id;
   const limit = input.toolResultLimit ?? DEFAULT_TOOL_RESULT_LIMIT;
   const toolsModel = turnToolsModel(input, found, attempt);
-  const appTools = attempt.endTurns.tools(onlyAllowedTools(typeof input.tools === "function" ? input.tools(toolsModel) : input.tools, input.group));
+  const appTools = attempt.endTurns.tools(attempt.sealedAnswer.tools(onlyAllowedTools(typeof input.tools === "function" ? input.tools(toolsModel) : input.tools, input.group)));
   // Предел ожидания — только серверным инструментам: у браузерных свой срок ответа вкладки.
   const toolTimeout = input.toolTimeout ?? DEFAULT_TOOL_TIMEOUT;
   // Очередь — снаружи предела ожидания: ожидание своей очереди не съедает срок ответа инструмента.
@@ -1547,6 +1561,7 @@ async function openAttempt(
     toolTimeout: _toolTimeout,
     repairToolInput: _repairToolInput,
     sequentialTools: _sequentialTools,
+    serviceTools: _serviceTools,
     now: _now,
     usageSource: _usageSource,
     replyChecks: _replyChecks,
@@ -1619,8 +1634,8 @@ async function openAttempt(
   attempt.forgedBlocks.reset(lastQuestionOf(attempt.history));
   const result = streamText({
     ...modelRequest,
-    // Сначала вырезка блоков, потом проверка на кашу: каша судит уже чистый текст.
-    model: attempt.garbledTail.wrap(attempt.forgedBlocks.wrap(modelRequest.model)),
+    // Сначала вырезка блоков, потом дописка после закрытого ответа, потом проверка на кашу: каша судит уже чистый текст.
+    model: attempt.garbledTail.wrap(attempt.sealedAnswer.wrap(attempt.forgedBlocks.wrap(modelRequest.model))),
     ...(approval.toolApproval && { toolApproval: gateToolApproval(approval.toolApproval, () => toolsClosed) }),
     // Попытке — остаток шагов хода.
     // Помощник встал на подтверждении человека — ход ждёт, модель основного агента его незаконченным не видит.
