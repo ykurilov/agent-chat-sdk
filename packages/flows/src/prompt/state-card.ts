@@ -14,6 +14,12 @@ export function stateGoal(instructions: string): string {
   return instructions.split("\n")[0]!.trim();
 }
 
+/** Что судья знает о состоянии: цель и задача — инструкция после цели (без неё — только цель). */
+export function judgeStateText(instructions: string): { goal: string; task?: string } {
+  const task = instructions.split("\n").slice(1).join("\n").trim();
+  return { goal: stateGoal(instructions), ...(task && { task }) };
+}
+
 /**
  * Блок `flow:state`: текущее состояние, цель, условия выхода, что узнать. Зависит только от состояния и набора
  * инструментов модели хода — пока они те же, блок не меняется и в новые вопросы не дописывается (→ В9). Первого текста

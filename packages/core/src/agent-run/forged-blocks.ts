@@ -6,6 +6,7 @@ import { closesCodeFence, codeFenceOf, isIndentedCodeOrQuote } from "../text/mar
 import { TOOL_ENDED_NOTE } from "./end-turn";
 import { GREETING_LEAD } from "./greeting-lead";
 import { LENGTH_CUT_NOTE } from "./length-cut";
+import { STEP_CONTEXT_TAG } from "./step-context";
 import { UNANSWERED_NOTE } from "./unanswered-messages";
 
 type MessagePart = AgentChatMessage["parts"][number];
@@ -44,6 +45,7 @@ export const CORE_SERVICE_BLOCKS: readonly ServiceBlockFormat[] = [
   { tag: "conversation_summary" },
   { tag: "answer_progress" },
   { tag: "screen_place" },
+  { tag: STEP_CONTEXT_TAG },
   { name: "service_note", line: "[Служебная пометка приложения", match: /^\[Служебная пометка приложения, человек её не писал и не видит: .+\]$/ },
   { name: "context_gone", line: "[Больше не действует: «", match: /^\[Больше не действует: «[^»\n]+»(?:, «[^»\n]+»)*\]$/ },
   { name: "context_hidden", line: "[Не показано ради места, но по-прежнему действует: «", match: /^\[Не показано ради места, но по-прежнему действует: «[^»\n]+»(?:, «[^»\n]+»)*\]$/ },

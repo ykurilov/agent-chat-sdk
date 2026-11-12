@@ -5,7 +5,7 @@ import { FLOW_STATE_KEY, type Transition } from "../engine/flow-run";
 import { stateById } from "../engine/flow-graph";
 import { nextTransition } from "../engine/next-transition";
 import { applyTransition, claimAllowed, noteRejectedClaim } from "../engine/run-updates";
-import { judgeExits, stateGoal } from "../prompt/state-card";
+import { judgeExits, judgeStateText } from "../prompt/state-card";
 import { advance, chainLimitMessage, currentRun, personTimeZone, transitionReport, type ChatFlowRun, type FlowRuntime, type PinnedFlow } from "./flow-events";
 import { compactVerdict, decisionEvent, publishDecision, validateTransitionMode, verdictText } from "./transition-policy";
 import type { ClientCardTools, FlowJudge, JudgeMessage } from "./flow-types";
@@ -161,7 +161,7 @@ function flowExitTool(input: FlowToolsInput, model: AgentToolsModel): Tool {
         const state = stateById(flow, turn.run.state)!;
         try {
           verdict = await input.judge().checkClaim({ ownerId: model.ownerId, chatId: model.chatId, exitId: chosen.exitId,
-            condition: chosen.text, goal: stateGoal(state.instructions), why, messages: await input.history(model.ownerId, model.chatId),
+            condition: chosen.text, ...judgeStateText(state.instructions), why, messages: await input.history(model.ownerId, model.chatId),
             ...(abortSignal && { signal: abortSignal }), ...(turn.run.timeOffset !== undefined && { testChat: true }) });
         } catch (error) {
           runtime.logError(`[сценарий] чат=${model.chatId} судья упал: ${error instanceof Error ? error.message : String(error)}`);

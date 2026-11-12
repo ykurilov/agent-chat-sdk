@@ -8,14 +8,26 @@ export const JUDGE_MESSAGE_CHARS = 600;
 export const JUDGE_INPUT_CHARS = 24_000;
 
 const GOAL_CHARS = 2000;
+const TASK_CHARS = 2000;
 const WHY_CHARS = 1000;
 const CONDITION_CHARS = 800;
-/** Рамка вопроса к судье вокруг условия: «Выполнено ли условие «…»?» и ключ. */
-const QUESTION_OVERHEAD_CHARS = 90;
+
+/**
+ * Вопрос decision-1 об одном условии. Условие из нескольких частей («понятна цель… и он уже получил шаг») — «да»
+ * только за все части: иначе судья засчитывает выход по одной. Цель и задача объясняют смысл слов условия, а
+ * выполнение видно только по репликам.
+ */
+export const conditionQuestion = (text: string) =>
+  `Выполнено ли условие «${text}» по репликам разговора (conversation)? Если в условии несколько частей, «да» — только когда выполнена каждая часть. ` +
+  "Цель и задача состояния (goal, task) объясняют, что значат слова условия, но не доказывают, что это уже случилось.";
+/** Рамка вопроса к судье вокруг условия и ключ. */
+const QUESTION_OVERHEAD_CHARS = conditionQuestion("").length + 20;
 const MIN_FIELD_CHARS = 24;
 
 export interface JudgeContextInput {
   goal?: string;
+  /** Задача состояния: инструкция после цели. Объясняет слова условия («маленький шаг» этого состояния). */
+  task?: string;
   /** Слова агента при заявке: почему он считает условие выполненным. */
   why?: string;
   messages: JudgeMessage[];
@@ -24,7 +36,7 @@ export interface JudgeContextInput {
 
 export interface JudgeContext {
   /** Что оценивает судья: цель, последние реплики, слова агента. */
-  state: { goal?: string; conversation: JudgeMessage[]; agent_words?: string };
+  state: { goal?: string; task?: string; conversation: JudgeMessage[]; agent_words?: string };
   /** Условия с обрезанным текстом, в исходном порядке. */
   conditions: Array<{ exitId: string; text: string }>;
 }
@@ -38,6 +50,7 @@ function build(input: JudgeContextInput, messages: JudgeMessage[], scale: number
   return {
     state: {
       ...(input.goal !== undefined && { goal: clip(input.goal, limit(GOAL_CHARS)) }),
+      ...(input.task !== undefined && { task: clip(input.task, limit(TASK_CHARS)) }),
       conversation: messages.map((message) => ({ role: message.role, text: clip(message.text, limit(JUDGE_MESSAGE_CHARS)) })),
       ...(input.why !== undefined && { agent_words: clip(input.why, limit(WHY_CHARS)) }),
     },

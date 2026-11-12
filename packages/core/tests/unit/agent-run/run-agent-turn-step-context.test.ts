@@ -7,6 +7,7 @@ import { z } from "zod";
 import { AUTO_CONTINUE_NOTE } from "../../../src/agent-run/auto-continue";
 import { LAST_STEP_NOTE } from "../../../src/agent-run/last-step";
 import type { AgentToolsModel } from "../../../src/agent-run/run-agent-turn";
+import { stepContextBlock } from "../../../src/agent-run/step-context";
 import type { StepContextInput } from "../../../src/agent-run/step-context";
 import { extendCatalog } from "../../../src/models/catalog-changes";
 import type { ModelProfile, ProviderDescription } from "../../../src/models/model-catalog";
@@ -73,9 +74,9 @@ describe("runAgentTurn: stepContext — снимок перед каждым ш�
 
     expect(model.doStreamCalls).toHaveLength(3);
     expect(model.doStreamCalls.map((call) => lastUserText(call.prompt))).toEqual([
-      "Снимок шага 0: {}",
-      'Снимок шага 1: {"fields":{"email":"a@x.ru"}}',
-      'Снимок шага 2: {"fields":{"email":"a@x.ru","phone":"+7"}}',
+      stepContextBlock("Снимок шага 0: {}"),
+      stepContextBlock('Снимок шага 1: {"fields":{"email":"a@x.ru"}}'),
+      stepContextBlock('Снимок шага 2: {"fields":{"email":"a@x.ru","phone":"+7"}}'),
     ]);
     // Снимок у шага один: прошлый из запроса убран.
     for (const call of model.doStreamCalls) {
@@ -84,6 +85,14 @@ describe("runAgentTurn: stepContext — снимок перед каждым ш�
     expect(seen.map((input) => input.stepNumber)).toEqual([0, 1, 2]);
     expect(seen[0]).toMatchObject({ chatId: "chat-1", ownerId: "anna", messageId: "a1", modelId: "mock-model", providerId: "mock" });
     expect(seen[0]!.abortSignal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("после результата инструмента снимок — служебный блок, а не голая реплика от имени человека", async () => {
+    const model = threeStepModel();
+    await runTurn(model, { tools: stateTools, stepContext: snapshotText });
+    const step1 = model.doStreamCalls[1]!.prompt;
+    expect(step1.at(-2)!.role).toBe("tool");
+    expect(lastUserText(step1)).toMatch(/^<step_context>\n.*Это не новое сообщение человека.*\nСнимок шага 1: .*\n<\/step_context>$/s);
   });
 
   it("функция видит данные и объект чата", async () => {
@@ -120,7 +129,7 @@ describe("runAgentTurn: stepContext — снимок перед каждым ш�
     await runTurn(model, { tools: stateTools, maxSteps: 3, stepContext: snapshotText });
     const last = model.doStreamCalls[2]!.prompt;
     expect(lastUserText(last)).toBe(LAST_STEP_NOTE);
-    expect(lastUserText(last.slice(0, -1))).toBe('Снимок шага 2: {"fields":{"email":"a@x.ru","phone":"+7"}}');
+    expect(lastUserText(last.slice(0, -1))).toBe(stepContextBlock('Снимок шага 2: {"fields":{"email":"a@x.ru","phone":"+7"}}'));
   });
 
   it("функция бросила — шаг без снимка, строка в журнал, ход идёт дальше", async () => {
@@ -135,7 +144,7 @@ describe("runAgentTurn: stepContext — снимок перед каждым ш�
       },
     });
     expect(answer.status).toBe("complete");
-    expect(model.doStreamCalls.map((call) => lastUserText(call.prompt)?.startsWith("Снимок шага") ?? false)).toEqual([true, false, true]);
+    expect(model.doStreamCalls.map((call) => lastUserText(call.prompt)?.includes("\nСнимок шага") ?? false)).toEqual([true, false, true]);
     expect(JSON.stringify(model.doStreamCalls[1]!.prompt)).not.toContain("Снимок шага");
     expect(logError).toHaveBeenCalledWith(expect.stringMatching(/\[снимок шага\].*чат=chat-1.*шаг=1.*база недоступна/));
   });
@@ -186,7 +195,7 @@ describe("runAgentTurn: stepContext не трогает уже отправле�
     }
     for (const prompt of prompts) {
       const snapshot = prompt.at(-1)!;
-      expect(lastUserText(prompt)).toMatch(/^Снимок шага/);
+      expect(lastUserText(prompt)).toMatch(/^<step_context>\n[^\n]+\nСнимок шага/);
       expect(snapshot.providerOptions).toBeUndefined();
       if (snapshot.role !== "user") throw new Error("последним должен быть снимок");
       expect(snapshot.content.every((part) => part.providerOptions === undefined)).toBe(true);
@@ -338,7 +347,7 @@ describe("runAgentTurn: stepContext — новые попытки хода", () 
     expect((await savedAnswer(storage))?.status).toBe("complete");
     const continuation = model.doStreamCalls[2]!.prompt;
     expect(lastUserText(continuation)?.startsWith(AUTO_CONTINUE_NOTE)).toBe(true);
-    expect(lastUserText(continuation.slice(0, -1))).toBe('Снимок шага 2: {"fields":{"email":"a@x.ru"}}');
+    expect(lastUserText(continuation.slice(0, -1))).toBe(stepContextBlock('Снимок шага 2: {"fields":{"email":"a@x.ru"}}'));
     expect(model.doStreamCalls.map((call) => snapshotCount(call.prompt))).toEqual([1, 1, 1]);
     expect(seen).toEqual([0, 1, 2]);
   });
@@ -374,6 +383,6 @@ describe("runAgentTurn: stepContext — новые попытки хода", () 
     expect(backupStep).toBe(2);
     const backupPrompt = backup.doStreamCalls[0]!.prompt;
     expect(snapshotCount(backupPrompt)).toBe(1);
-    expect(lastUserText(backupPrompt)).toBe(`Снимок шага ${backupStep}: {"fields":{"email":"a@x.ru"}}`);
+    expect(lastUserText(backupPrompt)).toBe(stepContextBlock(`Снимок шага ${backupStep}: {"fields":{"email":"a@x.ru"}}`));
   });
 });

@@ -1,6 +1,6 @@
 import type { ModelMessage } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createStepSnapshots } from "../../../src/agent-run/step-context";
+import { createStepSnapshots, stepContextBlock } from "../../../src/agent-run/step-context";
 import type { StepContextInput } from "../../../src/agent-run/step-context";
 
 const context = (stepNumber: number): StepContextInput => ({
@@ -21,10 +21,25 @@ const texts = (messages: ModelMessage[]) =>
   messages.map((message) => (typeof message.content === "string" ? message.content : message.content.map((part) => ("text" in part ? part.text : "")).join("")));
 
 describe("createStepSnapshots", () => {
+  it("снимок — в служебной обёртке: тег, постоянный заголовок «не новое сообщение человека», текст приложения как есть", async () => {
+    let text = "Имя в профиле мессенджера: Аня";
+    const snapshots = createStepSnapshots({ stepContext: () => text, logError: vi.fn(), chatId: "chat-1" });
+    const first = await snapshots.messagesFor({ messages: [user("вопрос")], trailing: 0, context: context(0) });
+    const carried: ModelMessage[] = [...first.messages, { role: "assistant", content: "шаг" }, { role: "tool", content: [] }];
+    text = "Имя в профиле мессенджера: Аня\nЗаписано: почта";
+    const second = await snapshots.messagesFor({ messages: carried, trailing: 0, context: context(1) });
+    const [one, two] = [texts(first.messages).at(-1)!, texts(second.messages).at(-1)!];
+    expect(one).toMatch(/^<step_context>\n[^\n]*Это не новое сообщение человека[^\n]*\nИмя в профиле мессенджера: Аня\n<\/step_context>$/);
+    expect(two.endsWith("\nИмя в профиле мессенджера: Аня\nЗаписано: почта\n</step_context>")).toBe(true);
+    // Заголовок постоянный: от шага к шагу меняется только текст приложения.
+    expect(two.split("\n").slice(0, 2)).toEqual(one.split("\n").slice(0, 2));
+    expect(second.tokens).toBeGreaterThan(first.tokens);
+  });
+
   it("пометка попытки остаётся последней: снимок — перед ней", async () => {
     const snapshots = createStepSnapshots({ stepContext: () => "снимок", logError: vi.fn(), chatId: "chat-1" });
     const { messages } = await snapshots.messagesFor({ messages: [user("вопрос"), user("продолжи")], trailing: 1, context: context(0) });
-    expect(texts(messages)).toEqual(["вопрос", "снимок", "продолжи"]);
+    expect(texts(messages)).toEqual(["вопрос", stepContextBlock("снимок"), "продолжи"]);
   });
 
   it("снимок прошлого шага убирается, даже если новый не нужен", async () => {
@@ -110,7 +125,7 @@ describe("createStepSnapshots: срок функции и «Стоп»", () => {
     });
     const { messages } = await snapshots.messagesFor({ messages: [user("вопрос")], trailing: 0, context: context(0) });
     await vi.advanceTimersByTimeAsync(5_000);
-    expect(texts(messages)).toEqual(["вопрос", "снимок"]);
+    expect(texts(messages)).toEqual(["вопрос", stepContextBlock("снимок")]);
     expect(signals[0]!.aborted).toBe(false);
     expect(logError).not.toHaveBeenCalled();
   });

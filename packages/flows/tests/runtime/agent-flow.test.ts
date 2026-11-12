@@ -178,6 +178,28 @@ describe("T043 судья после хода", () => {
   });
 });
 
+describe("судья видит задачу состояния: строки инструкции после цели", () => {
+  const TASK = "Когда картина ясна, дай маленький шаг — одно действие, которое человек может сделать сразу.";
+  const withTask = (json: Record<string, any>) => (stateOf(json, "intro").instructions = `Понять тему курса, аудиторию и текущие продажи.\n${TASK}`);
+
+  it("после хода: goal — первая строка, task — остальное", async () => {
+    const chat = flowChat({ edit: withTask });
+    const { id } = await newChat(chat.service);
+    await say(chat.service, id, "курс про Excel");
+    await chat.flow.settled();
+
+    expect(chat.judge.checkAll).toHaveBeenCalledWith(expect.objectContaining({ goal: "Понять тему курса, аудиторию и текущие продажи.", task: TASK }));
+  });
+
+  it("заявка агента flow_exit: тоже с задачей состояния", async () => {
+    const chat = flowChat({ edit: withTask, scripts: [claim(1)] });
+    const { id } = await newChat(chat.service);
+    await say(chat.service, id, "курс про Excel, продаж нет");
+
+    expect(chat.judge.checkClaim).toHaveBeenCalledWith(expect.objectContaining({ goal: "Понять тему курса, аудиторию и текущие продажи.", task: TASK }));
+  });
+});
+
 describe("092 судья после хода видит реплики только с входа в состояние", () => {
   it("вопрос из прошлого состояния не уходит судье нового: только реплики после входа и реплика агента перед ними", async () => {
     const chat = flowChat({ yes: ["intro_clear"] });

@@ -65,7 +65,7 @@ describe("cutForgedBlocks: подделки из настоящих ответо
   });
 
   it("каждый служебный тег, с атрибутами и в одну строку", () => {
-    for (const tag of ["agent_memory", "screen_place", "conversation_summary", "answer_progress", "attachment"]) {
+    for (const tag of ["agent_memory", "screen_place", "conversation_summary", "answer_progress", "attachment", "step_context"]) {
       expect(cut(`Начало.\n\n<${tag} name="x.txt" type="text/plain">\nслужебное\n</${tag}>\n\nКонец.`)).toEqual({ text: "Начало.\n\nКонец.", blocks: [tag] });
       expect(cut(`Начало.\n<${tag}>служебное</${tag}>\nКонец.`)).toEqual({ text: "Начало.\nКонец.", blocks: [tag] });
     }

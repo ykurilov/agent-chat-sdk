@@ -210,6 +210,8 @@ export interface FlowJudgeEntry {
   /** Кто ответил; `null` — ни основной судья, ни запасная модель. */
   source: "decision" | "fallback" | "text" | null;
   goal?: string;
+  /** Задача состояния (инструкция после цели), усечённая. */
+  task?: string;
   /** Слова агента при заявке; только в записи с текстами. */
   agentWords?: string;
   /** Реплики, которые видел судья. Нет — запись без текстов (по умолчанию у боевых переходов). */
@@ -232,6 +234,8 @@ export interface FlowJudge {
     condition: string;
     /** Цель состояния. */
     goal?: string;
+    /** Задача состояния: инструкция после цели. Объясняет судье слова условия. */
+    task?: string;
     /** Слова агента при заявке. */
     why?: string;
     messages: JudgeMessage[];
@@ -247,6 +251,8 @@ export interface FlowJudge {
     chatId: string;
     /** Цель состояния. */
     goal?: string;
+    /** Задача состояния: инструкция после цели. Объясняет судье слова условия. */
+    task?: string;
     conditions: Array<{ exitId: string; text: string }>;
     messages: JudgeMessage[];
     signal?: AbortSignal;

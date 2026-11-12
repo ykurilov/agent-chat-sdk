@@ -33,7 +33,7 @@ import { nextTransition } from "../engine/next-transition";
 import { FLOW_RULE_PARTS, flowRules } from "../prompt/flow-rules";
 import { clientFactsRules } from "../prompt/rules/client-facts";
 import { afterEndRules } from "../prompt/rules/after-end";
-import { judgeExits, stateCard, stateGoal } from "../prompt/state-card";
+import { judgeExits, judgeStateText, stateCard } from "../prompt/state-card";
 import type {
   AgentFlowHandle,
   AgentFlowOptions,
@@ -684,7 +684,7 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
       const checked = await judgeConfirmations({ mode, confirmations, pinned, run, result, port: service, atMessageId, judge: judge(), threshold: options.judge.threshold ?? 0.7,
         onVerdict: verdict => publishDecision(runtime, decisionEvent({ ownerId, chatId, turnId: messageId, pinned, run, exitId: verdict.exitId,
           phase: "judge", kind: "after_turn", decision: "advice", judge: verdict, at: now(), key: "after_turn:judge" })),
-        now: chatTime(run, now()), conditions, goal: stateGoal(state.instructions), messages: await history(ownerId, chatId, { run, answer: { id: messageId, parts: result.parts } }) });
+        now: chatTime(run, now()), conditions, ...judgeStateText(state.instructions), messages: await history(ownerId, chatId, { run, answer: { id: messageId, parts: result.parts } }) });
       if (!checked.saved) return;
       if (checked.transition) {
         const transition = checked.transition;
@@ -705,7 +705,7 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
       includeRejected: true,
       ownerId,
       chatId,
-      goal: stateGoal(state.instructions),
+      ...judgeStateText(state.instructions),
       conditions,
       messages: await history(ownerId, chatId, { run, answer: { id: messageId, parts: result.parts } }),
       // Сдвиг часов есть только у тестового чата редактора.

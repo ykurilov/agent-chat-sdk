@@ -4,7 +4,7 @@ import { FLOW_CHAIN_LIMIT } from "../engine/flow-run";
 import { activeExits, isFinal, stateById } from "../engine/flow-graph";
 import { nextTransition } from "../engine/next-transition";
 import { applyTransition, startRun } from "../engine/run-updates";
-import { stateGoal } from "../prompt/state-card";
+import { judgeStateText } from "../prompt/state-card";
 import type { FlowJudge, JudgeSettings } from "./flow-types";
 import { createFlowJudge, type JudgeDeps, type JudgePort } from "./judge";
 import type { FlowExitGuard } from "./confirmations";
@@ -61,7 +61,7 @@ export async function evaluateExchange(input: JudgeExchangeInput, judge: FlowJud
     const conditions = exits.flatMap(({ exit }) => exit.when.type === "judge" ? [{ exitId: exit.id, text: exit.when.text }] : []);
     if (!transition && conditions.length) {
       let verdicts;
-      try { verdicts = await judge.checkAll({ ownerId, chatId, messages, goal: stateGoal(state.instructions), conditions, includeRejected: true, ...(signal && { signal }) }); }
+      try { verdicts = await judge.checkAll({ ownerId, chatId, messages, ...judgeStateText(state.instructions), conditions, includeRejected: true, ...(signal && { signal }) }); }
       catch (error) { logError(`Судья разговора: ${error instanceof Error ? error.message : String(error)}`); return result(signal?.aborted ? "aborted" : "unchecked"); }
       if (signal?.aborted) return result("aborted");
       if (!verdicts.length) return result("unchecked");

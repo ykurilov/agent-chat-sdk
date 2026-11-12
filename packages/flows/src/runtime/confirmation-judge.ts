@@ -18,7 +18,7 @@ export async function judgeConfirmations(input: {
   onVerdict?: (verdict: import("./flow-types").JudgeVerdict) => Promise<void>;
   confirmations: FlowConfirmations; pinned: PinnedFlow; run: FlowRun; result: TurnResult;
   port: FlowPort; atMessageId: string | null; judge: FlowJudge; threshold: number; now: number;
-  conditions: Array<{ exitId: string; text: string }>; messages: JudgeMessage[]; goal?: string;
+  conditions: Array<{ exitId: string; text: string }>; messages: JudgeMessage[]; goal?: string; task?: string;
 }): Promise<{ transition?: Transition; verdict?: import("./flow-types").JudgeVerdict; saved: boolean }> {
   const { confirmations, pinned, run, result, port } = input;
   const configurationHash = confirmations.revision(pinned.flowId);
@@ -37,7 +37,7 @@ export async function judgeConfirmations(input: {
   const onBranch = (record: typeof records[string] | undefined) => record?.status === "confirmed" && branch.some((message) => message.id === record.source.answerId) && branch.some((message) => message.id === record.source.humanMessageId);
   const query = async (conditions: Array<{ exitId: string; text: string }>, messages: JudgeMessage[]) => {
     const verdicts = await input.judge.checkAll({ ...scope, conditions, messages, includeRejected: true,
-      ...(input.goal && { goal: input.goal }), ...(run.timeOffset !== undefined && { testChat: true }) });
+      ...(input.goal && { goal: input.goal }), ...(input.task && { task: input.task }), ...(run.timeOffset !== undefined && { testChat: true }) });
     for (const verdict of verdicts) if (input.conditions.some(condition => condition.exitId === verdict.exitId)) await input.onVerdict?.(verdict);
     return verdicts;
   };

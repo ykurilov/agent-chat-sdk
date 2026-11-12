@@ -2,6 +2,7 @@ import { tool } from "ai";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { LAST_STEP_NOTE } from "../../../src/agent-run/last-step";
+import { stepContextBlock } from "../../../src/agent-run/step-context";
 import { estimateTextTokens } from "../../../src/agent-run/turn-usage";
 import { createCacheMissWatch } from "../../../src/usage/cache-miss-watch";
 import { chatId, startTurn, storageWithQuestion, TODAY } from "../support/turn-fixtures";
@@ -76,7 +77,7 @@ describe("runAgentTurn: журнал промахов кэша", () => {
     const storage = await storageWithQuestion();
     // Снимок ≈ 3000 токенов в конце запроса. На втором шаге провайдер берёт из кэша всё, что было до него.
     const snapshot = "с".repeat(9_000);
-    const snapshotTokens = estimateTextTokens(snapshot);
+    const snapshotTokens = estimateTextTokens(stepContextBlock(snapshot));
     const steps = [
       [streamStart, { type: "tool-call" as const, toolCallId: "c1", toolName: "lookup", input: "{}" }, usageFinish(20_000, 15_000, "tool-calls")],
       [streamStart, ...textParts(["Ответ"]), usageFinish(24_000, 20_000 - snapshotTokens)],
@@ -121,8 +122,8 @@ describe("runAgentTurn: журнал промахов кэша", () => {
 
   it("из ожидания следующего хода вычитаются снимок и пометка «подведи итог» последнего шага прошлого хода", async () => {
     const snapshot = "с".repeat(9_000);
-    const tail = estimateTextTokens(snapshot) + estimateTextTokens(LAST_STEP_NOTE);
-    const first = [usageFinish(20_000, 15_000, "tool-calls"), usageFinish(24_000, 20_000 - estimateTextTokens(snapshot))];
+    const tail = estimateTextTokens(stepContextBlock(snapshot)) + estimateTextTokens(LAST_STEP_NOTE);
+    const first = [usageFinish(20_000, 15_000, "tool-calls"), usageFinish(24_000, 20_000 - estimateTextTokens(stepContextBlock(snapshot)))];
     const extra = { stepContext: () => snapshot, maxSteps: 2 };
     expect(await twoTurns([...first, usageFinish(25_000, 24_000 - tail)], extra)).toEqual([]);
     const missed = await twoTurns([...first, usageFinish(25_000, 24_000 - tail - 1_025)], extra);

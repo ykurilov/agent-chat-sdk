@@ -1,7 +1,7 @@
 import type { AskModel, ChatService, RecordUsage } from "@ykurilov/agent-chat-core";
 import { requestDecision } from "./decisions-client";
 import type { FlowJudge, FlowJudgeEntry, JudgeMessage, JudgeSettings, JudgeVerdict } from "./flow-types";
-import { buildJudgeContext, type JudgeContext } from "./judge-context";
+import { buildJudgeContext, conditionQuestion, type JudgeContext } from "./judge-context";
 
 export const DEFAULT_JUDGE_THRESHOLD = 0.7;
 export const DEFAULT_JUDGE_MODEL = "microsoft/microsoft-decision-1";
@@ -25,6 +25,7 @@ interface Question {
   ownerId: string;
   chatId: string;
   goal?: string;
+  task?: string;
   why?: string;
   messages: JudgeMessage[];
   conditions: Array<{ exitId: string; text: string }>;
@@ -34,7 +35,8 @@ interface Question {
 
 const FALLBACK_INSTRUCTIONS =
   "Ты судья в диалоге человека с ИИ-агентом. Для каждого условия реши, выполнено ли оно по последним репликам. " +
-  "Верни в met номера (id) только тех условий, которые явно выполнены. Сомневаешься — не включай.";
+  "Условие из нескольких частей выполнено, только если выполнена каждая часть. Цель и задача состояния (goal, task) объясняют смысл условия, " +
+  "но не доказывают выполнение. Верни в met номера (id) только тех условий, которые явно выполнены. Сомневаешься — не включай.";
 
 const FALLBACK_SCHEMA = {
   type: "object",
@@ -43,14 +45,12 @@ const FALLBACK_SCHEMA = {
   additionalProperties: false,
 };
 
-const TEXT_JUDGE_INSTRUCTIONS = "Оцени выполнение каждого условия по цели состояния и переданным репликам. Для каждого условия верни exitId, probability от 0 до 1 и короткий reason: какие сведения подтверждают выполнение или чего не хватает. Не добавляй условия и не принимай слова агента за доказательство сами по себе.";
+const TEXT_JUDGE_INSTRUCTIONS = "Оцени выполнение каждого условия по переданным репликам. Цель и задача состояния (goal, task) объясняют смысл условия, но не доказывают выполнение. Условие из нескольких частей выполнено, только если выполнена каждая часть: нет хотя бы одной — вероятность низкая. Для каждого условия верни exitId, probability от 0 до 1 и короткий reason: какие сведения подтверждают выполнение или чего не хватает. Не добавляй условия и не принимай слова агента за доказательство сами по себе.";
 const TEXT_JUDGE_SCHEMA = {
   type: "object", properties: { verdicts: { type: "array", items: { type: "object",
     properties: { exitId: { type: "string" }, probability: { type: "number", minimum: 0, maximum: 1 }, reason: { type: "string", minLength: 1, maxLength: 2000 } },
     required: ["exitId", "probability", "reason"], additionalProperties: false } } }, required: ["verdicts"], additionalProperties: false,
 };
-
-const conditionQuestion = (text: string) => `Выполнено ли условие «${text}»?`;
 
 /** Что судье нужно от службы чата. */
 export type JudgePort = Pick<ChatService, "assertWithinLimit"> & { askModel: AskModel; recordUsage: RecordUsage };
@@ -71,7 +71,7 @@ export function createFlowJudge(settings: JudgeSettings, port: (chat: { ownerId:
     // Тексты реплик в общем журнале сервера — только по явной настройке: у людей в них бывают пароли и телефоны.
     const withTexts = journal === "always" || question.testChat === true || (journal === "transitions" && confirmed);
     if (!withTexts && !confirmed) return;
-    const { goal, conversation, agent_words: agentWords } = context.state;
+    const { goal, task, conversation, agent_words: agentWords } = context.state;
     try {
       deps.logJudge({
         ownerId: question.ownerId,
@@ -81,6 +81,7 @@ export function createFlowJudge(settings: JudgeSettings, port: (chat: { ownerId:
         threshold,
         source: verdicts?.[0]?.source ?? null,
         ...(goal !== undefined && { goal: clip(goal) }),
+        ...(task !== undefined && { task: clip(task) }),
         ...(withTexts && agentWords !== undefined && { agentWords: clip(agentWords) }),
         ...(withTexts && { conversation: conversation.map(({ role, text }) => ({ role, text: clip(text) })) }),
         replies: conversation.map(({ role, text }) => ({ role, length: text.length })),
@@ -158,6 +159,7 @@ export function createFlowJudge(settings: JudgeSettings, port: (chat: { ownerId:
   async function judge(question: Question): Promise<JudgeVerdict[] | null> {
     const context = buildJudgeContext({
       ...(question.goal !== undefined && { goal: question.goal }),
+      ...(question.task !== undefined && { task: question.task }),
       ...(question.why !== undefined && { why: question.why }),
       messages: question.messages,
       conditions: question.conditions,
@@ -203,12 +205,13 @@ export function createFlowJudge(settings: JudgeSettings, port: (chat: { ownerId:
   }
 
   return {
-    async checkClaim({ ownerId, chatId, exitId, condition, goal, why, messages, signal, testChat }) {
+    async checkClaim({ ownerId, chatId, exitId, condition, goal, task, why, messages, signal, testChat }) {
       const verdicts = await judge({
         kind: "claim",
         ownerId,
         chatId,
         ...(goal !== undefined && { goal }),
+        ...(task !== undefined && { task }),
         ...(why !== undefined && { why }),
         messages,
         conditions: [{ exitId, text: condition }],
@@ -217,13 +220,14 @@ export function createFlowJudge(settings: JudgeSettings, port: (chat: { ownerId:
       });
       return verdicts?.[0] ?? null;
     },
-    async checkAll({ ownerId, chatId, goal, conditions, messages, signal, testChat, includeRejected }) {
+    async checkAll({ ownerId, chatId, goal, task, conditions, messages, signal, testChat, includeRejected }) {
       if (conditions.length === 0) return [];
       const verdicts = await judge({
         kind: "after_turn",
         ownerId,
         chatId,
         ...(goal !== undefined && { goal }),
+        ...(task !== undefined && { task }),
         messages,
         conditions,
         ...(signal && { signal }),

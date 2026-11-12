@@ -34,10 +34,27 @@ export interface StepContextInput {
 }
 
 /**
- * Снимок перед каждым шагом модели: текст ложится сообщением человека в самый конец запроса шага, в историю не пишется.
- * Пустая строка, `null` или `undefined` — шаг без снимка.
+ * Снимок перед каждым шагом модели: текст ложится в самый конец запроса шага служебным блоком `<step_context>` с
+ * постоянным заголовком (`stepContextBlock`), в историю не пишется. Пустая строка, `null` или `undefined` — шаг без
+ * снимка.
  */
 export type StepContext = (input: StepContextInput) => string | null | undefined | Promise<string | null | undefined>;
+
+/** Тег служебного блока снимка: модель, повторившая блок в ответе, его не покажет (`CORE_SERVICE_BLOCKS`). */
+export const STEP_CONTEXT_TAG = "step_context";
+
+/**
+ * Заголовок снимка. Снимок идёт сообщением роли «человек», на шагах после инструмента — сразу за результатом вызова:
+ * голые строки приложения модель принимала за новое сообщение человека без слов и отвечала «жду вашего ответа»
+ * (DeepSeek, 49 ходов из 103). Текст постоянный — меняется только снимок, а он и так в конце запроса.
+ */
+export const STEP_CONTEXT_LEAD =
+  "Служебные строки приложения к этому шагу ответа. Это не новое сообщение человека: он их не писал и не видит и ответа на них не ждёт. Ход тот же: продолжай отвечать на последнее сообщение человека выше.";
+
+/** Текст снимка так, как его видит модель: тег, заголовок, строки приложения как есть. */
+export function stepContextBlock(text: string): string {
+  return `<${STEP_CONTEXT_TAG}>\n${STEP_CONTEXT_LEAD}\n${text}\n</${STEP_CONTEXT_TAG}>`;
+}
 
 export interface StepSnapshots {
   /**
@@ -66,8 +83,9 @@ export function createStepSnapshots(options: StepSnapshotsOptions): StepSnapshot
     async messagesFor({ messages, trailing, context }) {
       const withoutPrevious = previous ? messages.filter((message) => message !== previous) : messages;
       previous = undefined;
-      const text = await snapshotText(options, context);
-      if (!text) return { messages: withoutPrevious, tokens: 0 };
+      const own = await snapshotText(options, context);
+      if (!own) return { messages: withoutPrevious, tokens: 0 };
+      const text = stepContextBlock(own);
       const snapshot: ModelMessage = { role: "user", content: [{ type: "text", text }] };
       previous = snapshot;
       const at = withoutPrevious.length - Math.min(trailing, withoutPrevious.length);
