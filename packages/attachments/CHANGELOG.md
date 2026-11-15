@@ -1,5 +1,13 @@
 # @ykurilov/agent-chat-attachments
 
+## 0.110.1
+
+### Patch Changes
+
+- 37fbe4d: Набор проверок `@ykurilov/agent-chat-attachments/storage-contract` больше не несёт свою копию vitest: vitest — необязательная peer-зависимость, как у `@ykurilov/agent-chat-core/storage-contract`. Раньше под vitest приложения набор падал с «Cannot read properties of undefined (reading 'config')».
+- @ykurilov/agent-chat-core@0.110.1
+  - @ykurilov/agent-chat-react@0.110.1
+
 ## 0.110.0
 
 ### Patch Changes

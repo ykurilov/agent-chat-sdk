@@ -1,6 +1,6 @@
 {
   "name": "@ykurilov/agent-chat-attachments",
-  "version": "0.110.0",
+  "version": "0.110.1",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,
@@ -50,20 +50,25 @@
   },
   "peerDependencies": {
     "react": "~19.0.1 || ~19.1.2 || ^19.2.1",
-    "@ykurilov/agent-chat-react": "workspace:^"
+    "@ykurilov/agent-chat-react": "workspace:^",
+    "vitest": "^3.2.0 || ^4.0.0 || ^5.0.0"
   },
   "devDependencies": {
     "@testing-library/react": "^16.3.3",
     "@types/react": "^19.3.0",
     "@ykurilov/agent-chat-react": "workspace:*",
     "jsdom": "^30.1.1",
-    "react": "^19.3.0"
+    "react": "^19.3.0",
+    "vitest": "5.0.2"
   },
   "peerDependenciesMeta": {
     "react": {
       "optional": true
     },
     "@ykurilov/agent-chat-react": {
+      "optional": true
+    },
+    "vitest": {
       "optional": true
     }
   }
