@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { BackgroundPort, BackgroundTasks, TaskView } from "@ykurilov/agent-chat-core";
 import type { ToolSet } from "ai";
+import { startFromApp } from "./app-start";
+import type { StartTaskRequest, StartTaskResult } from "./app-start";
 import { backgroundToolForTurn, runBackgroundTool } from "./background-tool";
 import { backgroundHelpers, HELPER_TOOL_PREFIX, helperToolForTurn, runHelperTask } from "./helper-task";
 import { createTaskDelivery } from "./task-delivery";
@@ -29,11 +31,25 @@ export interface BackgroundTasksOptions {
   leaseMs?: number;
 }
 
+/** Фон для службы чата и для кода приложения: `start` запускает задачу без хода модели. */
+export interface BackgroundTaskService extends BackgroundTasks {
+  /**
+   * Запуск фонового инструмента из кода приложения (сервер принял файл — пора разбирать), без хода модели. Дальше — как
+   * у задачи, запущенной моделью: карточка с «Отменить» и ходом, предел `maxRunningPerUser` (общий с задачами модели и
+   * между копиями сервера), перезапуск, итог служебным сообщением с ходом агента. Модель узнаёт из служебного сообщения,
+   * что задачу запустило приложение. Чат занят ходом — задача всё равно запускается, итог придёт после хода.
+   * @throws TypeError инструмента `name` нет в `tools` или вход не прошёл проверку его схемы: ничего не записано.
+   * @throws ChatNotFoundError чата нет или он чужой: ничего не записано.
+   * @throws Error фон не подключён к службе чата или уже остановлен (`flush`).
+   */
+  start(request: StartTaskRequest): Promise<StartTaskResult>;
+}
+
 /**
  * Фоновые задачи для службы чата: агент запускает долгую работу, разговор идёт дальше, итог приходит служебным
  * сообщением. Задачи переживают перезапуск сервера; несколько копий сервера на одной базе делят их по аренде.
  */
-export function createBackgroundTasks(options: BackgroundTasksOptions): BackgroundTasks {
+export function createBackgroundTasks(options: BackgroundTasksOptions): BackgroundTaskService {
   const { store } = options;
   const tools = options.tools ?? {};
   const maxRunningPerUser = options.maxRunningPerUser ?? DEFAULT_MAX_RUNNING_PER_USER;
@@ -114,6 +130,9 @@ export function createBackgroundTasks(options: BackgroundTasksOptions): Backgrou
     },
     async listForChat(ownerId, chatId) {
       return (await store.listForChat(ownerId, chatId)).map(viewOf);
+    },
+    async start(request) {
+      return startFromApp(request, { tools, port: requirePort(), runner, maxRunningPerUser });
     },
     cancel: (ownerId, chatId, taskId) => service.runner().cancel(ownerId, chatId, taskId, "human"),
     answerApproval: (ownerId, chatId, taskId, approvalId, decision) => service.runner().answerApproval(ownerId, chatId, taskId, approvalId, decision, maxRunningPerUser),

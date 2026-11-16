@@ -31,6 +31,7 @@ export function taskToolsForTurn(model: AgentToolsModel, service: { store: TaskS
             taskId: task.id,
             title: task.title,
             status: task.status,
+            ...(task.startedBy && { startedBy: task.startedBy }),
             startedAt: task.startedAt ?? task.createdAt,
             ...(task.finishedAt && { finishedAt: task.finishedAt }),
             ...(task.progress?.text && { progress: task.progress.text }),

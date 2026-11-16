@@ -13,4 +13,8 @@ export const migrations: readonly EmbeddedMigration[] = [
   { folderMillis: 1791184440303, hash: "3e0dc6b654a3f32e1f971e0237b9275c9172f39ddde7c8ab75bb11b4d187e1a7", bps: true, sql: [
     "ALTER TABLE \"agent_chat\".\"background_tasks\" ADD COLUMN \"delivery_key\" text;",
   ] },
+  // 0002_started_by
+  { folderMillis: 1794821625698, hash: "488606f9777cb47780214a470555312591253fcc3cf8150c02bfe9e6dc24977a", bps: true, sql: [
+    "ALTER TABLE \"agent_chat\".\"background_tasks\" ADD COLUMN \"started_by\" text;",
+  ] },
 ];

@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
-import { lastAnswer, send, signIn } from "./support/chat";
+import { chatIdOf, lastAnswer, send, signIn } from "./support/chat";
 
 /** Фоновые задачи: запуск, другой вопрос в это время, итог в открытой вкладке без перезагрузки, отмена (US2). */
 
@@ -45,4 +45,20 @@ test("отмена фоновой задачи: карточка уходит, �
   await expect(note).toContainText("Задача отменена");
   // Отменённая задача агента не будит: последний ответ остался про запуск.
   await expect(lastAnswer(page)).toContainText(`Запустил отчёт «${topic}»`);
+});
+
+test("приложение само запускает отчёт: карточка появляется в открытой вкладке, итог — ответом агента", async ({ page }) => {
+  const topic = uniqueTopic();
+  await signIn(page);
+  const started = await page.request.post("/api/demo/reports/start", { data: { chatId: chatIdOf(page), topic } });
+  expect(await started.json()).toMatchObject({ status: "started", title: `Отчёт: ${topic}` });
+
+  // Без хода модели и без перезагрузки: карточку приносит подписка вкладки на события чата.
+  await expect(taskCard(page, topic)).toHaveAttribute("data-task-status", /queued|running/);
+
+  await releaseReport(page, topic);
+  const done = `Отчёт «${topic}» готов: три раздела, шесть таблиц.`;
+  await expect(page.getByRole("note").filter({ hasText: done })).toBeVisible();
+  await expect(lastAnswer(page)).toContainText(`Фоновая задача приложения закончилась. Итог: ${done}`);
+  await expect(taskCard(page, topic)).toHaveCount(0);
 });

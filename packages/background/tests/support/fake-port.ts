@@ -77,6 +77,7 @@ export function createFakePort(options: {
     runHelper: vi.fn(options.runHelper ?? (async (): Promise<RunHelperResult> => ({ status: "done", text: "готово", messages: [] }))),
     helperModel: vi.fn(async (name: string, ownerId: string, chatId: string) => ({ ...toolsModel({ ownerId, chatId }), helperName: name }) as AgentToolsModel),
     assertWithinLimit: vi.fn(async () => {}),
+    assertOwnChat: vi.fn(async () => {}),
     logError: (error) => {
       errors.push(error);
     },

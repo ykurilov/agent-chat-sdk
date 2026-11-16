@@ -4373,6 +4373,9 @@ export function createChatService(input: ChatServiceOptions): ChatService {
         });
       },
       assertWithinLimit: (ownerId, chatId) => assertWithinSpendingLimit(ownerId, chatId),
+      async assertOwnChat(ownerId, chatId) {
+        await ownChat(ownerId, chatId);
+      },
       logError: (error) => logError(`Фон: ${error instanceof Error ? error.message : String(error)}`, error),
       helpers: backgroundHelpers,
     };

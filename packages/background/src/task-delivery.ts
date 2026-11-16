@@ -147,7 +147,7 @@ function deliveryKeyOf(task: TaskRecord): string {
 
 /** Служебное сообщение о задаче, как его видят модель и экран. */
 export function noticeOf(task: TaskRecord): AgentNotice {
-  const base = { taskId: task.id, title: task.title };
+  const base = { taskId: task.id, title: task.title, ...(task.startedBy && { startedBy: task.startedBy }) };
   switch (task.status) {
     case "done":
       return {

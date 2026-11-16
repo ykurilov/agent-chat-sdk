@@ -15,6 +15,8 @@ export interface TaskRecord {
   input?: unknown;
   /** Для карточки и служебного сообщения. */
   title: string;
+  /** `app` — задачу запустило приложение (`start`), а не модель: служебное сообщение о ней говорит это модели. */
+  startedBy?: "app";
   status: TaskStatus;
   /** Шаги помощника: с них задача продолжается после перезапуска. */
   helperMessages?: ModelMessage[];

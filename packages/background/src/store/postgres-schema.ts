@@ -20,6 +20,8 @@ export const backgroundTasks = agentChatSchema.table(
     name: text("name").notNull(),
     input: jsonb("input"),
     title: text("title").notNull(),
+    /** `app` — задачу запустило приложение; нет — модель. */
+    startedBy: text("started_by", { enum: ["app"] }),
     status: text("status").$type<TaskStatus>().notNull(),
     /** Шаги помощника: с них задача продолжается после перезапуска. */
     helperMessages: jsonb("helper_messages").$type<ModelMessage[]>(),

@@ -164,6 +164,17 @@ export function describeTaskStoreContract(open: () => Promise<SharedTaskStores>)
       }),
     );
 
+    it("пометка «запустило приложение» хранится; у задачи модели её нет", () =>
+      withStores(async ({ first, second }) => {
+        const fromApp = taskRecord({ startedBy: "app", messageId: "", toolCallId: "" });
+        const fromModel = taskRecord();
+        await first.admitWithinLimit({ create: fromApp }, 5);
+        await first.create(fromModel);
+        expect(await second.get("anna", fromApp.id)).toEqual(fromApp);
+        expect(await second.get("anna", fromModel.id)).not.toHaveProperty("startedBy");
+      }),
+    );
+
     it("результат-строка хранится строкой; нет результата — нет поля", () =>
       withStores(async ({ first }) => {
         const text = taskRecord({ status: "done", result: "просто строка" });

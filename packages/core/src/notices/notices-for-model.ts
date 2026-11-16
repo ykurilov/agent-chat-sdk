@@ -4,7 +4,8 @@ import type { AgentNotice } from "./agent-notice";
 
 /** Текст служебного сообщения для модели. Тот же и в хвосте запроса, и в истории на следующих ходах: кэш цел. */
 export function noticeText(notice: AgentNotice): string {
-  const task = `Фоновая задача "${notice.title}"`;
+  // Задачу, запущенную приложением, модель могла не видеть в разговоре: иначе приняла бы её за свою.
+  const task = `Фоновая задача "${notice.title}"${notice.startedBy === "app" ? " (её запустило приложение, не ты)" : ""}`;
   switch (notice.kind) {
     case "task_done":
       return `${task} закончилась: ${notice.result ?? ""}`;

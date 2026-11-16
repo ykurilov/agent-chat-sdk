@@ -36,6 +36,11 @@ export interface BackgroundPort {
   runHelper: RunHelper;
   helperModel(name: string, ownerId: string, chatId: string): Promise<AgentToolsModel>;
   assertWithinLimit(ownerId: string, chatId: string): Promise<void>;
+  /**
+   * Чат есть и принадлежит `ownerId` (с 0.111): запуск задачи из кода приложения.
+   * @throws ChatNotFoundError чата нет или он чужой.
+   */
+  assertOwnChat(ownerId: string, chatId: string): Promise<void>;
   logError(error: unknown): void;
   /** Только фоновые помощники (`background: true`), ядро заполняет в `attach`. */
   helpers?: Record<string, AgentHelper>;

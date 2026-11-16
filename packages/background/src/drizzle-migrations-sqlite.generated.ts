@@ -13,4 +13,8 @@ export const migrations: readonly EmbeddedMigration[] = [
   { folderMillis: 1791184440017, hash: "26d881cb5f9b4e488c4c6746c26fe8e84119ecae851ac613fc685993b1637158", bps: true, sql: [
     "ALTER TABLE `background_tasks` ADD `delivery_key` text;",
   ] },
+  // 0002_started_by
+  { folderMillis: 1794821625206, hash: "4318a7437936df8376f4b0694c2c0b98bf1689c347067b3cbb0160c45ba992dc", bps: true, sql: [
+    "ALTER TABLE `background_tasks` ADD `started_by` text;",
+  ] },
 ];

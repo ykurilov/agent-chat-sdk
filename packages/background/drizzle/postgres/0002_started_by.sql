@@ -1,0 +1,1 @@
+ALTER TABLE "agent_chat"."background_tasks" ADD COLUMN "started_by" text;

@@ -1,5 +1,5 @@
 import { createAttachments, createDiskAttachmentStorage } from "@ykurilov/agent-chat-attachments";
-import { extendCatalog, standardCatalog } from "@ykurilov/agent-chat-core";
+import { ChatNotFoundError, extendCatalog, standardCatalog } from "@ykurilov/agent-chat-core";
 import type { AppEvent, ChatStorage, ModelCatalog, SpendingLimits, TurnResult } from "@ykurilov/agent-chat-core";
 import { createChatServer } from "@ykurilov/agent-chat-server";
 import type { ChatHandlerOptions } from "@ykurilov/agent-chat-server";
@@ -435,6 +435,20 @@ export async function createDemoApp(options: DemoAppOptions) {
     return task ? c.json({ task }) : c.json({ error: "not_found" }, 404);
   });
   if (mock) {
+    // Приложение само запускает отчёт в чате, без хода модели (`background.start`): как сервер, принявший файл.
+    app.post("/api/demo/reports/start", async (c) => {
+      const user = await resolveUser(c.req.raw);
+      if (!user) return c.json({ error: "unauthorized" }, 401);
+      const body = (await c.req.json().catch(() => ({}))) as { chatId?: unknown; topic?: unknown };
+      if (typeof body.chatId !== "string" || typeof body.topic !== "string") return c.json({ error: "chatId and topic are required" }, 400);
+      try {
+        return c.json(await background.start({ ownerId: user.id, chatId: body.chatId, name: "report", input: { topic: body.topic } }));
+      } catch (error) {
+        if (error instanceof ChatNotFoundError) return c.json({ error: "chat_not_found" }, 404);
+        if (error instanceof TypeError) return c.json({ error: error.message }, 400);
+        throw error;
+      }
+    });
     app.post("/api/demo/reports/release", async (c) => {
       const body = (await c.req.json().catch(() => ({}))) as { topic?: unknown };
       if (typeof body.topic !== "string" || !body.topic) return c.json({ error: "topic is required" }, 400);

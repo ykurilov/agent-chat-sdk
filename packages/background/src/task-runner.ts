@@ -32,7 +32,7 @@ export interface RunControl {
 export type TaskPlan = { work(record: TaskRecord, control: RunControl): Promise<TaskOutcome>; rerunAfterRestart: boolean; timeoutMs: number } | string;
 
 /** Новая задача из вызова инструмента. */
-export type NewTask = Pick<TaskRecord, "ownerId" | "chatId" | "messageId" | "toolCallId" | "channel" | "kind" | "name" | "input" | "title">;
+export type NewTask = Pick<TaskRecord, "ownerId" | "chatId" | "messageId" | "toolCallId" | "channel" | "kind" | "name" | "input" | "title" | "startedBy">;
 
 interface RunningTask {
   record: TaskRecord;
@@ -235,6 +235,7 @@ export function createTaskRunner(deps: {
     start(task, maxRunningPerUser) {
       // По одному на человека в этой копии; между копиями предел держит само хранилище (`admitWithinLimit`).
       return ownerLock(task.ownerId, async () => {
+        if (stopped) throw new Error("Фоновые задачи остановлены (flush): новые задачи не запускаются");
         const plan = deps.plan({ ...task, id: "", status: "queued", attempt: 0, createdAt: "" });
         if (typeof plan === "string") throw new Error(plan);
         const createdAt = now();

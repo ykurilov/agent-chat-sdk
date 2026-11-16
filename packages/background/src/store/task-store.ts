@@ -29,6 +29,7 @@ const OPTIONAL_FIELDS = [
   "finishedAt",
   "deliveredAt",
   "deliveryKey",
+  "startedBy",
 ] as const satisfies readonly (keyof TaskRecord)[];
 
 /** Выполнено ли условие записи для задачи. */

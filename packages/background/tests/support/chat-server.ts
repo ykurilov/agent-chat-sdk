@@ -8,6 +8,7 @@ import type { ChatServerService } from "@ykurilov/agent-chat-server";
 import { MockLanguageModelV4 } from "ai/test";
 import { createBackgroundTasks } from "../../src/index";
 import { sqliteTaskStore } from "../../src/sqlite";
+import type { BackgroundTaskService } from "../../src/index";
 import type { BackgroundToolDefinition, TaskStore } from "../../src/types";
 
 /** Связка фона с настоящей службой чата: модель по сценарию, адреса сервера, хранилище задач на SQLite. */
@@ -99,6 +100,8 @@ export function createGate() {
 
 export interface ChatServerCopy {
   service: ChatServerService;
+  /** Фон этой копии: запуск задачи из кода приложения (`start`). */
+  background: BackgroundTaskService;
   model: MockLanguageModelV4;
   errors: string[];
   call(method: string, path: string, body?: unknown): Promise<Response>;
@@ -149,6 +152,7 @@ export async function openCopy(input: {
   const userMessage = (id: string, text: string) => ({ id, role: "user" as const, parts: [{ type: "text" as const, text }] });
   return {
     service,
+    background,
     model: input.model,
     errors,
     call,

@@ -15,6 +15,8 @@ export const backgroundTasks = sqliteTable(
     name: text("name").notNull(),
     input: text("input", { mode: "json" }),
     title: text("title").notNull(),
+    /** `app` — задачу запустило приложение; нет — модель. */
+    startedBy: text("started_by", { enum: ["app"] }),
     status: text("status").$type<TaskStatus>().notNull(),
     /** Шаги помощника: с них задача продолжается после перезапуска. */
     helperMessages: text("helper_messages", { mode: "json" }).$type<ModelMessage[]>(),

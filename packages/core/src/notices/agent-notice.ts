@@ -41,6 +41,8 @@ export interface AgentNotice {
   approval?: { approvalId: string; toolName: string; input: unknown };
   /** В итоге может быть чужой текст (помощник вызывал инструмент с пометкой `externalContent`). Нет — не было. */
   externalContent?: true;
+  /** У `task_*` (с 0.111): задачу запустило приложение (`background.start`), а не модель. Нет — запустила модель. */
+  startedBy?: "app";
 }
 
 /** Тип части сообщения со служебными сообщениями. */
