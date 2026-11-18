@@ -1,5 +1,16 @@
 # @ykurilov/agent-chat-skin-tandem
 
+## 0.112.1
+
+### Patch Changes
+
+- @ykurilov/agent-chat-messengers@0.112.1
+  - @ykurilov/agent-chat-flows@0.112.1
+  - @ykurilov/agent-chat-mcp@0.112.1
+  - @ykurilov/agent-chat-react@0.112.1
+  - @ykurilov/agent-chat-sandbox@0.112.1
+  - @ykurilov/agent-chat-skills@0.112.1
+
 ## 0.112.0
 
 ### Minor Changes

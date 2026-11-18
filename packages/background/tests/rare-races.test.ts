@@ -201,8 +201,7 @@ describe("продолжения после подтверждения", () => {
     await settle();
     expect(await shared.get("anna", taskId)).toMatchObject({ status: "running", attempt: 1 });
     await a.background.flush();
-    // Перезапуск занимает время: аренда остановленной копии успевает истечь.
-    await vi.advanceTimersByTimeAsync(1);
+    // Часы стоят: новая копия стартует в ту же миллисекунду, когда остановленная отпустила аренду.
     helper.next("finish");
     const b = helperCopy(shared, helper);
     await b.background.recover();

@@ -264,7 +264,7 @@ describe("восстановление после сбоя (T053)", () => {
     await background.flush();
   });
 
-  it("штатная остановка отпускает аренду: следующий старт подбирает задачу сразу, старый итог не пишется", async () => {
+  it("штатная остановка отпускает аренду: следующий старт подбирает задачу сразу (даже в ту же миллисекунду), старый итог не пишется", async () => {
     const store = memoryTaskStore();
     const first = setup({ store, rerunAfterRestart: true });
     const taskId = await start(first.background);
@@ -276,7 +276,7 @@ describe("восстановление после сбоя (T053)", () => {
     expect((await store.get("anna", taskId))?.status).toBe("running");
     expect(first.port.attempts).toEqual([]);
 
-    await vi.advanceTimersByTimeAsync(1);
+    // Часы стоят: новая копия стартует в ту же миллисекунду, когда старая отпустила аренду.
     const second = setup({ store, rerunAfterRestart: true });
     await second.background.recover();
     await settle();

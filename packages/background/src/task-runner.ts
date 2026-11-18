@@ -368,11 +368,15 @@ export function createTaskRunner(deps: {
       const held = [...leases.entries()];
       leases.clear();
       for (const [, lease] of held) if (lease.run) stopRun(lease.run, "служба остановлена");
-      const at = now();
-      await Promise.all(held.map(([taskId]) => store.renewLease(taskId, me, at).catch(logError)));
+      // Аренда отпускается в прошлое, а не на «сейчас»: свободной считается аренда строго раньше «сейчас», и копия,
+      // стартовавшая в ту же миллисекунду или с отстающими часами, иначе ждала бы обхода по таймеру.
+      await Promise.all(held.map(([taskId]) => store.renewLease(taskId, me, RELEASED_LEASE).catch(logError)));
     },
   };
 }
+
+/** Срок отпущенной аренды: заведомо в прошлом при любых часах копий. */
+const RELEASED_LEASE = new Date(0).toISOString();
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
