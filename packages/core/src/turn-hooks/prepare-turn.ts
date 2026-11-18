@@ -22,6 +22,11 @@ export interface PrepareTurnContext {
    * прежнего ответа уже в `state`, сообщение человека в них учтено.
    */
   resumed: boolean;
+  /**
+   * Ход отвечает на поправку человека и продолжает ответы, закрытые ради неё (как `AgentToolsModel.continuedAnswerIds`):
+   * их id от ближнего к дальнему. Нет поля — ход начат не поправкой.
+   */
+  continuedAnswerIds?: string[];
   /** `group` — групповой чат мессенджера, `private` — разговор с владельцем. */
   audience: AgentAudience;
   /** Сотрудник, который делает ход в копии чата человека (`staffOfChat`): данные `ownerId` только читаются. */

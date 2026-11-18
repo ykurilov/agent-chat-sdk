@@ -27,6 +27,11 @@ export type ChatEvent =
        * (`sendBurstMessage`). Каналы провожают такой ход, как ход по служебному сообщению. Нет — поток у вызова.
        */
       unattended?: true;
+      /**
+       * Ход отвечает на поправку человека и продолжает ответы, закрытые ради неё (как `AgentToolsModel.continuedAnswerIds`):
+       * их id от ближнего к дальнему. Нет — ход начат не поправкой.
+       */
+      continuedAnswerIds?: string[];
     }
   | {
       type: "turn-finished";

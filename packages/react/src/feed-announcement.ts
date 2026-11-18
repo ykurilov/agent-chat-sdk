@@ -1,5 +1,7 @@
 import { useState } from "react";
+import { answerBegan } from "./answer-began";
 import { messageText } from "./chat-types";
+import { isCorrection } from "./steering/corrections";
 import { voiceAnswerIds } from "./voice-turn";
 import { withoutMarkdown } from "./without-markdown";
 import type { AgentChatMessage } from "./chat-types";
@@ -40,13 +42,18 @@ function announcementFor(messages: AgentChatMessage[], labels: ResolvedChatLabel
   if (!answer) return "";
   const status = answer.metadata?.status ?? "complete";
   if (status === "error") return customErrorText(labels, answer.metadata?.error) ?? labels.errors[answer.metadata?.error?.kind ?? "other"];
-  if (status === "stopped") return labels.answerStopped;
-  if (status === "interrupted") return labels.answerInterrupted;
-  if (status === "awaiting_approval") return widgetQuestionOf(answer, labels) ?? labels.approvalAnnouncement;
   const text = messageText(answer, { voiceAnswer: voiceAnswerIds(messages).has(answer.id) });
+  // «До начала» — то же понимание, что у экрана (`answerBegan`).
+  const began = answerBegan(answer, text);
+  if (status === "stopped") return began ? labels.answerStopped : labels.answerStoppedEmpty;
+  if (status === "interrupted") return began ? labels.answerInterrupted : labels.answerInterruptedEmpty;
+  if (status === "awaiting_approval") return widgetQuestionOf(answer, labels) ?? labels.approvalAnnouncement;
   // Скин мог спрятать часть ответа на экране (`ChatSkin.spokenAnswer`): диктор читает то же, что видит человек.
   const spoken = withoutMarkdown(spokenAnswer ? spokenAnswer(text) : text);
-  return spoken.trim().length === 0 ? labels.answerEmpty : spoken;
+  if (spoken.trim().length > 0) return spoken;
+  // Законченный без текста и закрытый ради поправки: продолжение — следующий ответ, итога ещё нет.
+  const last = messages.at(-1);
+  return last && isCorrection(last) ? "" : labels.answerEmpty;
 }
 
 /** Ход остановился на вопросе агента (ждущий виджет): диктор слышит «Агент задал вопрос» и сам вопрос (FR-021). */

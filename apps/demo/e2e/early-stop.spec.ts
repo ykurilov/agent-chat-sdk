@@ -32,4 +32,8 @@ test("«Остановить», обогнавший отправку: ход о
   await page.unrouteAll({ behavior: "ignoreErrors" });
   await page.reload();
   await expect(lastAnswer(page)).toHaveAttribute("data-status", "stopped");
+  // Остановлен до первого слова: понятная строка вместо пустой карточки, «Повторить» на месте.
+  await expect(lastAnswer(page).getByText("Ответ остановлен до начала")).toBeVisible();
+  await expect(page.getByRole("log").getByText("Модель не дала ответа")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Повторить" })).toBeVisible();
 });

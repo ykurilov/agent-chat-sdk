@@ -12,6 +12,24 @@ export function isCorrection(message: Pick<AgentChatMessage, "role" | "parts">):
 }
 
 /**
+ * Ответы, которые продолжает ход на конце ветки: ветка кончается поправками — ход отвечает на них вместо ответа перед
+ * ними, закрытого ради поправки. Тот ответ сам мог продолжать закрытый — цепочка от ближнего к дальнему. Ветка не на
+ * поправках — пусто. Зависит только от ветки хранилища: годится и для «Повторить»/«Переделать», и после перезапуска.
+ */
+export function continuedAnswerIdsOf(branch: readonly Pick<StoredMessage, "id" | "role" | "parts">[]): string[] {
+  const answerIds: string[] = [];
+  let index = branch.length - 1;
+  while (index >= 0 && isCorrection(branch[index]!)) {
+    while (index >= 0 && isCorrection(branch[index]!)) index--;
+    const answer = branch[index];
+    if (answer?.role !== "assistant") break;
+    answerIds.push(answer.id);
+    index--;
+  }
+  return answerIds;
+}
+
+/**
  * Поправки подряд — одним сообщением человека: строгие провайдеры не принимают двух сообщений человека подряд, а пометка
  * «ответа нет» между ними была бы неправдой. Части следующей поправки — после частей предыдущей, её первый текст — через
  * пустую строку. Зависит только от истории: на каждом ходе те же байты.

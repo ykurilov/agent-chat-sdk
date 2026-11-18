@@ -272,7 +272,7 @@ export type {
   BurstMessageResult,
   SteerResult,
 } from "./chat-service";
-export { STEER_PART_TYPE, isCorrection } from "./steering/turn-steering";
+export { STEER_PART_TYPE, continuedAnswerIdsOf, isCorrection } from "./steering/turn-steering";
 export { BURST_HOLD_MS, BURST_PART_TYPE, BURST_SWEEP_LIMIT, DEFAULT_BURST_QUIET_MS, isBurstMessage } from "./bursts/message-bursts";
 export { GREETING_LEAD } from "./agent-run/greeting-lead";
 export { GREETING_MAX_LENGTH, IMPORT_MAX_IMAGE_BYTES, IMPORT_MAX_IMAGES, IMPORT_MAX_MESSAGES, SUBJECT_DATA_MAX_BYTES, SUBJECT_KEY_MAX_LENGTH } from "./subject-chats/subject-chats";

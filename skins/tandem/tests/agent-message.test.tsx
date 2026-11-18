@@ -86,3 +86,52 @@ describe("свои кнопки приложения в ряду под отве
     expect(screen.queryByRole("button", { name: "Нравится" })).toBeNull();
   });
 });
+
+describe("ответ без текста (договор 34)", () => {
+  const textless = (props: Partial<ComponentProps<typeof TandemAgentMessage>>, children?: ReactElement) => (
+    <TooltipProvider>
+      <TandemAgentMessage status="complete" onCopy={vi.fn()} empty={false} {...props}>
+        {children}
+      </TandemAgentMessage>
+    </TooltipProvider>
+  );
+
+  it("строка из `emptyText` вместо «модель не дала ответа», без копирования и без отметки «Остановлено»", () => {
+    render(textless({ status: "stopped", empty: true, emptyText: "Ответ остановлен до начала", onRetry: vi.fn() }));
+
+    expect(screen.getByText("Ответ остановлен до начала")).toBeTruthy();
+    expect(screen.queryByText("Модель не дала ответа")).toBeNull();
+    expect(screen.queryByText("Остановлено")).toBeNull();
+    expect(screen.queryByRole("button", { name: /копировать|copy/i })).toBeNull();
+    expect(screen.getByRole("button", { name: /повторить|retry/i })).toBeTruthy();
+  });
+
+  it("`emptyText` пустой: только шаги, ни строки, ни копирования, ни пустого ряда кнопок", () => {
+    const { container } = render(textless({ emptyText: "" }, <p>Посмотрел работу</p>));
+
+    expect(screen.getByText("Посмотрел работу")).toBeTruthy();
+    expect(screen.queryByText("Модель не дала ответа")).toBeNull();
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(rowUnderBubble(container).className).toContain("hidden");
+  });
+
+  it("без тела, только переключатель веток: аватар не виден, место под ним остаётся", () => {
+    const { container } = render(textless({ emptyText: "", branchSwitcher: <span>1/2</span> }));
+    const avatar = container.querySelector("[data-status] > :first-child")!;
+
+    expect(screen.getByText("1/2")).toBeTruthy();
+    expect(avatar.getAttribute("class")).toContain("invisible");
+  });
+
+  it("с телом аватар виден", () => {
+    const { container } = render(textless({ emptyText: "" }, <p>Посмотрел работу</p>));
+
+    expect(container.querySelector("[data-status] > :first-child")!.getAttribute("class")).not.toContain("invisible");
+  });
+
+  it("скин получает старый ответ без `emptyText`: как раньше по `empty`", () => {
+    render(textless({ empty: true }));
+
+    expect(screen.getByText("Модель не дала ответа")).toBeTruthy();
+  });
+});

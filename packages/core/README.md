@@ -63,7 +63,9 @@ import type { ChatStorage } from "@ykurilov/agent-chat-core";
   (отметка `data-agent-steer`, модели не уходит), агент берёт его на ближайшей границе шага: ответ закрывается, ход продолжается новым
   ответом на поправки (поток — `subscribe`). Поправки подряд уходят модели одним сообщением человека. Хода нет — обычный ход (`started`);
   ход на другой копии — `ChatBusyError`. Проверки — как у `sendMessage`. Ждущие поправки — `pendingMessages` в истории; `isCorrection`,
-  `STEER_PART_TYPE` — для своей ленты.
+  `STEER_PART_TYPE` — для своей ленты. Ход ответа на поправку получает `continuedAnswerIds` — id закрытых ответов, которые он продолжает
+  (от ближнего к дальнему): в модели инструментов, в `prepareTurn` и в событии `turn-started`. По нему приложение считает результаты
+  инструментов закрытого ответа своими для нового хода (`continuedAnswerIdsOf(branch)` — то же по ветке).
 - `@ykurilov/agent-chat-core/storage-contract` — общие тесты `describeChatStorageContract`
   для своей реализации хранилища (нужен `vitest`). Их проходят память, SQLite и PostgreSQL.
 - Список чатов: `chat.listChats(userId)`, `chat.renameChat(userId, chatId, title)`, `chat.deleteChat(userId, chatId)`. Хранилище для этого реализует `listChats`, `renameChat`, `deleteChat`. Название чата берётся из первого сообщения (`deriveChatTitle`, до 60 знаков), вручную — до 100 (`normalizeChatTitle`, `InvalidChatTitleError`). Удаление настоящее: идущий ответ и сжатие останавливаются, затем уходят файлы вложений, сообщения, записи сжатия и чат.

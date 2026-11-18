@@ -54,14 +54,16 @@ export const plainSkin: ChatSkin = {
       </div>
     );
   },
-  AgentMessage: function AgentMessage({ status, children, empty, onRetry, notice, branchSwitcher, onRegenerate }) {
+  AgentMessage: function AgentMessage({ status, children, empty, emptyText, onRetry, notice, branchSwitcher, onRegenerate }) {
     const labels = useChatLabels();
+    // Договор 34: строку для ответа без текста выбрал слой поведения; "" — без строки.
+    const emptyLine = emptyText ?? (empty && status === "complete" ? labels.answerEmpty : "");
     return (
       <div data-role="assistant" data-status={status} style={{ padding: 8 }}>
         {children}
-        {empty && status === "complete" && <em>{labels.answerEmpty}</em>}
-        {status === "stopped" && <em>{labels.answerStopped}</em>}
-        {status === "interrupted" && <em>{labels.answerInterrupted}</em>}
+        {emptyLine && <em>{emptyLine}</em>}
+        {!emptyText && status === "stopped" && <em>{labels.answerStopped}</em>}
+        {!emptyText && status === "interrupted" && <em>{labels.answerInterrupted}</em>}
         {notice}
         {onRetry && <button onClick={onRetry}>{labels.retry}</button>}
         {branchSwitcher}

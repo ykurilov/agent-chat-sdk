@@ -179,6 +179,8 @@ describe("словарь надписей", () => {
       screenshotUnavailable: "Снимок не загрузился.",
       answerStopped: "Остановлено",
       answerInterrupted: "Ответ прерван",
+      answerStoppedEmpty: "Ответ остановлен до начала",
+      answerInterruptedEmpty: "Ответ оборвался до начала",
       answerEmpty: "Модель не дала ответа",
       externalImageLink: "картинка",
       answerCutByLength: "Ответ оборван по длине",

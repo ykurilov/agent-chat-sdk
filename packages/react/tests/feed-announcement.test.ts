@@ -83,8 +83,39 @@ describe("текст для диктора", () => {
     ["ошибка", answer("", { status: "error", error: { kind: "overloaded" } }), russianLabels.errors.overloaded],
     ["ошибка без вида", answer("", { status: "error" }), russianLabels.errors.other],
     ["пустой ответ", answer(""), russianLabels.answerEmpty],
+    ["остановлен до первого слова", answer("", { status: "stopped" }), russianLabels.answerStoppedEmpty],
+    ["оборвался до первого слова", answer("", { status: "interrupted" }), russianLabels.answerInterruptedEmpty],
   ])("ответ закончился: %s — надпись вместо текста", (_, final, label) => {
     expect(finishedAnswer(final)).toBe(label);
+  });
+
+  const correction: AgentChatMessage = { id: "s1", role: "user", parts: [{ type: "text", text: "И ярче" }, { type: "data-agent-steer", data: true }] as AgentChatMessage["parts"] };
+  const endedBeforeCorrection = (final: AgentChatMessage) => {
+    const view = watch({ messages: [question, answer("", { status: "streaming" })], busy: true });
+    view.rerender({ messages: [question, final, correction], busy: false });
+    return view.result.current;
+  };
+
+  it.each([
+    ["остановлен до начала", answer("", { status: "stopped" }), russianLabels.answerStoppedEmpty],
+    ["ошибка", answer("", { status: "error", error: { kind: "overloaded" } }), russianLabels.errors.overloaded],
+    ["закончен с текстом", answer("Смотрю"), "Смотрю"],
+  ])("ход кончился при ждущей поправке: %s — итог звучит", (_, final, spoken) => {
+    expect(endedBeforeCorrection(final)).toBe(spoken);
+  });
+
+  it.each([
+    ["только раздумье — начался", [{ type: "reasoning", text: "Думаю", state: "done" }], russianLabels.answerStopped],
+    ["только подсказки ответа — не начался", [{ type: "tool-suggest_replies", toolCallId: "r1", state: "output-available", input: { replies: ["Да"] }, output: {} }], russianLabels.answerStoppedEmpty],
+  ])("остановлен: %s — как на экране", (_, parts, spoken) => {
+    expect(finishedAnswer({ id: "a1", role: "assistant", parts: parts as AgentChatMessage["parts"], metadata: { status: "stopped" } })).toBe(spoken);
+  });
+
+  it("ответ закрыт ради поправки: итога нет, «модель не дала ответа» не звучит", () => {
+    const view = watch({ messages: [question, answer("", { status: "streaming" })], busy: true });
+    const correction: AgentChatMessage = { id: "s1", role: "user", parts: [{ type: "text", text: "И ярче" }, { type: "data-agent-steer", data: true }] as AgentChatMessage["parts"] };
+    view.rerender({ messages: [question, answer(""), correction], busy: false });
+    expect(view.result.current).toBe("");
   });
 
   it("пока ответ растёт, прежний текст не меняется", () => {

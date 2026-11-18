@@ -18,6 +18,7 @@ export function OduvanchikAgentMessage({
   children,
   onCopy,
   empty,
+  emptyText,
   onRetry,
   notice,
   branchSwitcher,
@@ -32,6 +33,12 @@ export function OduvanchikAgentMessage({
   const [copied, setCopied] = useState(false);
   const streaming = status === "streaming";
   const hasParts = Children.toArray(children).length > 0;
+  // Договор 34: строку вместо ответа без текста выбрал слой поведения (`""` — без строки); скин до 34 решал по `empty`.
+  const textless = empty || emptyText !== undefined;
+  const emptyLine = emptyText ?? (empty ? labels.answerEmpty : "");
+  // Строка «остановлен/оборвался до начала» уже всё говорит: отметка рядом её бы повторила.
+  const statusBadge = !emptyText && (status === "stopped" || status === "interrupted");
+  const hasActions = Boolean(branchSwitcher) || statusBadge || Boolean(cutByLength) || Boolean(edited) || Boolean(onRetry) || Boolean(onRegenerate) || Boolean(onEdit) || !textless || Boolean(actions?.length);
 
   useEffect(() => {
     if (!copied) return;
@@ -43,11 +50,11 @@ export function OduvanchikAgentMessage({
     <div className="oduvanchik-agent pb-6" data-status={status}>
       {streaming && !hasParts && <Sphere size={22} label={labels.reasoningRunning} />}
       <div className="flex min-w-0 max-w-[650px] flex-1 flex-col items-start">
-        {hasParts || (empty && !notice) ? (
+        {hasParts || (emptyLine && !notice) ? (
           // Ответ без пузыря; живой демонстрации доступна вся ширина колонки.
           <div className="oduvanchik-agent-body max-w-full has-[[data-live-demo]]:w-full">
             {children}
-            {empty && <p className="text-[var(--foreground-muted)]">{labels.answerEmpty}</p>}
+            {emptyLine && <p className="text-[var(--foreground-muted)]">{emptyLine}</p>}
           </div>
         ) : (
           streaming && (
@@ -62,12 +69,12 @@ export function OduvanchikAgentMessage({
         {/* Строка с кнопками стоит под пузырём всегда, пока ответ пишется — скрытая. Если её вставлять в конце, пузырь
             перестаёт быть последним в колонке, и правило `tr:last-child td` дизайн-системы заставляет браузер
             пересчитать стили каждой ячейки всех таблиц ответа разом (R16). */}
-        <div className={streaming ? "hidden" : "oduvanchik-answer-actions mt-1 flex h-7 items-center gap-2"}>
+        <div className={streaming || !hasActions ? "hidden" : "oduvanchik-answer-actions mt-1 flex h-7 items-center gap-2"}>
           {!streaming && (
             <>
               {branchSwitcher}
-              {status === "stopped" && <Badge variant="neutral">{labels.answerStopped}</Badge>}
-              {status === "interrupted" && <Badge variant="warm">{labels.answerInterrupted}</Badge>}
+              {statusBadge && status === "stopped" && <Badge variant="neutral">{labels.answerStopped}</Badge>}
+              {statusBadge && status === "interrupted" && <Badge variant="warm">{labels.answerInterrupted}</Badge>}
               {cutByLength && <Badge variant="warm">{labels.answerCutByLength}</Badge>}
               {edited && <Badge variant="cool">{labels.answerEdited}</Badge>}
               {onRetry && (
@@ -106,7 +113,7 @@ export function OduvanchikAgentMessage({
                   <span className="oduvanchik-answer-action-label">{labels.editAnswer}</span>
                 </Button>
               )}
-              {!empty && (
+              {!textless && (
                 <Tooltip label={copied ? labels.copied : labels.copyAnswer} side="bottom">
                   <Button
                     variant="ghost"

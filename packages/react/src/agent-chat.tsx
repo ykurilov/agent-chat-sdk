@@ -3,6 +3,7 @@ import { HistoryDetailsContext } from "./history-view";
 import type { FeedChange } from "./history-view";
 import type { ComposerOptions } from "./composer-options";
 import { getToolName, isToolUIPart } from "ai";
+import { answerBegan } from "./answer-began";
 import type { DynamicToolUIPart, ToolUIPart } from "ai";
 import { Fragment, memo, useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ComponentProps, ElementType, ReactNode } from "react";
@@ -1244,11 +1245,13 @@ const AgentAnswer = memo(function AgentAnswer({
       else step(index, toolStepOf(part), row);
     }
   });
+  // Пустой текст законченного ответа — не часть ответа: тела у него нет. Пока ответ идёт, место под текст остаётся.
+  const visibleEntries = status === "streaming" ? entries : entries.filter((entry) => entry.kind !== "shown" || !entry.blank);
   const parts = simple
-    ? workLayoutOf(entries, { streaming: status === "streaming", phrases: extensions.stepPhrases, labels: labels.workView, thoughts: Object.keys(thoughtTitles).length > 0 }).map((item) =>
+    ? workLayoutOf(visibleEntries, { streaming: status === "streaming", phrases: extensions.stepPhrases, labels: labels.workView, thoughts: Object.keys(thoughtTitles).length > 0 }).map((item) =>
         item.kind === "shown" ? item.node : <WorkStepsPart key={`${item.key}:work`} skin={skin} expanded={expanded} item={item} />,
       )
-    : entries.map((entry) => (entry.kind === "shown" ? entry.node : null));
+    : visibleEntries.map((entry) => (entry.kind === "shown" ? entry.node : null));
 
 
   const text = messageText(message, { voiceAnswer });
@@ -1262,14 +1265,23 @@ const AgentAnswer = memo(function AgentAnswer({
     status === "error" ? (
       <skin.ErrorNotice kind={message.metadata?.error?.kind ?? "other"} {...(errorText !== undefined && { text: errorText })} {...(onRetry && { onRetry })} />
     ) : undefined;
+  const textless = status !== "streaming" && status !== "awaiting_approval" && text.trim().length === 0;
+  // Закрыт ради поправки (законченный, без текста): продолжение — следующий ответ. Остановленный при ждущей поправке — не он.
+  const closedForCorrection = steered && status === "complete" && textless;
+  const hasBody = visibleEntries.length > 0 || Boolean(suggestedReplies);
+  const marked = Boolean(message.metadata?.undelivered || message.metadata?.voiceCut || answerEdited(editMark) || message.parts.some((part) => part.type === "data-length-cut"));
+  // Показать нечего — не показывать совсем.
+  if (closedForCorrection && !hasBody && !notice && !branchSwitcher && !marked) return null;
+  const emptyText = emptyTextOf({ closedForCorrection, textless, began: answerBegan(message, text), status, labels });
   const answerProvider = extensions.modelNames?.find((provider) => provider.id === message.metadata?.providerId);
   const answerModel = answerProvider?.models.find((model) => model.id === message.metadata?.modelId);
   return (
     <ThinkingClockProvider id={message.id} waiting={status === "streaming"}>
       <skin.AgentMessage
-        {...(extensions.answerDetails && message.metadata?.modelId && message.metadata?.providerId && { modelDetails: { modelId: message.metadata.modelId, providerId: message.metadata.providerId, ...(answerProvider && { providerName: answerProvider.name }), ...(answerModel && { modelName: answerModel.name }), ...(message.metadata.reasoningLevel !== undefined && { reasoning: message.metadata.reasoningLevel }) } })}
+        {...(extensions.answerDetails && !closedForCorrection && message.metadata?.modelId && message.metadata?.providerId && { modelDetails: { modelId: message.metadata.modelId, providerId: message.metadata.providerId, ...(answerProvider && { providerName: answerProvider.name }), ...(answerModel && { modelName: answerModel.name }), ...(message.metadata.reasoningLevel !== undefined && { reasoning: message.metadata.reasoningLevel }) } })}
         status={status}
-        empty={!steered && status !== "streaming" && status !== "awaiting_approval" && text.trim().length === 0}
+        empty={!steered && textless}
+        {...(emptyText !== undefined && { emptyText })}
         onCopy={() => void navigator.clipboard?.writeText(text)}
         {...(notice && { notice })}
         {...(onRetry && !notice && { onRetry })}
@@ -1288,6 +1300,19 @@ const AgentAnswer = memo(function AgentAnswer({
     </ThinkingClockProvider>
   );
 });
+
+/**
+ * Строка вместо текста ответа (договор скина 34); `""` — без строки, `undefined` — у ответа есть текст. Ошибку объясняет
+ * свой блок. Остановленный и оборванный: начался (`answerBegan`) — без строки, работа и отметка объясняют; до начала — что
+ * случилось. Закрытый ради поправки — без строки: продолжение ниже. Модель промолчала — «модель не дала ответа».
+ */
+function emptyTextOf({ closedForCorrection, textless, began, status, labels }: { closedForCorrection: boolean; textless: boolean; began: boolean; status: AnswerStatus; labels: ResolvedChatLabels }): string | undefined {
+  if (!textless) return undefined;
+  if (status === "error") return "";
+  if (status === "stopped") return began ? "" : labels.answerStoppedEmpty;
+  if (status === "interrupted") return began ? "" : labels.answerInterruptedEmpty;
+  return closedForCorrection ? "" : labels.answerEmpty;
+}
 
 /** Свои кнопки ответа для скина; ни одной видимой — `undefined`. */
 function messageActionViews(

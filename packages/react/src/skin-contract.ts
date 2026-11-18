@@ -357,7 +357,7 @@ export interface StaffMessageView {
 }
 
 /**
- * Договор скина, версия 33: необязательное spokenAnswer — текст ответа для диктора; docs/skin-v33.md. Версия 32: необязательный AnswerTextEditor для штатной правки ответа; docs/skin-v32.md. Версия 31: необязательные Layout.header и Layout.completion. Версия 30: необязательный Layout.empty. Версия 29: необязательные Composer.options, AgentMessage.modelDetails и WorkSteps.live.completed.
+ * Договор скина, версия 34: необязательное AgentMessage.emptyText — строка вместо ответа без текста; docs/skin-v34.md. Версия 33: необязательное spokenAnswer — текст ответа для диктора; docs/skin-v33.md. Версия 32: необязательный AnswerTextEditor для штатной правки ответа; docs/skin-v32.md. Версия 31: необязательные Layout.header и Layout.completion. Версия 30: необязательный Layout.empty. Версия 29: необязательные Composer.options, AgentMessage.modelDetails и WorkSteps.live.completed.
  * Скины 28 работают без правок. В версии 28 добавились только необязательные значки шагов и заголовки раздумий:
  * `WorkStepsView.live.icon`, `WorkStepsView.done.items`, `icons`, `moreIcons` и `Reasoning.title`, docs/skin-v28.md;
  * скин версии 27 работает без правок: шаги без значков, раздумья — «Думал N сек».
@@ -486,8 +486,14 @@ export interface ChatSkin {
     children: ReactNode;
     /** Скопировать ответ целиком. */
     onCopy: () => void;
-    /** Модель не написала текста. */
+    /** Модель не написала текста. Закрытый ради поправки ответ — `false`: его продолжение идёт следующим ответом. */
     empty: boolean;
+    /**
+     * У ответа нет текста (версия 34): показать эту строку вместо `labels.answerEmpty`, `""` — без строки; кнопку
+     * «Скопировать» не показывать. Слой поведения сам выбрал строку по причине: остановлен, оборвался, модель промолчала.
+     * Нет — у ответа есть текст (или скин до версии 34 решает по `empty`).
+     */
+    emptyText?: string;
     /** «Повторить» у остановленного, прерванного или пустого ответа; только у последнего ответа. */
     onRetry?: () => void;
     /** Блок ошибки ответа (`ErrorNotice`), рисуется под написанной частью. */

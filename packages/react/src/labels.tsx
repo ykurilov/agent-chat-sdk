@@ -260,6 +260,10 @@ export interface ChatLabels {
   answerStopped: string;
   answerInterrupted: string;
   answerEmpty: string;
+  /** Строка вместо ответа, остановленного до первого слова (договор скина 34). Нет — по языку словаря. */
+  answerStoppedEmpty?: string;
+  /** Строка вместо ответа, оборвавшегося до первого слова (договор скина 34). Нет — по языку словаря. */
+  answerInterruptedEmpty?: string;
   /** Подпись ссылки вместо картинки с чужого адреса, если у картинки нет своей подписи. Нет — русская по умолчанию. */
   externalImageLink?: string;
   /** Отметка у ответа, который модель не дописала: упёрлась в предел длины ответа. Нет — русская по умолчанию. */
@@ -488,7 +492,7 @@ export type ResolvedChatLabels = Omit<ChatLabels, "widgets" | "diagram" | "demo"
   Required<
     Pick<
       ChatLabels,
-      "externalImageLink" | "answerCutByLength" | "answerEdited" | "answerUndelivered" | "toolOutputEdited" | "editAnswer" | "answerEditFailed" | "answerEditSave" | "steeringPending" | "thinkingPhrases" | "thinkingElapsed" | "spendingMessagesLeft" | "spendingMessagesExhausted" | "editMessageLimit"
+      "externalImageLink" | "answerStoppedEmpty" | "answerInterruptedEmpty" | "answerCutByLength" | "answerEdited" | "answerUndelivered" | "toolOutputEdited" | "editAnswer" | "answerEditFailed" | "answerEditSave" | "steeringPending" | "thinkingPhrases" | "thinkingElapsed" | "spendingMessagesLeft" | "spendingMessagesExhausted" | "editMessageLimit"
     >
   > & {
     history: NonNullable<ChatLabels["history"]>;
@@ -735,6 +739,8 @@ export const russianLabels: ResolvedChatLabels = {
   answerStopped: "Остановлено",
   answerInterrupted: "Ответ прерван",
   answerEmpty: "Модель не дала ответа",
+  answerStoppedEmpty: "Ответ остановлен до начала",
+  answerInterruptedEmpty: "Ответ оборвался до начала",
   externalImageLink: "картинка",
   answerCutByLength: "Ответ оборван по длине",
   answerEdited: "Изменено человеком",
@@ -1063,6 +1069,8 @@ export const englishLabels: ResolvedChatLabels = {
   answerStopped: "Stopped",
   answerInterrupted: "Reply interrupted",
   answerEmpty: "The model gave no reply",
+  answerStoppedEmpty: "Stopped before the reply began",
+  answerInterruptedEmpty: "The reply broke off before it began",
   externalImageLink: "image",
   answerCutByLength: "The reply was cut off for length",
   answerEdited: "Edited by a person",
@@ -1328,6 +1336,8 @@ export function ChatLabelsProvider({ labels, children }: { labels: ChatLabels; c
       welcome: { ...(labels.locale?.startsWith("en") ? englishLabels : russianLabels).welcome, ...labels.welcome },
       composerSettings: { ...(labels.locale?.startsWith("en") ? englishLabels : russianLabels).composerSettings, ...labels.composerSettings },
       externalImageLink: labels.externalImageLink ?? russianLabels.externalImageLink,
+      answerStoppedEmpty: labels.answerStoppedEmpty ?? (labels.locale?.startsWith("en") ? englishLabels : russianLabels).answerStoppedEmpty,
+      answerInterruptedEmpty: labels.answerInterruptedEmpty ?? (labels.locale?.startsWith("en") ? englishLabels : russianLabels).answerInterruptedEmpty,
       answerCutByLength: labels.answerCutByLength ?? russianLabels.answerCutByLength,
       answerEdited: labels.answerEdited ?? russianLabels.answerEdited,
       answerUndelivered: labels.answerUndelivered ?? russianLabels.answerUndelivered,

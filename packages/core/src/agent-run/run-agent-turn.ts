@@ -137,6 +137,13 @@ export interface AgentToolsModel {
    */
   turnId?: string;
   /**
+   * Ход продолжает ответы, закрытые ради поправки человека: id этих ответов от ближнего к дальнему. Человек написал,
+   * пока агент работал, — ответ закончился на границе шага, а этот ход отвечает на поправку. Результаты инструментов
+   * тех ответов — работа над тем же ответом: например, картинку, которую агент смотрел там, можно считать увиденной в
+   * этом ходе. Нет поля — ход начат не поправкой. Одно на все попытки и шаги хода.
+   */
+  continuedAnswerIds?: readonly string[];
+  /**
    * Сообщить браузеру вкладки, где идёт ответ, что данные приложения изменены. Звать после записи: сообщение уходит сразу,
    * не дожидаясь конца вызова. Неверная форма — `TypeError`; после конца хода — ничего, запись в журнал.
    */
@@ -207,6 +214,8 @@ export interface AgentTurnInput {
   messageId: string;
   /** Сообщение собеседника, на которое отвечает агент. */
   parentId: string;
+  /** Ответы, которые ход продолжает после поправки человека (`continuedAnswerIdsOf`), от ближнего к дальнему; нет — не продолжает. */
+  continuedAnswerIds?: string[];
   modelId: string;
   providerId: string;
   /** Выбранный уровень рассуждений. */
@@ -1967,6 +1976,7 @@ function turnToolsModel(
     ownerId: input.ownerId ?? "",
     place: input.place ?? null,
     turnId: input.messageId,
+    ...(input.continuedAnswerIds?.length && { continuedAnswerIds: [...input.continuedAnswerIds] }),
     notifyDataChanged: turn.dataChanges.notify,
     emitAppEvent: turn.appEvents.emit,
     channel: input.channel ?? "web",

@@ -68,6 +68,9 @@ import { AgentChat, ChatLabelsProvider, russianLabels } from "@ykurilov/agent-ch
   «Агент учтёт на следующем шаге» (`steeringPending` в словаре) и уходит на `POST …/steer`. `steering={false}` — выключить. У `useAgentChat` — опция
   `steering: true` (по умолчанию выключено), `canSteer` и `corrections` (ждущие поправки, рисовать после `messages`); `submit()` во время ответа шлёт
   поправку. Скину — `ChatSkin.steering`, `Composer.canSteer` и `UserMessage.pending` (договор v21, [docs/skin-v21.md](../../docs/skin-v21.md)).
+- Ответ без текста — не пустая карточка (договор v34, [docs/skin-v34.md](../../docs/skin-v34.md)): закрытый ради поправки показывает только шаги
+  или не рисуется совсем, остановленный и оборванный до первого слова — строкой `answerStoppedEmpty` / `answerInterruptedEmpty`. Скину —
+  `AgentMessage.emptyText`; скин до v34 работает по `empty`, как раньше.
 - `liveDemos` — живые демонстрации: блок ` ```html-demo ` в ответе запускается в изолированной рамке во всю ширину ответа (на сервере —
   `agent.liveDemos: true`). Скину — `AgentText.renderDemo` и `ChatSkin.demoColors` (договор v22, [docs/live-demos.md](../../docs/live-demos.md)).
 - Значки шагов и заголовки раздумий (с 0.69, договор скина v28, [docs/skin-v28.md](../../docs/skin-v28.md)): в простом виде

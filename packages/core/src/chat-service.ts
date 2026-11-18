@@ -125,7 +125,7 @@ import { ChatBusyError, createRunningAnswerRegistry } from "./running-answers/ru
 import { BURST_BUSY_RETRY_MS, BURST_HOLD_MS, BURST_HOLD_RENEW_MS, BURST_PART_TYPE, BURST_PENDING_GRACE_MS, BURST_SWEEP_LIMIT, burstPart, burstText, burstToAnswer, burstVerdict, createBurstWaits, isBurstMessage, isBurstPending, resolveQuietMs } from "./bursts/message-bursts";
 import { createChatTurnLeases } from "./chat-turn-lease";
 import { guardedTurnStorage } from "./chat-turn-storage";
-import { createTurnSteering, isCorrection, steerPart } from "./steering/turn-steering";
+import { continuedAnswerIdsOf, createTurnSteering, isCorrection, steerPart } from "./steering/turn-steering";
 import type { SteeringTurn } from "./steering/turn-steering";
 import type { RunningAnswerRegistry } from "./running-answers/running-answer-registry";
 import { createLiveTurns, STOPPED_TURNS_WAIT_MS, turnStopReasonOf } from "./running-answers/live-turns";
@@ -2566,6 +2566,8 @@ export function createChatService(input: ChatServiceOptions): ChatService {
     const sentTimeZone = resolveTimeZone(launch.timeZone) ?? resolveTimeZone(launch.page?.timeZone);
     const timeZone = sentTimeZone ?? fallbackTimeZone;
     const resumeMessage = launch.resume && toAgentChatMessage(launch.resume);
+    // Ход на поправку продолжает ответ перед ней; продолжаемый ответ (подтверждение, «Повторить») уже последний в ветке.
+    const continuedAnswerIds = continuedAnswerIdsOf(launch.resume ? branch.slice(0, -1) : branch);
     if (resumeMessage && !launch.replay) resumeBases.set(chatId, resumeMessage);
     const toolQueue = chatToolQueues.get(chatId) ?? createToolQueue();
     chatToolQueues.set(chatId, toolQueue);
@@ -2592,6 +2594,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
           ownerId: chat.ownerId,
           messageId: answerId,
           parentId: launch.parentId,
+          ...(continuedAnswerIds.length > 0 && { continuedAnswerIds }),
           ...model,
           ...agentSettings,
           ...(instructions !== undefined && { instructions }),
@@ -2630,6 +2633,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
                   chat: structuredClone(chat),
                   action: launch.action,
                   resumed: launch.resume !== undefined,
+                  ...(continuedAnswerIds.length > 0 && { continuedAnswerIds: [...continuedAnswerIds] }),
                   audience: group ? "group" : "private",
                   ...(staff && { staff: structuredClone(staff) }),
                   // Ход по служебному сообщению — с ним; у остальных ходов пусто.
@@ -2749,6 +2753,7 @@ export function createChatService(input: ChatServiceOptions): ChatService {
       ...turnEvent,
       ...(launch.deliveredByApp && { deliveredByApp: true as const }),
       ...(launch.unattended && { unattended: true as const }),
+      ...(continuedAnswerIds.length > 0 && { continuedAnswerIds: [...continuedAnswerIds] }),
     });
     if (launch.unattended && chatEvents.hasListeners?.() === false) {
       logError(`Ход без вызова на пачку чата ${chatId}: на события чата никто не подписан — ответ будет только в истории`);
