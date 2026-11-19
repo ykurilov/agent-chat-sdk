@@ -1,5 +1,11 @@
 # @ykurilov/agent-chat-react
 
+## 0.113.0
+
+### Minor Changes
+
+- e7f0e22: «Отправить» во время загрузки файла запоминается и уходит само после загрузки; договор скина 35 (`Composer.pendingSend`).
+
 ## 0.112.1
 
 No changes in this release.

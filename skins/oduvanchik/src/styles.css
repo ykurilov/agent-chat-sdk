@@ -97,6 +97,13 @@
 .oduvanchik-field-actions { display: flex; min-width: 0; gap: 2px; }
 .oduvanchik-field-actions > * { min-width: 0; }
 .oduvanchik-field-send:disabled { background: var(--yk-surface-2); color: var(--yk-faint); opacity: 1; }
+/* «Отправить» во время загрузки файлов: кнопка занята, строка ожидания под полем. */
+.oduvanchik-send-spinner { width: 16px; height: 16px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: oduvanchik-send-spin .8s linear infinite; }
+@keyframes oduvanchik-send-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .oduvanchik-send-spinner { animation: none; border-right-color: currentColor; opacity: .6; } }
+.oduvanchik-pending-send { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; margin: 0; padding: 0 4px; font-size: 13px; color: var(--yk-muted); }
+.oduvanchik-pending-send:not([data-active]) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.oduvanchik-pending-send button { min-height: 32px; padding: 0 4px; border: 0; background: transparent; color: var(--yk-text); font: inherit; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 .oduvanchik-context { height: 24px; padding: 0 7px; border: 1px solid var(--yk-border); border-radius: 6px; background: transparent; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 180px; }
 .oduvanchik-add { position: relative; flex: none; }
 .oduvanchik-add-menu { position: absolute; left: -4px; bottom: calc(100% + 16px); min-width: 210px; padding: 6px; border-radius: 14px; box-shadow: var(--yk-shadow-pop); background: var(--yk-surface); z-index: 20; }

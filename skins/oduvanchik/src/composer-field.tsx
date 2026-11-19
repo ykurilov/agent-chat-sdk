@@ -17,7 +17,8 @@ function pointerStaysIn(event: DragEvent<HTMLElement>) {
   return event.clientX > box.left && event.clientX < box.right && event.clientY > box.top && event.clientY < box.bottom;
 }
 
-type Props = ComponentProps<ChatSkin["Composer"]> & { mic?: ReactNode; dialogButton?: ReactNode };
+/** `pendingId` — `id` строки «отправим, как только загрузятся файлы»: на неё ссылается занятая кнопка отправки. */
+type Props = ComponentProps<ChatSkin["Composer"]> & { mic?: ReactNode; dialogButton?: ReactNode; pendingId?: string };
 export function ComposerField(props: Props) {
   const labels = useChatLabels();
   const settings = labels.composerSettings;
@@ -59,12 +60,16 @@ export function ComposerField(props: Props) {
   /** Над полем держат файлы (а не текст или данные приложения), и поле может их принять. */
   const acceptsFiles = (event: DragEvent<HTMLElement>) => !compact && !!attachments && !controlsDisabled
     && (event.dataTransfer.files.length > 0 || Array.from(event.dataTransfer.types).includes("Files"));
-  const submit = () => { if (canSend) props.onSubmit(); };
+  // Нажатие уже запомнено и ждёт загрузки файлов: повторное ничего не шлёт.
+  const waiting = props.pendingSend !== undefined;
+  const submit = () => { if (canSend && !waiting) props.onSubmit(); };
   const pickFile = (accept: string) => { if (controlsDisabled) return; if (files.current) files.current.accept = accept; files.current?.click(); setAddMenu(false); };
   const stop = <button type="button" className="oduvanchik-field-send oduvanchik-field-stop" aria-label={labels.stop}
     disabled={disabled} onClick={props.onStop}><SquareIcon size={15} weight="fill" aria-hidden /></button>;
+  // Пока ждём загрузки, кнопка занята, но не неактивна: фокус с неё не слетает, диктор читает строку ожидания.
   const send = <>{steering && stop}{stoppingOnly ? stop : <button type="button" className="oduvanchik-field-send" aria-label={labels.send}
-    disabled={!canSend} onClick={submit}><ArrowUpIcon size={19} weight="bold" aria-hidden /></button>}</>;
+    disabled={!canSend} onClick={submit} aria-busy={waiting || undefined} aria-describedby={waiting ? props.pendingId : undefined}>
+    {waiting ? <span className="oduvanchik-send-spinner" aria-hidden /> : <ArrowUpIcon size={19} weight="bold" aria-hidden />}</button>}</>;
   return <div data-composer-variant={variant} data-dropping={dropping || undefined} className={`oduvanchik-field oduvanchik-field-${variant}${variant === "standard" && !attachments && !hasAddMenu && !options.context && !props.actions && !props.dialogButton ? " oduvanchik-field-inline" : ""}`} onKeyDown={(event) => { if (event.key === "Escape") setAddMenu(false); }}
     onDragOver={(event) => { if (acceptsFiles(event)) { event.preventDefault(); setDropping(true); } }}
     onDragLeave={(event) => { if (!pointerStaysIn(event)) setDropping(false); }}

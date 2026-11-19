@@ -191,7 +191,7 @@ export const stubSkin: ChatSkin = {
   ChatNotFound: function StubChatNotFound() {
     return <p data-kind="chat-not-found">{useChatLabels().chatNotFound}</p>;
   },
-  Composer: function StubComposer({ value, onValueChange, onSubmit, canSubmit, canSteer, busy, onStop, modelChoice, attachments, voice, dialog, sendingBlocked, sendingBlockedReasonId, actions }) {
+  Composer: function StubComposer({ value, onValueChange, onSubmit, canSubmit, canSteer, busy, onStop, modelChoice, attachments, voice, dialog, sendingBlocked, sendingBlockedReasonId, actions, pendingSend }) {
     const labels = useChatLabels();
     return (
       <form
@@ -286,6 +286,14 @@ export const stubSkin: ChatSkin = {
           />
         )}
         {actions && <div data-kind="composer-actions">{actions}</div>}
+        {pendingSend && (
+          <p data-kind="pending-send">
+            {labels.sendAfterUpload.waiting}
+            <button type="button" onClick={pendingSend.onCancel}>
+              {labels.sendAfterUpload.cancel}
+            </button>
+          </p>
+        )}
         <button type="submit" disabled={!canSubmit && canSteer !== true} data-busy={String(busy)}>
           послать
         </button>

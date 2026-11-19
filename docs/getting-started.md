@@ -1227,6 +1227,9 @@ import { attachmentsClient } from "@ykurilov/agent-chat-attachments/react";
   набором `describeAttachmentStorageContract` из `@ykurilov/agent-chat-attachments/storage-contract`.
 - Со своим скином: `Composer` и `UserMessage` получают необязательные `attachments` — договор скина версии 5. Нет свойства — вложений нет.
 - Пока сервер принимает файлы сообщения, чат занят: второе сообщение в тот же чат в это время получит 409.
+- «Отправить» или Enter, нажатые, пока файл ещё грузится, не пропадают: под полем «Отправим, как только загрузятся файлы» и
+  «Не отправлять», а по концу загрузки сообщение уходит само. Упала загрузка — не уходит, у поля «Сообщение не отправлено.» и причина.
+  Свой скин показывает ожидание по `Composer.pendingSend` — договор скина 35, [docs/skin-v35.md](skin-v35.md).
 - Пример — `apps/demo` (сценарий `apps/demo/e2e/attachments.spec.ts`). Подробнее — README пакета.
 
 ## Подтверждение опасных действий

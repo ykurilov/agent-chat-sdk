@@ -357,7 +357,7 @@ export interface StaffMessageView {
 }
 
 /**
- * Договор скина, версия 34: необязательное AgentMessage.emptyText — строка вместо ответа без текста; docs/skin-v34.md. Версия 33: необязательное spokenAnswer — текст ответа для диктора; docs/skin-v33.md. Версия 32: необязательный AnswerTextEditor для штатной правки ответа; docs/skin-v32.md. Версия 31: необязательные Layout.header и Layout.completion. Версия 30: необязательный Layout.empty. Версия 29: необязательные Composer.options, AgentMessage.modelDetails и WorkSteps.live.completed.
+ * Договор скина, версия 35: необязательное Composer.pendingSend — «Отправить», нажатое во время загрузки файлов, ждёт её конца; docs/skin-v35.md. Версия 34: необязательное AgentMessage.emptyText — строка вместо ответа без текста; docs/skin-v34.md. Версия 33: необязательное spokenAnswer — текст ответа для диктора; docs/skin-v33.md. Версия 32: необязательный AnswerTextEditor для штатной правки ответа; docs/skin-v32.md. Версия 31: необязательные Layout.header и Layout.completion. Версия 30: необязательный Layout.empty. Версия 29: необязательные Composer.options, AgentMessage.modelDetails и WorkSteps.live.completed.
  * Скины 28 работают без правок. В версии 28 добавились только необязательные значки шагов и заголовки раздумий:
  * `WorkStepsView.live.icon`, `WorkStepsView.done.items`, `icons`, `moreIcons` и `Reasoning.title`, docs/skin-v28.md;
  * скин версии 27 работает без правок: шаги без значков, раздумья — «Думал N сек».
@@ -620,6 +620,15 @@ export interface ChatSkin {
      * Нет — во время ответа поле не отправляет (`canSubmit` — `false`).
      */
     canSteer?: boolean;
+    /**
+     * Версия 35. Есть — человек нажал «Отправить», пока файлы грузились: сообщение уйдёт само, как только загрузка
+     * закончится. Показать у кнопки отправки строку `labels.sendAfterUpload.waiting` (и для диктора: `role="status"`),
+     * кнопку оставить в фокусе занятой (`aria-busy`), повторное нажатие и Enter ничего не шлют. Кнопка
+     * `labels.sendAfterUpload.cancel` вызывает `onCancel` — ожидание снято, отправить можно вручную.
+     * С вложениями `canSubmit`/`canSteer` — `true` и пока файлы грузятся: нажатие нужно пропустить к `onSubmit`.
+     * Скин до версии 35 работает без правок: нажатие запоминается и отправляется так же, только без строки ожидания.
+     */
+    pendingSend?: { onCancel: () => void };
     onStop: () => void;
     /** Нет — рисовать поле без выбора. `providers` пуст — список грузится или не загрузился: меню не рисовать. */
     modelChoice?: ModelChoiceView;

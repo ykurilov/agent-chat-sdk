@@ -8,6 +8,19 @@
 - Обновление приложения: обновить пакеты SDK одной версией после выпуска, пересобрать и убрать временные подмены значков. API и CSS-импорты прежние, миграций нет.
 
 
+## 0.113.0
+
+### Minor Changes
+
+- e7f0e22: «Отправить» во время загрузки файла запоминается и уходит само после загрузки; договор скина 35 (`Composer.pendingSend`).
+
+### Patch Changes
+
+- Updated dependencies [e7f0e22]
+  - @ykurilov/agent-chat-react@0.113.0
+  - @ykurilov/agent-chat-flows@0.113.0
+  - @ykurilov/agent-chat-sandbox@0.113.0
+
 ## 0.112.1
 
 ### Patch Changes

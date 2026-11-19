@@ -48,7 +48,8 @@ import type { WidgetFailureKind } from "./widgets/use-widget-answer";
 import { SUGGEST_REPLIES, widgetCallOf } from "./widgets/widget-view";
 import { WidgetPart } from "./widgets/widget-part";
 import { helperCallViewOf, isHelperPart } from "./helpers/helper-call";
-import type { AttachmentsPlugin, MessageAttachmentsView } from "./attachments-contract";
+import type { AttachmentsPlugin, ComposerAttachments, MessageAttachmentsView } from "./attachments-contract";
+import { uploadsInProgress, useSendAfterUpload } from "./send-after-upload";
 import type { AgentVideoView, ChatHeaderView, ChatSkin, DiagramColors, LiveDemoColors, MessageActionView, ModelChoiceView, ToolApprovalView, ToolCallState } from "./skin-contract";
 import { useAgentChat } from "./use-agent-chat";
 import { useModelChoice } from "./use-model-choice";
@@ -292,6 +293,14 @@ function AgentChatBody({ history, header, completion, composerOptions, api, chat
   const { busy, canRetry, retry, canEdit, canRegenerate, regenerate, edit, selectBranch, respondToApproval, approvalPendingId, approvalFailure } = chat;
   const { answerWidget, widgetPendingId, widgetFailure, sendReply, capabilities, closed } = chat;
   const chatClosed = closed !== null;
+  // «Отправить» во время загрузки файлов: отправит то, что в поле, когда загрузка закончится (`sendComposer` ниже).
+  const sendComposerRef = useRef<() => void>(() => undefined);
+  const sendAfterUpload = useSendAfterUpload({
+    attachments: capabilities.attachments ? attachments : undefined,
+    sendingBlocked: chat.spending?.state === "exhausted" || chatClosed,
+    waitForAnswer: chat.busy && !chat.canSteer,
+    send: () => sendComposerRef.current(),
+  });
   const reportAccess = useRef(onChatAccessChange);
   reportAccess.current = onChatAccessChange;
   useEffect(() => {
@@ -685,11 +694,20 @@ function AgentChatBody({ history, header, completion, composerOptions, api, chat
   const sendingFiles = composerAttachments?.hasFiles ?? false;
   const exhausted = chat.spending?.state === "exhausted";
   const sendingBlocked = exhausted || chatClosed;
-  const canSubmit = sendingFiles ? chat.loaded && !chat.busy && !sendingBlocked && attachments!.ready : chat.canSubmit;
-  // Поправка во время ответа: с файлами — когда они загружены, без них — когда есть текст.
-  const canSteer = chat.canSteer && (sendingFiles ? attachments!.ready : chat.value.trim().length > 0);
+  // Пока файлы грузятся, нажатие не мёртвое: оно запоминается и уходит само, когда загрузка закончится.
+  const filesUploading = uploadsInProgress(composerAttachments);
+  const filesSendable = sendingFiles && (attachments!.ready || filesUploading);
+  const canSubmit = sendingFiles ? chat.loaded && !chat.busy && !sendingBlocked && filesSendable : chat.canSubmit;
+  // Поправка во время ответа: с файлами — когда они загружены (или грузятся), без них — когда есть текст.
+  const canSteer = chat.canSteer && (sendingFiles ? filesSendable : chat.value.trim().length > 0);
   const canSend = chat.loaded && !chat.busy && !sendingBlocked;
   const submitComposer = () => {
+    if (sendAfterUpload.pending) return;
+    if (sendingFiles && !canSubmit && !canSteer) return;
+    if (filesUploading) return sendAfterUpload.hold();
+    sendComposer();
+  };
+  const sendComposer = () => {
     if (sendingFiles && !canSubmit && !canSteer) return;
     if (canSubmit || canSteer) {
       // Отправка заканчивает диктовку: слова, пришедшие позже, не должны начинать новое сообщение.
@@ -700,6 +718,7 @@ function AgentChatBody({ history, header, completion, composerOptions, api, chat
     const accepted = chat.submit(sendingFiles ? attachments!.readFiles() : undefined, attachments && ((kind) => attachments.restoreFiles(kind)));
     if (accepted && sendingFiles) attachments!.markSent();
   };
+  sendComposerRef.current = sendComposer;
   const composerHelper: ComposerHelper = {
     value: chat.value,
     setValue: chat.setValue,
@@ -786,7 +805,8 @@ function AgentChatBody({ history, header, completion, composerOptions, api, chat
           busy={chat.busy}
           onStop={() => void chat.stop()}
           {...(capabilities.modelChoice && { modelChoice })}
-          {...(composerAttachments && { attachments: composerAttachments.composer })}
+          {...(composerAttachments && { attachments: notSentNotice(composerAttachments.composer, sendAfterUpload.failed && labels.sendAfterUpload.notSent) })}
+          {...(sendAfterUpload.pending && { pendingSend: { onCancel: sendAfterUpload.cancel } })}
           {...(sendingBlocked && { sendingBlocked: true, ...(sendingBlockedReasonId && { sendingBlockedReasonId }) })}
           {...(capabilities.voice && dictation.view && { voice: dictation.view })}
           {...(capabilities.voice && dialog && { dialog })}
@@ -807,6 +827,12 @@ function AgentChatBody({ history, header, completion, composerOptions, api, chat
       </ChatStateContext.Provider>
     </ComposerHelperProvider>
   );
+}
+
+/** Отправка ждала загрузки, а файл не загрузился: надпись у поля начинается со слов «сообщение не отправлено». */
+function notSentNotice(composer: ComposerAttachments, notSent: string | false): ComposerAttachments {
+  if (!notSent) return composer;
+  return { ...composer, notice: composer.notice ? `${notSent} ${composer.notice}` : notSent };
 }
 
 /** Надпись лимита: у окна сообщений — сколько осталось или «лимит сообщений исчерпан», у денег — доля и срок. */

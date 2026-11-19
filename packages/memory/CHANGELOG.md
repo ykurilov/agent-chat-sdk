@@ -1,5 +1,11 @@
 # @ykurilov/agent-chat-memory
 
+## 0.113.0
+
+### Patch Changes
+
+- @ykurilov/agent-chat-core@0.113.0
+
 ## 0.112.1
 
 ### Patch Changes

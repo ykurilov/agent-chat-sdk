@@ -57,6 +57,7 @@ export type {
   MessengerStatusLabels,
   NoticeLabels,
   ResolvedChatLabels,
+  SendAfterUploadLabels,
   TaskLabels,
   VideoLabels,
   ViewerLabels,

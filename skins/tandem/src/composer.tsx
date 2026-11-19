@@ -1,8 +1,8 @@
 import { Button, Composer, Tooltip } from "@tandem/ui";
 import type { ChatSkin, ModelChoiceView } from "@ykurilov/agent-chat-react";
 import { useChatLabels } from "@ykurilov/agent-chat-react";
-import { Square } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import { Send, Square } from "lucide-react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import type { ComponentProps } from "react";
 import { useFollowDictation, useKeepCaretWhilePolishing } from "./dictation-follow";
 import { TandemVoiceButton } from "./voice-button";
@@ -119,6 +119,20 @@ function useBlockedReason(sendingBlocked: boolean, reasonId: string | undefined)
  * поэтому у них потолок ширины и длинная подпись обрезается с конца (приложению лучше дать короткую подпись), а не выталкивает «Отправить» за рамку.
  * Прижатие к левому краю — только для широких элементов; кнопка-значок (класс `size-…`) остаётся по центру.
  */
+/**
+ * Поле Тандема не отправляет, пока файл грузится. На это время его «Отправить» (последняя кнопка нижнего ряда рамки)
+ * спрятана, а на её месте стоит своя: нажатие уходит слою поведения, и тот отправит, когда загрузка закончится.
+ */
+const hideNativeSend = "[&_textarea~div>div:last-child>button:last-child]:hidden!";
+
+/**
+ * Родная «Отправить» поля Тандема — тот же адрес, что в `hideNativeSend`: последняя кнопка последнего блока в ряду под
+ * полем ввода. Он зависит от вёрстки `@tandem/ui`; тест-страж проверяет, что находится ровно одна кнопка «Отправить».
+ */
+export function findNativeSend(root: ParentNode): HTMLButtonElement[] {
+  return [...root.querySelectorAll<HTMLButtonElement>("textarea ~ div > div:last-child > button:last-child:not([data-send-while-uploading])")];
+}
+
 const actionsClass = "flex min-w-0 shrink items-center gap-1 max-[30rem]:max-w-24 [&>*]:min-w-0 [&>*]:shrink [&>*:not([class*=size-])]:justify-start [&>*]:overflow-hidden";
 
 /**
@@ -131,8 +145,10 @@ export function TandemComposer({
   value,
   onValueChange,
   onSubmit,
+  canSubmit,
   busy,
   canSteer,
+  pendingSend,
   onStop,
   modelChoice,
   attachments,
@@ -148,6 +164,39 @@ export function TandemComposer({
   useKeepCaretWhilePolishing(wrapperRef, value, voice?.polishing === true);
   const dialogOn = dialog !== undefined && dialog.state !== "off";
   const steering = busy && canSteer !== undefined;
+  const pendingId = useId();
+  // Файл грузится, а поле могло бы отправить: нажатие ведёт своя кнопка и перехват Enter.
+  const sendWhileUploading = attachments?.items.some((item) => item.status === "uploading") === true && sendingBlocked !== true && (!busy || steering) && !dialogOn;
+  const canPress = (busy ? canSteer : canSubmit) === true;
+  const press = () => {
+    if (canPress && !pendingSend) onSubmit();
+  };
+  // Родную кнопку прячет и атрибут `hidden`: так её не видит и диктор, даже если класс не подхватился.
+  useLayoutEffect(() => {
+    const found = wrapperRef.current ? findNativeSend(wrapperRef.current) : [];
+    // Вёрстка поля изменилась и адрес нашёл не одну кнопку: чужое не трогать (тест-страж это ловит).
+    if (found.length !== 1) return;
+    const native = found[0]!;
+    if (sendWhileUploading) native.setAttribute("hidden", "");
+    else native.removeAttribute("hidden");
+  });
+  const ownSendButton = sendWhileUploading && (
+    <Tooltip label={labels.send}>
+      <Button
+        data-send-while-uploading
+        variant={canPress ? "warm" : "secondary"}
+        size="icon"
+        aria-label={labels.send}
+        disabled={!canPress}
+        loading={pendingSend !== undefined}
+        aria-describedby={pendingSend ? pendingId : undefined}
+        onClick={press}
+        className="shrink-0 [&_svg]:-translate-x-px [&_svg]:translate-y-px"
+      >
+        {!pendingSend && <Send />}
+      </Button>
+    </Tooltip>
+  );
   const narrow = useSyncExternalStore(subscribeToScreenWidth, isNarrowScreen, () => false);
   // На узком экране ряд рамки занят до края: на время поправок кнопка голосового режима уступает место «Стопу».
   const dialogButtonShown = dialog !== undefined && !(steering && narrow && !dialogOn);
@@ -170,12 +219,13 @@ export function TandemComposer({
     disabled: sendingBlocked === true,
     // Голос идёт прямо в поле, поэтому вместо встроенной записи Тандема (полоски вместо текста) микрофон — наш, в нижнем ряду рамки.
     // Кнопки приложения стоят рядом с голосом. В режиме голоса поле скрыто вместе с рамкой, и они переезжают к панели режима.
-    actions: (voice || dialogButtonShown || actions || steering) && (
+    actions: (voice || dialogButtonShown || actions || steering || ownSendButton) && (
       <>
         {voice && <TandemVoiceButton voice={voice} />}
         {dialogButtonShown && <TandemVoiceDialogButton dialog={dialog} />}
         {!dialogOn && actions && <div className={actionsClass}>{actions}</div>}
         {steering && !dialogOn && stopButton}
+        {ownSendButton}
       </>
     ),
   };
@@ -203,7 +253,19 @@ export function TandemComposer({
   // Пока режим включён, вместо поля стоит панель режима. Поле только скрыто: черновик и его состояние остаются, клавиатура не выезжает.
   return (
     <TandemSkinLabels>
-      <div ref={wrapperRef} className="flex flex-col gap-1 max-sm:[&_textarea]:text-base">
+      <div
+        ref={wrapperRef}
+        className={`flex flex-col gap-1 max-sm:[&_textarea]:text-base ${sendWhileUploading ? hideNativeSend : ""}`}
+        {...(sendWhileUploading && { "data-native-send-hidden": "" })}
+        onKeyDownCapture={(event) => {
+          // Enter поля Тандема во время загрузки ничего не делает: нажатие передаётся слою поведения здесь.
+          if (!sendWhileUploading || event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
+          // Только само поле ввода (первое в обёртке, как в useBlockedReason): Enter в поле приложения — не отправка.
+          if (event.target !== wrapperRef.current?.querySelector("textarea")) return;
+          event.preventDefault();
+          press();
+        }}
+      >
         <div className={`flex items-end gap-2 ${hasMenu ? "" : hideModelPicker}`}>
           <div hidden={dialogOn} className={dialogOn ? "hidden" : "flex min-w-0 flex-1"}>
             {attachments ? (
@@ -225,6 +287,19 @@ export function TandemComposer({
           {busy && dialogOn && <div className="shrink-0 self-center">{stopButton}</div>}
         </div>
         {dialog && !dialogOn && <TandemVoiceDialogPanel dialog={dialog} />}
+        {/* Область для диктора стоит, пока есть вложения: живой регион, появившийся уже с текстом, читают не везде. */}
+        {attachments && (
+          <p className={pendingSend ? "flex flex-wrap items-center gap-x-2 px-2 text-sm text-[var(--foreground-muted)]" : "sr-only"}>
+            <span role="status" id={pendingId}>
+              {pendingSend ? labels.sendAfterUpload.waiting : ""}
+            </span>
+            {pendingSend && (
+              <Button variant="ghost" size="sm" onClick={pendingSend.onCancel}>
+                {labels.sendAfterUpload.cancel}
+              </Button>
+            )}
+          </p>
+        )}
         {attachments?.notice && (
           <p role="alert" className="px-2 text-sm text-[var(--destructive-text)]">
             {attachments.notice}

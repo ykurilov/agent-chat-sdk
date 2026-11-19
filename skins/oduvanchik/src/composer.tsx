@@ -3,7 +3,7 @@ import type { ChatSkin } from "@ykurilov/agent-chat-react";
 import { useChatLabels } from "@ykurilov/agent-chat-react";
 import { ComposerField as Composer } from "./composer-field";
 import { Square } from "./icons";
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useId, useLayoutEffect, useRef } from "react";
 import type { ComponentProps } from "react";
 import { useFollowDictation, useKeepCaretWhilePolishing } from "./dictation-follow";
 import { OduvanchikVoiceButton } from "./voice-button";
@@ -73,8 +73,9 @@ function useBlockedReason(sendingBlocked: boolean, reasonId: string | undefined)
 
 /** The same native field stays mounted as configuration and voice arrive. */
 export function OduvanchikComposer(props: ComponentProps<ChatSkin["Composer"]>) {
-  const { value, voice, dialog, actions, busy, onStop, sendingBlocked, sendingBlockedReasonId } = props;
+  const { value, voice, dialog, actions, busy, onStop, sendingBlocked, sendingBlockedReasonId, pendingSend } = props;
   const labels = useChatLabels();
+  const pendingId = useId();
   const wrapperRef = useBlockedReason(sendingBlocked === true, sendingBlockedReasonId);
   useFollowDictation(wrapperRef, value, voice !== undefined && voice.state !== "idle");
   useKeepCaretWhilePolishing(wrapperRef, value, voice?.polishing === true);
@@ -82,11 +83,16 @@ export function OduvanchikComposer(props: ComponentProps<ChatSkin["Composer"]>) 
   const compact = props.options?.variant === "compact";
   return <OduvanchikSkinLabels><div ref={wrapperRef} className="oduvanchik-composer flex flex-col gap-1">
     <div hidden={dialogOn}>
-      <Composer {...props} mic={!compact && voice && <OduvanchikVoiceButton voice={voice} />} dialogButton={!compact && dialog && <OduvanchikVoiceDialogButton dialog={dialog} />} />
+      <Composer {...props} pendingId={pendingId} mic={!compact && voice && <OduvanchikVoiceButton voice={voice} />} dialogButton={!compact && dialog && <OduvanchikVoiceDialogButton dialog={dialog} />} />
     </div>
     {dialog && <OduvanchikVoiceDialogPanel dialog={dialog} />}
     {dialogOn && actions}
     {dialogOn && busy && <Button variant="secondary" aria-label={labels.stop} onClick={onStop}><Square weight="fill" aria-hidden /></Button>}
+    {/* Область для диктора стоит, пока есть вложения: живой регион, появившийся уже с текстом, читают не везде. */}
+    {props.attachments && <p className="oduvanchik-pending-send" data-active={pendingSend ? "" : undefined}>
+      <span role="status" id={pendingId}>{pendingSend ? labels.sendAfterUpload.waiting : ""}</span>
+      {pendingSend && <button type="button" onClick={pendingSend.onCancel}>{labels.sendAfterUpload.cancel}</button>}
+    </p>}
     {props.attachments?.notice && <p role="alert" className="text-sm text-[var(--destructive-text)]">{props.attachments.notice}</p>}
     {props.modelChoice?.error && <p role="status" className="text-sm text-[var(--destructive-text)]">{props.modelChoice.error}</p>}
     {voice?.error && <p role="status" className="text-sm text-[var(--destructive-text)]">{voice.error}</p>}
