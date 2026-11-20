@@ -12,12 +12,15 @@ for (const theme of ["light", "dark"]) test(`server files and custom menu on 375
   await page.screenshot({ path: info.outputPath(`menu-${theme}.png`) });
   await page.getByRole("button", { name: "Мои загрузки" }).click();
   await expect(page.locator(".oduvanchik-field-files")).toContainText("library.png");
-  await expect(page.getByRole("button", { name: "Отправить", exact: true })).toBeDisabled();
+  // С 0.113: нажатие «Отправить» во время подготовки файла запоминается и уходит само — кнопка не заблокирована.
+  const send = page.getByRole("button", { name: "Отправить", exact: true });
+  await expect(send).toBeEnabled();
   await expect.poll(() => page.evaluate("window.attachmentStats.ingests")).toBe(1);
+  await send.click();
+  await expect(send).toHaveAttribute("aria-busy", "true");
+  expect(await page.evaluate("window.attachmentStats.posts.length")).toBe(0);
   await page.getByRole("button", { name: "Завершить ingest" }).click();
-  await expect(page.getByRole("button", { name: "Отправить", exact: true })).toBeEnabled();
   await page.screenshot({ path: info.outputPath(`ready-${theme}.png`) });
-  await page.getByRole("button", { name: "Отправить", exact: true }).click();
   await expect.poll(() => page.evaluate("window.attachmentStats.posts.length")).toBe(1);
   expect(JSON.stringify(await page.evaluate("window.attachmentStats.posts"))).toContain("attachment:server-file");
   expect(await page.evaluate("window.attachmentStats.uploads")).toBe(0);

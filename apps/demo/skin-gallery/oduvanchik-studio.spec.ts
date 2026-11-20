@@ -23,8 +23,8 @@ test("Studio: empty/dialog/working, themes, independent scroll, composer and key
       await expect(page.locator(".oduvanchik-field")).toHaveCSS("border-radius", "18px");
       if (state === "empty") await expect(page.getByRole("heading", { name: "Проверим, как агент ведёт разговор?" })).toBeVisible();
       const scroll = page.locator(".oduvanchik-thread-scroll");
-      await expect(scroll).toHaveCSS("scrollbar-gutter", "stable");
-      await expect(scroll).toHaveCSS("padding-right", "16px");
+      await expect(scroll).toHaveCSS("scrollbar-gutter", "stable both-edges");
+      await expect(scroll).toHaveCSS("padding-right", "0px");
       if (state !== "empty") {
         await expect(page.locator(".oduvanchik-agent-body .tandem-markdown").last()).toHaveCSS("font-size", "15px");
         await expect(page.locator(".oduvanchik-agent-body .tandem-markdown").last()).toHaveCSS("line-height", "27px");

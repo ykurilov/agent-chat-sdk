@@ -1,4 +1,5 @@
 import { Button, Composer, Tooltip } from "@tandem/ui";
+import { nestedButtonsTouchZone } from "./touch-zone";
 import type { ChatSkin, ModelChoiceView } from "@ykurilov/agent-chat-react";
 import { useChatLabels } from "@ykurilov/agent-chat-react";
 import { Send, Square } from "lucide-react";
@@ -152,7 +153,7 @@ function measureRow(wrapper: HTMLElement) {
   return { inner, controls: clip + group + (clip ? 16 : 8) };
 }
 
-const actionsClass = "flex min-w-0 shrink items-center gap-1 max-[30rem]:max-w-24 [&>*]:min-w-0 [&>*]:shrink [&>*:not([class*=size-])]:justify-start [&>*]:overflow-hidden";
+const actionsClass = "flex min-w-0 shrink items-center gap-1 max-[30rem]:max-w-24 [&>*]:min-w-0 [&>*]:shrink [&>*:not([class*=size-])]:justify-start [&>*]:overflow-hidden [@media(pointer:coarse)]:[&>*]:overflow-visible [@media(pointer:coarse)]:[&>*>*]:min-w-0 [@media(pointer:coarse)]:[&>*>*]:overflow-hidden";
 
 /**
  * Поле ввода Тандема; пока идёт ответ, «Отправить» в рамке заменяется родной кнопкой «Стоп» из Composer. Поле принимает
@@ -277,7 +278,7 @@ export function TandemComposer({
     <TandemSkinLabels>
       <div
         ref={wrapperRef}
-        className={`flex flex-col gap-1 max-sm:[&_textarea]:text-base ${sendWhileUploading ? hideNativeSend : ""}`}
+        className={`flex flex-col gap-1 max-sm:[&_textarea]:text-base ${nestedButtonsTouchZone} ${sendWhileUploading ? hideNativeSend : ""}`}
         {...(sendWhileUploading && { "data-native-send-hidden": "" })}
         onKeyDownCapture={(event) => {
           // Enter поля Тандема во время загрузки ничего не делает: нажатие передаётся слою поведения здесь.

@@ -287,6 +287,14 @@
   .oduvanchik-answer-action[aria-label] { width: 44px; }
   .oduvanchik-answer-actions { gap: 12px 0; margin-top: 6px; }
 }
+/* Поле ввода на телефоне: кнопки на вид прежние (40px), касание — не меньше 44px за счёт невидимого поля вокруг (`::after`).
+   Кнопки стоят с зазором 2–4px, поле по 2px с каждой стороны соседей не перекрывает. */
+@media (pointer: coarse), (max-width: 640px) {
+  .oduvanchik-field-tool, .oduvanchik-field-send, .oduvanchik-field-mic > button, .oduvanchik-field-actions button { position: relative; }
+  .oduvanchik-field-tool::after, .oduvanchik-field-send::after, .oduvanchik-field-mic > button::after, .oduvanchik-field-actions button::after { content: ""; position: absolute; left: 50%; top: 50%; width: 44px; height: 44px; transform: translate(-50%, -50%); }
+  .oduvanchik-field-files button { min-width: 44px; height: 44px; margin: -14px -6px -14px -14px; display: grid; place-items: center; cursor: pointer; }
+  .oduvanchik-pending-send button { min-height: 44px; margin-block: -6px; }
+}
 @media (max-width: 640px) {
   .oduvanchik-answer-action-text { position: relative; width: 44px; min-width: 44px; padding-inline: 0; justify-content: center; }
   .oduvanchik-answer-action-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

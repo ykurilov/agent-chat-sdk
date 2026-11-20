@@ -7,10 +7,12 @@ type Viewport = { x: number; y: number; zoom: number };
 const shots = screenshotFolder("agent-chat-flow-navigation");
 const errors = new WeakMap<Page, string[]>();
 test.use({ actionTimeout: 10_000 });
+// WebKit сообщает это, когда доска меняет размер, а наблюдатели XYFlow получают часть уведомлений кадром позже. Источник — библиотека доски, вреда нет (то же в oduvanchik-flows.spec.ts).
+const RO_LOOP = "ResizeObserver loop completed with undelivered notifications.";
 test.beforeEach(({ page }) => {
   const messages: string[] = []; errors.set(page, messages);
-  page.on("pageerror", error => messages.push(error.message));
-  page.on("console", message => { if (message.type() === "error") messages.push(message.text()); });
+  page.on("pageerror", error => { if (error.message !== RO_LOOP) messages.push(error.message); });
+  page.on("console", message => { if (message.type() === "error" && message.text() !== RO_LOOP) messages.push(message.text()); });
 });
 test.afterEach(({ page }) => expect(errors.get(page)).toEqual([]));
 

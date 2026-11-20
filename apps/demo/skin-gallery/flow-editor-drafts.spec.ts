@@ -36,7 +36,7 @@ for (const skin of ["tandem", "oduvanchik"]) for (const theme of ["light", "dark
     await expect(panel.getByText("Подсказка меток приложения", { exact: true })).toBeVisible();
     await expect(panel.getByRole("switch")).toHaveAccessibleDescription("Подсказка вопросов приложения");
     await page.screenshot({ animations: "disabled", path: `${screenshots}/${info.project.name}-${skin}-${theme}-labels.png` });
-    await page.getByRole("button", { name: "JSON", exact: true }).click();
+    await page.getByRole("button", { name: "Код сценария (JSON)", exact: true }).click();
     const value = JSON.parse(await page.getByRole("dialog").getByRole("textbox").inputValue());
     expect(value.states[0].exits[0].when).toEqual({ type: "judge", text: "Условие сохраняется после переключения" });
     expect(value.states.find((state: { id: string }) => state.id === "block").exits.find((exit: { id: string }) => exit.id === "block_tool").when).toEqual({ type: "event", event: "tool", name: "finish_dialog" });

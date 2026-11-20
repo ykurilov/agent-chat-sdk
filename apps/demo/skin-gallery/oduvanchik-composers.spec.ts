@@ -42,7 +42,8 @@ test("три вида: ввод, файлы/проект, каталог, нас
   await modelPanel.getByRole("searchbox").fill("GPT 6 Luna");
   await modelPanel.locator(".oduvanchik-model-option").click();
   await expect(extended.getByRole("button", { name: "Модель: GPT 6 Luna" })).toBeVisible();
-  await expect(modelPanel.getByRole("button", { name: "OpenRouter", exact: true })).toBeVisible();
+  // У GPT 6 Luna один провайдер — выбор провайдера не показывается (с 7 ноября), провайдер виден в подписи ответа ниже.
+  await expect(modelPanel.getByRole("button", { name: "OpenRouter", exact: true })).toHaveCount(0);
   await page.keyboard.press("Escape");
   await extended.getByRole("button", { name: "Рассуждения", exact: true }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Высоко", exact: true }).click();
@@ -63,7 +64,7 @@ test("три вида: ввод, файлы/проект, каталог, нас
   await expect(extended.getByText(/Изучил материалы проекта/)).toBeVisible();
   await saveScreenshot(page, folder, "oduvanchik-composers-light");
   await page.getByRole("button", { name: "Светлая / тёмная" }).click();
-  await expect(extended.locator(".oduvanchik-field")).toHaveCSS("background-color", "rgb(22, 22, 22)");
+  await expect(extended.locator(".oduvanchik-field")).toHaveCSS("background-color", "rgb(34, 34, 34)");
   await saveScreenshot(page, folder, "oduvanchik-composers-dark");
   await page.setViewportSize({ width: 390, height: 844 });
   await expectNoHorizontalOverflow(page);

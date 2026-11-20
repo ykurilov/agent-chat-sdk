@@ -1,5 +1,17 @@
 # @ykurilov/agent-chat-skin-tandem
 
+## 0.115.1
+
+### Patch Changes
+
+- 524b04b: Зона касания 44 px у кнопок поля ввода и под ответом на телефоне; соседние кнопки не перекрываются.
+- @ykurilov/agent-chat-flows@0.115.1
+  - @ykurilov/agent-chat-mcp@0.115.1
+  - @ykurilov/agent-chat-messengers@0.115.1
+  - @ykurilov/agent-chat-react@0.115.1
+  - @ykurilov/agent-chat-sandbox@0.115.1
+  - @ykurilov/agent-chat-skills@0.115.1
+
 ## 0.115.0
 
 ### Minor Changes

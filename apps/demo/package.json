@@ -11,6 +11,7 @@
     "test:e2e": "playwright test",
     "test:e2e:quick": "playwright test --project=desktop-light --grep-invert @long",
     "test:e2e:perf": "DEMO_E2E_PERF=1 playwright test --project=perf-phone --project=perf-desktop",
+    "skin-gallery:all": "status=0; for config in skin-gallery/playwright.config.ts skin-gallery/*.playwright.config.ts; do playwright test -c $config || status=1; done; exit $status",
     "test:e2e:dialog-latency": "DEMO_E2E_DIALOG_LATENCY=1 playwright test --project=dialog-latency"
   },
   "dependencies": {
