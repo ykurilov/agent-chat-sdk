@@ -1,4 +1,5 @@
 import { createAttachments, createDiskAttachmentStorage } from "@ykurilov/agent-chat-attachments";
+import { slowUploads } from "./slow-upload";
 import { ChatNotFoundError, extendCatalog, standardCatalog } from "@ykurilov/agent-chat-core";
 import type { AppEvent, ChatStorage, ModelCatalog, SpendingLimits, TurnResult } from "@ykurilov/agent-chat-core";
 import { createChatServer } from "@ykurilov/agent-chat-server";
@@ -417,6 +418,7 @@ export async function createDemoApp(options: DemoAppOptions) {
       return c.json({ mode });
     });
     app.use("/api/chat/*", connection.middleware);
+    app.use("/api/chat/*", slowUploads(readCookie));
   }
   app.use("/api/chat/*", async (c, next) => {
     const failure = parseDemoFailure(readCookie(c.req.raw, "demo-failure"));

@@ -9,6 +9,7 @@ import { TandemVoiceButton } from "./voice-button";
 import { TandemVoiceDialogButton } from "./voice-dialog-button";
 import { TandemVoiceDialogPanel } from "./voice-dialog-panel";
 import { TandemSkinLabels } from "./tandem-labels";
+import { useUploadProgress } from "./upload-progress";
 
 /** Меню провайдеров и подменю моделей стоят рядом и вместе шире узкого экрана телефона. */
 const narrowScreenQuery = "(max-width: 30rem)";
@@ -162,6 +163,7 @@ export function TandemComposer({
   const wrapperRef = useBlockedReason(sendingBlocked === true, sendingBlockedReasonId);
   useFollowDictation(wrapperRef, value, voice !== undefined && voice.state !== "idle");
   useKeepCaretWhilePolishing(wrapperRef, value, voice?.polishing === true);
+  useUploadProgress(wrapperRef, attachments?.items);
   const dialogOn = dialog !== undefined && dialog.state !== "off";
   const steering = busy && canSteer !== undefined;
   const pendingId = useId();

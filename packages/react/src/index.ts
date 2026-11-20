@@ -58,6 +58,7 @@ export type {
   NoticeLabels,
   ResolvedChatLabels,
   SendAfterUploadLabels,
+  UploadProgressLabels,
   TaskLabels,
   VideoLabels,
   ViewerLabels,

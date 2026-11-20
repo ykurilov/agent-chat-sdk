@@ -1,5 +1,21 @@
 # @ykurilov/agent-chat-skin-tandem
 
+## 0.114.0
+
+### Minor Changes
+
+- b7be763: Прогресс загрузки вложений (договор скина 36); стрелка кнопки отправки «Одуванчика» своим значком.
+
+### Patch Changes
+
+- Updated dependencies [b7be763]
+  - @ykurilov/agent-chat-react@0.114.0
+  - @ykurilov/agent-chat-messengers@0.114.0
+  - @ykurilov/agent-chat-sandbox@0.114.0
+  - @ykurilov/agent-chat-flows@0.114.0
+  - @ykurilov/agent-chat-mcp@0.114.0
+  - @ykurilov/agent-chat-skills@0.114.0
+
 ## 0.113.0
 
 ### Minor Changes

@@ -50,7 +50,7 @@ describe("словарь надписей", () => {
   });
 
   it("русские надписи по умолчанию: все литералы на месте", () => {
-    const { reasoningDone, thinkingElapsed, toolRunning, toolDone, toolError, approvalRequested, branchPosition, spendingWarning, spendingExhausted, spendingMessagesLeft, spendingMessagesExhausted, chatListRowMenu, chatListDeleteBody, voiceDialog, memoryCount, memoryShownHint, memoryEditNote, memoryDeleteNote, memoryGroupLabel, memoryDeleteBody, memoryClearBody, memoryMergeDate, memoryMergeRevertFor, widgets, diagram, demo, images, videos, viewer, voice, helpers, tasks, notices, messengerStatus, workView, voiceErrors, ...texts } = russianLabels;
+    const { reasoningDone, thinkingElapsed, toolRunning, toolDone, toolError, approvalRequested, branchPosition, spendingWarning, spendingExhausted, spendingMessagesLeft, spendingMessagesExhausted, chatListRowMenu, chatListDeleteBody, voiceDialog, memoryCount, memoryShownHint, memoryEditNote, memoryDeleteNote, memoryGroupLabel, memoryDeleteBody, memoryClearBody, memoryMergeDate, memoryMergeRevertFor, widgets, diagram, demo, images, videos, viewer, voice, helpers, tasks, notices, messengerStatus, workView, voiceErrors, uploadProgress, ...texts } = russianLabels;
     const { interruptedMark, ...dialogTexts } = voiceDialog;
     expect(demo.loading).toBe("Готовлю демонстрацию…");
     const info = { scope: "user" as const, period: "month" as const, share: 0.8, resetsAt: new Date("2026-11-01T00:00:00Z") };
@@ -69,6 +69,7 @@ describe("словарь надписей", () => {
       spendingMessagesExhausted: spendingMessagesExhausted({ ...info, unit: "messages" }),
       chatListRowMenu: chatListRowMenu("Отпуск"),
       chatListDeleteBody: chatListDeleteBody("Отпуск"),
+      uploadProgress: { label: uploadProgress!.label("кот.png"), percent: uploadProgress!.percent(46) },
       voiceDialog: { ...dialogTexts, interruptedMark: interruptedMark("Длинный") },
       voiceErrors: { ...voiceErrors, time_limit: voiceErrorText(voiceErrors, "time_limit", { maxSessionSeconds: 300 }) },
       memoryCount: memoryCount(12, 200),
@@ -141,6 +142,7 @@ describe("словарь надписей", () => {
       send: "Отправить",
       stop: "Остановить",
       sendAfterUpload: { waiting: "Отправим, как только загрузятся файлы", cancel: "Не отправлять", notSent: "Сообщение не отправлено." },
+      uploadProgress: { label: "Загрузка «кот.png»", percent: "46\u00a0%" },
       copyAnswer: "Скопировать ответ",
       copied: "Скопировано",
       copyCode: "Скопировать код",

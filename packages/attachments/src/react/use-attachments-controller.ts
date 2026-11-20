@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AttachmentsController, AttachmentsPlugin, ComposerAttachmentItem, ServerFileDraft } from "@ykurilov/agent-chat-react";
 import { russianAttachmentsLabels } from "./labels";
 import type { AttachmentErrorKind, AttachmentsLabels } from "./labels";
+import { isBrowserOwnFetch, uploadFile } from "./upload-file";
 
 /** Пока сервер не ответил на запрос настроек, действуют его же значения по умолчанию. */
 const fallbackSettings = {
@@ -37,6 +38,10 @@ interface FieldItem extends ComposerAttachmentItem {
   fileName: string;
   uploadUrl: string;
   fetchFile: typeof globalThis.fetch;
+  /** Свой `fetch` приложения или подменённый им глобальный: загрузка идёт через него, без прогресса. */
+  uploadTransport?: typeof globalThis.fetch;
+  /** Доля отправленного (0–1, с шагом в процент), пока файл грузится; нет — неизвестно. */
+  progress?: number;
   ownedPreview?: string;
   size: number;
   abort: AbortController;
@@ -50,7 +55,11 @@ const errorKinds: readonly AttachmentErrorKind[] = ["unsupported_type", "too_lar
 /** Отказы сервера, после которых файла на сервере уже нет: его нужно загрузить снова. */
 const goneKinds = new Set(["attachment_expired", "attachment_not_found"]);
 
-/** Сервер пускает человека не больше чем на 3 загрузки сразу: с запасом грузим по две, остальные ждут в очереди. */
+/**
+ * Сервер пускает человека не больше чем на 3 загрузки сразу: с запасом грузим по две, остальные ждут в очереди. Канал
+ * отправки у человека один: третья загрузка общий срок не сократит, а две дают серверу ужимать одну картинку, пока
+ * приходит другая. Запасное место нужно второй вкладке и картинкам с сервера.
+ */
 const parallelUploads = 2;
 const busyRetries = 4;
 
@@ -142,18 +151,23 @@ export function useAttachmentsController(
   /** Одна попытка загрузки; `busy` — сервер просит подождать. */
   const uploadOnce = useCallback(
     async (item: FieldItem, file: File): Promise<"busy" | "done"> => {
-      const body = new FormData();
-      body.append("file", file);
+      // Поле перерисовывается, только когда меняется целый процент: событий прогресса бывают сотни в секунду.
+      const showProgress = (fraction: number) => {
+        const progress = Math.floor(fraction * 100) / 100;
+        if (itemsRef.current.find((candidate) => candidate.id === item.id)?.progress !== progress) update(item.id, { progress });
+      };
       try {
-        const response = await item.fetchFile(item.uploadUrl, {
-          method: "POST",
-          body,
+        const reply = await uploadFile({
+          url: item.uploadUrl,
+          file,
           signal: item.abort.signal,
+          ...(item.uploadTransport && { transport: item.uploadTransport }),
+          onProgress: showProgress,
         });
-        const payload = (await response.json().catch(() => undefined)) as
+        const payload = reply.payload as
           | { id?: string; mediaType?: string; kind?: string; textTokens?: number; error?: { kind?: string } }
           | undefined;
-        if (response.ok && payload?.id) {
+        if (reply.ok && payload?.id) {
           if (item.abort.signal.aborted || !itemsRef.current.some((candidate) => candidate.id === item.id)) {
             void item.fetchFile(`${item.uploadUrl}/${encodeURIComponent(payload.id)}`, { method: "DELETE" }).catch(() => undefined);
             return "done";
@@ -181,6 +195,8 @@ export function useAttachmentsController(
     async (item: FieldItem, file: File) => {
       for (let attempt = 1; !item.abort.signal.aborted; attempt++) {
         if ((await uploadOnce(item, file)) === "done") return;
+        // Сервер занят: пока ждём повтора, отправленного нет — прогресс начнётся заново.
+        update(item.id, { progress: undefined });
         if (attempt > busyRetries) {
           update(item.id, { status: "error", errorKind: "busy" });
           return;
@@ -237,6 +253,11 @@ export function useAttachmentsController(
             fileName: file.name,
             uploadUrl: `${api}/${encodeURIComponent(chatId)}/attachments`,
             fetchFile: captureFetch(latest.current.fetchImpl ?? globalThis.fetch),
+            // Прогресс — только через XMLHttpRequest, мимо `fetch`. Свой или подменённый `fetch` приложения обходить нельзя:
+            // в нём токен и перехватчики. Тогда загрузка идёт через него, как раньше, без прогресса.
+            ...((latest.current.fetchImpl || !isBrowserOwnFetch(globalThis.fetch)) && {
+              uploadTransport: captureFetch(latest.current.fetchImpl ?? globalThis.fetch),
+            }),
             size: file.size,
             kind: isImage ? "image" : "file",
             status: refused ? "error" : "uploading",
@@ -391,7 +412,9 @@ export function useAttachmentsController(
   return {
     addServerFiles,
     composer: {
-      items: items.map(({ id, name, kind, previewUrl, status }) => ({ id, name, kind, status, ...(previewUrl && { previewUrl }) })),
+      items: items.map(({ id, name, kind, previewUrl, status, progress }) => ({
+        id, name, kind, status, ...(previewUrl && { previewUrl }), ...(status === "uploading" && progress !== undefined && { progress }),
+      })),
       onAddFiles,
       onRemove,
       accept: settings.accept,

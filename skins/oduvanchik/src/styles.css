@@ -62,10 +62,14 @@
 .oduvanchik-field-send:disabled { opacity: .4; }
 .oduvanchik-field-stop { background: var(--yk-surface-2); color: var(--yk-text); }
 .oduvanchik-field-files { display: flex; gap: 6px; list-style: none; padding: 0; margin: 0; flex-wrap: wrap; }
-.oduvanchik-field-files li { display: flex; align-items: center; gap: 6px; border: 1px solid var(--yk-border); padding: 6px; border-radius: 10px; font-size: 12px; max-width: 100%; }
+.oduvanchik-field-files li { position: relative; overflow: hidden; display: flex; align-items: center; gap: 6px; border: 1px solid var(--yk-border); padding: 6px; border-radius: 10px; font-size: 12px; max-width: 100%; }
 .oduvanchik-field-files li span { min-width: 0; overflow-wrap: anywhere; }
 .oduvanchik-field-files img { width: 32px; height: 32px; object-fit: cover; border-radius: 6px; }
 .oduvanchik-field-files button { background: transparent; color: var(--yk-muted); border: 0; }
+/* Прогресс загрузки — тонкая полоса по низу плашки файла. */
+.oduvanchik-field-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: var(--yk-border); }
+.oduvanchik-field-progress > span { display: block; height: 100%; background: var(--yk-accent); transition: width .2s linear; }
+@media (prefers-reduced-motion: reduce) { .oduvanchik-field-progress > span { transition: none; } }
 .oduvanchik-welcome { display: flex; flex-direction: column; min-height: 480px; height: 100%; gap: 32px; }
 .oduvanchik-welcome-intro { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 14px; padding: 24px 12px; }
 .oduvanchik-welcome-intro h1 { font-size: 26px; font-weight: 600; letter-spacing: -.02em; line-height: 1.15; margin: 0; }

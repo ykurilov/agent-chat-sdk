@@ -230,6 +230,14 @@ export interface SendAfterUploadLabels {
   notSent: string;
 }
 
+/** Прогресс загрузки файла в поле ввода (договор скина 36). */
+export interface UploadProgressLabels {
+  /** Подпись полосы прогресса для диктора: «Загрузка «кот.png»». */
+  label: (fileName: string) => string;
+  /** Видимый процент: «45 %». */
+  percent: (percent: number) => string;
+}
+
 export interface ChatLabels {
   /** Приветствие пустого чата. Скины без приветствия игнорируют. */
   welcome?: { title?: string; description?: string };
@@ -250,6 +258,8 @@ export interface ChatLabels {
    * `cancel` — кнопка «передумал», `notSent` — начало надписи у поля, когда загрузка упала. Нет — по языку словаря.
    */
   sendAfterUpload?: SendAfterUploadLabels;
+  /** Прогресс загрузки файла (договор скина 36): подпись полосы и процент. Нет — по языку словаря. */
+  uploadProgress?: UploadProgressLabels;
   copyAnswer: string;
   copied: string;
   copyCode: string;
@@ -504,7 +514,7 @@ export type ResolvedChatLabels = Omit<ChatLabels, "widgets" | "diagram" | "demo"
   Required<
     Pick<
       ChatLabels,
-      "externalImageLink" | "sendAfterUpload" | "answerStoppedEmpty" | "answerInterruptedEmpty" | "answerCutByLength" | "answerEdited" | "answerUndelivered" | "toolOutputEdited" | "editAnswer" | "answerEditFailed" | "answerEditSave" | "steeringPending" | "thinkingPhrases" | "thinkingElapsed" | "spendingMessagesLeft" | "spendingMessagesExhausted" | "editMessageLimit"
+      "externalImageLink" | "sendAfterUpload" | "uploadProgress" | "answerStoppedEmpty" | "answerInterruptedEmpty" | "answerCutByLength" | "answerEdited" | "answerUndelivered" | "toolOutputEdited" | "editAnswer" | "answerEditFailed" | "answerEditSave" | "steeringPending" | "thinkingPhrases" | "thinkingElapsed" | "spendingMessagesLeft" | "spendingMessagesExhausted" | "editMessageLimit"
     >
   > & {
     history: NonNullable<ChatLabels["history"]>;
@@ -722,6 +732,7 @@ export const russianLabels: ResolvedChatLabels = {
   send: "Отправить",
   stop: "Остановить",
   sendAfterUpload: { waiting: "Отправим, как только загрузятся файлы", cancel: "Не отправлять", notSent: "Сообщение не отправлено." },
+  uploadProgress: { label: (fileName) => `Загрузка «${fileName}»`, percent: (percent) => `${percent}\u00a0%` },
   copyAnswer: "Скопировать ответ",
   copied: "Скопировано",
   copyCode: "Скопировать код",
@@ -1053,6 +1064,7 @@ export const englishLabels: ResolvedChatLabels = {
   send: "Send",
   stop: "Stop",
   sendAfterUpload: { waiting: "Will send once the files finish uploading", cancel: "Don’t send", notSent: "Message not sent." },
+  uploadProgress: { label: (fileName) => `Uploading ${fileName}`, percent: (percent) => `${percent}%` },
   copyAnswer: "Copy answer",
   copied: "Copied",
   copyCode: "Copy code",
@@ -1351,6 +1363,7 @@ export function ChatLabelsProvider({ labels, children }: { labels: ChatLabels; c
       composerSettings: { ...(labels.locale?.startsWith("en") ? englishLabels : russianLabels).composerSettings, ...labels.composerSettings },
       externalImageLink: labels.externalImageLink ?? russianLabels.externalImageLink,
       sendAfterUpload: { ...(labels.locale?.startsWith("en") ? englishLabels : russianLabels).sendAfterUpload, ...labels.sendAfterUpload },
+      uploadProgress: { ...(labels.locale?.startsWith("en") ? englishLabels : russianLabels).uploadProgress, ...labels.uploadProgress },
       answerStoppedEmpty: labels.answerStoppedEmpty ?? (labels.locale?.startsWith("en") ? englishLabels : russianLabels).answerStoppedEmpty,
       answerInterruptedEmpty: labels.answerInterruptedEmpty ?? (labels.locale?.startsWith("en") ? englishLabels : russianLabels).answerInterruptedEmpty,
       answerCutByLength: labels.answerCutByLength ?? russianLabels.answerCutByLength,

@@ -357,7 +357,7 @@ export interface StaffMessageView {
 }
 
 /**
- * Договор скина, версия 35: необязательное Composer.pendingSend — «Отправить», нажатое во время загрузки файлов, ждёт её конца; docs/skin-v35.md. Версия 34: необязательное AgentMessage.emptyText — строка вместо ответа без текста; docs/skin-v34.md. Версия 33: необязательное spokenAnswer — текст ответа для диктора; docs/skin-v33.md. Версия 32: необязательный AnswerTextEditor для штатной правки ответа; docs/skin-v32.md. Версия 31: необязательные Layout.header и Layout.completion. Версия 30: необязательный Layout.empty. Версия 29: необязательные Composer.options, AgentMessage.modelDetails и WorkSteps.live.completed.
+ * Договор скина, версия 36: необязательное ComposerAttachmentItem.progress — прогресс загрузки файла в поле ввода; docs/skin-v36.md. Версия 35: необязательное Composer.pendingSend — «Отправить», нажатое во время загрузки файлов, ждёт её конца; docs/skin-v35.md. Версия 34: необязательное AgentMessage.emptyText — строка вместо ответа без текста; docs/skin-v34.md. Версия 33: необязательное spokenAnswer — текст ответа для диктора; docs/skin-v33.md. Версия 32: необязательный AnswerTextEditor для штатной правки ответа; docs/skin-v32.md. Версия 31: необязательные Layout.header и Layout.completion. Версия 30: необязательный Layout.empty. Версия 29: необязательные Composer.options, AgentMessage.modelDetails и WorkSteps.live.completed.
  * Скины 28 работают без правок. В версии 28 добавились только необязательные значки шагов и заголовки раздумий:
  * `WorkStepsView.live.icon`, `WorkStepsView.done.items`, `icons`, `moreIcons` и `Reasoning.title`, docs/skin-v28.md;
  * скин версии 27 работает без правок: шаги без значков, раздумья — «Думал N сек».

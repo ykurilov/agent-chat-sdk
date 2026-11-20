@@ -1,5 +1,5 @@
 import { useTandemLabels } from "@tandem/ui";
-import { ArrowUpIcon, PlusIcon, SquareIcon, XIcon, FileTextIcon, ImageIcon, FolderIcon } from "@phosphor-icons/react";
+import { PlusIcon, SquareIcon, XIcon, FileTextIcon, ImageIcon, FolderIcon } from "@phosphor-icons/react";
 import { useChatLabels } from "@ykurilov/agent-chat-react";
 import type { ChatSkin } from "@ykurilov/agent-chat-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -69,7 +69,7 @@ export function ComposerField(props: Props) {
   // Пока ждём загрузки, кнопка занята, но не неактивна: фокус с неё не слетает, диктор читает строку ожидания.
   const send = <>{steering && stop}{stoppingOnly ? stop : <button type="button" className="oduvanchik-field-send" aria-label={labels.send}
     disabled={!canSend} onClick={submit} aria-busy={waiting || undefined} aria-describedby={waiting ? props.pendingId : undefined}>
-    {waiting ? <span className="oduvanchik-send-spinner" aria-hidden /> : <ArrowUpIcon size={19} weight="bold" aria-hidden />}</button>}</>;
+    {waiting ? <span className="oduvanchik-send-spinner" aria-hidden /> : <SendArrow />}</button>}</>;
   return <div data-composer-variant={variant} data-dropping={dropping || undefined} className={`oduvanchik-field oduvanchik-field-${variant}${variant === "standard" && !attachments && !hasAddMenu && !options.context && !props.actions && !props.dialogButton ? " oduvanchik-field-inline" : ""}`} onKeyDown={(event) => { if (event.key === "Escape") setAddMenu(false); }}
     onDragOver={(event) => { if (acceptsFiles(event)) { event.preventDefault(); setDropping(true); } }}
     onDragLeave={(event) => { if (!pointerStaysIn(event)) setDropping(false); }}
@@ -77,7 +77,10 @@ export function ComposerField(props: Props) {
     {!compact && ((attachments?.items.length ?? 0) > 0 || (options.contextAttachments?.length ?? 0) > 0) && <ul className="oduvanchik-field-files" aria-label={fileLabels.attachments}>
       {attachments?.items.map((item) => <li key={item.id}>
         {item.kind === "image" && item.previewUrl ? <img src={item.previewUrl} alt="" /> : <FileTextIcon size={18} aria-hidden />}
-        <span>{item.name}{item.status === "uploading" ? ` · ${fileLabels.uploading}` : item.status === "error" ? ` · ${fileLabels.uploadFailed}` : ""}</span>
+        <span>{item.name}{item.status === "uploading" ? ` · ${item.progress === undefined || item.progress >= 1 ? fileLabels.uploading : labels.uploadProgress.percent(percentOf(item.progress))}` : item.status === "error" ? ` · ${fileLabels.uploadFailed}` : ""}</span>
+        {item.status === "uploading" && item.progress !== undefined && <span className="oduvanchik-field-progress" role="progressbar" aria-label={labels.uploadProgress.label(item.name)} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percentOf(item.progress)}>
+          <span style={{ width: `${percentOf(item.progress)}%` }} />
+        </span>}
         <button type="button" disabled={controlsDisabled} aria-label={fileLabels.removeAttachment(item.name)} onClick={() => attachments.onRemove(item.id)}><XIcon size={16} aria-hidden /></button>
       </li>)}
       {options.contextAttachments?.map((item) => <li key={item.id}><FolderIcon size={18} aria-hidden /><span>{item.label}</span>{item.onRemove && <button type="button" disabled={controlsDisabled} aria-label={fileLabels.removeAttachment(item.label)} onClick={item.onRemove}><XIcon size={16} aria-hidden /></button>}</li>)}
@@ -99,4 +102,17 @@ export function ComposerField(props: Props) {
       <span className="oduvanchik-field-mic">{props.dialogButton}{props.mic}</span>{send}
     </div>}
   </div>;
+}
+
+/** Целый процент. На 100 % сервер ещё разбирает файл, поэтому у имени тогда снова «Загружается…». */
+const percentOf = (progress: number) => Math.round(progress * 100);
+
+/**
+ * Стрелка кнопки отправки — своим рисунком, а не жирным значком Phosphor: сборка приложения может оставить у Phosphor
+ * только обычное и залитое начертание, и тогда жирный значок рисуется пустым — кнопка становится сплошным кругом.
+ */
+function SendArrow() {
+  return <svg width={19} height={19} viewBox="0 0 256 256" fill="currentColor" aria-hidden>
+    <path d="M208.49,120.49a12,12,0,0,1-17,0L140,69V216a12,12,0,0,1-24,0V69L64.49,120.49a12,12,0,0,1-17-17l72-72a12,12,0,0,1,17,0l72,72A12,12,0,0,1,208.49,120.49Z" />
+  </svg>;
 }
