@@ -25,6 +25,8 @@ export function TandemAgentMessage({
   onEdit,
   edited,
   actions,
+  continued,
+  followsPrevious,
 }: ComponentProps<ChatSkin["AgentMessage"]>) {
   const labels = useChatLabels();
   const [copied, setCopied] = useState(false);
@@ -38,7 +40,9 @@ export function TandemAgentMessage({
   // Без тела (только ряд кнопок, например переключатель веток у ответа, закрытого ради поправки) аватар не рисуется: место
   // под ним остаётся, чтобы ряд стоял на своей линии.
   const bodyless = !streaming && !hasParts && !emptyLine && !notice && !voiceInterrupted;
-  const hasActions = Boolean(branchSwitcher) || statusBadge || Boolean(cutByLength) || Boolean(edited) || Boolean(onRetry) || Boolean(onRegenerate) || Boolean(onEdit) || !textless || Boolean(actions?.length);
+  // Договор 37: ответ продолжается следующим — «Копировать» у последнего ответа цепочки, он копирует всю цепочку.
+  const copyable = !textless && !continued;
+  const hasActions = Boolean(branchSwitcher) || statusBadge || Boolean(cutByLength) || Boolean(edited) || Boolean(onRetry) || Boolean(onRegenerate) || Boolean(onEdit) || copyable || Boolean(actions?.length);
 
   useEffect(() => {
     if (!copied) return;
@@ -47,8 +51,9 @@ export function TandemAgentMessage({
   }, [copied]);
 
   return (
-    <div className="flex gap-3 pb-6" data-status={status}>
-      <AgentAvatar thinking={streaming} className={bodyless ? "invisible mt-0.5" : "mt-0.5"} aria-hidden={bodyless || undefined} />
+    <div className={continued ? "flex gap-3" : "flex gap-3 pb-6"} data-status={status}>
+      {/* Продолжение прошлого ответа (договор 37) — одно сообщение: второй аватар не рисуется, место под ним остаётся. */}
+      <AgentAvatar thinking={streaming} className={bodyless || (followsPrevious && !streaming) ? "invisible mt-0.5" : "mt-0.5"} aria-hidden={bodyless || (followsPrevious && !streaming) || undefined} />
       <div className="flex min-w-0 max-w-[650px] flex-1 flex-col items-start">
         {hasParts || (emptyLine && !notice) ? (
           // Пузырь сжимается по тексту; с живой демонстрацией он во всю колонку: рамке нужна ширина ответа.
@@ -109,7 +114,7 @@ export function TandemAgentMessage({
                   {labels.editAnswer}
                 </Button>
               )}
-              {!textless && (
+              {copyable && (
                 <Tooltip label={copied ? labels.copied : labels.copyAnswer} side="bottom">
                   <Button
                     variant="ghost"

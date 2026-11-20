@@ -451,6 +451,16 @@ export async function createDemoApp(options: DemoAppOptions) {
         throw error;
       }
     });
+    // Приложение будит агента невидимым служебным сообщением (`kind: "app"`, без строки в ленте): так Творелла сообщает,
+    // что фоновые генерации готовы. Ответ после него лента показывает продолжением прошлого (договор скина 37).
+    app.post("/api/demo/app-notice", async (c) => {
+      const user = await resolveUser(c.req.raw);
+      if (!user) return c.json({ error: "unauthorized" }, 401);
+      const body = (await c.req.json().catch(() => ({}))) as { chatId?: unknown };
+      if (typeof body.chatId !== "string") return c.json({ error: "chatId is required" }, 400);
+      const notice = { kind: "app" as const, name: "generations_finished", title: "Генерации готовы: четыре работы. Посмотри их и расскажи человеку.", data: { count: 4 } };
+      return c.json(await service.deliverNotices({ ownerId: user.id, chatId: body.chatId, notices: [notice], wakeAgent: true, deliveryKey: `generations_finished:${crypto.randomUUID()}` }));
+    });
     app.post("/api/demo/reports/release", async (c) => {
       const body = (await c.req.json().catch(() => ({}))) as { topic?: unknown };
       if (typeof body.topic !== "string" || !body.topic) return c.json({ error: "topic is required" }, 400);

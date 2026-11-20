@@ -17,7 +17,7 @@ export interface MessageActionContext {
   /** Id ответа — тот же, что в истории на сервере и в `onTurnFinished`. */
   messageId: string;
   message: AgentChatMessage;
-  /** Текст ответа, как его копирует «Скопировать». */
+  /** Текст ответа, как его копирует «Скопировать»: у цепочки ответов (договор 37) — вся цепочка. */
   text: string;
 }
 

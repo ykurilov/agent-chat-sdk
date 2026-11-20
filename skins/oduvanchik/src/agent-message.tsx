@@ -11,7 +11,7 @@ import { OduvanchikThinkingLabel } from "./thinking-label";
 
 const COPIED_FEEDBACK_MS = 1600;
 
-/** Ответ агента (промежуток до следующего сообщения — внутренний отступ): аватар, пузырь с частями ответа, блок ошибки, отметка состояния и правки, «повторить», «изменить», копирование и свои кнопки приложения. */
+/** Ответ агента (промежуток до следующего сообщения — внутренний отступ; у ответа, который продолжается следующим, его нет): аватар, пузырь с частями ответа, блок ошибки, отметка состояния и правки, «повторить», «изменить», копирование и свои кнопки приложения. */
 export function OduvanchikAgentMessage({
   status,
   modelDetails,
@@ -28,6 +28,7 @@ export function OduvanchikAgentMessage({
   onEdit,
   edited,
   actions,
+  continued,
 }: ComponentProps<ChatSkin["AgentMessage"]>) {
   const labels = useChatLabels();
   const [copied, setCopied] = useState(false);
@@ -38,7 +39,9 @@ export function OduvanchikAgentMessage({
   const emptyLine = emptyText ?? (empty ? labels.answerEmpty : "");
   // Строка «остановлен/оборвался до начала» уже всё говорит: отметка рядом её бы повторила.
   const statusBadge = !emptyText && (status === "stopped" || status === "interrupted");
-  const hasActions = Boolean(branchSwitcher) || statusBadge || Boolean(cutByLength) || Boolean(edited) || Boolean(onRetry) || Boolean(onRegenerate) || Boolean(onEdit) || !textless || Boolean(actions?.length);
+  // Договор 37: ответ продолжается следующим — «Копировать» у последнего ответа цепочки, он копирует всю цепочку.
+  const copyable = !textless && !continued;
+  const hasActions = Boolean(branchSwitcher) || statusBadge || Boolean(cutByLength) || Boolean(edited) || Boolean(onRetry) || Boolean(onRegenerate) || Boolean(onEdit) || copyable || Boolean(actions?.length);
 
   useEffect(() => {
     if (!copied) return;
@@ -47,7 +50,7 @@ export function OduvanchikAgentMessage({
   }, [copied]);
 
   return (
-    <div className="oduvanchik-agent pb-6" data-status={status}>
+    <div className={continued ? "oduvanchik-agent" : "oduvanchik-agent pb-6"} data-status={status} {...(continued && { "data-continued": "" })}>
       {streaming && !hasParts && <Sphere size={22} label={labels.reasoningRunning} />}
       <div className="flex min-w-0 max-w-[650px] flex-1 flex-col items-start">
         {hasParts || (emptyLine && !notice) ? (
@@ -113,7 +116,7 @@ export function OduvanchikAgentMessage({
                   <span className="oduvanchik-answer-action-label">{labels.editAnswer}</span>
                 </Button>
               )}
-              {!textless && (
+              {copyable && (
                 <Tooltip label={copied ? labels.copied : labels.copyAnswer} side="bottom">
                   <Button
                     variant="ghost"

@@ -28,6 +28,7 @@ import { TandemAgentVideo } from "./agent-video";
 import { TandemMessageEditor } from "./message-editor";
 import { TandemReasoning } from "./reasoning";
 import { TandemSpendingNotice } from "./spending-notice";
+import { TandemToolCallGroup } from "./tool-call-group";
 import { TandemToolCallRow } from "./tool-call-row";
 import { TandemUserMessage } from "./user-message";
 import { TandemInterruptMark } from "./interrupt-mark";
@@ -48,6 +49,7 @@ export const tandemSkin: ChatSkin & ChatListSkin & AgentPanelSkin = {
   AgentText: TandemAgentText,
   Reasoning: TandemReasoning,
   ToolCallRow: TandemToolCallRow,
+  ToolCallGroup: TandemToolCallGroup,
   ConnectionNotice: TandemConnectionNotice,
   SpendingNotice: TandemSpendingNotice,
   ChatClosedNotice: TandemChatClosedNotice,
@@ -116,6 +118,7 @@ export {
   TandemReasoning,
   TandemSpendingNotice,
   TandemSuggestedReplies,
+  TandemToolCallGroup,
   TandemToolCallRow,
   TandemUserMessage,
   TandemVoiceButton,

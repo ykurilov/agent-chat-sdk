@@ -1,5 +1,21 @@
 # @ykurilov/agent-chat-skin-tandem
 
+## 0.115.0
+
+### Minor Changes
+
+- 116b51c: Компактный чат на телефоне: поле в одну строку, цепочка ответов после служебного сообщения, одинаковые шаги «×N» (договор скина 37).
+
+### Patch Changes
+
+- Updated dependencies [116b51c]
+  - @ykurilov/agent-chat-react@0.115.0
+  - @ykurilov/agent-chat-flows@0.115.0
+  - @ykurilov/agent-chat-messengers@0.115.0
+  - @ykurilov/agent-chat-sandbox@0.115.0
+  - @ykurilov/agent-chat-mcp@0.115.0
+  - @ykurilov/agent-chat-skills@0.115.0
+
 ## 0.114.0
 
 ### Minor Changes

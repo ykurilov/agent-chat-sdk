@@ -5,6 +5,7 @@ import type { ChatSkin } from "@ykurilov/agent-chat-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ComponentProps, DragEvent, ReactNode } from "react";
 import { ComposerSettings } from "./composer-settings";
+import { useCrowdedRow } from "./composer-row";
 
 /**
  * Курсор остался внутри поля. `dragleave` приходит и при переходе на дочерний элемент: тогда цель — внутри поля.
@@ -26,6 +27,21 @@ export function ComposerField(props: Props) {
   const options = props.options ?? {};
   const variant = options.variant ?? "standard";
   const compact = variant === "compact";
+  /**
+   * Обычное поле — одна строка: «+» слева, текст, справа кнопки и «Отправить»; файлы — над строкой. Расширенному нужен
+   * ряд настроек. Тексту в строке осталось бы мало места (много кнопок на узком экране) — `crowded`: текст на всю ширину
+   * сверху, «+» и кнопки под ним. Решает фактическая ширина, а не набор кнопок.
+   */
+  const inline = variant === "standard";
+  const root = useRef<HTMLDivElement>(null);
+  const bar = useRef<HTMLDivElement>(null);
+  const crowded = useCrowdedRow(root, (element) => {
+    const style = getComputedStyle(element);
+    const inner = element.clientWidth - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0);
+    const gap = parseFloat(style.columnGap) || 0;
+    const add = addRoot.current?.offsetWidth ?? 0;
+    return { inner, controls: add + (bar.current?.offsetWidth ?? 0) + gap * (add ? 2 : 1) };
+  }, inline);
   const field = useRef<HTMLTextAreaElement>(null);
   const files = useRef<HTMLInputElement>(null);
   const addRoot = useRef<HTMLDivElement>(null);
@@ -70,7 +86,12 @@ export function ComposerField(props: Props) {
   const send = <>{steering && stop}{stoppingOnly ? stop : <button type="button" className="oduvanchik-field-send" aria-label={labels.send}
     disabled={!canSend} onClick={submit} aria-busy={waiting || undefined} aria-describedby={waiting ? props.pendingId : undefined}>
     {waiting ? <span className="oduvanchik-send-spinner" aria-hidden /> : <SendArrow />}</button>}</>;
-  return <div data-composer-variant={variant} data-dropping={dropping || undefined} className={`oduvanchik-field oduvanchik-field-${variant}${variant === "standard" && !attachments && !hasAddMenu && !options.context && !props.actions && !props.dialogButton ? " oduvanchik-field-inline" : ""}`} onKeyDown={(event) => { if (event.key === "Escape") setAddMenu(false); }}
+  const addControl = hasAddMenu && <div className="oduvanchik-add" ref={addRoot}>
+        <button type="button" className="oduvanchik-field-tool" disabled={controlsDisabled} aria-label={settings.file} aria-expanded={addMenu && !controlsDisabled} onClick={() => setAddMenu(!addMenu)}><PlusIcon size={20} aria-hidden /></button>
+        <input ref={files} type="file" hidden multiple disabled={controlsDisabled} accept={attachments?.accept} onChange={(event) => { if (!controlsDisabled && event.target.files?.length) attachments?.onAddFiles(Array.from(event.target.files)); event.target.value = ""; }} />
+        {addMenu && !controlsDisabled && <div className="oduvanchik-add-menu">{options.addMenu?.items?.map((item) => <button type="button" key={item.id} data-add-menu-item={item.id} onClick={() => { setAddMenu(false); if (!controlsDisabled) item.onPick(); }}>{item.icon}{item.label}</button>)}{deviceMenu && attachments && (options.addMenu?.fromDevice ? <button type="button" onClick={() => pickFile(attachments.accept)}><FileTextIcon size={16} aria-hidden />{options.addMenu.fromDevice.label}</button> : <><button type="button" onClick={() => pickFile(attachments.accept)}><FileTextIcon size={16} aria-hidden />{settings.file}</button><button type="button" onClick={() => pickFile("image/*")}><ImageIcon size={16} aria-hidden />{settings.image}</button></>)}{options.projects?.map((project) => <button type="button" key={project.id} onClick={() => { if (!controlsDisabled) project.onPick(); setAddMenu(false); }}><FolderIcon size={16} aria-hidden />{project.label}</button>)}</div>}
+      </div>;
+  return <div ref={root} data-composer-variant={variant} data-crowded={crowded || undefined} data-dropping={dropping || undefined} className={`oduvanchik-field oduvanchik-field-${variant}${inline ? " oduvanchik-field-inline" : ""}`} onKeyDown={(event) => { if (event.key === "Escape") setAddMenu(false); }}
     onDragOver={(event) => { if (acceptsFiles(event)) { event.preventDefault(); setDropping(true); } }}
     onDragLeave={(event) => { if (!pointerStaysIn(event)) setDropping(false); }}
     onDrop={(event) => { setDropping(false); if (compact || !attachments || controlsDisabled || !event.dataTransfer.files.length) return; event.preventDefault(); attachments.onAddFiles(Array.from(event.dataTransfer.files)); }}>
@@ -86,16 +107,15 @@ export function ComposerField(props: Props) {
       {options.contextAttachments?.map((item) => <li key={item.id}><FolderIcon size={18} aria-hidden /><span>{item.label}</span>{item.onRemove && <button type="button" disabled={controlsDisabled} aria-label={fileLabels.removeAttachment(item.label)} onClick={item.onRemove}><XIcon size={16} aria-hidden /></button>}</li>)}
     </ul>}
     {dropping && <div className="oduvanchik-field-drop" aria-hidden>{fileLabels.dropToAttach}</div>}
+    {/* Тесно — текст встаёт сверху, и «+» в документе идёт после него: Tab проходит поле в том же порядке, что видно. */}
+    {inline && !crowded && addControl}
     <textarea ref={field} onFocus={resizeField} rows={1} value={props.value} disabled={disabled} aria-describedby={props.sendingBlockedReasonId} aria-label={labels.composerLabel} placeholder={labels.composerPlaceholder}
       onChange={(event) => props.onValueChange(event.target.value)}
       onPaste={(event) => { if (!compact && attachments && !controlsDisabled && event.clipboardData.files.length) { event.preventDefault(); attachments.onAddFiles(Array.from(event.clipboardData.files)); } }}
       onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229) { event.preventDefault(); submit(); } }} />
-    {compact ? send : <div className="oduvanchik-field-bar">
-      {hasAddMenu ? <div className="oduvanchik-add" ref={addRoot}>
-        <button type="button" className="oduvanchik-field-tool" disabled={controlsDisabled} aria-label={settings.file} aria-expanded={addMenu && !controlsDisabled} onClick={() => setAddMenu(!addMenu)}><PlusIcon size={20} aria-hidden /></button>
-        <input ref={files} type="file" hidden multiple disabled={controlsDisabled} accept={attachments?.accept} onChange={(event) => { if (!controlsDisabled && event.target.files?.length) attachments?.onAddFiles(Array.from(event.target.files)); event.target.value = ""; }} />
-        {addMenu && !controlsDisabled && <div className="oduvanchik-add-menu">{options.addMenu?.items?.map((item) => <button type="button" key={item.id} data-add-menu-item={item.id} onClick={() => { setAddMenu(false); if (!controlsDisabled) item.onPick(); }}>{item.icon}{item.label}</button>)}{deviceMenu && attachments && (options.addMenu?.fromDevice ? <button type="button" onClick={() => pickFile(attachments.accept)}><FileTextIcon size={16} aria-hidden />{options.addMenu.fromDevice.label}</button> : <><button type="button" onClick={() => pickFile(attachments.accept)}><FileTextIcon size={16} aria-hidden />{settings.file}</button><button type="button" onClick={() => pickFile("image/*")}><ImageIcon size={16} aria-hidden />{settings.image}</button></>)}{options.projects?.map((project) => <button type="button" key={project.id} onClick={() => { if (!controlsDisabled) project.onPick(); setAddMenu(false); }}><FolderIcon size={16} aria-hidden />{project.label}</button>)}</div>}
-      </div> : null}
+    {inline && crowded && addControl}
+    {compact ? send : <div ref={bar} className="oduvanchik-field-bar">
+      {!inline && addControl}
       {variant === "standard" && options.context && <button type="button" className="oduvanchik-context oduvanchik-label" disabled={controlsDisabled || !options.context.onPick} onClick={options.context.onPick}>@ {options.context.label}</button>}
       {variant === "extended" && <ComposerSettings choice={props.modelChoice} options={options} disabled={controlsDisabled} />}
       {props.actions && <div className="oduvanchik-field-actions">{props.actions}</div>}

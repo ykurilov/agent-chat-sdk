@@ -260,6 +260,8 @@ export interface ChatLabels {
   sendAfterUpload?: SendAfterUploadLabels;
   /** Прогресс загрузки файла (договор скина 36): подпись полосы и процент. Нет — по языку словаря. */
   uploadProgress?: UploadProgressLabels;
+  /** Одинаковые вызовы подряд одной строкой (договор скина 37) — для диктора: «Посмотрел работу, 4 раза». Нет — по языку словаря. */
+  toolRepeatedSpoken?: (phrase: string, count: number) => string;
   copyAnswer: string;
   copied: string;
   copyCode: string;
@@ -514,7 +516,7 @@ export type ResolvedChatLabels = Omit<ChatLabels, "widgets" | "diagram" | "demo"
   Required<
     Pick<
       ChatLabels,
-      "externalImageLink" | "sendAfterUpload" | "uploadProgress" | "answerStoppedEmpty" | "answerInterruptedEmpty" | "answerCutByLength" | "answerEdited" | "answerUndelivered" | "toolOutputEdited" | "editAnswer" | "answerEditFailed" | "answerEditSave" | "steeringPending" | "thinkingPhrases" | "thinkingElapsed" | "spendingMessagesLeft" | "spendingMessagesExhausted" | "editMessageLimit"
+      "externalImageLink" | "sendAfterUpload" | "uploadProgress" | "toolRepeatedSpoken" | "answerStoppedEmpty" | "answerInterruptedEmpty" | "answerCutByLength" | "answerEdited" | "answerUndelivered" | "toolOutputEdited" | "editAnswer" | "answerEditFailed" | "answerEditSave" | "steeringPending" | "thinkingPhrases" | "thinkingElapsed" | "spendingMessagesLeft" | "spendingMessagesExhausted" | "editMessageLimit"
     >
   > & {
     history: NonNullable<ChatLabels["history"]>;
@@ -733,6 +735,7 @@ export const russianLabels: ResolvedChatLabels = {
   stop: "Остановить",
   sendAfterUpload: { waiting: "Отправим, как только загрузятся файлы", cancel: "Не отправлять", notSent: "Сообщение не отправлено." },
   uploadProgress: { label: (fileName) => `Загрузка «${fileName}»`, percent: (percent) => `${percent}\u00a0%` },
+  toolRepeatedSpoken: (phrase, count) => `${phrase}, ${russianCount(count, { one: "раз", few: "раза", many: "раз" })}`,
   copyAnswer: "Скопировать ответ",
   copied: "Скопировано",
   copyCode: "Скопировать код",
@@ -1065,6 +1068,7 @@ export const englishLabels: ResolvedChatLabels = {
   stop: "Stop",
   sendAfterUpload: { waiting: "Will send once the files finish uploading", cancel: "Don’t send", notSent: "Message not sent." },
   uploadProgress: { label: (fileName) => `Uploading ${fileName}`, percent: (percent) => `${percent}%` },
+  toolRepeatedSpoken: (phrase, count) => `${phrase}, ${count} times`,
   copyAnswer: "Copy answer",
   copied: "Copied",
   copyCode: "Copy code",
@@ -1364,6 +1368,7 @@ export function ChatLabelsProvider({ labels, children }: { labels: ChatLabels; c
       externalImageLink: labels.externalImageLink ?? russianLabels.externalImageLink,
       sendAfterUpload: { ...(labels.locale?.startsWith("en") ? englishLabels : russianLabels).sendAfterUpload, ...labels.sendAfterUpload },
       uploadProgress: { ...(labels.locale?.startsWith("en") ? englishLabels : russianLabels).uploadProgress, ...labels.uploadProgress },
+      toolRepeatedSpoken: labels.toolRepeatedSpoken ?? (labels.locale?.startsWith("en") ? englishLabels : russianLabels).toolRepeatedSpoken,
       answerStoppedEmpty: labels.answerStoppedEmpty ?? (labels.locale?.startsWith("en") ? englishLabels : russianLabels).answerStoppedEmpty,
       answerInterruptedEmpty: labels.answerInterruptedEmpty ?? (labels.locale?.startsWith("en") ? englishLabels : russianLabels).answerInterruptedEmpty,
       answerCutByLength: labels.answerCutByLength ?? russianLabels.answerCutByLength,

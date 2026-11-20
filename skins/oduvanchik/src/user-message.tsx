@@ -10,12 +10,14 @@ import { OduvanchikMessageAttachments } from "./message-attachments";
 /**
  * Реплика собеседника. Поправка, которую агент ещё не взял (`pending`), — с пометкой под пузырём. Вложения стоят над текстом справа: миниатюры картинок и плашки файлов.
  * Под пузырём строка с переключателем веток и карандашом: она занимает прежний промежуток до следующего сообщения (24 px),
- * поэтому высота сообщения не меняется и лента не подпрыгивает, когда правка недоступна.
+ * поэтому высота сообщения не меняется и лента не подпрыгивает, когда правка недоступна. На узком экране один карандаш
+ * (`data-edit-beside`: без веток, пометки и вложений) стоит слева от пузыря на его нижней линии: строка под ним не нужна.
  */
 export function OduvanchikUserMessage({ text, attachments, branchSwitcher, onEdit, pending }: ComponentProps<ChatSkin["UserMessage"]>) {
   const labels = useChatLabels();
+  const editBeside = Boolean(onEdit) && !pending && !branchSwitcher && !attachments;
   return (
-    <div className="oduvanchik-user flex flex-col items-end">
+    <div className="oduvanchik-user flex flex-col items-end" {...(editBeside && { "data-edit-beside": "" })}>
       <div className="flex w-full flex-col items-end gap-2">
         {attachments && <OduvanchikMessageAttachments attachments={attachments} />}
         {(!attachments || text.trim().length > 0) && (

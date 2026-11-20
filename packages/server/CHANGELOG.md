@@ -1,5 +1,11 @@
 # @ykurilov/agent-chat-server
 
+## 0.115.0
+
+### Patch Changes
+
+- @ykurilov/agent-chat-core@0.115.0
+
 ## 0.114.0
 
 ### Patch Changes

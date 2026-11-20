@@ -5,7 +5,7 @@ import type { ComposerOptions } from "./composer-options";
 import { getToolName, isToolUIPart } from "ai";
 import { answerBegan } from "./answer-began";
 import type { DynamicToolUIPart, ToolUIPart } from "ai";
-import { Fragment, memo, useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ComponentProps, ElementType, ReactNode } from "react";
 import { ALWAYS_IN_CHAT, ALWAYS_OFFERED, messageText } from "./chat-types";
 import { stripVoiceTags } from "./voice-tags";
@@ -78,6 +78,9 @@ import { steeredAnswerIdsOf } from "./steering/corrections";
 import { workLayoutOf } from "./work-view/work-layout";
 import type { AnswerEntry, WorkStep } from "./work-view/work-layout";
 import { WorkStepsPart } from "./work-view/work-steps-part";
+import { detailedItemsOf } from "./work-view/tool-groups";
+import type { DetailedItem, GroupableCall } from "./work-view/tool-groups";
+import { answerChainsKey, answerChainsOf, settledWithoutText } from "./answer-chains";
 
 interface FeedExtensions extends AgentChatExtensions {
   reasoningVisible?: boolean;
@@ -374,6 +377,20 @@ function AgentChatBody({ history, header, completion, composerOptions, api, chat
   const dividers = useMemo(() => dividersByMessage(chat.compactions), [chat.compactions]);
   const voiceAnswers = useVoiceAnswerIds(chat.messages);
   const forkByMessage = useMemo(() => new Map(chat.forks.map((fork) => [fork.messageId, fork])), [chat.forks]);
+  // Ответ после невидимого служебного сообщения (сервер разбудил агента) — продолжение прошлого (договор 37).
+  const lastFeedId = feedMessages.at(-1)?.id;
+  const answerChainsId = answerChainsKey(feedMessages, {
+    isAnswer: (message) =>
+      message.role === "assistant" && !correctionIds.has(message.id) && agentNoticesOf(message).length === 0 && staffRepliesOf(message).length === 0 &&
+      !settledWithoutText(message, { streaming: busy && message.id === lastFeedId, voiceAnswer: voiceAnswers.has(message.id) }),
+    isInvisible: (message) =>
+      isInvisibleServiceMessage(message, skin, extensions.noticeLines) && !dividers.has(message.id) && chat.historyDetailStates[`${message.id}:message`] !== "error",
+    breaksAfter: (message) => dividers.has(message.id),
+  });
+  const answerChains = useMemo(() => answerChainsOf(answerChainsId), [answerChainsId]);
+  // Текст прежних ответов цепочки нужен только «Копировать» последнего: лента не перерисовывается от каждого куска ответа.
+  const feedMessagesNow = useRef(feedMessages);
+  feedMessagesNow.current = feedMessages;
   /** Ответ агента, на месте которого стоит редактор страницы. */
   const [editingAnswerId, setEditingAnswerId] = useState<string | null>(null);
   useEffect(() => {
@@ -568,6 +585,9 @@ function AgentChatBody({ history, header, completion, composerOptions, api, chat
             expanded={expanded}
             status={busy && index === lastIndex ? "streaming" : (message.metadata?.status ?? "complete")}
             branchSwitcher={branchSwitcher}
+            {...(answerChains.continued.has(message.id) && { continued: true })}
+            {...(answerChains.follows.has(message.id) && { followsPrevious: true })}
+            {...(answerChains.before.has(message.id) && { copyPrefix: chainTextOf(answerChains.before.get(message.id)!, feedMessagesNow.current, voiceAnswers) })}
             {...(index === lastIndex && canRetry && { onRetry: retry })}
             onApproval={respondToApproval}
             approvalPendingId={approvalPendingId}
@@ -627,6 +647,7 @@ function AgentChatBody({ history, header, completion, composerOptions, api, chat
       chatId,
       approvalFailure,
       approvalPendingId,
+      answerChains,
       busy,
       canEdit,
       canRegenerate,
@@ -905,6 +926,25 @@ const EDIT_REFUSAL_ERRORS: Record<EditRefusalReason, EditErrorKind> = {
 };
 
 /** Пометки приложения серыми строками (`ServiceLine`, версия 27); нет строки у пометки или компонента у скина — ничего. */
+/** Служебное сообщение, от которого на экране ничего нет: только пометки приложения, и ни у одной нет видимой строки. */
+function isInvisibleServiceMessage(message: AgentChatMessage, skin: ChatSkin, lines: NoticeLines | undefined): boolean {
+  const notices = appNoticesOf(message);
+  if (notices.length === 0 || agentNoticesOf(message).length > 0 || staffRepliesOf(message).length > 0 || !message.parts.every(isAgentNoticePart)) return false;
+  if (!skin.ServiceLine || !lines) return true;
+  return notices.every((notice) => !(Object.hasOwn(lines, notice.name) && lines[notice.name]!(notice)));
+}
+
+/** Текст прежних ответов цепочки для «Копировать» последнего. */
+function chainTextOf(ids: readonly string[], messages: readonly AgentChatMessage[], voiceAnswers: ReadonlySet<string>): string {
+  return ids
+    .map((id) => {
+      const message = messages.find((candidate) => candidate.id === id);
+      return message ? messageText(message, { voiceAnswer: voiceAnswers.has(id) }) : "";
+    })
+    .filter((text) => text.trim().length > 0)
+    .join("\n\n");
+}
+
 function ServiceLines({ skin, notices, lines }: { skin: ChatSkin; notices: AppNotice[]; lines: NoticeLines | undefined }) {
   const View = skin.ServiceLine;
   if (!View || !lines) return null;
@@ -1063,6 +1103,9 @@ const AgentAnswer = memo(function AgentAnswer({
   last,
   runningActionIds,
   onRunAction,
+  continued,
+  followsPrevious,
+  copyPrefix,
 }: {
   skin: ChatSkin;
   /** Свои виджеты, схемы и картинки страницы. */
@@ -1111,6 +1154,12 @@ const AgentAnswer = memo(function AgentAnswer({
   /** Id кнопок, чьи обработчики у этого ответа ещё идут. */
   runningActionIds?: readonly string[] | undefined;
   onRunAction?: (action: MessageAction, message: AgentChatMessage, text: string) => void;
+  /** Ответ продолжается следующим ответом цепочки (договор 37). */
+  continued?: boolean;
+  /** Ответ продолжает прошлый ответ цепочки (договор 37). */
+  followsPrevious?: boolean;
+  /** Текст прежних ответов цепочки: «Копировать» последнего копирует всю цепочку. */
+  copyPrefix?: string;
 }) {
   const labels = useChatLabels();
   const durations = message.metadata?.reasoningDurationsMs ?? {};
@@ -1119,9 +1168,11 @@ const AgentAnswer = memo(function AgentAnswer({
   // Простой вид: размышления и вызовы — шаги работы, их раскладывает `workLayoutOf`; подробный — всё как есть.
   const simple = extensions.workView === "simple";
   const entries: AnswerEntry<ReactNode>[] = [];
-  const show = (node: ReactNode, blank = false) => void entries.push({ kind: "shown", node, ...(blank && { blank }) });
-  const step = (index: number, work: WorkStep, node: ReactNode) =>
-    void (simple ? entries.push({ kind: "step", key: partKey(message.id, index), step: work, ...(message.metadata?.historyDetails && { node }) }) : show(node));
+  const show = (node: ReactNode, blank = false, call?: GroupableCall, pending = false) =>
+    void entries.push({ kind: "shown", node, ...(blank && { blank }), ...(pending && { pending }), ...(call && { call }) });
+  /** `pending` — часть ещё идёт: серия одинаковых вызовов перед ней, возможно, ещё растёт (подробный вид). */
+  const step = (index: number, work: WorkStep, node: ReactNode, pending = false) =>
+    void (simple ? entries.push({ kind: "step", key: partKey(message.id, index), step: work, ...(message.metadata?.historyDetails && { node }) }) : show(node, false, undefined, pending));
   const customNames = new Set(Object.keys(extensions.widgets ?? {}));
   /** Номер следующей схемы в ответе: схемы всех текстовых частей ответа нумеруются подряд. */
   let nextDiagram = 0;
@@ -1164,6 +1215,7 @@ const AgentAnswer = memo(function AgentAnswer({
           durationMs={durationMs}
           {...(title !== undefined && { title })}
         />,
+        streaming,
       );
     } else if (part.type === "text") {
       const streaming = part.state === "streaming";
@@ -1268,7 +1320,10 @@ const AgentAnswer = memo(function AgentAnswer({
       );
       // Подтверждение опасного действия видно и в простом виде; решённое — уже шаг работы.
       if (part.state === "approval-requested") show(row);
-      else step(index, toolStepOf(part), row);
+      else if (!simple && skin.ToolCallGroup && isGroupableCall(part, editMark)) {
+        // Подробный вид (договор 37): одинаковые законченные вызовы подряд сводятся в строку «… ×N».
+        show(row, false, { toolName: getToolName(part), ...(hasTitle(part) && { title: part.title }), partId: partKey(message.id, index) });
+      } else step(index, toolStepOf(part), row, toolCallState(part) === "running");
     }
   });
   // Пустой текст законченного ответа — не часть ответа: тела у него нет. Пока ответ идёт, место под текст остаётся.
@@ -1277,13 +1332,17 @@ const AgentAnswer = memo(function AgentAnswer({
     ? workLayoutOf(visibleEntries, { streaming: status === "streaming", phrases: extensions.stepPhrases, labels: labels.workView, thoughts: Object.keys(thoughtTitles).length > 0 }).map((item) =>
         item.kind === "shown" ? item.node : <WorkStepsPart key={`${item.key}:work`} skin={skin} expanded={expanded} item={item} />,
       )
-    : visibleEntries.map((entry) => (entry.kind === "shown" ? entry.node : null));
+    : detailedItemsOf(visibleEntries.map((entry) => (entry.kind === "shown" ? entry : { node: null })), { streaming: status === "streaming" }).map((item) =>
+        item.kind === "node" ? item.node : <ToolCallGroupPart key={`${item.partId}:group`} Group={skin.ToolCallGroup!} expanded={expanded} item={item} />,
+      );
 
 
   const text = messageText(message, { voiceAnswer });
-  const actionViews = status === "streaming" ? undefined : messageActionViews(actions, { message, status, last: last ?? false }, (action) => ({
+  // Цепочка для человека — один ответ: «Копировать» и свои кнопки приложения — у последней части, текст — всей цепочки.
+  const chainText = copyPrefix ? [copyPrefix, text].filter((part) => part.trim().length > 0).join("\n\n") : text;
+  const actionViews = status === "streaming" || continued ? undefined : messageActionViews(actions, { message, status, last: last ?? false }, (action) => ({
     busy: runningActionIds?.includes(action.id) ?? false,
-    onRun: () => onRunAction?.(action, message, text),
+    onRun: () => onRunAction?.(action, message, chainText),
   }));
   // У ответа с ошибкой «повторить» живёт в блоке ошибки, второй кнопки нет.
   const errorText = status === "error" ? customErrorText(labels, message.metadata?.error) : undefined;
@@ -1304,11 +1363,13 @@ const AgentAnswer = memo(function AgentAnswer({
   return (
     <ThinkingClockProvider id={message.id} waiting={status === "streaming"}>
       <skin.AgentMessage
-        {...(extensions.answerDetails && !closedForCorrection && message.metadata?.modelId && message.metadata?.providerId && { modelDetails: { modelId: message.metadata.modelId, providerId: message.metadata.providerId, ...(answerProvider && { providerName: answerProvider.name }), ...(answerModel && { modelName: answerModel.name }), ...(message.metadata.reasoningLevel !== undefined && { reasoning: message.metadata.reasoningLevel }) } })}
+        {...(extensions.answerDetails && !closedForCorrection && !continued && message.metadata?.modelId && message.metadata?.providerId && { modelDetails: { modelId: message.metadata.modelId, providerId: message.metadata.providerId, ...(answerProvider && { providerName: answerProvider.name }), ...(answerModel && { modelName: answerModel.name }), ...(message.metadata.reasoningLevel !== undefined && { reasoning: message.metadata.reasoningLevel }) } })}
         status={status}
         empty={!steered && textless}
         {...(emptyText !== undefined && { emptyText })}
-        onCopy={() => void navigator.clipboard?.writeText(text)}
+        onCopy={() => void navigator.clipboard?.writeText(chainText)}
+        {...(continued && { continued: true })}
+        {...(followsPrevious && { followsPrevious: true })}
         {...(notice && { notice })}
         {...(onRetry && !notice && { onRetry })}
         {...(branchSwitcher && { branchSwitcher })}
@@ -1464,6 +1525,48 @@ function ExpandablePart<C extends ChatSkin["Reasoning"] | ChatSkin["ToolCallRow"
   return <div style={message?.metadata?.historyRevision ? { maxHeight: "60dvh", overflowY: "auto" } : undefined}><Part {...props} open={open} onOpenChange={setOpen} />
     {open && ref && <div role="status">{details?.states[partId] === "error" ? <button type="button" onClick={() => void load?.(partId)}>{labels.history?.failed} · {labels.retry}</button> : labels.history?.loading}</div>}
   </div>;
+}
+
+/**
+ * Законченный вызов без решения человека и без правки выхода: его можно свести в зелёную группу одинаковых. Недописанный
+ * выход (`preliminary`) и ошибка в обычном выходе (`{ error }` — так отвечают, например, инструменты браузера) — не готово.
+ */
+function isGroupableCall(part: ToolUIPart | DynamicToolUIPart, editMark: AnswerEditMark | undefined): boolean {
+  return (
+    toolCallState(part) === "done" &&
+    !reportsError(part.output) &&
+    !("approval" in part && part.approval) &&
+    !editMark?.editedToolCallIds.includes(part.toolCallId)
+  );
+}
+
+/** Выход сообщает об ошибке своим полем `error`. */
+function reportsError(output: unknown): boolean {
+  if (typeof output !== "object" || output === null || Array.isArray(output) || !Object.hasOwn(output, "error")) return false;
+  const error = (output as { error: unknown }).error;
+  return error !== undefined && error !== null && error !== false && error !== "";
+}
+
+/**
+ * Одинаковые вызовы подряд одной строкой (договор 37); раскрытие хранится по первому вызову и переживает уход за экран.
+ * Строку, которую человек раскрыл до того, как серия свернулась, он видит и дальше: группа при появлении раскрывается
+ * сама — один раз; свернул её человек — так и остаётся.
+ */
+function ToolCallGroupPart({ Group, expanded, item }: { Group: NonNullable<ChatSkin["ToolCallGroup"]>; expanded: ExpandedParts; item: Extract<DetailedItem<ReactNode>, { kind: "group" }> }) {
+  const groupKey = `${item.partId}:group`;
+  const [open, setOpen] = usePartOpen(expanded, groupKey);
+  const partIds = item.partIds.join(" ");
+  useLayoutEffect(() => {
+    const formed = `${groupKey}:formed`;
+    if (expanded.isOpen(formed)) return;
+    expanded.setOpen(formed, true);
+    if (partIds.split(" ").some((id) => expanded.isOpen(id))) expanded.setOpen(groupKey, true);
+  }, [expanded, groupKey, partIds]);
+  return (
+    <Group toolName={item.toolName} {...(item.title !== undefined && { title: item.title })} count={item.nodes.length} open={open} onOpenChange={setOpen}>
+      {item.nodes}
+    </Group>
+  );
 }
 
 /** Вызов инструмента как шаг простого вида: имя, состояние, вход и выход, если они пришли. */

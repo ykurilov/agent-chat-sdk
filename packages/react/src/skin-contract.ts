@@ -357,7 +357,7 @@ export interface StaffMessageView {
 }
 
 /**
- * Договор скина, версия 36: необязательное ComposerAttachmentItem.progress — прогресс загрузки файла в поле ввода; docs/skin-v36.md. Версия 35: необязательное Composer.pendingSend — «Отправить», нажатое во время загрузки файлов, ждёт её конца; docs/skin-v35.md. Версия 34: необязательное AgentMessage.emptyText — строка вместо ответа без текста; docs/skin-v34.md. Версия 33: необязательное spokenAnswer — текст ответа для диктора; docs/skin-v33.md. Версия 32: необязательный AnswerTextEditor для штатной правки ответа; docs/skin-v32.md. Версия 31: необязательные Layout.header и Layout.completion. Версия 30: необязательный Layout.empty. Версия 29: необязательные Composer.options, AgentMessage.modelDetails и WorkSteps.live.completed.
+ * Договор скина, версия 37: необязательные AgentMessage.continued и AgentMessage.followsPrevious — ответ продолжается следующим или продолжает прошлый (между ними невидимое служебное сообщение), и ToolCallGroup — одинаковые законченные вызовы подряд одной строкой «… ×N»; docs/skin-v37.md. Версия 36: необязательное ComposerAttachmentItem.progress — прогресс загрузки файла в поле ввода; docs/skin-v36.md. Версия 35: необязательное Composer.pendingSend — «Отправить», нажатое во время загрузки файлов, ждёт её конца; docs/skin-v35.md. Версия 34: необязательное AgentMessage.emptyText — строка вместо ответа без текста; docs/skin-v34.md. Версия 33: необязательное spokenAnswer — текст ответа для диктора; docs/skin-v33.md. Версия 32: необязательный AnswerTextEditor для штатной правки ответа; docs/skin-v32.md. Версия 31: необязательные Layout.header и Layout.completion. Версия 30: необязательный Layout.empty. Версия 29: необязательные Composer.options, AgentMessage.modelDetails и WorkSteps.live.completed.
  * Скины 28 работают без правок. В версии 28 добавились только необязательные значки шагов и заголовки раздумий:
  * `WorkStepsView.live.icon`, `WorkStepsView.done.items`, `icons`, `moreIcons` и `Reasoning.title`, docs/skin-v28.md;
  * скин версии 27 работает без правок: шаги без значков, раздумья — «Думал N сек».
@@ -520,6 +520,34 @@ export interface ChatSkin {
      * же виде. Пока ответ пишется, их нет.
      */
     actions?: MessageActionView[];
+    /**
+     * Ответ продолжается следующим (версия 37, необязательное): между ними только невидимое служебное сообщение (сервер
+     * разбудил агента), человек видит один ответ. Не рисовать «Скопировать» (копирует последний ответ цепочки — всю
+     * цепочку) и нижний промежуток до следующего сообщения. Своих кнопок приложения у него нет: они у последнего ответа.
+     * Отметки и переключатель веток остаются.
+     */
+    continued?: boolean;
+    /**
+     * Ответ продолжает прошлый (версия 37, необязательное): пара к `continued` у прошлого ответа. Не начинать новое
+     * сообщение — например, не рисовать второй аватар.
+     */
+    followsPrevious?: boolean;
+  }>;
+  /**
+   * Одинаковые законченные вызовы подряд в подробном виде (версия 37, необязательное): тот же инструмент и то же
+   * название. Одна строка «… ×N» (`labels.workView.stepRepeated`, для диктора — `labels.toolRepeatedSpoken`),
+   * раскрывается кнопкой с `aria-expanded` (`aria-controls` — только у раскрытой); внутри `children` — сами строки
+   * вызовов. Вызов с ошибкой (и `{ error }` в обычном выходе), ещё идущий и ждущий подтверждения в группу не попадают.
+   * Нет — каждая строка отдельно, как раньше.
+   */
+  ToolCallGroup?: ComponentType<{
+    toolName: string;
+    /** Название действия от приложения (`title` инструмента), как у `ToolCallRow`. */
+    title?: string;
+    count: number;
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+    children: ReactNode;
   }>;
   AgentText: ComponentType<{
     markdown: string;

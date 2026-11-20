@@ -1,4 +1,5 @@
 import type { WorkViewLabels } from "../labels";
+import type { GroupableCall } from "./tool-groups";
 import { stepIconOf } from "./step-icons";
 import type { StepIcon } from "./step-icons";
 import { stepPhraseOf } from "./step-phrases";
@@ -13,10 +14,10 @@ export type WorkStep =
   | { kind: "tool"; call: StepCall; title?: string; fallback?: StepPhraseText };
 
 /**
- * Часть ответа для раскладки: то, что видно как обычно (`blank` — пустой текст, модель только начала писать), или шаг
- * работы. `key` шага — ключ части ответа: по первому шагу группы хранится раскрытие свёрнутой строки.
+ * Часть ответа для раскладки: то, что видно как обычно (`blank` — пустой текст, модель только начала писать; `call` —
+ * строка вызова, которую подробный вид может свести в группу «… ×N»; `pending` — часть ещё идёт), или шаг работы. `key` шага — ключ части ответа: по первому шагу группы хранится раскрытие свёрнутой строки.
  */
-export type AnswerEntry<Node> = { kind: "shown"; node: Node; blank?: boolean } | { kind: "step"; key: string; step: WorkStep; node?: Node };
+export type AnswerEntry<Node> = { kind: "shown"; node: Node; blank?: boolean; pending?: boolean; call?: GroupableCall } | { kind: "step"; key: string; step: WorkStep; node?: Node };
 
 /** Строка списка шагов. */
 export interface WorkStepLine {

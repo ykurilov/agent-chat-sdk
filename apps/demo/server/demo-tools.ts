@@ -72,6 +72,13 @@ export function createDemoTools(now: () => Date = () => new Date()): ToolSet {
         return `Проверка «${subject}» прошла.`;
       },
     }),
+    // Агент смотрит каждую готовую работу отдельным вызовом: подряд одинаковые шаги лента сводит в «… ×N» (договор скина 37).
+    view_work: tool({
+      title: "Просмотр работы",
+      description: "Открывает готовую работу (картинку) и описывает, что на ней.",
+      inputSchema: z.object({ workId: z.string().describe("Номер работы") }),
+      execute: async ({ workId }) => `Работа ${workId}: кот у окна.`,
+    }),
     broken_lookup: tool({
       description: "Справочная служба: ищет справку по запросу во внешнем сервисе.",
       inputSchema: z.object({ query: z.string().describe("Что найти") }),

@@ -10,6 +10,7 @@ import { TandemVoiceDialogButton } from "./voice-dialog-button";
 import { TandemVoiceDialogPanel } from "./voice-dialog-panel";
 import { TandemSkinLabels } from "./tandem-labels";
 import { useUploadProgress } from "./upload-progress";
+import { useCrowdedRow } from "./composer-row";
 
 /** Меню провайдеров и подменю моделей стоят рядом и вместе шире узкого экрана телефона. */
 const narrowScreenQuery = "(max-width: 30rem)";
@@ -32,11 +33,15 @@ function isNarrowScreen(): boolean {
 const hideModelPicker = "[&_textarea~div>button[aria-haspopup=menu]]:hidden!";
 
 /**
- * Без меню и вложений нижний ряд рамки пуст, кроме кнопок справа: поле в одну строку, как простое поле Тандема.
- * Простое поле (`variant="minimal"`) не берётся: у него другое дерево, и при появлении меню поле пересоздалось бы —
- * набранный в этот миг текст ушёл бы в удалённое поле, фокус пропал бы.
+ * Без меню моделей поле в одну строку: скрепка слева, текст, справа голос, кнопки приложения и «Отправить»; превью файлов —
+ * строкой сверху. Дерево поля Тандема не меняется (ряд под текстом растворяется, порядок задают стили): простое поле
+ * (`variant="minimal"`) не берётся — у него другое дерево, и при появлении меню поле пересоздалось бы, набранный в этот миг
+ * текст ушёл бы в удалённое поле, фокус пропал бы. Текст растёт вверх, кнопки остаются внизу. Правая группа не помещается
+ * (много кнопок на узком экране) — уходит под текст, вправо. `+ div` — именно ряд: подложка «Отпустите файл» стоит дальше.
+ * Пустое поле не подгоняется под подсказку: в узкой строке длинная подсказка растянула бы его на несколько строк.
+ * Тексту в строке осталось бы мало места (много кнопок на узком экране) — рамка остаётся в два ряда (`measureRow`).
  */
-const singleRowFrame = "flex items-end gap-2 [&>textarea~div]:mt-0";
+const singleRowFrame = "tandem-single-row flex flex-wrap items-end gap-x-2 gap-y-1 [&>ul]:basis-full [&>textarea]:order-2 [&>textarea]:w-0 [&>textarea]:min-w-24 [&>textarea]:flex-1 [&>textarea:placeholder-shown]:[field-sizing:fixed] [&>textarea:placeholder-shown]:overflow-hidden [&>textarea:placeholder-shown]:text-ellipsis [&>textarea:placeholder-shown]:whitespace-nowrap [&>textarea+div]:contents [&>textarea+div>button]:order-1 [&>textarea+div>div]:order-3 [&>textarea+div>div]:ml-auto";
 
 /**
  * Один список «модель · провайдер» вместо провайдеров с подменю: для узкого экрана.
@@ -132,6 +137,19 @@ const hideNativeSend = "[&_textarea~div>div:last-child>button:last-child]:hidden
  */
 export function findNativeSend(root: ParentNode): HTMLButtonElement[] {
   return [...root.querySelectorAll<HTMLButtonElement>("textarea ~ div > div:last-child > button:last-child:not([data-send-while-uploading])")];
+}
+
+/** Ширина строки в рамке и кнопок одной строки: скрепки и группы справа. Промежуток — `gap-x-2`, он же в двух рядах. */
+function measureRow(wrapper: HTMLElement) {
+  const textarea = wrapper.querySelector("textarea");
+  const frame = textarea?.parentElement;
+  const row = textarea?.nextElementSibling;
+  if (!frame || !row) return null;
+  const style = getComputedStyle(frame);
+  const inner = frame.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+  const clip = [...row.querySelectorAll(":scope > button")].reduce((sum, button) => sum + (button as HTMLElement).offsetWidth, 0);
+  const group = (row.querySelector(":scope > div") as HTMLElement | null)?.offsetWidth ?? 0;
+  return { inner, controls: clip + group + (clip ? 16 : 8) };
 }
 
 const actionsClass = "flex min-w-0 shrink items-center gap-1 max-[30rem]:max-w-24 [&>*]:min-w-0 [&>*]:shrink [&>*:not([class*=size-])]:justify-start [&>*]:overflow-hidden";
@@ -231,8 +249,10 @@ export function TandemComposer({
       </>
     ),
   };
-  const flat = useMemo(() => (modelChoice && narrow ? flatModelChoice(modelChoice) : null), [modelChoice, narrow]);
   const hasMenu = modelChoice !== undefined && modelChoice.providers.length > 0;
+  const crowded = useCrowdedRow(wrapperRef, measureRow, !hasMenu && !dialogOn);
+  const oneRow = !hasMenu && !crowded;
+  const flat = useMemo(() => (modelChoice && narrow ? flatModelChoice(modelChoice) : null), [modelChoice, narrow]);
   const modelProps = flat
     ? { models: flat.models, model: flat.current, onModelChange: flat.onChange }
     : hasMenu
@@ -273,6 +293,7 @@ export function TandemComposer({
             {attachments ? (
               <Composer
                 {...common}
+                {...(oneRow && { className: `${common.className} ${singleRowFrame}` })}
                 variant="full"
                 {...modelFields}
                 attachments={attachments.items}
@@ -281,7 +302,7 @@ export function TandemComposer({
                 accept={attachments.accept}
               />
             ) : (
-              <Composer {...common} {...(!hasMenu && { className: `${common.className} ${singleRowFrame}` })} variant="extended" {...modelFields} />
+              <Composer {...common} {...(oneRow && { className: `${common.className} ${singleRowFrame}` })} variant="extended" {...modelFields} />
             )}
           </div>
           {dialogOn && <TandemVoiceDialogPanel dialog={dialog} />}

@@ -29,6 +29,8 @@
 .oduvanchik-label { font: 400 10px/1.5 var(--yk-font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--yk-muted); }
 .oduvanchik-agent { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
 .oduvanchik-agent > div { max-width: 100%; width: 100%; }
+/* Ответ продолжается следующим (договор 37): промежутка до него нет, даже если приложение задало ответам свой. */
+.oduvanchik-agent[data-continued] { padding-bottom: 0 !important; }
 .oduvanchik-agent-body { width: 100%; line-height: 1.55; color: var(--yk-text); }
 .oduvanchik-user [data-user-text] > div { background: var(--yk-surface-2); color: var(--yk-text); border: 0; border-radius: 16px 16px 4px 16px; padding: 10px 13px; max-width: 82%; }
 .oduvanchik-work { border: 1px solid var(--yk-border); border-radius: 12px; overflow: hidden; }
@@ -252,10 +254,21 @@
 .oduvanchik-field textarea { height: 26px; min-height: 26px; max-height: 160px; line-height: 26px; }
 .oduvanchik-field-send,
 .oduvanchik-field-mic > button { width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0; }
-.oduvanchik-field-inline { flex-direction: row; align-items: flex-end; padding: 8px 8px 8px 20px; gap: 6px; }
-.oduvanchik-field-inline textarea { flex: 1; width: 0; margin-block: 7px; }
-.oduvanchik-field-inline .oduvanchik-field-bar { display: contents; }
+/* Обычное поле — одна строка: «+», текст, кнопки справа. Текст растёт вверх, кнопки остаются внизу.
+   Файлы — отдельной строкой сверху. Справа не помещается (много кнопок на узком экране) — группа уходит под текст, вправо. */
+.oduvanchik-field-inline { flex-direction: row; flex-wrap: wrap; align-items: flex-end; padding: 8px 8px 8px 20px; gap: 4px; }
+.oduvanchik-field-inline:has(> .oduvanchik-add) { padding-inline-start: 8px; }
+.oduvanchik-field-inline > .oduvanchik-field-files { order: -2; flex-basis: 100%; margin-bottom: 4px; }
+.oduvanchik-field-inline textarea { flex: 1 1 0; width: 0; min-width: 5rem; margin-block: 7px; }
+.oduvanchik-field-inline textarea:placeholder-shown { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.oduvanchik-field-inline > .oduvanchik-add + textarea { padding-inline-start: 4px; }
+.oduvanchik-field-inline .oduvanchik-field-mic:empty { display: none; }
+.oduvanchik-field-inline .oduvanchik-field-bar { flex: none; margin-inline-start: auto; }
 .oduvanchik-field-inline .oduvanchik-field-mic { margin-inline-start: 0; }
+.oduvanchik-field-inline .oduvanchik-field-mic + .oduvanchik-field-send { margin-left: 0; }
+.oduvanchik-field-inline .oduvanchik-field-tool { width: 40px; height: 40px; border-radius: 50%; }
+/* Тексту в строке мало места: текст на всю ширину сверху, «+» и кнопки — рядом под ним. */
+.oduvanchik-field-inline[data-crowded] > textarea { order: -1; flex-basis: 100%; width: 100%; margin-block: 6px 2px; padding-inline: 8px 4px; }
 .oduvanchik-answer-actions { margin-inline-start: -8px; height: auto; min-height: 32px; }
 .oduvanchik-answer-action { height: 32px; padding-inline: 8px; opacity: 0; transition: opacity .15s; }
 .oduvanchik-answer-action[aria-label] { width: 32px; }
@@ -263,17 +276,27 @@
 .oduvanchik-agent:hover .oduvanchik-answer-action,
 .oduvanchik-answer-actions:focus-within .oduvanchik-answer-action { opacity: 1; }
 @media (hover: none) { .oduvanchik-answer-action { opacity: 1; } }
-/* Телефон: цели касания не меньше 44px, ряд действий под ответом — значками (подпись остаётся для читалки и в подсказке). */
+/* Телефон: цели касания не меньше 44px, ряд действий под ответом — значками (подпись остаётся для читалки и в подсказке).
+   Кнопки ряда на вид 32px, как на компьютере; касание добирают до 44px невидимые поля сверху и снизу (`::after`), они
+   ложатся на отступ над рядом и промежуток под ответом. При переносе ряда поля строк не перекрываются (row-gap). */
 @media (pointer: coarse) {
   .oduvanchik-user-meta { height: auto; min-height: 24px; }
   .oduvanchik-user-edit { width: 44px; height: 44px; margin-inline-end: -10px; }
-  .oduvanchik-answer-action { height: 44px; min-width: 44px; }
+  .oduvanchik-answer-action { position: relative; height: 32px; min-width: 44px; }
+  .oduvanchik-answer-action::after { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 44px; transform: translateY(-50%); }
   .oduvanchik-answer-action[aria-label] { width: 44px; }
-  .oduvanchik-answer-actions { gap: 0; }
+  .oduvanchik-answer-actions { gap: 12px 0; margin-top: 6px; }
 }
 @media (max-width: 640px) {
   .oduvanchik-answer-action-text { position: relative; width: 44px; min-width: 44px; padding-inline: 0; justify-content: center; }
   .oduvanchik-answer-action-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  /* Один карандаш — слева от пузыря на его нижней линии, а не отдельной строкой 44px под ним. */
+  .oduvanchik-user[data-edit-beside] { flex-direction: row; align-items: flex-end; justify-content: flex-end; gap: 4px; padding-bottom: 16px; }
+  .oduvanchik-user[data-edit-beside] > .oduvanchik-user-meta { order: -1; flex: none; height: auto; min-height: 0; }
+  .oduvanchik-user[data-edit-beside] > :first-child { width: auto; flex: 0 1 auto; min-width: 0; max-width: 82%; }
+  .oduvanchik-user[data-edit-beside] [data-user-text] { width: auto; }
+  .oduvanchik-user[data-edit-beside] [data-user-text] > div { max-width: 100%; }
+  .oduvanchik-user[data-edit-beside] .oduvanchik-user-edit { margin-inline-end: 0; }
 }
 /* Активная стрелка отправки — в полную силу: ни прозрачности, ни серой подсветки касания. */
 .oduvanchik-field-send:not(:disabled) { opacity: 1; background: var(--yk-ink); color: var(--yk-on-ink); -webkit-tap-highlight-color: transparent; }

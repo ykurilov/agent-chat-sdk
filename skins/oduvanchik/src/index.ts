@@ -29,6 +29,7 @@ import { OduvanchikAgentVideo } from "./agent-video";
 import { OduvanchikMessageEditor } from "./message-editor";
 import { OduvanchikReasoning } from "./reasoning";
 import { OduvanchikSpendingNotice } from "./spending-notice";
+import { OduvanchikToolCallGroup } from "./tool-call-group";
 import { OduvanchikToolCallRow } from "./tool-call-row";
 import { OduvanchikUserMessage } from "./user-message";
 import { OduvanchikInterruptMark } from "./interrupt-mark";
@@ -50,6 +51,7 @@ export const oduvanchikSkin: ChatSkin & ChatListSkin & AgentPanelSkin = {
   AgentText: OduvanchikAgentText,
   Reasoning: OduvanchikReasoning,
   ToolCallRow: OduvanchikToolCallRow,
+  ToolCallGroup: OduvanchikToolCallGroup,
   ConnectionNotice: OduvanchikConnectionNotice,
   SpendingNotice: OduvanchikSpendingNotice,
   ChatClosedNotice: OduvanchikChatClosedNotice,
@@ -119,6 +121,7 @@ export {
   OduvanchikReasoning,
   OduvanchikSpendingNotice,
   OduvanchikSuggestedReplies,
+  OduvanchikToolCallGroup,
   OduvanchikToolCallRow,
   OduvanchikUserMessage,
   OduvanchikVoiceButton,
