@@ -28,6 +28,7 @@ import type { ServerRefusal } from "./server-refusal";
 import { helperProgressOf, pendingHelperApprovalId } from "./helpers/helper-call";
 import { useWidgetAnswer } from "./widgets/use-widget-answer";
 import { appEventOf } from "./app-events";
+import { useChatTitleReport } from "./chat-list/active-chat-title";
 import { ALL_CAPABILITIES, CHAT_CLOSED_PART_TYPE, capabilitiesOf, closureOf, sameCapabilities } from "./chat-access";
 import type { ChatCapabilities, ChatClosure } from "./chat-access";
 import { EXTERNAL_CONTENT_PART_TYPE } from "./live-demos/live-demo-document";
@@ -269,7 +270,7 @@ export type EditOutcome =
 
 interface ServerHistory {
   historyView?: HistoryView;
-  chat?: Partial<ChatModelChoice> & { closed?: unknown };
+  chat?: Partial<ChatModelChoice> & { closed?: unknown; title?: unknown };
   /** Нет у серверов до 0.27. */
   capabilities?: unknown;
   /** Фоновые задачи на сервере подключены. Нет у серверов до этой заявки: тогда клиент спрашивает адрес задач сам. */
@@ -461,9 +462,12 @@ export function useAgentChat({
   const showClosure = useCallback((next: ChatClosure | null) => {
     setClosed((current) => (current?.code === next?.code && current?.message === next?.message ? current : next));
   }, []);
-  /** Права, закрытие и зрение модели из истории: то же значение не перерисовывает экран. */
+  /** Панель агента и `ChatWorkspace` берут название отсюда для чата не из списка (чат объекта). */
+  const reportTitle = useChatTitleReport();
+  /** Права, закрытие, название и зрение модели из истории: то же значение не перерисовывает экран. */
   const applyAccess = useCallback(
     (history: ServerHistory) => {
+      if (history.chat) reportTitle?.({ chatId, title: typeof history.chat.title === "string" && history.chat.title !== "" ? history.chat.title : null });
       const next = capabilitiesOf(history.capabilities);
       setCapabilities((current) => (sameCapabilities(current, next) ? current : next));
       showClosure(closureOf(history.chat?.closed));
@@ -476,7 +480,7 @@ export function useAgentChat({
       // Только включается: история, прочитанная раньше куска потока, признак не снимает.
       if (history.externalContent === true) setExternalContent(true);
     },
-    [chatUrl, showClosure],
+    [chatId, chatUrl, reportTitle, showClosure],
   );
   const onTurnRefusedRef = useRef(onTurnRefused);
   onTurnRefusedRef.current = onTurnRefused;

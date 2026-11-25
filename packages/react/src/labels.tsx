@@ -467,6 +467,11 @@ export interface ChatLabels {
   agentPanelLauncher: string;
   agentPanelOpen: string;
   agentPanelClose: string;
+  /**
+   * Видимая подпись кнопки закрытия на экране ≤ 640 px, где панель на весь экран (договор скина v38): там она же — имя
+   * кнопки. Приложение может задать своё, например «Назад к уроку». Нет в своём словаре — «Закрыть» / «Close» по `locale`.
+   */
+  agentPanelCloseText?: string;
   agentPanelLabel: string;
   agentPanelChats: string;
   agentPanelBackToChat: string;
@@ -516,7 +521,7 @@ export type ResolvedChatLabels = Omit<ChatLabels, "widgets" | "diagram" | "demo"
   Required<
     Pick<
       ChatLabels,
-      "externalImageLink" | "sendAfterUpload" | "uploadProgress" | "toolRepeatedSpoken" | "answerStoppedEmpty" | "answerInterruptedEmpty" | "answerCutByLength" | "answerEdited" | "answerUndelivered" | "toolOutputEdited" | "editAnswer" | "answerEditFailed" | "answerEditSave" | "steeringPending" | "thinkingPhrases" | "thinkingElapsed" | "spendingMessagesLeft" | "spendingMessagesExhausted" | "editMessageLimit"
+      "externalImageLink" | "sendAfterUpload" | "uploadProgress" | "toolRepeatedSpoken" | "answerStoppedEmpty" | "answerInterruptedEmpty" | "answerCutByLength" | "answerEdited" | "answerUndelivered" | "toolOutputEdited" | "editAnswer" | "answerEditFailed" | "answerEditSave" | "steeringPending" | "thinkingPhrases" | "thinkingElapsed" | "spendingMessagesLeft" | "spendingMessagesExhausted" | "editMessageLimit" | "agentPanelCloseText"
     >
   > & {
     history: NonNullable<ChatLabels["history"]>;
@@ -970,6 +975,7 @@ export const russianLabels: ResolvedChatLabels = {
   agentPanelLauncher: "Агент",
   agentPanelOpen: "Открыть агента",
   agentPanelClose: "Закрыть панель агента",
+  agentPanelCloseText: "Закрыть",
   agentPanelLabel: "Панель агента",
   agentPanelChats: "Чаты",
   agentPanelBackToChat: "К чату",
@@ -1294,6 +1300,7 @@ export const englishLabels: ResolvedChatLabels = {
   agentPanelLauncher: "Agent",
   agentPanelOpen: "Open agent",
   agentPanelClose: "Close agent panel",
+  agentPanelCloseText: "Close",
   agentPanelLabel: "Agent panel",
   agentPanelChats: "Chats",
   agentPanelBackToChat: "Back to chat",
@@ -1382,6 +1389,7 @@ export function ChatLabelsProvider({ labels, children }: { labels: ChatLabels; c
       spendingMessagesLeft: labels.spendingMessagesLeft ?? russianLabels.spendingMessagesLeft,
       spendingMessagesExhausted: labels.spendingMessagesExhausted ?? russianLabels.spendingMessagesExhausted,
       editMessageLimit: labels.editMessageLimit ?? russianLabels.editMessageLimit,
+      agentPanelCloseText: labels.agentPanelCloseText ?? (labels.locale?.startsWith("en") ? englishLabels : russianLabels).agentPanelCloseText,
       thinkingPhrases: labels.thinkingPhrases ?? (labels.reasoningRunning === russianLabels.reasoningRunning ? russianLabels.thinkingPhrases : []),
       thinkingElapsed: labels.thinkingElapsed ?? (labels.reasoningRunning === russianLabels.reasoningRunning ? russianLabels.thinkingElapsed : clockElapsed),
       widgets: { ...russianLabels.widgets, ...labels.widgets },

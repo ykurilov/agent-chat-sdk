@@ -20,18 +20,19 @@ test("панель на весь экран; «Закрыть» видна; по
   const box = (await panel.boundingBox())!;
   expect(box.width).toBe(viewport.width);
   expect(box.height).toBe(viewport.height);
-  await expectInsideViewport(page, panel.getByRole("button", { name: "Закрыть панель агента" }));
+  await expectInsideViewport(page, panel.getByRole("button", { name: "Закрыть", exact: true }));
   await expectNoHorizontalOverflow(page);
 
+  // На телефоне у «Закрыть» видимая подпись (договор скина 38) — она же имя кнопки.
   // Экранная клавиатура съедает низ экрана: панель сжимается вместе с ним, поле ввода остаётся на виду.
   const field = page.getByRole("textbox", { name: "Сообщение" });
   await field.tap();
   await page.setViewportSize({ width: viewport.width, height: Math.round(viewport.height * 0.55) });
   await expectInsideViewport(page, field);
-  await expectInsideViewport(page, panel.getByRole("button", { name: "Закрыть панель агента" }));
+  await expectInsideViewport(page, panel.getByRole("button", { name: "Закрыть", exact: true }));
   await expectNoHorizontalOverflow(page);
 
   await page.setViewportSize(viewport);
-  await panel.getByRole("button", { name: "Закрыть панель агента" }).tap();
+  await panel.getByRole("button", { name: "Закрыть", exact: true }).tap();
   await expect(panel).toHaveCount(0);
 });

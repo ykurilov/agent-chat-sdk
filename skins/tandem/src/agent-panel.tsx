@@ -2,7 +2,7 @@ import { Button, buttonVariants, cn } from "@tandem/ui";
 import type { AgentPanelSkin } from "@ykurilov/agent-chat-react/panel";
 import { useChatLabels } from "@ykurilov/agent-chat-react";
 import { ArrowLeft, List, Loader2, Sparkles, X } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import type { ComponentProps, CSSProperties, KeyboardEvent } from "react";
 import { TandemSkinLabels } from "./tandem-labels";
 
@@ -51,6 +51,8 @@ export function TandemAgentPanel({
   list,
 }: ComponentProps<AgentPanelSkin["AgentPanel"]>) {
   const labels = useChatLabels();
+  // Панель на весь экран: у кнопки закрытия видимая подпись, она же имя кнопки.
+  const narrow = useFullScreenPanel();
   const panelRef = useRef<HTMLElement>(null);
   const wasOpen = useRef(open);
   const lastFocusRequest = useRef(0);
@@ -110,13 +112,14 @@ export function TandemAgentPanel({
           <h2 className="min-w-0 flex-1 truncate px-1 text-sm font-medium text-[var(--foreground)]">{title}</h2>
           <Button
             variant="ghost"
-            size="icon"
-            aria-label={labels.agentPanelClose}
+            size={narrow ? "md" : "icon"}
+            aria-label={narrow ? undefined : labels.agentPanelClose}
             onClick={onClose}
             style={{ minWidth: 44, minHeight: 44 }}
-            className="shrink-0"
+            className={cn("shrink-0", narrow && "max-w-[50%]")}
           >
             <X aria-hidden="true" />
+            {narrow && <span className="min-w-0 truncate">{labels.agentPanelCloseText}</span>}
           </Button>
         </header>
         <div className="relative min-h-0 flex-1">
@@ -127,5 +130,21 @@ export function TandemAgentPanel({
         </div>
       </aside>
     </TandemSkinLabels>
+  );
+}
+
+/** Экран ≤ 640 px: панель на весь экран. Где `matchMedia` нет (jsdom, серверная отрисовка) — широкий экран. */
+const fullScreenPanelQuery = "(max-width: 640px)";
+
+function useFullScreenPanel(): boolean {
+  return useSyncExternalStore(
+    (onChange) => {
+      if (typeof window.matchMedia !== "function") return () => undefined;
+      const query = window.matchMedia(fullScreenPanelQuery);
+      query.addEventListener("change", onChange);
+      return () => query.removeEventListener("change", onChange);
+    },
+    () => typeof window.matchMedia === "function" && window.matchMedia(fullScreenPanelQuery).matches,
+    () => false,
   );
 }

@@ -1,15 +1,19 @@
 import { useComposerHelper } from "../../src/composer-helper-context";
 import type { ComposerHelper } from "../../src/composer-actions";
 // @vitest-environment jsdom
+import type React from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentPanel } from "../../src/agent-panel/agent-panel";
 import type { AgentPanelProps } from "../../src/agent-panel/agent-panel";
 import { AgentPanelProvider } from "../../src/agent-panel/agent-panel-provider";
 import type { AgentPanelProviderProps } from "../../src/agent-panel/agent-panel-provider";
-import { useAgentDataChanges, useAgentPanel, useAgentPlace } from "../../src/agent-panel/agent-panel-hooks";
+import { useAgentDataChanges, useAgentPanel, useAgentPanelLauncher, useAgentPlace } from "../../src/agent-panel/agent-panel-hooks";
 import type { AgentPanelControls } from "../../src/agent-panel/agent-panel-hooks";
 import { panelChatKey, panelOpenKey } from "../../src/agent-panel/panel-state";
+import { usePanelView } from "../../src/agent-panel/panel-context";
+import type { PanelView } from "../../src/agent-panel/panel-context";
+import { useEffect } from "react";
 import type { AgentAppBridge } from "../../src/app-bridge/app-bridge";
 import { fakeChatListServer } from "../support/fake-chat-list-server";
 import { setupChatDom, settle, submitQuestion } from "../support/chat-dom";
@@ -26,6 +30,8 @@ type Server = ReturnType<typeof fakeChatListServer>;
 interface RenderOptions {
   provider?: Partial<AgentPanelProviderProps>;
   panel?: Partial<AgentPanelProps>;
+  /** Своё содержимое страницы рядом с панелью. */
+  page?: React.ReactNode;
 }
 
 let controls: AgentPanelControls | undefined;
@@ -34,10 +40,11 @@ function ControlsProbe() {
   return null;
 }
 
-function page({ provider = {}, panel = {} }: RenderOptions = {}) {
+function page({ provider = {}, panel = {}, page: content }: RenderOptions = {}) {
   return (
     <AgentPanelProvider api="/api/chat" userKey="ivan" {...provider}>
       <button type="button">Page button</button>
+      {content}
       <ControlsProbe />
       <AgentPanel skin={stubPanelSkin} {...panel} />
     </AgentPanelProvider>
@@ -158,6 +165,21 @@ describe("AgentPanel: кнопка, закрытие, фокус (T008)", () => 
     await waitFor(() => expect(screen.getByTestId("panel-title").textContent).toBe("Про Грецию"));
     cleanupAndRender(fakeChatListServer([{ id: "empty", title: null }]));
     await waitFor(() => expect(screen.getByTestId("panel-title").textContent).toBe("Новый чат"));
+  });
+
+  it("openChat на чат не из списка (чат объекта): в шапке название из истории чата; чат без названия — «Новый чат»", async () => {
+    const server = twoChats();
+    server.state.hidden.push({ id: "lesson-1", title: "Урок 1. Знакомство" }, { id: "lesson-2", title: null });
+    renderPanel(server);
+    await waitFor(() => expect(screen.getByTestId("panel-title").textContent).toBe("Второй"));
+    act(() => controls!.openChat("lesson-1"));
+    await waitFor(() => expect(screen.getByTestId("panel-title").textContent).toBe("Урок 1. Знакомство"));
+    act(() => controls!.openChat("lesson-2"));
+    await waitFor(() => expect(historyRequested(server, "lesson-2")).toBe(true));
+    await settle();
+    expect(screen.getByTestId("panel-title").textContent).toBe("Новый чат");
+    act(() => controls!.openChat("c1"));
+    await waitFor(() => expect(screen.getByTestId("panel-title").textContent).toBe("Первый"));
   });
 
   it("надписи кнопки и панели — из словаря", async () => {
@@ -633,4 +655,290 @@ it("public field helper is available to a panel sibling and retires on chat swit
   const current = helper!;
   act(() => controls!.setOpen(false)); await waitFor(() => expect(helper).toBeNull());
   act(() => current.addFiles([])); expect(controller.composer.onAddFiles).not.toHaveBeenCalled();
+});
+
+describe("AgentPanel: чат объекта, открытый чат, своя кнопка", () => {
+  const lessonServer = () => {
+    const server = twoChats();
+    server.state.hidden.push({ id: "lesson-1", title: "Урок 1. Знакомство" });
+    server.state.subjects["lesson:intro"] = "lesson-1";
+    return server;
+  };
+
+  it("openSubject открывает панель на чате объекта: POST {api}/subject, название урока в шапке, activeChatId — его id", async () => {
+    const server = lessonServer();
+    renderPanel(server);
+    await screen.findByLabelText("поле");
+    expect(controls!.activeChatId).toBe("c2");
+    act(() => controls!.openSubject("lesson:intro"));
+    expect(isOpen()).toBe(true);
+    await waitFor(() => expect(historyRequested(server, "lesson-1")).toBe(true));
+    expect(server.requests.some((request) => request.method === "POST" && request.path === "/api/chat/subject" && (request.body as { key?: string }).key === "lesson:intro")).toBe(true);
+    await waitFor(() => expect(screen.getByTestId("panel-title").textContent).toBe("Урок 1. Знакомство"));
+    expect(controls!.activeChatId).toBe("lesson-1");
+    act(() => controls!.openChat("c1"));
+    await waitFor(() => expect(controls!.activeChatId).toBe("c1"));
+  });
+
+  it("openSubject: сервер отказал — текст отказа и «Повторить» в панели; выбор чата из списка уводит из отказа", async () => {
+    const server = lessonServer();
+    renderPanel(server);
+    await screen.findByLabelText("поле");
+    act(() => controls!.openSubject("lesson:missing"));
+    const notice = await within(screen.getByTestId("panel-chat")).findByText("Чат урока недоступен");
+    expect(notice).toBeTruthy();
+    server.state.subjects["lesson:missing"] = "lesson-1";
+    fireEvent.click(within(screen.getByTestId("panel-chat")).getByText("Повторить"));
+    await waitFor(() => expect(screen.getByTestId("panel-title").textContent).toBe("Урок 1. Знакомство"));
+    act(() => controls!.openSubject("lesson:gone"));
+    await within(screen.getByTestId("panel-chat")).findByText("Чат урока недоступен");
+    await openList();
+    fireEvent.click(within(row("c1")).getByText("Первый"));
+    await waitFor(() => expect(screen.getByTestId("panel-title").textContent).toBe("Первый"));
+    expect(within(screen.getByTestId("panel-chat")).queryByText("Чат урока недоступен")).toBeNull();
+  });
+
+  it("своя кнопка (useAgentPanelLauncher) открывает и закрывает панель, получает фокус после закрытия; launcher={false} — встроенной нет", async () => {
+    function LessonButton() {
+      const launcher = useAgentPanelLauncher();
+      return (
+        <button {...launcher}>
+          Спросить агента
+        </button>
+      );
+    }
+    renderPanel(twoChats(), { panel: { launcher: false }, page: <LessonButton /> });
+    await screen.findByLabelText("поле");
+    expect(screen.queryByTestId("launcher")).toBeNull();
+    const own = screen.getByText("Спросить агента");
+    expect(own.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(own);
+    await waitFor(() => expect(panelFrame().hidden).toBe(false));
+    expect(own.getAttribute("aria-expanded")).toBe("true");
+    await waitFor(() => expect(document.activeElement).toBe(field()));
+    fireEvent.click(screen.getByTestId("panel-close"));
+    await waitFor(() => expect(panelFrame().hidden).toBe(true));
+    expect(document.activeElement).toBe(own);
+    // Открыли кодом (например, с карточки урока) — фокус после закрытия всё равно на своей кнопке, а не потерян.
+    act(() => controls!.openSubject("lesson:none"));
+    await waitFor(() => expect(panelFrame().hidden).toBe(false));
+    (screen.getByTestId("panel-close") as HTMLButtonElement).focus();
+    fireEvent.click(screen.getByTestId("panel-close"));
+    await waitFor(() => expect(panelFrame().hidden).toBe(true));
+    expect(document.activeElement).toBe(own);
+  });
+});
+
+describe("AgentPanel: чат объекта — гонки, запоминание, занятость, возврат фокуса", () => {
+  const lessons = (chats: Parameters<typeof fakeChatListServer>[0] = []) => {
+    const server = fakeChatListServer(chats);
+    server.state.hidden.push({ id: "lesson-1", title: "Урок 1" }, { id: "lesson-2", title: "Урок 2" });
+    server.state.subjects["lesson:one"] = "lesson-1";
+    server.state.subjects["lesson:two"] = "lesson-2";
+    return server;
+  };
+  /** Ответ на поиск чата этого ключа ждёт `release()`. */
+  const hold = (server: Server, key: string) => {
+    let release!: () => void;
+    server.state.subjectGate[key] = new Promise<void>((resolve) => (release = resolve));
+    return () => act(() => release());
+  };
+  function OpenSubjectOnMount({ subject }: { subject: string }) {
+    const { openSubject } = useAgentPanel();
+    useEffect(() => openSubject(subject), [openSubject, subject]);
+    return null;
+  }
+  const title = () => screen.getByTestId("panel-title").textContent;
+
+  it("холодный старт: пока ищется чат урока, список не создаёт пустой «Новый чат» и не выбирает другой", async () => {
+    const server = lessons();
+    const release = hold(server, "lesson:one");
+    renderPanel(server, { page: <OpenSubjectOnMount subject="lesson:one" /> });
+    await waitFor(() => expect(server.listRequests("GET").length).toBeGreaterThan(0));
+    await settle();
+    await settle();
+    expect(server.state.created).toBe(0);
+    expect(controls!.activeChatId).toBeNull();
+    release();
+    await waitFor(() => expect(title()).toBe("Урок 1"));
+    expect(controls!.activeChatId).toBe("lesson-1");
+    expect(server.state.created).toBe(0);
+  });
+
+  it("чат урока не становится запомненным: после перезагрузки панель на последнем обычном чате", async () => {
+    localStorage.setItem(panelChatKey("/api/chat", "ivan"), "c1");
+    const server = lessons([{ id: "c2", title: "Второй" }, { id: "c1", title: "Первый" }]);
+    renderPanel(server, { page: <OpenSubjectOnMount subject="lesson:one" /> });
+    await waitFor(() => expect(title()).toBe("Урок 1"));
+    expect(localStorage.getItem(panelChatKey("/api/chat", "ivan"))).toBe("c1");
+
+    const again = lessons([{ id: "c2", title: "Второй" }, { id: "c1", title: "Первый" }]);
+    cleanupAndRender(again);
+    await waitFor(() => expect(historyRequested(again, "c1")).toBe(true));
+    await waitFor(() => expect(title()).toBe("Первый"));
+  });
+
+  it("холодный старт без запомненного: чат урока не запоминается, первый чат списка тоже", async () => {
+    const server = lessons([{ id: "c2", title: "Второй" }, { id: "c1", title: "Первый" }]);
+    const release = hold(server, "lesson:one");
+    renderPanel(server, { page: <OpenSubjectOnMount subject="lesson:one" /> });
+    await waitFor(() => expect(server.listRequests("GET").length).toBeGreaterThan(0));
+    await settle();
+    expect(historyRequested(server, "c2")).toBe(false);
+    release();
+    await waitFor(() => expect(title()).toBe("Урок 1"));
+    expect(localStorage.getItem(panelChatKey("/api/chat", "ivan"))).toBeNull();
+  });
+
+  it("пока ищется чат урока, занятость прежнего чата не висит на кнопке; отказ — тоже не крутится", async () => {
+    const server = lessons([{ id: "c2", title: "Второй" }, { id: "c1", title: "Первый" }]);
+    renderPanel(server);
+    await screen.findByLabelText("поле");
+    submitQuestion("Вопрос");
+    await waitFor(() => expect(launcher().getAttribute("data-busy")).toBe("true"));
+    const release = hold(server, "lesson:none");
+    act(() => controls!.openSubject("lesson:none"));
+    expect(controls!.busy).toBe(false);
+    expect(launcher().getAttribute("data-busy")).toBe("false");
+    release();
+    await within(screen.getByTestId("panel-chat")).findByText("Чат урока недоступен");
+    expect(controls!.busy).toBe(false);
+    expect(launcher().getAttribute("data-busy")).toBe("false");
+  });
+
+  it("быстрые повторные openSubject: открыт последний, поздний ответ первого его не подменяет", async () => {
+    const server = lessons([{ id: "c2", title: "Второй" }]);
+    renderPanel(server);
+    await screen.findByLabelText("поле");
+    const releaseOne = hold(server, "lesson:one");
+    const releaseTwo = hold(server, "lesson:two");
+    act(() => controls!.openSubject("lesson:one"));
+    act(() => controls!.openSubject("lesson:two"));
+    releaseTwo();
+    await waitFor(() => expect(title()).toBe("Урок 2"));
+    releaseOne();
+    await settle();
+    await settle();
+    expect(controls!.activeChatId).toBe("lesson-2");
+    expect(title()).toBe("Урок 2");
+  });
+
+  it("ответ поиска после смены чата (openChat) ничего не открывает", async () => {
+    const server = lessons([{ id: "c2", title: "Второй" }, { id: "c1", title: "Первый" }]);
+    renderPanel(server);
+    await screen.findByLabelText("поле");
+    const release = hold(server, "lesson:one");
+    act(() => controls!.openSubject("lesson:one"));
+    act(() => controls!.openChat("c1"));
+    release();
+    await settle();
+    await settle();
+    expect(controls!.activeChatId).toBe("c1");
+    expect(historyRequested(server, "lesson-1")).toBe(false);
+  });
+
+  it("находка по устаревшему запросу (subjectFound) игнорируется", async () => {
+    let view: PanelView | undefined;
+    function ViewProbe() {
+      view = usePanelView("test");
+      return null;
+    }
+    const server = lessons([{ id: "c2", title: "Второй" }]);
+    const releaseOne = hold(server, "lesson:one");
+    hold(server, "lesson:two");
+    renderPanel(server, { page: <ViewProbe /> });
+    await screen.findByLabelText("поле");
+    act(() => controls!.openSubject("lesson:one"));
+    const stale = view!.subjectRequest!;
+    act(() => controls!.openSubject("lesson:two"));
+    act(() => view!.subjectFound(stale, "lesson-1"));
+    expect(view!.subjectRequest?.key).toBe("lesson:two");
+    expect(controls!.activeChatId).toBeNull();
+    releaseOne();
+  });
+
+  it("сменился человек во время поиска: его панель не открывает чат урока прежнего", async () => {
+    const server = lessons([{ id: "c2", title: "Второй" }]);
+    const view = renderPanel(server);
+    await screen.findByLabelText("поле");
+    const release = hold(server, "lesson:one");
+    act(() => controls!.openSubject("lesson:one"));
+    view.rerenderWith({ provider: { userKey: "petr" } });
+    await waitFor(() => expect(controls!.activeChatId).toBe("c2"));
+    release();
+    await settle();
+    await settle();
+    expect(controls!.activeChatId).toBe("c2");
+    expect(historyRequested(server, "lesson-1")).toBe(false);
+    expect(localStorage.getItem(panelChatKey("/api/chat", "petr"))).not.toBe("lesson-1");
+  });
+
+  function OwnButton({ label }: { label: string }) {
+    const props = useAgentPanelLauncher();
+    return <button {...props}>{label}</button>;
+  }
+  async function closeByButton() {
+    fireEvent.click(screen.getByTestId("panel-close"));
+    await waitFor(() => expect(panelFrame().hidden).toBe(true));
+  }
+
+  it("несколько своих кнопок: фокус после закрытия — на ту, которой открыли", async () => {
+    renderPanel(twoChats(), { panel: { launcher: false }, page: <><OwnButton label="Сверху" /><OwnButton label="Снизу" /></> });
+    await screen.findByLabelText("поле");
+    for (const label of ["Снизу", "Сверху", "Снизу"]) {
+      fireEvent.click(screen.getByText(label));
+      await waitFor(() => expect(panelFrame().hidden).toBe(false));
+      await closeByButton();
+      expect(document.activeElement).toBe(screen.getByText(label));
+    }
+  });
+
+  it("открыли встроенной кнопкой — фокус на неё, даже если есть своя", async () => {
+    renderPanel(twoChats(), { page: <OwnButton label="Своя" /> });
+    await screen.findByLabelText("поле");
+    fireEvent.click(screen.getByText("Своя"));
+    await waitFor(() => expect(panelFrame().hidden).toBe(false));
+    await closeByButton();
+    expect(document.activeElement).toBe(screen.getByText("Своя"));
+    fireEvent.click(launcher());
+    await waitFor(() => expect(panelFrame().hidden).toBe(false));
+    await closeByButton();
+    expect(document.activeElement).toBe(launcher());
+  });
+
+  it("открыли кодом с карточки — фокус на карточку; карточку скрыли — на свою кнопку, своей нет — на встроенную", async () => {
+    function LessonCard() {
+      const { openSubject } = useAgentPanel();
+      return (
+        <div data-testid="card-box">
+          <button type="button" onClick={() => openSubject("lesson:one")}>Карточка урока</button>
+        </div>
+      );
+    }
+    const server = lessons([{ id: "c2", title: "Второй" }]);
+    const view = renderPanel(server, { page: <><LessonCard /><OwnButton label="Своя" /></> });
+    await screen.findByLabelText("поле");
+    const openFromCard = async () => {
+      const card = screen.getByText("Карточка урока");
+      card.focus();
+      fireEvent.click(card);
+      await waitFor(() => expect(title()).toBe("Урок 1"));
+      (screen.getByTestId("panel-close") as HTMLButtonElement).focus();
+    };
+    await openFromCard();
+    await closeByButton();
+    expect(document.activeElement).toBe(screen.getByText("Карточка урока"));
+
+    await openFromCard();
+    screen.getByTestId("card-box").hidden = true;
+    await closeByButton();
+    expect(document.activeElement).toBe(screen.getByText("Своя"));
+
+    view.rerenderWith({ page: <LessonCard /> });
+    screen.getByTestId("card-box").hidden = false;
+    await openFromCard();
+    screen.getByTestId("card-box").hidden = true;
+    await closeByButton();
+    expect(document.activeElement).toBe(launcher());
+  });
 });

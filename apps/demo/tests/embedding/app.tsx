@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { ChatLabelsProvider, russianLabels } from '@ykurilov/agent-chat-react';
 import { createRoot } from 'react-dom/client';
-import { AgentPanelProvider, AgentPanel, useAgentPanel } from '@ykurilov/agent-chat-react/panel';
+import { AgentPanelProvider, AgentPanel, useAgentPanel, useAgentPanelLauncher } from '@ykurilov/agent-chat-react/panel';
 import { oduvanchikSkin } from '@ykurilov/agent-chat-skin-oduvanchik';
 import { Dialog, DialogTrigger, DialogContent, DialogTitle } from '../../../../skins/oduvanchik/src/primitives/dialog';
 import { Menu, MenuTrigger, MenuContent, MenuItem } from '../../../../skins/oduvanchik/src/primitives/menu';
@@ -9,6 +9,11 @@ import { Menu, MenuTrigger, MenuContent, MenuItem } from '../../../../skins/oduv
 function Controls() {
   const panel = useAgentPanel();
   return <><button onClick={panel.focusComposer}>Edit with AI</button><button onClick={panel.showChat}>Show chat</button></>;
+}
+/** Своя кнопка приложения вместо плавающей: после закрытия панели фокус возвращается на неё. */
+function LessonLauncher() {
+  const launcher = useAgentPanelLauncher();
+  return <button {...launcher}>Ask about the lesson</button>;
 }
 function DensityDemo() {
   const params = new URLSearchParams(location.search);
@@ -38,7 +43,7 @@ function App() {
   const Launcher=oduvanchikSkin.AgentPanelLauncher;
   const launcherOnly=new URLSearchParams(window.location.search).has('launcher');
   return <><button onClick={async () => { await import('../../../../skins/oduvanchik/dist/embedded.css'); setStyles(true); }}>Load panel styles</button><output>{styles ? 'Styles ready' : 'No panel styles'}</output>
-    {new URLSearchParams(location.search).has('drop') ? <DropDemo/> : new URLSearchParams(location.search).has('density') ? <DensityDemo/> : launcherOnly ? <ChatLabelsProvider labels={russianLabels}><Launcher open={false} busy={false} onToggle={()=>{}} buttonRef={buttonRef}/></ChatLabelsProvider> : <AgentPanelProvider api="/api/chat" userKey="fixture"><Controls/><AgentPanel skin={oduvanchikSkin}/></AgentPanelProvider>}
+    {new URLSearchParams(location.search).has('drop') ? <DropDemo/> : new URLSearchParams(location.search).has('density') ? <DensityDemo/> : launcherOnly ? <ChatLabelsProvider labels={russianLabels}><Launcher open={false} busy={false} onToggle={()=>{}} buttonRef={buttonRef}/></ChatLabelsProvider> : new URLSearchParams(location.search).has('own') ? <ChatLabelsProvider labels={{...russianLabels,agentPanelCloseText:new URLSearchParams(location.search).get('caption') ?? 'Назад к уроку'}}><AgentPanelProvider api="/api/chat" userKey="fixture"><LessonLauncher/><AgentPanel skin={oduvanchikSkin} launcher={false}/></AgentPanelProvider></ChatLabelsProvider> : <AgentPanelProvider api="/api/chat" userKey="fixture"><Controls/><AgentPanel skin={oduvanchikSkin}/></AgentPanelProvider>}
     <section className="oduvanchik-chat" style={{maxWidth:300}}><Menu><MenuTrigger>Portal menu</MenuTrigger><MenuContent><MenuItem>Portal item</MenuItem></MenuContent></Menu>
     <Dialog><DialogTrigger>Portal dialog</DialogTrigger><DialogContent><DialogTitle>Test dialog</DialogTitle><p>Inside portal</p></DialogContent></Dialog></section></>;
 }

@@ -318,6 +318,7 @@ describe("словарь надписей", () => {
       agentPanelLauncher: "Агент",
       agentPanelOpen: "Открыть агента",
       agentPanelClose: "Закрыть панель агента",
+      agentPanelCloseText: "Закрыть",
       agentPanelLabel: "Панель агента",
       agentPanelChats: "Чаты",
       agentPanelBackToChat: "К чату",

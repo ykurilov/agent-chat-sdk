@@ -4,6 +4,7 @@ import type { ComponentType, ReactNode, Ref } from "react";
  * Договор скина, версия 12: отдельный интерфейс для боковой панели агента (`AgentPanel` из `@ykurilov/agent-chat-react/panel`).
  * `ChatSkin`, `ChatListSkin` (версия 7) и `MemorySkin` (версия 11) не менялись. Скин без `AgentPanelSkin` работает как раньше,
  * но для панели не годится (ошибка типов). Надписи компоненты берут из `useChatLabels()`.
+ * Договор 38 (docs/skin-v38.md): на экране ≤ 640 px у кнопки закрытия видимая подпись `labels.agentPanelCloseText`.
  */
 export interface AgentPanelSkin {
   /** Кнопка агента в углу страницы. Положение и вид — дело скина. */
@@ -19,7 +20,8 @@ export interface AgentPanelSkin {
    * Рамка панели. Смонтирована всегда; закрытая — скрыта (`hidden`/`inert`), содержимое живёт.
    * Страница под панелью не затемняется и остаётся кликабельной. При переходе `open: false → true` фокус уходит в поле ввода внутри рамки;
    * роль `complementary` или `dialog` без `aria-modal`, `aria-label` из словаря. На экране ≤ 640 px панель на весь экран,
-   * «Закрыть» всегда видна, горизонтальной прокрутки нет.
+   * «Закрыть» всегда видна, горизонтальной прокрутки нет. С договора 38 на таком экране у «Закрыть» видимая подпись
+   * `labels.agentPanelCloseText`, она же имя кнопки (без `aria-label`); на широком — значок и `labels.agentPanelClose`.
    */
   AgentPanel: ComponentType<{
     open: boolean;

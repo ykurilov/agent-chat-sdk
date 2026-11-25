@@ -14,6 +14,14 @@ export interface AgentPanelControls {
   focusComposer(): void;
   /** Открыть панель на чате; чужой или удалённый — «Чат не найден», список — по кнопке «Чаты». */
   openChat(chatId: string): void;
+  /**
+   * Открыть панель на чате объекта (урок, заказ): `POST {api}/subject { key }` находит или создаёт чат человека, дальше —
+   * как `openChat`. Нужен `subjectChats` в обработчике чата. Отказ сервера — его текст и «Повторить» в панели; выбор чата
+   * из списка уводит из отказа.
+   */
+  openSubject(key: string): void;
+  /** Id открытого чата (только чтение): вернуться к нему потом через `openChat`. `null` — чата нет или ищется чат объекта. */
+  activeChatId: string | null;
   /** Новый (или пустой) чат и готовый текст в поле ввода. `false` — не создался (список открыт с ошибкой). */
   openNewChat(options?: { draft?: string }): Promise<boolean>;
   /** Отступ справа для страницы в режиме `push`; 0 — закрыто, режим `overlay` или экран ≤ 640 px. */
@@ -41,7 +49,65 @@ export interface PanelView {
   focusRequest: number;
   setBusy(busy: boolean): void;
   launcherRef: RefObject<HTMLButtonElement | null>;
+  /** Свои кнопки вызова (`useAgentPanelLauncher`): куда вернуть фокус, когда панель закрылась. */
+  launchers: PanelLaunchers;
+  /** Ищется чат объекта (`openSubject`): ключ и номер попытки; `null` — открыт обычный чат. */
+  subjectRequest: { key: string; nonce: number } | null;
+  /** Чат объекта найден: открыть его как обычный. */
+  subjectFound(request: { key: string; nonce: number }, chatId: string): void;
   bridge: AppBridgeControl["bridge"];
+}
+
+/**
+ * Кнопки вызова панели и куда вернуть фокус, когда панель закрылась: туда, откуда её открыли (нажатая кнопка вызова или
+ * элемент, который был в фокусе при открытии из кода), если он ещё на странице и виден; иначе на свою кнопку вызова,
+ * иначе на встроенную.
+ */
+export interface PanelLaunchers {
+  /** Своя кнопка вызова (`useAgentPanelLauncher`) появилась на странице; возвращает уборку. */
+  add(button: HTMLElement): () => void;
+  /** Закрытую панель открывают этой кнопкой вызова (своей или встроенной). */
+  pressed(button: HTMLElement): void;
+  /** Панель открывается: запомнить, откуда. */
+  opening(): void;
+  /** Куда вернуть фокус; `builtIn` — встроенная кнопка, если она есть. `null` — некуда. */
+  focusTarget(builtIn: HTMLElement | null): HTMLElement | null;
+}
+
+const isVisible = (element: Element | null): element is HTMLElement =>
+  element instanceof HTMLElement &&
+  element.isConnected &&
+  element.closest("[hidden], [inert]") === null &&
+  (typeof element.checkVisibility !== "function" || element.checkVisibility());
+
+export function createPanelLaunchers(): PanelLaunchers {
+  const mounted = new Set<HTMLElement>();
+  let lastOwn: HTMLElement | null = null;
+  let pressed: HTMLElement | null = null;
+  let origin: Element | null = null;
+  return {
+    add(button) {
+      mounted.add(button);
+      return () => {
+        mounted.delete(button);
+        if (lastOwn === button) lastOwn = null;
+      };
+    },
+    pressed(button) {
+      pressed = button;
+      if (mounted.has(button)) lastOwn = button;
+    },
+    opening() {
+      const focused = typeof document === "undefined" ? null : document.activeElement;
+      origin = pressed ?? (focused === document.body ? null : focused);
+      pressed = null;
+    },
+    focusTarget(builtIn) {
+      if (isVisible(origin)) return origin;
+      if (lastOwn !== null && isVisible(lastOwn)) return lastOwn;
+      return [...mounted].find(isVisible) ?? (isVisible(builtIn) ? builtIn : null);
+    },
+  };
 }
 
 export const AppBridgeContext = createContext<AppBridgeControl | null>(null);

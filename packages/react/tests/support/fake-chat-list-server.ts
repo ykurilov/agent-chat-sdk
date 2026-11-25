@@ -19,6 +19,7 @@ export type ListEndpoint = "list" | "create" | "rename" | "delete";
  * Остальные адреса чата (история, модели…) отдаёт обычный подменённый сервер чата, но только для чатов из списка:
  * чужого чата нет — 404. `state.fail` — адреса, отвечающие 500; `state.down` — сервер не отвечает;
  * `state.busy` — id чатов, которые нельзя удалить (409); `state.refuseCreate` — отказ приложения на создание чата.
+ * `state.hidden` — чаты, которых нет в списке (как чаты объектов), но история у них есть. История несёт `chat.title`.
  */
 export function fakeChatListServer(initial: FakeListedChat[] = []) {
   const inner = fakeChatServer();
@@ -29,6 +30,14 @@ export function fakeChatListServer(initial: FakeListedChat[] = []) {
       updatedAt: `2026-01-0${index + 1}T00:00:00.000Z`,
       ...chat,
     })) as Array<Required<Omit<FakeListedChat, "origin" | "closed">> & Pick<FakeListedChat, "origin" | "closed">>,
+    /** Чаты не из списка (чаты объектов): история есть, в `GET {base}` их нет. */
+    hidden: [] as Array<{ id: string; title: string | null }>,
+    /** Ключи объектов для `POST {base}/subject`: ключ → id чата (обычно из `hidden`). Нет ключа — 404 с текстом. */
+    subjects: {} as Record<string, string>,
+    /** Ответ `POST {base}/subject` для ключа ждёт этого промиса. */
+    subjectGate: {} as Record<string, Promise<void>>,
+    /** Ответ `GET {base}` (список) ждёт этого промиса. */
+    listGate: null as Promise<void> | null,
     fail: new Set<ListEndpoint>(),
     busy: new Set<string>(),
     created: 0,
@@ -47,7 +56,10 @@ export function fakeChatListServer(initial: FakeListedChat[] = []) {
       state.fail.has(endpoint) ? Response.json({ error: { kind: "other" } }, { status: 500 }) : make();
     const notFound = () => Response.json({ error: { kind: "not_found" } }, { status: 404 });
     if (chatId === undefined) {
-      if (method === "GET") return respond("list", () => Response.json({ chats: state.chats }));
+      if (method === "GET") {
+        if (state.listGate) await state.listGate;
+        return respond("list", () => Response.json({ chats: state.chats }));
+      }
       return respond("create", () => {
         if (state.refuseCreate) return Response.json(state.refuseCreate.body, { status: state.refuseCreate.status });
         state.created += 1;
@@ -56,6 +68,12 @@ export function fakeChatListServer(initial: FakeListedChat[] = []) {
         state.chats.unshift(chat);
         return Response.json({ id: chat.id }, { status: 201 });
       });
+    }
+    if (chatId === "subject" && action === undefined && method === "POST") {
+      const key = (body as { key?: string } | undefined)?.key ?? "";
+      if (state.subjectGate[key]) await state.subjectGate[key];
+      const id = state.subjects[key];
+      return id === undefined ? Response.json({ error: { kind: "not_found", message: "Чат урока недоступен" } }, { status: 404 }) : Response.json({ id });
     }
     const chat = state.chats.find((item) => item.id === chatId);
     if (action === undefined && method === "PATCH") {
@@ -76,7 +94,14 @@ export function fakeChatListServer(initial: FakeListedChat[] = []) {
         return new Response(null, { status: 204 });
       });
     }
-    if (!chat && chatId !== "models") return notFound();
+    const known = chat ?? state.hidden.find((item) => item.id === chatId);
+    if (!known && chatId !== "models") return notFound();
+    if (known && action === undefined && method === "GET") {
+      const history = await inner.fetch(input, init);
+      if (!history.ok) return history;
+      const body = (await history.json()) as { chat?: object };
+      return Response.json({ ...body, chat: { ...body.chat, id: known.id, ...(known.title !== null && { title: known.title }) } });
+    }
     return inner.fetch(input, init);
   });
   return {

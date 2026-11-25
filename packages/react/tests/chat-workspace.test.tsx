@@ -85,6 +85,18 @@ describe("ChatWorkspace", () => {
     expect(row("empty").textContent).toContain("Новый чат");
   });
 
+  it("открытый чат не из списка (чат объекта): название каркасу — из истории чата, а не «Новый чат»", async () => {
+    const server = twoChats();
+    server.state.hidden.push({ id: "lesson-1", title: "Урок 1. Знакомство" });
+    renderWorkspace(server, { initialChatId: "lesson-1" });
+    await screen.findByLabelText("поле");
+    await waitFor(() => expect(screen.getByTestId("open-list").textContent).toBe("Урок 1. Знакомство"));
+    fireEvent.click(screen.getByTestId("open-list"));
+    await waitFor(() => expect(rows()).toEqual(["c2", "c1"]));
+    fireEvent.click(within(row("c1")).getByText("Первый"));
+    await waitFor(() => expect(screen.getByTestId("open-list").textContent).toBe("Первый"));
+  });
+
   it("безымянный чат передаётся скину как title: null; переименование «как есть» ничего не отправляет", async () => {
     const server = fakeChatListServer([{ id: "empty", title: null }]);
     renderWorkspace(server);

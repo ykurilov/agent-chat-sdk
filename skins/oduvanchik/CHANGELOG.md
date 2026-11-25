@@ -8,6 +8,19 @@
 - Обновление приложения: обновить пакеты SDK одной версией после выпуска, пересобрать и убрать временные подмены значков. API и CSS-импорты прежние, миграций нет.
 
 
+## 0.117.0
+
+### Minor Changes
+
+- 686d56d: Панель агента: openSubject, activeChatId, своя кнопка вызова (useAgentPanelLauncher, launcher={false}), видимая подпись закрытия на телефоне; название чата не из списка в шапке.
+
+### Patch Changes
+
+- Updated dependencies [686d56d]
+  - @ykurilov/agent-chat-react@0.117.0
+  - @ykurilov/agent-chat-flows@0.117.0
+  - @ykurilov/agent-chat-sandbox@0.117.0
+
 ## 0.116.0
 
 ### Minor Changes

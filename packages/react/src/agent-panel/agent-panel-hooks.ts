@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { RefCallback } from "react";
 import type { AppDataChange, ScreenPlace } from "../app-bridge/app-bridge";
-import { useAppBridgeControl, usePanelControls } from "./panel-context";
+import { useAppBridgeControl, usePanelControls, usePanelView } from "./panel-context";
 import type { AgentPanelControls } from "./panel-context";
 
 export type { AgentPanelControls } from "./panel-context";
@@ -8,6 +9,39 @@ export type { AgentPanelControls } from "./panel-context";
 /** Управление панелью из кода приложения: открыть, закрыть, открыть чат, новый чат с готовым текстом, отступ для `push`. */
 export function useAgentPanel(): AgentPanelControls {
   return usePanelControls("useAgentPanel");
+}
+
+/** Что разложить на свою кнопку вызова панели: `<button {...useAgentPanelLauncher()}>`. */
+export interface AgentPanelLauncherProps {
+  ref: RefCallback<HTMLElement>;
+  type: "button";
+  "aria-expanded": boolean;
+  onClick: () => void;
+}
+
+/**
+ * Своя кнопка вызова панели в любом месте страницы: открывает и закрывает панель, а после закрытия панели фокус
+ * возвращается на неё, если открыли ею (открыли из кода, а элемента, бывшего в фокусе, уже не видно, — на последнюю нажатую из своих кнопок). Встроенную плавающую кнопку убирает `<AgentPanel launcher={false} />`.
+ */
+export function useAgentPanelLauncher(): AgentPanelLauncherProps {
+  const { controls, launchers } = usePanelView("useAgentPanelLauncher");
+  const button = useRef<HTMLElement | null>(null);
+  const removal = useRef<(() => void) | null>(null);
+  const ref = useCallback<RefCallback<HTMLElement>>(
+    (element) => {
+      removal.current?.();
+      removal.current = null;
+      button.current = element;
+      if (element) removal.current = launchers.add(element);
+    },
+    [launchers],
+  );
+  const { open, setOpen } = controls;
+  const onClick = useCallback(() => {
+    if (!open && button.current) launchers.pressed(button.current);
+    setOpen(!open);
+  }, [launchers, open, setOpen]);
+  return { ref, type: "button", "aria-expanded": open, onClick };
 }
 
 /**

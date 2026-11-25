@@ -1,5 +1,11 @@
 # @ykurilov/agent-chat-react
 
+## 0.117.0
+
+### Minor Changes
+
+- 686d56d: Панель агента: openSubject, activeChatId, своя кнопка вызова (useAgentPanelLauncher, launcher={false}), видимая подпись закрытия на телефоне; название чата не из списка в шапке.
+
 ## 0.116.0
 
 No changes in this release.

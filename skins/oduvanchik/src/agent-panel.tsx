@@ -6,6 +6,7 @@ import { ArrowLeft, List, Sparkles, X } from "./icons";
 import { useEffect, useRef } from "react";
 import type { ComponentProps, CSSProperties, KeyboardEvent } from "react";
 import { OduvanchikSkinLabels } from "./tandem-labels";
+import { useScreenQuery } from "./screen-width";
 
 /**
  * Кнопка агента в правом нижнем углу страницы: значок и слово «Агент». Пока идёт ответ, на значке крутится кружок
@@ -52,6 +53,8 @@ export function OduvanchikAgentPanel({
   list,
 }: ComponentProps<AgentPanelSkin["AgentPanel"]>) {
   const labels = useChatLabels();
+  // Панель на весь экран: у кнопки закрытия видимая подпись, она же имя кнопки.
+  const narrow = useScreenQuery("(max-width: 640px)", false);
   const panelRef = useRef<HTMLElement>(null);
   const wasOpen = useRef(open);
   const lastFocusRequest = useRef(0);
@@ -110,12 +113,14 @@ export function OduvanchikAgentPanel({
           <h2 className="min-w-0 flex-1 truncate px-1 text-sm font-medium text-[var(--foreground)]">{title}</h2>
           <Button
             variant="ghost"
-            size="icon"
-            aria-label={labels.agentPanelClose}
+            size={narrow ? "md" : "icon"}
+            aria-label={narrow ? undefined : labels.agentPanelClose}
+            data-captioned={narrow ? "" : undefined}
             onClick={onClose}
             className="oduvanchik-agent-panel-control oduvanchik-agent-panel-close shrink-0"
           >
             <X aria-hidden="true" />
+            {narrow && <span className="min-w-0 truncate">{labels.agentPanelCloseText}</span>}
           </Button>
         </header>
         <div className="relative min-h-0 flex-1">

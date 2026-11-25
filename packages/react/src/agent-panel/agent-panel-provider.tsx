@@ -7,7 +7,7 @@ import type { AppBridgeOptions } from "../app-bridge/create-app-bridge";
 import { useChatList } from "../chat-list/use-chat-list";
 import { useWorkspaceListSync } from "../chat-list/use-workspace-list-sync";
 import { useChatLabels } from "../labels";
-import { AppBridgeContext, PanelControlsContext, PanelViewContext } from "./panel-context";
+import { AppBridgeContext, PanelControlsContext, PanelViewContext, createPanelLaunchers } from "./panel-context";
 import type { AgentPanelControls, PanelView } from "./panel-context";
 import { panelChatKey, usePanelOpen } from "./panel-state";
 
@@ -46,8 +46,13 @@ export function AgentPanelProvider({ api, userKey, browserTools, mode = "overlay
   };
   const [bridgeControl] = useState(() => createAppBridge(() => bridgeOptions.current));
 
-  const [open, setOpen] = usePanelOpen(api, userKey);
-  const list = useChatList({ api, rememberKey: panelChatKey(api, userKey), ...(fetch && { fetch }) });
+  const [open, setStoredOpen] = usePanelOpen(api, userKey);
+  const [launchers] = useState(createPanelLaunchers);
+  /** Ищется чат объекта (`openSubject`); номер растёт с каждым вызовом — тот же ключ спрашивается заново. */
+  const [subjectRequest, setSubjectRequest] = useState<{ key: string; nonce: number } | null>(null);
+  const subjectCount = useRef(0);
+  // Пока ищется чат объекта, список сам не открывает и не создаёт другой чат.
+  const list = useChatList({ api, rememberKey: panelChatKey(api, userKey), deferInitialChat: subjectRequest !== null, ...(fetch && { fetch }) });
   const [listOpen, setListOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [focusRequest, setFocusRequest] = useState(0);
@@ -55,9 +60,25 @@ export function AgentPanelProvider({ api, userKey, browserTools, mode = "overlay
   const [draft, setDraft] = useState<{ text: string; nonce: number; chatId: string | null } | null>(null);
   const draftCount = useRef(0);
   const launcherRef = useRef<HTMLButtonElement | null>(null);
+  /** Открыта ли панель сейчас, с учётом открытия в этом же кадре: откуда открыли, запоминается один раз. */
+  const openNow = useRef(open);
+  openNow.current = open;
+  // Панель открывается: запомнить, куда вернуть фокус после закрытия (нажатая кнопка вызова или элемент в фокусе).
+  const setOpen = useCallback(
+    (next: boolean) => {
+      if (next && !openNow.current) launchers.opening();
+      openNow.current = next;
+      setStoredOpen(next);
+    },
+    [launchers, setStoredOpen],
+  );
   const { activeChatId } = list;
   const composerStore = useMemo(createComposerRegistry, [api, userKey]);
-  const composerTarget = useMemo(() => ({ api, chatId: activeChatId, available: open && !listOpen && activeChatId !== null }), [api, activeChatId, open, listOpen]);
+  const searching = subjectRequest !== null;
+  const composerTarget = useMemo(
+    () => ({ api, chatId: activeChatId, available: open && !listOpen && !searching && activeChatId !== null }),
+    [api, activeChatId, open, listOpen, searching],
+  );
   composerStore.target = composerTarget;
   const composerRegistry = useMemo(() => ({ store: composerStore, target: composerTarget }), [composerStore, composerTarget]);
 
@@ -68,6 +89,7 @@ export function AgentPanelProvider({ api, userKey, browserTools, mode = "overlay
     setListOpen(false);
     setDraft(null);
     setBusy(false);
+    setSubjectRequest(null);
   }
   /** Человек на экране сейчас: действие, начатое для прежнего, после ожидания ничего не меняет. */
   const currentUser = useRef(userKey);
@@ -86,7 +108,8 @@ export function AgentPanelProvider({ api, userKey, browserTools, mode = "overlay
   }
   const boundDraft = draft !== null && draft.chatId !== null && draft.chatId === activeChatId ? draft : null;
 
-  const chatBusy = activeChatId !== null && busy;
+  // Ищется чат объекта: прежний чат не на экране, его занятость кнопке не показывать.
+  const chatBusy = !searching && activeChatId !== null && busy;
   useWorkspaceListSync(list, chatBusy);
   const narrow = useSyncExternalStore(subscribeToScreen, readNarrowScreen, () => false);
   const pageInset = mode === "push" && open && !narrow ? width : 0;
@@ -113,14 +136,40 @@ export function AgentPanelProvider({ api, userKey, browserTools, mode = "overlay
     (chatId: string) => {
       setOpen(true);
       setListOpen(false);
+      setSubjectRequest(null);
       select(chatId);
     },
     [select, setOpen],
+  );
+  const openSubject = useCallback(
+    (key: string) => {
+      setOpen(true);
+      setListOpen(false);
+      // Прежний чат уходит с экрана вместе с его занятостью.
+      setBusy(false);
+      subjectCount.current += 1;
+      setSubjectRequest({ key, nonce: subjectCount.current });
+    },
+    [setOpen],
+  );
+  const currentSubject = useRef(subjectRequest);
+  currentSubject.current = subjectRequest;
+  // Ответ на прежний запрос (сменился ключ, человек выбрал другой чат) ничего не открывает.
+  const subjectFound = useCallback(
+    (request: { key: string; nonce: number }, chatId: string) => {
+      if (currentSubject.current !== request) return;
+      currentSubject.current = null;
+      setSubjectRequest(null);
+      // Чат объекта не запоминается: после перезагрузки панель на последнем обычном чате.
+      select(chatId, { remember: false });
+    },
+    [select],
   );
   const openNewChat = useCallback(
     async (options?: { draft?: string }) => {
       setOpen(true);
       setListOpen(false);
+      setSubjectRequest(null);
       const created = await create();
       if (currentUser.current !== userKey) return false;
       if (!created) {
@@ -135,7 +184,11 @@ export function AgentPanelProvider({ api, userKey, browserTools, mode = "overlay
     },
     [create, setOpen, showList, userKey],
   );
-  const closeList = useCallback(() => setListOpen(false), []);
+  // Чат выбран или создан в списке: искомый чат объекта больше не нужен.
+  const closeList = useCallback(() => {
+    setListOpen(false);
+    setSubjectRequest(null);
+  }, []);
   // Esc: ждёт подтверждения удаления — ничего; открыт список — назад к чату; иначе закрыть панель.
   const escape = useCallback(() => {
     if (deleteRequest !== null) return;
@@ -144,8 +197,11 @@ export function AgentPanelProvider({ api, userKey, browserTools, mode = "overlay
   }, [deleteRequest, listOpen, setOpen]);
 
   const controls = useMemo<AgentPanelControls>(
-    () => ({ open, setOpen, toggle, showChat, focusComposer, openChat, openNewChat, pageInset, mode, width, busy: chatBusy }),
-    [chatBusy, mode, open, openChat, openNewChat, pageInset, setOpen, toggle, showChat, focusComposer, width],
+    () => ({
+      open, setOpen, toggle, showChat, focusComposer, openChat, openSubject, openNewChat, pageInset, mode, width, busy: chatBusy,
+      activeChatId: subjectRequest === null ? activeChatId : null,
+    }),
+    [activeChatId, chatBusy, mode, open, openChat, openNewChat, openSubject, pageInset, setOpen, subjectRequest, toggle, showChat, focusComposer, width],
   );
   const view: PanelView = {
     api,
@@ -161,6 +217,9 @@ export function AgentPanelProvider({ api, userKey, browserTools, mode = "overlay
     focusRequest,
     setBusy,
     launcherRef,
+    launchers,
+    subjectRequest,
+    subjectFound,
     bridge: userBridge,
   };
 

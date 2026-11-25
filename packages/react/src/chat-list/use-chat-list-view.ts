@@ -59,11 +59,6 @@ export function useChatListView(list: ChatListState, onChosen: () => void): Chat
   };
 }
 
-/** Название открытого чата для шапки; нет названия или чата нет в списке — «Новый чат». */
-export function activeChatTitle(list: Pick<ChatListState, "items" | "activeChatId">, labels: ChatLabels): string {
-  return list.items.find((item) => item.id === list.activeChatId)?.title ?? labels.chatListUntitled;
-}
-
 function actionErrorText(labels: ChatLabels, error: ChatListActionError): string {
   switch (error) {
     case "create":

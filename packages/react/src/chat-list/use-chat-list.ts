@@ -26,6 +26,11 @@ export interface UseChatListOptions {
   rememberKey?: string;
   /** Приложение не дало создать чат (`chat_creation_refused`): та же весть, что `onTurnRefused` у чата. Текст отказа список показывает сам. */
   onCreateRefused?: (refusal: AppRefusal) => void;
+  /**
+   * Пока `true`, загруженный список сам не выбирает и не создаёт открытый чат: его откроет приложение (панель — найденный
+   * чат объекта). Стало `false`, а открытого чата так и нет — выбор как обычно: запомненный, первый или новый.
+   */
+  deferInitialChat?: boolean;
 }
 
 export interface ChatListState {
@@ -40,7 +45,8 @@ export interface ChatListState {
   /** Чат, удаление которого ждёт подтверждения. Удаляет только `confirmDelete`. */
   deleteRequest: { id: string; title: string | null } | null;
   deleting: boolean;
-  select(chatId: string): void;
+  /** Открыть чат. `remember: false` — не запоминать его: после перезагрузки откроется прежний запомненный (чат объекта в панели). */
+  select(chatId: string, options?: { remember?: boolean }): void;
   /** Открывает пустой чат (без названия и без сообщений), если он уже есть, иначе создаёт новый. `false` — не вышло (`error` — `create`). */
   create(): Promise<boolean>;
   /** Пустое или прежнее название — ничего не делает. Не вышло — прежнее название возвращается. */
@@ -76,7 +82,7 @@ const NOTHING_LOADED = {
 const collapse = (title: string) => title.trim().replace(/\s+/g, " ");
 
 /** Состояние списка чатов: загрузка, выбор открытого чата, создание, переименование и удаление. Ничего не рисует. */
-export function useChatList({ api, initialChatId, fetch: customFetch, rememberKey, onCreateRefused }: UseChatListOptions): ChatListState {
+export function useChatList({ api, initialChatId, fetch: customFetch, rememberKey, onCreateRefused, deferInitialChat = false }: UseChatListOptions): ChatListState {
   const memoryKey = rememberKey ?? defaultRememberKey(api);
   const [status, setStatus] = useState<ChatListStatus>("loading");
   const [items, setItems] = useState<ChatListEntry[]>([]);
@@ -115,6 +121,10 @@ export function useChatList({ api, initialChatId, fetch: customFetch, rememberKe
   const activeRef = useRef(activeChatId);
   activeRef.current = keyChanged ? null : activeChatId;
   const initialRef = useRef(initialChatId);
+  const deferRef = useRef(deferInitialChat);
+  deferRef.current = deferInitialChat;
+  /** Список загружен, пока выбор открытого чата отложен (`deferInitialChat`): номер той загрузки. */
+  const deferredChoice = useRef<number | null>(null);
   /** Номер последней полной загрузки: ответы более ранних игнорируются. */
   const loadRequest = useRef(0);
   /** Номер последнего запроса списка (загрузка или тихое обновление): устаревшее обновление не затирает свежее. */
@@ -143,10 +153,10 @@ export function useChatList({ api, initialChatId, fetch: customFetch, rememberKe
   );
 
   const activate = useCallback(
-    (chatId: string) => {
+    (chatId: string, remember = true) => {
       activeRef.current = chatId;
       setActiveChatId(chatId);
-      rememberChat(memoryKey, chatId);
+      if (remember) rememberChat(memoryKey, chatId);
     },
     [memoryKey],
   );
@@ -161,6 +171,29 @@ export function useChatList({ api, initialChatId, fetch: customFetch, rememberKe
     return true;
   }, [activate, api, memoryKey, send, stillFor]);
 
+  /** Открыть чат после загрузки списка: из адреса, запомненный, первый или новый. */
+  const openInitialChat = useCallback(
+    async (loaded: ChatListEntry[], request: number) => {
+      const remembered = readRememberedChat(memoryKey);
+      const chosen =
+        initialRef.current ??
+        (remembered !== null && loaded.some((item) => item.id === remembered) ? remembered : loaded[0]?.id);
+      if (chosen !== undefined) {
+        activate(chosen);
+        return;
+      }
+      try {
+        await createAndOpen();
+      } catch (cause) {
+        if (!stillFor(memoryKey) || request !== loadRequest.current) return;
+        // Приложение отказало в первом чате: список загружен, отказ показывается в нём, а не «список не загрузился».
+        if (cause instanceof ChatCreationRefusedError) failCreate(cause);
+        else setStatus("error");
+      }
+    },
+    [activate, createAndOpen, failCreate, memoryKey, stillFor],
+  );
+
   const load = useCallback(async () => {
     if (loadedKey.current !== memoryKey) {
       // Сменился человек: начальный чат из адреса к нему не относится (список и открытый чат сброшены при отрисовке).
@@ -168,6 +201,7 @@ export function useChatList({ api, initialChatId, fetch: customFetch, rememberKe
       loadedKey.current = memoryKey;
     }
     const request = ++loadRequest.current;
+    deferredChoice.current = null;
     listRequest.current += 1;
     setStatus("loading");
     try {
@@ -176,30 +210,27 @@ export function useChatList({ api, initialChatId, fetch: customFetch, rememberKe
       setItems(loaded);
       setStatus("ready");
       if (activeRef.current !== null) return;
-      const remembered = readRememberedChat(memoryKey);
-      const chosen =
-        initialRef.current ??
-        (remembered !== null && loaded.some((item) => item.id === remembered) ? remembered : loaded[0]?.id);
-      if (chosen !== undefined) activate(chosen);
-      else
-        try {
-          await createAndOpen();
-        } catch (cause) {
-          // Приложение отказало в первом чате: список загружен, отказ показывается в нём, а не «список не загрузился».
-          if (!(cause instanceof ChatCreationRefusedError)) throw cause;
-          if (stillFor(memoryKey) && request === loadRequest.current) failCreate(cause);
-        }
+      if (deferRef.current) deferredChoice.current = request;
+      else await openInitialChat(loaded, request);
     } catch {
       if (!alive.current || request !== loadRequest.current) return;
       setStatus("error");
       // Адрес чата известен: открываем его и без списка, пусть чат сам скажет, что с ним (история не грузится, чата нет).
       if (activeRef.current === null && initialRef.current !== undefined) activate(initialRef.current);
     }
-  }, [activate, api, createAndOpen, failCreate, memoryKey, send, stillFor]);
+  }, [activate, api, memoryKey, openInitialChat, send]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Отложенный выбор отпустили: чат так никто и не открыл — открыть как после обычной загрузки.
+  useEffect(() => {
+    const request = deferredChoice.current;
+    if (deferInitialChat || request === null) return;
+    deferredChoice.current = null;
+    if (activeRef.current === null && request === loadRequest.current) void openInitialChat(itemsRef.current, request);
+  }, [deferInitialChat, openInitialChat]);
 
   const refresh = useCallback(async () => {
     const request = ++listRequest.current;
@@ -233,9 +264,9 @@ export function useChatList({ api, initialChatId, fetch: customFetch, rememberKe
   }, [activate, api, createAndOpen, failCreate, memoryKey, send, stillFor]);
 
   const select = useCallback(
-    (chatId: string) => {
+    (chatId: string, options?: { remember?: boolean }) => {
       setError(null);
-      activate(chatId);
+      activate(chatId, options?.remember ?? true);
     },
     [activate],
   );

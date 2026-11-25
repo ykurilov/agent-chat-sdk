@@ -332,6 +332,8 @@
   .oduvanchik-agent-panel-header > .oduvanchik-agent-panel-control { height: max(44px, var(--yk-studio-panel-control-size, 44px)); min-height: 44px; min-width: 44px; }
   .oduvanchik-agent-panel-header > .oduvanchik-agent-panel-close { width: max(44px, var(--yk-studio-panel-control-size, 44px)); }
 }
+/* Narrow full-screen panel: the close button carries a visible caption (labels.agentPanelCloseText). */
+.oduvanchik-agent-panel-header > .oduvanchik-agent-panel-close[data-captioned] { width: auto; max-width: 50%; padding-inline: 12px; gap: 6px; }
 
 /* Text selection must contrast with every neutral chat surface, including the composer.
    Override inherited Tandem border-colored selection without changing the host page. */

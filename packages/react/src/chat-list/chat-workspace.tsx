@@ -8,7 +8,8 @@ import type { ChatSkin } from "../skin-contract";
 import type { ChatListSkin } from "./chat-list-skin";
 import { useChatList } from "./use-chat-list";
 import type { ChatListViewProps } from "./use-chat-list-view";
-import { activeChatTitle, useChatListView } from "./use-chat-list-view";
+import { ChatTitleReportProvider, activeChatTitle, useReportedChatTitle } from "./active-chat-title";
+import { useChatListView } from "./use-chat-list-view";
 import { useWorkspaceListSync } from "./use-workspace-list-sync";
 
 /** Data and chat content for an application-owned shell. Undefined list means chatList is not allowed yet. */
@@ -79,15 +80,19 @@ export function ChatWorkspace({ skin, initialChatId, onChatChange, onChatAccessC
   useWorkspaceListSync(list, activeBusy, listShown);
   const closeList = useCallback(() => setListOpen(false), []);
   const listView = useChatListView(list, closeList);
+  const [reportedTitle, reportTitle] = useReportedChatTitle();
+  const activeTitle = activeChatTitle(list, labels, reportedTitle);
 
   const children = activeChatId !== null && (
-    <AgentChat key={activeChatId} {...chatProps} chatId={activeChatId} skin={skin} onBusyChange={setActiveBusy} onChatAccessChange={onActiveAccessChange} onChatUnavailable={onActiveChatUnavailable} onDraftChange={onActiveDraftChange} {...(activeDraft !== undefined && { initialDraft: activeDraft })} />
+    <ChatTitleReportProvider value={reportTitle}>
+      <AgentChat key={activeChatId} {...chatProps} chatId={activeChatId} skin={skin} onBusyChange={setActiveBusy} onChatAccessChange={onActiveAccessChange} onChatUnavailable={onActiveChatUnavailable} onDraftChange={onActiveDraftChange} {...(activeDraft !== undefined && { initialDraft: activeDraft })} />
+    </ChatTitleReportProvider>
   );
-  if (renderWorkspace) return renderWorkspace({ activeTitle: activeChatTitle(list, labels), ...(listShown && { list: listView }), children });
+  if (renderWorkspace) return renderWorkspace({ activeTitle, ...(listShown && { list: listView }), children });
 
   return (
     <skin.ChatWorkspace
-      activeTitle={activeChatTitle(list, labels)}
+      activeTitle={activeTitle}
       listOpen={listOpen && listShown}
       onListOpenChange={setListOpen}
       {...(listShown && { list: <skin.ChatList {...listView} /> })}

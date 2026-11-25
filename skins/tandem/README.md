@@ -61,7 +61,7 @@ pnpm add @ykurilov/agent-chat-skin-tandem "@tandem/ui@npm:@ykurilov/tandem-ui@^0
 
 Экран памяти: `tandemMemorySkin` (`TandemMemoryScreen`, `TandemMemoryGroup`, `TandemMemoryNoteRow`, `TandemMemoryNoteEditor`, `TandemMemoryConfirm`) — договор скина версии 11 для `AgentMemory`. Всё переносится по строкам: на телефоне нет горизонтальной прокрутки. Строка вызова инструмента памяти называется «Работа с памятью» (`withMemoryToolTitles` из `@ykurilov/agent-chat-memory/labels`).
 
-Панель агента: `TandemAgentPanelLauncher` и `TandemAgentPanel` (входят в `tandemSkin`; договор скина версии 12 для `AgentPanel` из `@ykurilov/agent-chat-react/panel`). Панель без затемнения страницы, на экране до 640 px — на весь экран, список чатов открывается поверх чата.
+Панель агента: `TandemAgentPanelLauncher` и `TandemAgentPanel` (входят в `tandemSkin`; договор скина версии 12 для `AgentPanel` из `@ykurilov/agent-chat-react/panel`). Панель без затемнения страницы, на экране до 640 px — на весь экран, список чатов открывается поверх чата. На таком экране у кнопки закрытия видна подпись `agentPanelCloseText` («Закрыть», своя — через словарь) — [договор 38](../../docs/skin-v38.md).
 
 Панель подключения мессенджеров: `tandemMessengersSkin` из `@ykurilov/agent-chat-skin-tandem/messengers` (договор скина мессенджеров версии 1, `TandemMessengerConnectPanel`) — для `MessengerConnect` из `@ykurilov/agent-chat-messengers/react`:
 

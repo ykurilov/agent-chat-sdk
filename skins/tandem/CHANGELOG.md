@@ -1,5 +1,21 @@
 # @ykurilov/agent-chat-skin-tandem
 
+## 0.117.0
+
+### Minor Changes
+
+- 686d56d: Панель агента: openSubject, activeChatId, своя кнопка вызова (useAgentPanelLauncher, launcher={false}), видимая подпись закрытия на телефоне; название чата не из списка в шапке.
+
+### Patch Changes
+
+- Updated dependencies [686d56d]
+  - @ykurilov/agent-chat-react@0.117.0
+  - @ykurilov/agent-chat-flows@0.117.0
+  - @ykurilov/agent-chat-messengers@0.117.0
+  - @ykurilov/agent-chat-sandbox@0.117.0
+  - @ykurilov/agent-chat-mcp@0.117.0
+  - @ykurilov/agent-chat-skills@0.117.0
+
 ## 0.116.0
 
 ### Minor Changes
