@@ -128,6 +128,8 @@ export interface FlowEditorLabels {
     addStep: string;
     dailyAt: string;
     addTime: string;
+    /** Поле `stopAfter`: тишина, после которой агент больше не пишет первым, а разговор открыт. С 0.116. */
+    stopAfter: string;
     giveUpAfter: string;
     never: string;
     remove: string;
@@ -136,6 +138,8 @@ export interface FlowEditorLabels {
     summaryDaily: (times: string) => string;
     /** «молчит 3 дн. — разговор окончен» в строке касаний. */
     summaryGiveUp: (duration: string) => string;
+    /** «молчит 3 дн. — больше не напоминать» в строке касаний. С 0.116. */
+    summaryStop: (duration: string) => string;
   };
   /** Раздел общих касаний сценария в обзоре (`FlowNudgesSection`). С 0.104. */
   nudgesSection: {
@@ -418,12 +422,14 @@ export const russianFlowEditorLabels: FlowEditorLabels = {
     addStep: "Добавить срок",
     dailyAt: "Потом каждый день в",
     addTime: "Добавить время",
+    stopAfter: "Молчит столько — больше не напоминать",
     giveUpAfter: "Молчит столько — разговор окончен",
     never: "никогда",
     remove: "Убрать",
     on: "Касания сценария",
     summaryDaily: (times) => `каждый день в ${times}`,
     summaryGiveUp: (duration) => `молчит ${duration} — разговор окончен`,
+    summaryStop: (duration) => `молчит ${duration} — больше не напоминать`,
   },
   nudgesSection: {
     title: "Касания",
@@ -684,12 +690,14 @@ export const englishFlowEditorLabels: FlowEditorLabels = {
     addStep: "Add a delay",
     dailyAt: "Then every day at",
     addTime: "Add a time",
+    stopAfter: "Silent this long — stop nudging",
     giveUpAfter: "Silent this long — conversation over",
     never: "never",
     remove: "Remove",
     on: "Flow nudges",
     summaryDaily: (times) => `every day at ${times}`,
     summaryGiveUp: (duration) => `silent ${duration} — conversation over`,
+    summaryStop: (duration) => `silent ${duration} — stop nudging`,
   },
   nudgesSection: {
     title: "Nudges",

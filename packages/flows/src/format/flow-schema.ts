@@ -77,6 +77,7 @@ const nudges = z.strictObject({
   afterSilence: z.array(duration),
   dailyAt: z.array(clock).optional(),
   giveUpAfter: duration.optional(),
+  stopAfter: duration.optional(),
 });
 
 const schedule = z.strictObject({

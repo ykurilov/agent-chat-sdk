@@ -9,4 +9,6 @@ onlyBuiltDependencies:
 
 # Свой файл на каждую копию в node_modules, а не жёсткая ссылка на общий. TypeScript 7.0 изредка путает одинаковые
 # файлы-ссылки (у drizzle-orm входы драйверов, две копии vitest), и typecheck изредка падает.
+# Уже поставленные пакеты pnpm сам не переносит: их переносит `pnpm install --force`. Остались ли ссылки,
+# проверяет scripts/check-node-modules-copies.mjs перед `pnpm typecheck` и в начале выпуска.
 packageImportMethod: clone-or-copy

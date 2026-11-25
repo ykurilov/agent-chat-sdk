@@ -8,6 +8,7 @@ import {
   type FlowNudges,
   type FlowState,
 } from "../format/flow-format";
+import { flowDurationMs } from "../format/flow-duration";
 import { appIssues, type FlowAppChecks } from "./app-checks";
 import { catalogEventNames } from "../format/catalog-events";
 import { commonApplies, fieldById, isFinal, sameText, stateById } from "../engine/flow-graph";
@@ -144,6 +145,7 @@ function checkState(flow: AgentFlow, catalog: FlowCatalog, issues: Issues, state
   if (state.nudges && state.nudges !== "off" && nudgesEmpty(state.nudges)) {
     issues.warning("empty_nudges", `${stateName(state)}: в касаниях нет ни одного срока — агент не напишет первым`, { stateId: state.id });
   }
+  if (state.nudges && state.nudges !== "off") checkStopAfter(state.nudges, issues, `${stateName(state)}: `, { stateId: state.id });
   const days = state.nudges && state.nudges !== "off" ? state.nudges.days : undefined;
   if (days !== undefined && (!Number.isInteger(days) || days < 1)) {
     issues.error("nudges_days_invalid", `${stateName(state)}: свои касания действуют целое число дней, с 1`, { stateId: state.id });
@@ -159,6 +161,15 @@ function checkState(flow: AgentFlow, catalog: FlowCatalog, issues: Issues, state
 }
 
 const nudgesEmpty = (nudges: FlowNudges) => nudges.afterSilence.length === 0 && !nudges.dailyAt?.length;
+
+/** «Перестать напоминать» позже «разговор окончен» не наступит: разговор кончится раньше. */
+function checkStopAfter(nudges: FlowNudges, issues: Issues, where: string, place: Place = {}) {
+  const { stopAfter, giveUpAfter } = nudges;
+  if (!stopAfter || !giveUpAfter) return;
+  if (flowDurationMs(stopAfter) > flowDurationMs(giveUpAfter)) {
+    issues.warning("nudges_stop_after_give_up", `${where}касания прекращаются позже, чем разговор заканчивается от молчания, — срок «перестать напоминать» не действует`, place);
+  }
+}
 
 function checkSchedule(flow: AgentFlow, issues: Issues) {
   const schedule = flow.schedule;
@@ -184,6 +195,7 @@ function checkSchedule(flow: AgentFlow, issues: Issues) {
       `«Дни и время»: потолок задан на ${byDay.length} дн., а программа длится ${schedule.lengthDays} дн. — лишние значения не действуют`,
     );
   }
+  if (schedule.nudges) checkStopAfter(schedule.nudges, issues, "«Дни и время»: ");
   if (schedule.nudges && nudgesEmpty(schedule.nudges)) {
     issues.warning("empty_nudges", "«Дни и время»: в касаниях нет ни одного срока — агент не напишет первым");
   }
@@ -193,6 +205,7 @@ function checkSchedule(flow: AgentFlow, issues: Issues) {
 }
 
 function checkFlowNudges(flow: AgentFlow, issues: Issues) {
+  if (flow.nudges) checkStopAfter(flow.nudges, issues, "Касания сценария: ");
   if (flow.nudges && nudgesEmpty(flow.nudges)) {
     issues.warning("empty_nudges", "Касания сценария: нет ни одного срока — агент не напишет первым");
   }

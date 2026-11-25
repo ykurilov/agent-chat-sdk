@@ -30,7 +30,7 @@ beforeEach(() => {
   mkdirSync(join(project, "scripts"));
   mkdirSync(join(project, ".changeset"));
   mkdirSync(join(project, "packages/core"), { recursive: true });
-  for (const file of ["release.mjs", "release-in-actions.mjs", "verified-stamp.mjs"]) copyFileSync(join(scriptsFolder, file), join(project, "scripts", file));
+  for (const file of ["release.mjs", "release-in-actions.mjs", "verified-stamp.mjs", "check-node-modules-copies.mjs"]) copyFileSync(join(scriptsFolder, file), join(project, "scripts", file));
   writeFileSync(join(project, ".changeset/README.md"), "# записи\n");
   writeFileSync(join(project, "packages/core/package.json"), JSON.stringify({ name: "@ykurilov/agent-chat-core", version: "1.2.3" }));
   writeFileSync(logFile, "");

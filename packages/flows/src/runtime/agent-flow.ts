@@ -66,6 +66,7 @@ import { withFlowTools } from "./flow-tools";
 import { FLOW_NOTE_TOOL } from "./note-tools";
 import { FLOW_SIDE_TASK_TOOL } from "./side-task-tool";
 import { withStepTail } from "./step-tail";
+import { pauseNoticeMs } from "./tail/pause-line";
 import { createFlowAdmit } from "./admit";
 import { flowTurnGate } from "./turn-gate";
 import { createFlowPause } from "./pause";
@@ -173,6 +174,7 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
   const confirmations = createConfirmations(options.confirmations, options.exitGuards);
   const defaultTimeZone = options.defaultTimeZone === undefined ? undefined : ianaTimeZone(options.defaultTimeZone);
   if (defaultTimeZone === null) throw new TypeError(`createAgentFlow: defaultTimeZone «${options.defaultTimeZone}» — не пояс IANA`);
+  const pauseNoticeAfterMs = options.pauseNotice === undefined ? undefined : pauseNoticeMs(options.pauseNotice);
 
   let port: FlowPort | undefined;
   let attachment: FlowAttachment | undefined;
@@ -528,6 +530,19 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
     return remember(chatId, await pinned);
   }
 
+  /** Своё правило приложения после конца (`afterEndRules`); нет, `null` или сбой — встроенное. */
+  async function appAfterEndRules(target: Chat, flow: AgentFlow): Promise<string | null> {
+    if (!options.afterEndRules) return null;
+    try {
+      const record = await store.getChat(target.id);
+      const own = await options.afterEndRules({ ownerId: target.ownerId, chatId: target.id, flow, endReason: record?.endReason ?? "final" });
+      return own?.trim() ? own : null;
+    } catch (error) {
+      logError(`[сценарий] чат=${target.id} afterEndRules упал, правило после конца — встроенное: ${errorText(error)}`);
+      return null;
+    }
+  }
+
   const runtime: FlowRuntime = {
     confirmations,
     judgeThreshold: options.judge.threshold ?? 0.7,
@@ -543,6 +558,7 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
     chatFlow,
     timeZones,
     ...(defaultTimeZone && { defaultTimeZone }),
+    ...(pauseNoticeAfterMs !== undefined && { pauseNoticeAfterMs }),
     async cardValues(ownerId) {
       // Карточка у приложения (`options.clientCard`): читаем её, а не свою таблицу. Сбой его хранилища не рвёт ход.
       const app = options.clientCard ? clientCard() : null;
@@ -1049,7 +1065,7 @@ export function buildAgentFlow(options: AgentFlowOptions, modules: FlowModules =
           const found = await chatFlow(target.ownerId, target.id, turn ? target : undefined);
           if (!found) return own;
           const pinned = turn ? await closeOverdue(target.ownerId, target.id, found) : found;
-          const rules = pinned.ended ? afterEndRules(pinned.flow) : flowRules(pinned.flow.common, pinned.flow, options.clientFacts ? [...FLOW_RULE_PARTS, clientFactsRules] : FLOW_RULE_PARTS);
+          const rules = pinned.ended ? afterEndRules(pinned.flow, await appAfterEndRules(target, pinned.flow)) : flowRules(pinned.flow.common, pinned.flow, options.clientFacts ? [...FLOW_RULE_PARTS, clientFactsRules] : FLOW_RULE_PARTS);
           return `${own ?? agent.instructions}\n\n${rules}`;
         },
         afterTurn: async (result: TurnResult) => {

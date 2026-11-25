@@ -16,7 +16,7 @@
     "test:e2e:quick": "pnpm --filter @ykurilov/agent-chat-demo test:e2e:quick",
     "test:e2e:perf": "pnpm --filter @ykurilov/agent-chat-demo test:e2e:perf",
     "dev": "pnpm --filter @ykurilov/agent-chat-demo dev",
-    "typecheck": "pnpm -r --parallel typecheck",
+    "typecheck": "node scripts/check-node-modules-copies.mjs && pnpm -r --parallel typecheck",
     "verify": "node scripts/verify.mjs",
     "secrets:load": "node scripts/load-secrets.mjs",
     "changeset": "changeset",

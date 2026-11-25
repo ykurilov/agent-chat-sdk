@@ -1,5 +1,5 @@
 import type { AgentNotice, PrepareTurn, TurnAction } from "@ykurilov/agent-chat-core";
-import { FLOW_STATE_KEY, type FlowTouch, type Transition } from "../engine/flow-run";
+import { FLOW_STATE_KEY, type FlowRun, type FlowTouch, type Transition } from "../engine/flow-run";
 import { mapWithLostTarget, migrateRun } from "../engine/migrate-run";
 import { noteAgentAnswer, noteHumanMessage, withNudgeStep, withoutUndeliveredTouch } from "../engine/run-updates";
 import { advance, chainLimitMessage, currentRun, pendingEvent, transitionNotice, withReopen, type ChatFlowRun, type FlowRuntime } from "./flow-events";
@@ -32,6 +32,12 @@ const firstReasonsOf = (notices: readonly AgentNotice[]): FlowFirstReason[] =>
     const { reasons } = dataOf(notice);
     return Array.isArray(reasons) ? (reasons as FlowFirstReason[]) : [];
   });
+
+/** Прошлое сообщение человека было не меньше `afterMs` назад — пометка паузы для этого ответа. Иначе — нет. */
+function pauseBefore(run: FlowRun, now: number, answerId: string, afterMs: number | undefined): FlowRun["humanPause"] {
+  if (afterMs === undefined || run.lastHumanAt === null || now - run.lastHumanAt < afterMs) return undefined;
+  return { answerId, previousAt: run.lastHumanAt };
+}
 
 /**
  * `agent.prepareTurn` сценария: в начале хода, до застывших блоков, применяет всё, что случилось вне хода — ожидающие
@@ -142,6 +148,7 @@ export function flowPrepareTurn(runtime: FlowRuntime, appTimeZone: () => string 
           run = await step(run, { type: "event", event: "app", name: change.name });
         }
       }
+      let humanPause: FlowRun["humanPause"];
       // Ход «пишет первым»: счёт до него — на случай, если его ответ не дойдёт (FR-309).
       let touchBase: Omit<FlowTouch, "answerId" | "at"> | null = null;
       for (const notice of ended ? [] : ctx.notices) {
@@ -163,6 +170,8 @@ export function flowPrepareTurn(runtime: FlowRuntime, appTimeZone: () => string 
       if (!ctx.resumed && HUMAN_ACTIONS.has(ctx.action)) {
         // Человек написал — окно канала снова открыто: агент может писать первым.
         if (record?.windowClosed) await runtime.store.setWindowClosed(ctx.chatId, false);
+        // Пауза человека — до того, как его новое сообщение сдвинет `lastHumanAt`.
+        humanPause = pauseBefore(run, now, ctx.messageId, runtime.pauseNoticeAfterMs);
         // Ход на пачку сообщений — в счёт каждое её сообщение.
         run = noteHumanMessage(run, now, schedule ? dayInProgress(now, timeZone, schedule) : undefined, ctx.burstMessageIds?.length ?? 1);
         if (!ended) run = await step(run, { type: "event", event: "message" });
@@ -173,12 +182,14 @@ export function flowPrepareTurn(runtime: FlowRuntime, appTimeZone: () => string 
       if (ctx.action !== "approval" && ctx.action !== "widget") run = noteAgentAnswer(run, now);
       // Снимок касания живёт до следующего хода; продолжение того же ответа его сохраняет.
       // Причины «пишет первым» — тоже: для хвоста приложения в этом ответе.
-      const { touch: earlierTouch, firstReasons: earlierReasons, ...withoutTouch } = run;
+      // Пауза человека — тоже: только для этого ответа.
+      const { touch: earlierTouch, firstReasons: earlierReasons, humanPause: earlierPause, ...withoutTouch } = run;
       const continued = ctx.action === "approval" || ctx.action === "widget";
       const touch = touchBase ? { answerId: ctx.messageId, at: now, ...touchBase } : continued ? earlierTouch : undefined;
       const reasons = firstReasonsOf(ctx.notices);
       const firstReasons = reasons.length > 0 ? reasons : continued ? earlierReasons : undefined;
-      run = { ...withoutTouch, answerId: ctx.messageId, ...(timeOffset !== null && { timeOffset }), ...(touch && { touch }), ...(firstReasons && { firstReasons }) };
+      const pause = humanPause ?? (earlierPause && (continued || earlierPause.answerId === ctx.messageId) ? earlierPause : undefined);
+      run = { ...withoutTouch, answerId: ctx.messageId, ...(timeOffset !== null && { timeOffset }), ...(touch && { touch }), ...(firstReasons && { firstReasons }), ...(pause && { humanPause: pause }) };
 
       if (ctx.abortSignal.aborted) {
         await restore();

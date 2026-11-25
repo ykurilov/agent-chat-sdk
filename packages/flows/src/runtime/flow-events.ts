@@ -49,6 +49,8 @@ export interface FlowRuntime {
   timeZones?: FlowTimeZones;
   /** `AgentFlowOptions.defaultTimeZone`: пояс хода без страницы и без известного пояса человека — он, а не пояс службы. */
   defaultTimeZone?: string;
+  /** `AgentFlowOptions.pauseNotice` в мс: пауза человека не короче — факт в хвосте шага. Нет — выключено. */
+  pauseNoticeAfterMs?: number;
   /** Переходы случились: копия состояния в хранилище, `onTransition`. Не бросает. */
   afterTransitions(input: { ownerId: string; chatId: string; pinned: PinnedFlow; run: FlowRun; transitions: Transition[] }): Promise<void>;
 }

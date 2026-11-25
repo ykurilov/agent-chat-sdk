@@ -1,5 +1,16 @@
 # @ykurilov/agent-chat-flows
 
+## 0.116.0
+
+### Minor Changes
+
+- 85c1ae5: Сценарии: nudges.stopAfter (касания прекращаются, разговор открыт), pauseNotice (факт о паузе в ходе человека), afterEndRules (своё правило после конца).
+
+### Patch Changes
+
+- @ykurilov/agent-chat-core@0.116.0
+  - @ykurilov/agent-chat-react@0.116.0
+
 ## 0.115.1
 
 ### Patch Changes

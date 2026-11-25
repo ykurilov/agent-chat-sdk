@@ -129,6 +129,8 @@ if (run("git", ["rev-parse", "--abbrev-ref", "HEAD"], { quiet: true }) !== "main
 if (run("git", ["status", "--porcelain"], { quiet: true }) !== "") {
   stopUnlessDryRun("В рабочей папке есть незакоммиченные изменения. Закоммитьте их (вместе с записью в .changeset) и запустите снова.");
 }
+// Жёсткие ссылки в node_modules ломают проверку типов изредка и в случайном пакете — останавливаем сразу, до тестов.
+run("node", ["scripts/check-node-modules-copies.mjs"]);
 const sdkConfigDir = join(process.env.HOME ?? "", ".config/agent-chat-sdk");
 /** Настройки выпуска своей машины: ~/.config/agent-chat-sdk/release.env, если он есть. */
 function machineReleaseEnv() {

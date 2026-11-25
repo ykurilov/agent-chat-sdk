@@ -130,3 +130,19 @@ describe("касания одной строкой", () => {
     expect(nudgesSummary({ afterSilence: [{ amount: 15, unit: "min" }, { amount: 1, unit: "h" }] }, labels)).toBe("15 мин · 1 ч");
   });
 });
+
+describe("«перестать напоминать» (`stopAfter`) на доске", () => {
+  const STOPPING: FlowNudges = { afterSilence: [{ amount: 1, unit: "d" }], stopAfter: { amount: 3, unit: "d" } };
+
+  it("в строке касаний — до «разговор окончен»", () => {
+    expect(nudgesSummary({ ...STOPPING, giveUpAfter: { amount: 30, unit: "d" } }, labels)).toBe(
+      "1 дн. · молчит 3 дн. — больше не напоминать · молчит 30 дн. — разговор окончен",
+    );
+  });
+
+  it("правка касаний на доске его не теряет", () => {
+    const flow = roundTrip(updateCommonNudges(base(), STOPPING));
+    expect(flow.nudges).toEqual(STOPPING);
+    expect(roundTrip(updateCommonNudges(withDays(DAYS), STOPPING)).schedule?.nudges).toEqual(STOPPING);
+  });
+});

@@ -8,6 +8,19 @@
 - Обновление приложения: обновить пакеты SDK одной версией после выпуска, пересобрать и убрать временные подмены значков. API и CSS-импорты прежние, миграций нет.
 
 
+## 0.116.0
+
+### Minor Changes
+
+- 85c1ae5: Сценарии: nudges.stopAfter (касания прекращаются, разговор открыт), pauseNotice (факт о паузе в ходе человека), afterEndRules (своё правило после конца).
+
+### Patch Changes
+
+- Updated dependencies [85c1ae5]
+  - @ykurilov/agent-chat-flows@0.116.0
+  - @ykurilov/agent-chat-react@0.116.0
+  - @ykurilov/agent-chat-sandbox@0.116.0
+
 ## 0.115.1
 
 ### Patch Changes

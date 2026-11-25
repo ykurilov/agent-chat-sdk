@@ -716,6 +716,28 @@
                     ],
                     "additionalProperties": false
                   },
+                  "stopAfter": {
+                    "type": "object",
+                    "properties": {
+                      "amount": {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      "unit": {
+                        "type": "string",
+                        "enum": [
+                          "min",
+                          "h",
+                          "d"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "amount",
+                      "unit"
+                    ],
+                    "additionalProperties": false
+                  },
                   "days": {
                     "type": "number"
                   },
@@ -880,6 +902,28 @@
                 "unit"
               ],
               "additionalProperties": false
+            },
+            "stopAfter": {
+              "type": "object",
+              "properties": {
+                "amount": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "unit": {
+                  "type": "string",
+                  "enum": [
+                    "min",
+                    "h",
+                    "d"
+                  ]
+                }
+              },
+              "required": [
+                "amount",
+                "unit"
+              ],
+              "additionalProperties": false
             }
           },
           "required": [
@@ -948,6 +992,28 @@
           }
         },
         "giveUpAfter": {
+          "type": "object",
+          "properties": {
+            "amount": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "unit": {
+              "type": "string",
+              "enum": [
+                "min",
+                "h",
+                "d"
+              ]
+            }
+          },
+          "required": [
+            "amount",
+            "unit"
+          ],
+          "additionalProperties": false
+        },
+        "stopAfter": {
           "type": "object",
           "properties": {
             "amount": {

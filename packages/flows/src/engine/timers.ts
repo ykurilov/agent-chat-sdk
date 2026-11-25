@@ -1,10 +1,11 @@
-import type { AgentFlow, FlowSchedule, FlowTimerUnit, TimerCondition } from "../format/flow-format";
+import type { AgentFlow, FlowSchedule, TimerCondition } from "../format/flow-format";
+import { flowDurationMs } from "../format/flow-duration";
 import type { FlowRun } from "./flow-run";
 import { activeExits, stateById } from "./flow-graph";
 import { exitTarget } from "./targets";
 import { nextClockTime, parseClock } from "./zoned-time";
 import { deadlineAt, programDayDue, stateDaysDue } from "./flow-days";
-import { giveUpAt, nextMorning, nextNightReply, nextNudge, type FirstWakeContext, type FlowFirstReason } from "./nudges";
+import { giveUpAt, nextMorning, nextNightReply, nextNudge, nudgesStopAt, type FirstWakeContext, type FlowFirstReason } from "./nudges";
 
 /** `exitId` срока «срок вышел» в `FlowDue`: это не выход ноды, а конец разговора (`schedule.lengthDays`). */
 export const FLOW_DEADLINE_EXIT = "@deadline";
@@ -14,8 +15,6 @@ export interface FlowDue {
   at: number;
   exitId: string;
 }
-
-const UNIT_MS: Readonly<Record<FlowTimerUnit, number>> = { min: 60_000, h: 3_600_000, d: 86_400_000 };
 
 /** Когда на самом деле вошли в текущее состояние. `enteredAt` после «назад» сдвинут на остановленные часы — время суток от него не считается. */
 function actualEntry(run: FlowRun): number {
@@ -30,14 +29,14 @@ function actualEntry(run: FlowRun): number {
 export function timerDueAt(condition: TimerCondition, run: FlowRun, timeZone: string, schedule?: FlowSchedule): number | null {
   switch (condition.from) {
     case "in_state":
-      return run.enteredAt + condition.amount * UNIT_MS[condition.unit];
+      return run.enteredAt + flowDurationMs(condition);
     case "since_start":
-      return run.startedAt + condition.amount * UNIT_MS[condition.unit];
+      return run.startedAt + flowDurationMs(condition);
     case "silence":
       if (run.lastAgentAt === null) return null;
       if (run.lastHumanAt !== null && run.lastHumanAt > run.lastAgentAt) return null;
       // После открытия заново тишина считается от открытия.
-      return Math.max(run.lastAgentAt, run.reopenedAt ?? 0) + condition.amount * UNIT_MS[condition.unit];
+      return Math.max(run.lastAgentAt, run.reopenedAt ?? 0) + flowDurationMs(condition);
     case "time_of_day": {
       const minutes = parseClock(condition.at);
       return minutes === null ? null : nextClockTime(actualEntry(run), minutes, timeZone);
@@ -99,7 +98,9 @@ export const FLOW_GIVE_UP_EXIT = "@give_up";
 /** Сроки «пишет первым»: каждая причина со своим моментом. */
 function firstMessageDues(flow: AgentFlow, run: FlowRun, now: number, timeZone: string, context: FirstWakeContext) {
   const nudge = nextNudge(flow, run, now, timeZone, context);
-  const morning = nextMorning(flow, run, timeZone, context);
+  // Утреннее не успело до `stopAfter` (сервер стоял) — уже не пишется.
+  const stop = nudgesStopAt(flow, run, timeZone, context);
+  const morning = stop !== null && now >= stop ? null : nextMorning(flow, run, timeZone, context);
   const night = nextNightReply(flow, run, timeZone, context);
   const dues: Array<{ at: number; reason: FlowFirstReason }> = [];
   if (morning !== null) dues.push({ at: morning, reason: { kind: "morning" } });

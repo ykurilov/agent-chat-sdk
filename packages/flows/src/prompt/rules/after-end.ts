@@ -12,8 +12,12 @@ const AFTER_END_RULES = `# Программа закончилась
 - Первым не пиши. Переходов больше нет: «flow_exit» не вызывай.
 - Пришло служебное сообщение «Срок программы вышел» — попрощайся одним сообщением: коротко подведи итог и скажи, что дальше.`;
 
-/** Постоянные правила после конца разговора: вместо `flowRules`, когда чат закончен. От дня и места не зависят. */
-export function afterEndRules(flow: AgentFlow): string {
+/**
+ * Постоянные правила после конца разговора: вместо `flowRules`, когда чат закончен. От дня и места не зависят. `own` —
+ * правило приложения (`afterEndRules`) вместо встроенного; общая часть сценария дописывается к любому.
+ */
+export function afterEndRules(flow: AgentFlow, own?: string | null): string {
+  const rules = own?.trim() || AFTER_END_RULES;
   const shared = flow.common.trim();
-  return shared ? `${AFTER_END_RULES}\n\n## Общее\n${shared}` : AFTER_END_RULES;
+  return shared ? `${rules}\n\n## Общее\n${shared}` : rules;
 }

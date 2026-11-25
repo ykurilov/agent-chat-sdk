@@ -126,6 +126,16 @@ export function TandemFlowNudgesEditor({ nudges, optional, onChange }: FlowNudge
         </Button>
       </div>
       <div className="flex flex-col gap-1.5">
+        <span className="text-sm font-medium text-[var(--foreground)]">{labels.stopAfter}</span>
+        {nudges.stopAfter ? (
+          <DurationInput label={labels.stopAfter} value={nudges.stopAfter} onChange={(stopAfter) => set({ stopAfter })} onRemove={() => set({ stopAfter: undefined })} />
+        ) : (
+          <Button variant="secondary" size="sm" className="self-start" onClick={() => set({ stopAfter: { amount: 3, unit: "d" } })}>
+            {labels.never}
+          </Button>
+        )}
+      </div>
+      <div className="flex flex-col gap-1.5">
         <span className="text-sm font-medium text-[var(--foreground)]">{labels.giveUpAfter}</span>
         {nudges.giveUpAfter ? (
           <DurationInput label={labels.giveUpAfter} value={nudges.giveUpAfter} onChange={(giveUpAfter) => set({ giveUpAfter })} onRemove={() => set({ giveUpAfter: undefined })} />

@@ -17,7 +17,7 @@ import type {
   StoredMessage,
 } from "@ykurilov/agent-chat-core";
 import type { ToolSet } from "ai";
-import type { AgentFlow, FlowAfterEnd, FlowSchedule } from "../format/flow-format";
+import type { AgentFlow, FlowAfterEnd, FlowDuration, FlowSchedule } from "../format/flow-format";
 import type { FirstMessagesSetting, FlowEndReason, FlowRun, Transition, FlowTransitionMode, FlowJudgeAdvice } from "../engine/flow-run";
 import type { StateMap } from "../engine/migrate-run";
 import type { FlowDayInfo } from "../engine/flow-days";
@@ -653,8 +653,28 @@ export interface AgentFlowOptions {
   logError?: (message: string) => void;
   /** Журнал судьи (`judge.journal`), с 0.62. По умолчанию — строка `[сценарий] судья: {…}` в `console.info`. */
   logJudge?: (entry: FlowJudgeEntry) => void;
+  /**
+   * Факт о паузе в ходе человека, с 0.116: с его прошлого сообщения прошло не меньше `after` — в хвосте шага (мимо
+   * истории, кэш цел) строка «сколько прошло словами, дата прошлого сообщения», и если разговор был закрыт и открыт
+   * заново или идёт после конца — это тоже. Часы — чата (тестовый чат — перемотанные). Нет — выключено.
+   */
+  pauseNotice?: { after: FlowDuration };
+  /**
+   * Своё правило после конца разговора вместо встроенного «Программа закончилась…», с 0.116. «## Общее» из сценария
+   * дописывается, как у встроенного. `null` — встроенное. Текст должен быть стабилен на чат: он в постоянной инструкции
+   * (кэш модели). Ошибка приложения — встроенное правило и `logError`.
+   */
+  afterEndRules?: (input: FlowAfterEndRulesInput) => string | null | Promise<string | null>;
   /** Часы; для тестов. */
   now?: () => Date;
+}
+
+/** Что видит `afterEndRules`: чат, его сценарий и чем кончился разговор. */
+export interface FlowAfterEndRulesInput {
+  ownerId: string;
+  chatId: string;
+  flow: AgentFlow;
+  endReason: FlowEndReason;
 }
 
 /** Событие приложения вне хода: кнопка страницы, оплата, событие сервера. */

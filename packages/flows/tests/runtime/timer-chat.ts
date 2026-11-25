@@ -3,7 +3,7 @@ import { vi } from "vitest";
 import { noticeService, scriptedModel, userMessage, waitTurn } from "../../../core/tests/unit/support/notice-chat";
 import { mockModelId, readAll } from "../../../core/tests/unit/support/mock-model";
 import { buildAgentFlow } from "../../src/runtime/agent-flow";
-import type { AgentFlowOptions, FlowChatOptions, FlowFinish } from "../../src/runtime/flow-types";
+import type { AgentFlowOptions, ClientCardTools, FlowChatOptions, FlowFinish } from "../../src/runtime/flow-types";
 import { memoryFlowStore } from "../../src/store/memory";
 import type { FlowStore } from "../../src/store/flow-store";
 import { fixtureJson } from "../flow-fixtures";
@@ -35,6 +35,10 @@ export interface TimerChatSetup {
   timers?: AgentFlowOptions["timers"];
   onTransition?: AgentFlowOptions["onTransition"];
   onReopen?: AgentFlowOptions["onReopen"];
+  /** Остальные настройки сценария (`pauseNotice`, `afterEndRules`…). */
+  options?: Partial<AgentFlowOptions>;
+  /** Модуль карточки клиента; нет — пустая подделка. */
+  clientCard?: ClientCardTools;
 }
 
 export function timerChat(setup: TimerChatSetup = {}) {
@@ -57,8 +61,9 @@ export function timerChat(setup: TimerChatSetup = {}) {
       ...(setup.timers && { timers: setup.timers }),
       ...(setup.onTransition && { onTransition: setup.onTransition }),
       ...(setup.onReopen && { onReopen: setup.onReopen }),
+      ...setup.options,
     },
-    { judge, clientCard: emptyClientCard() },
+    { judge, clientCard: setup.clientCard ?? emptyClientCard() },
   );
   const options = flow.withChat({ agent: { instructions: "Ты помощник.", ...setup.agent }, ...(setup.beforeTurn && { beforeTurn: setup.beforeTurn }) });
   const { service, storage } = noticeService(model, { ...setup.chatOptions, ...options, logError, ...(setup.storage && { storage: setup.storage }) });

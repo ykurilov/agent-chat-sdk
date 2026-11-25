@@ -229,6 +229,7 @@ export function updateScheduleNudges(flow: AgentFlow, nudges: FlowNudges | null)
 function cleanNudges(nudges: FlowNudges): FlowNudges {
   let clean: FlowNudges = { afterSilence: nudges.afterSilence };
   if (nudges.dailyAt?.length) clean = { ...clean, dailyAt: nudges.dailyAt };
+  if (nudges.stopAfter) clean = { ...clean, stopAfter: nudges.stopAfter };
   if (nudges.giveUpAfter) clean = { ...clean, giveUpAfter: nudges.giveUpAfter };
   return clean;
 }
@@ -240,10 +241,11 @@ export function durationText(duration: FlowDuration, labels: FlowEditorLabels): 
   return `${duration.amount} ${labels.units[duration.unit]}`;
 }
 
-/** Касания одной строкой: «30 мин · каждый день в 19:00 · молчит 3 дн. — разговор окончен». */
+/** Касания одной строкой: «30 мин · каждый день в 19:00 · молчит 3 дн. — больше не напоминать · молчит 30 дн. — разговор окончен». */
 export function nudgesSummary(nudges: FlowNudges, labels: FlowEditorLabels): string {
   const parts = nudges.afterSilence.map((step) => durationText(step, labels));
   if (nudges.dailyAt?.length) parts.push(labels.nudges.summaryDaily(nudges.dailyAt.join(", ")));
+  if (nudges.stopAfter) parts.push(labels.nudges.summaryStop(durationText(nudges.stopAfter, labels)));
   if (nudges.giveUpAfter) parts.push(labels.nudges.summaryGiveUp(durationText(nudges.giveUpAfter, labels)));
   return parts.join(" · ");
 }

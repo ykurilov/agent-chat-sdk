@@ -1,4 +1,5 @@
-import type { AgentFlow, FlowDuration, FlowNudges, FlowSchedule } from "../format/flow-format";
+import type { AgentFlow, FlowNudges, FlowSchedule } from "../format/flow-format";
+import { flowDurationMs } from "../format/flow-duration";
 import type { FlowRun } from "./flow-run";
 import { stateById } from "./flow-graph";
 import { flowDay, programDayDue } from "./flow-days";
@@ -61,8 +62,6 @@ function nudgeRings(flow: AgentFlow, run: FlowRun, timeZone: string): NudgeRings
   return { ring: own, until: Math.min(...ends), after: common };
 }
 
-const UNIT_MS = { min: 60_000, h: 3_600_000, d: 86_400_000 } as const;
-const durationMs = (duration: FlowDuration) => duration.amount * UNIT_MS[duration.unit];
 
 /** Порог утреннего по умолчанию: человек писал за 3 ч до него — утреннее завтра. */
 export const DEFAULT_SKIP_MORNING_MIN = 180;
@@ -96,6 +95,9 @@ export function nextNudge(flow: AgentFlow, run: FlowRun, now: number, timeZone: 
     if (own && own.at < rings.until) nudge = { ...own, own: true };
     else if (rings.after) nudge = ringNudge(rings.after, Math.max(base, rings.until), run.nudgeStepOwn || base < rings.until ? 0 : step, timeZone);
   }
+  // Тишина человека дошла до `stopAfter` — касаний больше нет, и пропущенное (сервер стоял) тоже не пишется.
+  const stop = nudgesStopAt(flow, run, timeZone, context);
+  if (nudge && stop !== null && (nudge.at >= stop || now >= stop)) nudge = null;
   const giveUp = giveUpAt(flow, run, timeZone, context);
   // Сервер стоял дольше тишины: пропущенное касание уже не к месту — разговор кончается.
   if (giveUp !== null && (!nudge || giveUp <= nudge.at || giveUp <= now)) return { at: giveUp, reason: { kind: "give_up" } };
@@ -105,7 +107,7 @@ export function nextNudge(flow: AgentFlow, run: FlowRun, now: number, timeZone: 
 /** Шаг ряда `step` от `base`: срок тишины, а после ряда — ближайшие часы `dailyAt`. Ряд кончился — `null`. */
 function ringNudge(ring: FlowNudges, base: number, step: number, timeZone: string): NudgeDue | null {
   const silence = ring.afterSilence[step];
-  if (silence) return { at: base + durationMs(silence), reason: { kind: "silence", step: step + 1 } };
+  if (silence) return { at: base + flowDurationMs(silence), reason: { kind: "silence", step: step + 1 } };
   let nudge: NudgeDue | null = null;
   for (const clock of ring.dailyAt ?? []) {
     const minutes = parseClock(clock);
@@ -132,9 +134,26 @@ export function giveUpAt(flow: AgentFlow, run: FlowRun, timeZone: string, contex
   const rings = nudgesRunning(flow, run, timeZone, context);
   // Свой ряд на N дней без своего «не завершил» — общий: тишина человека считается всё время в ноде.
   const giveUpAfter = rings && (rings.ring.giveUpAfter ?? (rings.until !== undefined ? rings.after?.giveUpAfter : undefined));
-  // Слова сотрудника на паузе — тоже разговор (FR-507): тишина человека считается и от конца паузы.
-  // Открыт заново — тишина человека считается от открытия.
-  return giveUpAfter ? Math.max(run.lastHumanAt ?? run.startedAt, context.pausedUntil ?? 0, run.reopenedAt ?? 0) + durationMs(giveUpAfter) : null;
+  return giveUpAfter ? humanSilenceFrom(run, context) + flowDurationMs(giveUpAfter) : null;
+}
+
+/**
+ * Начало тишины человека: его последнее сообщение (не писал — начало разговора). Слова сотрудника на паузе — тоже
+ * разговор (FR-507): тишина считается и от конца паузы. Открыт заново — от открытия.
+ */
+const humanSilenceFrom = (run: FlowRun, context: FirstWakeContext) => Math.max(run.lastHumanAt ?? run.startedAt, context.pausedUntil ?? 0, run.reopenedAt ?? 0);
+
+/**
+ * С какого момента агент больше не пишет первым (касания, утренние): `stopAfter` тишины человека. Срок — ряда ноды, как у
+ * `giveUpAfter`; касаний в ноде нет («off») — общих касаний сценария: утренние программы гасит он. Разговор при этом не
+ * кончается. Нет `stopAfter` — `null`.
+ */
+export function nudgesStopAt(flow: AgentFlow, run: FlowRun, timeZone: string, context: FirstWakeContext = {}): number | null {
+  const rings = nudgeRings(flow, run, timeZone);
+  const stopAfter = rings
+    ? (rings.ring.stopAfter ?? (rings.until !== undefined ? rings.after?.stopAfter : undefined))
+    : (flow.schedule?.nudges ?? flow.nudges)?.stopAfter;
+  return stopAfter ? humanSilenceFrom(run, context) + flowDurationMs(stopAfter) : null;
 }
 
 /** Пишет ли сценарий утреннее: так задано, а нет — если у программы есть срок. */
@@ -154,10 +173,11 @@ export function nextMorning(flow: AgentFlow, run: FlowRun, timeZone: string, con
   for (let day = 0; day < 3; day += 1) {
     const humanJustWrote = run.lastHumanAt !== null && run.lastHumanAt < morning && morning - run.lastHumanAt < skipMs;
     const paused = (context.pausedUntil ?? 0) > morning;
-    if (!humanJustWrote && !paused) return morning;
+    if (!humanJustWrote && !paused) break;
     morning = flowDay(run, morning, timeZone, schedule).nextDayStartAt;
   }
-  return morning;
+  const stop = nudgesStopAt(flow, run, timeZone, context);
+  return stop !== null && morning >= stop ? null : morning;
 }
 
 /** Касания, которые ждут правила «человек писал недавно»: агент пишет первым без дела, а не по программе или ответу. */
